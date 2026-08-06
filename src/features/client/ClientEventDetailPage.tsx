@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ICON, Pencil, STROKE } from '../../components/ui/icons'
 import {
   Button,
@@ -17,6 +17,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { fmtDate, fmtDateLong, fmtHours, fmtTime } from '../../lib/dates'
 import { EventFormModal } from '../events/EventFormModal'
+import { EventActivityLog } from '../events/EventActivityLog'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import type { EventRow, WorkBoardRow } from '../../types/domain'
@@ -31,6 +32,7 @@ import type { EventRow, WorkBoardRow } from '../../types/domain'
 export default function ClientEventDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const { has, showsEventField } = useAuth()
   const [editOpen, setEditOpen] = useState(false)
 
@@ -174,8 +176,22 @@ export default function ClientEventDetailPage() {
           </CardBody>
         </Card>
 
+        {has(PERM.EVENTS_ACTIVITY_LOG) && <EventActivityLog eventId={event.id} />}
+
         {editOpen && (
-          <EventFormModal open onClose={() => setEditOpen(false)} event={event} contact={contact} supplierIds={suppliers.map((s) => s.supplier_id)} />
+          <EventFormModal
+            open
+            onClose={() => {
+              setEditOpen(false)
+              // the broad ['events'] invalidation in EventFormModal's onSuccess
+              // covers this page's ['client','event',id] by prefix; the log
+              // needs its own key since nothing else writes to it
+              void qc.invalidateQueries({ queryKey: ['event_activity', id] })
+            }}
+            event={event}
+            contact={contact}
+            supplierIds={suppliers.map((s) => s.supplier_id)}
+          />
         )}
       </div>
     </RequirePermission>
