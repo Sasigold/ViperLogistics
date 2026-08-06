@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, ICON, MapPin, Package, PartyPopper, Phone, STROKE, User } from '../../components/ui/icons'
+import { Check, Clock, ICON, MapPin, Package, PartyPopper, Phone, STROKE, User } from '../../components/ui/icons'
 import {
   Button,
+  Card,
+  CardBody,
+  CardHeader,
   Checkbox,
   Field,
   Input,
@@ -15,9 +18,18 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { useCustomerFormConfig, useCustomers, useStatuses, useSuppliers } from '../../lib/queries'
+import {
+  useAllowedExecutionMethods,
+  useCustomerFormConfig,
+  useCustomers,
+  useEventAutoTasks,
+  useExecutionMethods,
+  useStatuses,
+  useSuppliers,
+  useTaskTypes,
+} from '../../lib/queries'
 import { AddressAutocomplete } from './AddressAutocomplete'
-import type { EventRow } from '../../types/domain'
+import type { EventRow, ExecutionMethod } from '../../types/domain'
 
 type EventForm = {
   customer_id: string
@@ -40,6 +52,16 @@ type EventForm = {
   porterage: boolean
   supplier_pickup: boolean
   supplier_ids: string[]
+  setup_date: string
+  setup_time: string
+  setup_worker_count: string
+  setup_hours_count: string
+  setup_execution_method: string
+  teardown_date: string
+  teardown_time: string
+  teardown_worker_count: string
+  teardown_hours_count: string
+  teardown_execution_method: string
 }
 
 const empty: EventForm = {
@@ -47,15 +69,37 @@ const empty: EventForm = {
   location_provider: '', location_place_id: '', location_lat: null, location_lng: null,
   location_notes: '', volume_m: '', truck_count: '', contact_name: '', contact_phone: '',
   notes: '', status_id: '', no_parking: false, porterage: false, supplier_pickup: false, supplier_ids: [],
+  setup_date: '', setup_time: '', setup_worker_count: '', setup_hours_count: '', setup_execution_method: '',
+  teardown_date: '', teardown_time: '', teardown_worker_count: '', teardown_hours_count: '', teardown_execution_method: '',
 }
 
 const DRAFT_KEY = 'vl-event-draft'
+
+/** The two auto-created tasks the last wizard step edits. */
+const SECTIONS = [
+  { code: 'setup' as const, title: 'הקמה' },
+  { code: 'teardown' as const, title: 'פירוק' },
+]
+
+/** The five per-section fields, with the labels reused from the task drawer. */
+const SECTION_LABELS = [
+  ['date', 'תאריך'],
+  ['time', 'שעה'],
+  ['worker_count', 'כמות עובדים'],
+  ['hours_count', 'כמות שעות'],
+  ['execution_method', 'אופן ביצוע'],
+] as const
+
+/** Field keys of one section — same names in form_fields, in the form and in the RPC payload. */
+const sectionFields = (code: 'setup' | 'teardown') =>
+  [`${code}_date`, `${code}_time`, `${code}_worker_count`, `${code}_hours_count`, `${code}_execution_method`] as const
 
 /** Which configurable field keys belong to which step. */
 const STEPS = [
   { key: 'basics', label: 'פרטי האירוע', icon: PartyPopper, fields: ['end_client_name', 'event_number', 'event_date'] },
   { key: 'location', label: 'מיקום ואיש קשר', icon: MapPin, fields: ['location', 'location_notes', 'contact_name', 'contact_phone'] },
   { key: 'logistics', label: 'לוגיסטיקה ותוספות', icon: Package, fields: ['volume_m', 'truck_count', 'addons', 'notes'] },
+  { key: 'sections', label: 'הקמה ופירוק', icon: Clock, fields: [...sectionFields('setup'), ...sectionFields('teardown')] },
 ] as const
 
 export function EventFormModal({
@@ -86,6 +130,15 @@ export function EventFormModal({
   const { data: config = [] } = useCustomerFormConfig(effectiveCustomerId)
   const { data: suppliers = [] } = useSuppliers(effectiveCustomerId)
 
+  const { data: taskTypes = [] } = useTaskTypes()
+  const { data: allMethods = [] } = useExecutionMethods()
+  const typeIdOf = (code: string) => taskTypes.find((t) => t.code === code && t.is_active)?.id ?? null
+  const setupTypeId = typeIdOf('setup')
+  const teardownTypeId = typeIdOf('teardown')
+  const setupMethods = useAllowedExecutionMethods(setupTypeId, effectiveCustomerId)
+  const teardownMethods = useAllowedExecutionMethods(teardownTypeId, effectiveCustomerId)
+  const { data: autoTasks } = useEventAutoTasks(open && event ? event.id : null)
+
   useEffect(() => {
     if (!open) return
     setStep(0)
@@ -113,12 +166,30 @@ export function EventFormModal({
         porterage: event.porterage,
         supplier_pickup: event.supplier_pickup,
         supplier_ids: supplierIds ?? [],
+        // placeholders until the two auto tasks load below
+        setup_date: event.event_date,
+        teardown_date: event.event_date,
       })
     } else {
       const draft = localStorage.getItem(DRAFT_KEY)
       setForm(draft ? { ...empty, ...(JSON.parse(draft) as Partial<EventForm>) } : empty)
     }
   }, [open, event, contact, supplierIds])
+
+  /** Edit mode: the section values live on the auto-created tasks, not on the event. */
+  useEffect(() => {
+    if (!open || !event || !autoTasks) return
+    const patch: Partial<EventForm> = {}
+    for (const { code } of SECTIONS) {
+      const t = autoTasks.find((x) => x.task_types.code === code)
+      patch[`${code}_date`] = t?.task_date ?? ''
+      patch[`${code}_time`] = t?.onsite_start_time?.slice(0, 5) ?? ''
+      patch[`${code}_worker_count`] = t?.worker_count ? String(t.worker_count) : ''
+      patch[`${code}_hours_count`] = t?.hours_count != null ? String(t.hours_count) : ''
+      patch[`${code}_execution_method`] = t?.execution_method_id ?? ''
+    }
+    setForm((f) => ({ ...f, ...patch }))
+  }, [open, event, autoTasks])
 
   // auto-save draft for new events
   useEffect(() => {
@@ -170,6 +241,15 @@ export function EventFormModal({
       if (req('truck_count') && !form.truck_count) out.push('כמות משאיות')
       if (req('notes') && !form.notes.trim()) out.push('הערות')
     }
+    if (stepKey === 'sections') {
+      for (const { code, title } of SECTIONS) {
+        if (!typeIdOf(code)) continue
+        for (const [key, label] of SECTION_LABELS) {
+          const k = `${code}_${key}` as keyof EventForm
+          if (show(k) && req(k) && !String(form[k] ?? '').trim()) out.push(`${title} — ${label}`)
+        }
+      }
+    }
     return out
   }
 
@@ -203,6 +283,16 @@ export function EventFormModal({
         payload.contact_name = form.contact_name
         payload.contact_phone = form.contact_phone
       }
+      // hidden sections are never sent, so the RPC leaves their tasks alone
+      for (const { code } of SECTIONS) {
+        if (!typeIdOf(code)) continue
+        for (const key of sectionFields(code)) {
+          if (!show(key)) continue
+          // task_date is NOT NULL — omitting an empty date keeps the current one
+          if (key.endsWith('_date') && !form[key]) continue
+          payload[key] = form[key]
+        }
+      }
       if (event) {
         const { error } = await supabase.rpc('update_event', { p_event_id: event.id, payload })
         if (error) throw error
@@ -218,6 +308,7 @@ export function EventFormModal({
       })
       localStorage.removeItem(DRAFT_KEY)
       void qc.invalidateQueries({ queryKey: ['events'] })
+      void qc.invalidateQueries({ queryKey: ['tasks'] })
       void qc.invalidateQueries({ queryKey: ['calendar'] })
       void qc.invalidateQueries({ queryKey: ['workboard'] })
       void qc.invalidateQueries({ queryKey: ['dashboard'] })
@@ -364,7 +455,23 @@ export function EventFormModal({
           )}
           {show('event_date') && (
             <Field label="תאריך אירוע" required error={touched && !form.event_date ? 'שדה חובה' : undefined}>
-              <Input type="date" value={form.event_date} onChange={(e) => set({ event_date: e.target.value })} />
+              {/* section dates follow the event date until the user moves one of them */}
+              <Input
+                type="date"
+                value={form.event_date}
+                onChange={(e) =>
+                  setForm((f) => {
+                    const d = e.target.value
+                    const carry = (v: string) => (!v || v === f.event_date ? d : v)
+                    return {
+                      ...f,
+                      event_date: d,
+                      setup_date: carry(f.setup_date),
+                      teardown_date: carry(f.teardown_date),
+                    }
+                  })
+                }
+              />
             </Field>
           )}
           {!isCustomer && (
@@ -489,6 +596,128 @@ export function EventFormModal({
           )}
         </div>
       )}
+
+      {/* ── step 4: setup & teardown ───────────────────────────────────────
+          These two write straight onto the tasks the event trigger creates,
+          so they are editable here instead of only in the task drawer.    */}
+      {current?.key === 'sections' && (
+        <div className="animate-fade-in grid gap-4 lg:grid-cols-2">
+          {SECTIONS.map(({ code, title }) =>
+            typeIdOf(code) ? (
+              <TaskSection
+                key={code}
+                code={code}
+                title={title}
+                form={form}
+                set={set}
+                show={show}
+                req={req}
+                err={err}
+                methods={code === 'setup' ? setupMethods : teardownMethods}
+                allMethods={allMethods}
+              />
+            ) : null,
+          )}
+        </div>
+      )}
     </Modal>
+  )
+}
+
+/** One הקמה/פירוק block — the five fields that land on the auto-created task. */
+function TaskSection({
+  code,
+  title,
+  form,
+  set,
+  show,
+  req,
+  err,
+  methods,
+  allMethods,
+}: {
+  code: 'setup' | 'teardown'
+  title: string
+  form: EventForm
+  set: (patch: Partial<EventForm>) => void
+  show: (key: string) => boolean
+  req: (key: string) => boolean
+  err: (key: string, value: string) => string | undefined
+  methods: ExecutionMethod[]
+  allMethods: ExecutionMethod[]
+}) {
+  const dateKey = `${code}_date` as const
+  const timeKey = `${code}_time` as const
+  const workersKey = `${code}_worker_count` as const
+  const hoursKey = `${code}_hours_count` as const
+  const methodKey = `${code}_execution_method` as const
+
+  if (!sectionFields(code).some(show)) return null
+
+  /** A method disabled for the customer after the fact would otherwise vanish silently. */
+  const picked = form[methodKey]
+  const orphan = picked && !methods.some((m) => m.id === picked) ? allMethods.find((m) => m.id === picked) : null
+
+  return (
+    <Card>
+      <CardHeader title={title} icon={<Clock size={ICON.md} strokeWidth={STROKE} />} />
+      <CardBody className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {show(dateKey) && (
+            <Field label="תאריך" required={req(dateKey)} error={err(dateKey, form[dateKey])}>
+              <Input type="date" value={form[dateKey]} onChange={(e) => set({ [dateKey]: e.target.value })} />
+            </Field>
+          )}
+          {show(timeKey) && (
+            <Field label="שעה" required={req(timeKey)} error={err(timeKey, form[timeKey])} hint="שעת תחילה בשטח">
+              <Input type="time" value={form[timeKey]} onChange={(e) => set({ [timeKey]: e.target.value })} />
+            </Field>
+          )}
+          {show(workersKey) && (
+            <Field label="כמות עובדים" required={req(workersKey)} error={err(workersKey, form[workersKey])}>
+              <Input
+                type="number"
+                min="0"
+                value={form[workersKey]}
+                onChange={(e) => set({ [workersKey]: e.target.value })}
+              />
+            </Field>
+          )}
+          {show(hoursKey) && (
+            <Field label="כמות שעות" required={req(hoursKey)} error={err(hoursKey, form[hoursKey])}>
+              <Input
+                type="number"
+                step="0.5"
+                min="0"
+                value={form[hoursKey]}
+                onChange={(e) => set({ [hoursKey]: e.target.value })}
+              />
+            </Field>
+          )}
+        </div>
+        {show(methodKey) && (
+          <Field
+            label="אופן ביצוע"
+            required={req(methodKey)}
+            error={err(methodKey, form[methodKey])}
+            hint={methods.length ? undefined : 'לא הוגדרו אופני ביצוע זמינים ללקוח זה'}
+          >
+            <Select value={form[methodKey]} onChange={(e) => set({ [methodKey]: e.target.value })}>
+              <option value="">בחירה...</option>
+              {methods.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+              {orphan && (
+                <option value={orphan.id} disabled>
+                  {orphan.name} (אינו זמין יותר)
+                </option>
+              )}
+            </Select>
+          </Field>
+        )}
+      </CardBody>
+    </Card>
   )
 }

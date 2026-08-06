@@ -166,6 +166,17 @@ export interface TaskRow {
   deleted_at: string | null
 }
 
+/** The auto-created הקמה/פירוק task, as read back into the event form. */
+export interface EventAutoTask {
+  id: string
+  task_date: string
+  onsite_start_time: string | null
+  hours_count: number | null
+  worker_count: number
+  execution_method_id: string | null
+  task_types: { code: 'setup' | 'teardown' }
+}
+
 export interface AssignmentPerson {
   profile_id: string
   name: string

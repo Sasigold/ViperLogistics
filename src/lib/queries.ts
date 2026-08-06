@@ -1,9 +1,11 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import type {
   Contractor,
   ContractorWorker,
   Customer,
+  EventAutoTask,
   ExecutionMethod,
   FormField,
   Profile,
@@ -140,6 +142,40 @@ export function useTaskTypeMethods() {
       const { data, error } = await supabase.from('task_type_execution_methods').select('*')
       if (error) throw error
       return data as { task_type_id: string; execution_method_id: string }[]
+    },
+  })
+}
+
+/** Active methods ∩ those allowed for the task type ∩ those enabled for the customer. */
+export function useAllowedExecutionMethods(taskTypeId?: string | null, customerId?: string | null) {
+  const { data: methods = [] } = useExecutionMethods()
+  const { data: typeMethods = [] } = useTaskTypeMethods()
+  const { data: customerMethods } = useCustomerExecutionMethods(customerId)
+  return useMemo(() => {
+    let list = methods.filter((m) => m.is_active)
+    if (taskTypeId) {
+      const forType = typeMethods.filter((tm) => tm.task_type_id === taskTypeId).map((tm) => tm.execution_method_id)
+      if (forType.length) list = list.filter((m) => forType.includes(m.id))
+    }
+    if (customerId && customerMethods) list = list.filter((m) => customerMethods.includes(m.id))
+    return list
+  }, [methods, typeMethods, taskTypeId, customerId, customerMethods])
+}
+
+/** The הקמה/פירוק tasks the event trigger created — used to prefill the event form. */
+export function useEventAutoTasks(eventId?: string | null) {
+  return useQuery({
+    queryKey: ['tasks', 'autoByEvent', eventId],
+    enabled: !!eventId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('id, task_date, onsite_start_time, hours_count, worker_count, execution_method_id, task_types!inner(code)')
+        .eq('event_id', eventId)
+        .is('deleted_at', null)
+        .in('task_types.code', ['setup', 'teardown'])
+      if (error) throw error
+      return data as unknown as EventAutoTask[]
     },
   })
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Briefcase, Clock, HardHat, ICON, MapPin, STROKE, Trash2, Truck, Users } from '../../components/ui/icons'
 import {
@@ -21,12 +21,10 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import {
+  useAllowedExecutionMethods,
   useContractors,
-  useCustomerExecutionMethods,
-  useExecutionMethods,
   useStaff,
   useStatuses,
-  useTaskTypeMethods,
   useTaskTypes,
   useTrucks,
 } from '../../lib/queries'
@@ -55,8 +53,6 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   const canEdit = can('tasks', 'edit') || (!taskId && can('tasks', 'create'))
 
   const { data: taskTypes = [] } = useTaskTypes()
-  const { data: methods = [] } = useExecutionMethods()
-  const { data: typeMethods = [] } = useTaskTypeMethods()
   const { data: statuses = [] } = useStatuses('task')
   const { data: trucks = [] } = useTrucks()
   const { data: contractors = [] } = useContractors()
@@ -99,18 +95,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
     }
   }, [open, taskId, existing, initial])
 
-  const customerMethodsQ = useCustomerExecutionMethods(form.customer_id)
-  const allowedMethods = useMemo(() => {
-    let list = methods.filter((m) => m.is_active)
-    if (form.task_type_id) {
-      const forType = typeMethods.filter((tm) => tm.task_type_id === form.task_type_id).map((tm) => tm.execution_method_id)
-      if (forType.length) list = list.filter((m) => forType.includes(m.id))
-    }
-    if (form.customer_id && customerMethodsQ.data) {
-      list = list.filter((m) => customerMethodsQ.data.includes(m.id))
-    }
-    return list
-  }, [methods, typeMethods, form.task_type_id, form.customer_id, customerMethodsQ.data])
+  const allowedMethods = useAllowedExecutionMethods(form.task_type_id, form.customer_id)
 
   const set = (patch: Partial<TaskRow>) => setForm((f) => ({ ...f, ...patch }))
 
