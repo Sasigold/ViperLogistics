@@ -39,7 +39,15 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { useCustomerExecutionMethods, useCustomerFormConfig, useExecutionMethods, useFormFields, useSuppliers } from '../../lib/queries'
+import {
+  useCustomerExecutionMethods,
+  useCustomerFormConfig,
+  useExecutionMethods,
+  useFormFields,
+  useSuppliers,
+  useTaskTypeMethods,
+  useTaskTypes,
+} from '../../lib/queries'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { StickySaveBar } from '../contractors/ContractorDetailPage'
 import { RequirePermission } from '../auth/guards'
@@ -371,6 +379,25 @@ function MethodsTab({ customerId }: { customerId: string }) {
   const canEdit = can('customers', 'edit') || can('settings', 'edit')
   const { data: methods = [] } = useExecutionMethods()
   const { data: enabled = [] } = useCustomerExecutionMethods(customerId)
+  const { data: taskTypes = [] } = useTaskTypes()
+  const { data: typeMethods = [] } = useTaskTypeMethods()
+
+  /* Grouped by task type so it is obvious which section of the event form each
+     method feeds. A method mapped to both types appears in both groups — there
+     is one customer_execution_methods row per method, so the state is shared. */
+  const groups = useMemo(() => {
+    const idsFor = (code: string) => {
+      const t = taskTypes.find((x) => x.code === code)
+      return new Set(t ? typeMethods.filter((m) => m.task_type_id === t.id).map((m) => m.execution_method_id) : [])
+    }
+    const setupIds = idsFor('setup')
+    const teardownIds = idsFor('teardown')
+    return [
+      { label: 'הקמה', items: methods.filter((m) => setupIds.has(m.id)) },
+      { label: 'פירוק', items: methods.filter((m) => teardownIds.has(m.id)) },
+      { label: 'סוגי משימות אחרים', items: methods.filter((m) => !setupIds.has(m.id) && !teardownIds.has(m.id)) },
+    ].filter((g) => g.items.length > 0)
+  }, [methods, taskTypes, typeMethods])
 
   const toggle = useMutation({
     mutationFn: async ({ methodId, on }: { methodId: string; on: boolean }) => {
@@ -399,25 +426,37 @@ function MethodsTab({ customerId }: { customerId: string }) {
         subtitle={`${enabled.length} מתוך ${methods.length} מופעלים`}
         icon={<Boxes size={ICON.md} strokeWidth={STROKE} />}
       />
-      <CardBody>
+      <CardBody className="space-y-5">
         {methods.length === 0 ? (
           <EmptyState compact art="box" title="לא הוגדרו אופני ביצוע" description="ניתן להגדיר אותם במסך ההגדרות" />
         ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {methods.map((m) => (
-              <label
-                key={m.id}
-                className="flex cursor-pointer items-center gap-2 rounded-lg border border-line-subtle p-2.5 transition-colors hover:bg-hover"
-              >
-                <Checkbox
-                  label={m.name}
-                  checked={enabled.includes(m.id)}
-                  onChange={(v) => toggle.mutate({ methodId: m.id, on: v })}
-                  disabled={!canEdit}
-                />
-              </label>
+          <>
+            <p className="type-caption text-ink-secondary">
+              אופן ביצוע המשותף לשני הסעיפים מופיע בשניהם — כיבויו משפיע על שניהם.
+            </p>
+            {groups.map((g) => (
+              <div key={g.label} className="space-y-2">
+                <p className="type-overline">
+                  {g.label} · {g.items.filter((m) => enabled.includes(m.id)).length}/{g.items.length}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {g.items.map((m) => (
+                    <label
+                      key={m.id}
+                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-line-subtle p-2.5 transition-colors hover:bg-hover"
+                    >
+                      <Checkbox
+                        label={m.name}
+                        checked={enabled.includes(m.id)}
+                        onChange={(v) => toggle.mutate({ methodId: m.id, on: v })}
+                        disabled={!canEdit}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
             ))}
-          </div>
+          </>
         )}
       </CardBody>
     </Card>

@@ -197,6 +197,23 @@ export default function EventDetailPage() {
     navigate(`/events/${newId}`)
   }
 
+  /** one-line recap of an auto-created task, so the two sections read at a glance */
+  const sectionLine = (code: 'setup' | 'teardown') => {
+    const t = tasks.find((x) => x.task_type_code === code)
+    if (!t) return null
+    return (
+      [
+        fmtDate(t.task_date),
+        fmtTime(t.onsite_start_time),
+        t.worker_count ? `${t.worker_count} עובדים` : null,
+        t.hours_count != null ? `${fmtHours(t.hours_count)} שעות` : null,
+        t.execution_method_name,
+      ]
+        .filter(Boolean)
+        .join(' · ') || null
+    )
+  }
+
   const info: [string, React.ReactNode][] = [
     [
       'לקוח במערכת',
@@ -226,6 +243,8 @@ export default function EventDetailPage() {
           ],
         ] as [string, React.ReactNode][])
       : []),
+    ['הקמה', sectionLine('setup')],
+    ['פירוק', sectionLine('teardown')],
     ['הערות', event.notes],
   ]
 
@@ -398,6 +417,8 @@ export default function EventDetailPage() {
         onClose={() => {
           setEditOpen(false)
           void qc.invalidateQueries({ queryKey: ['events', 'one', id] })
+          // the setup/teardown sections write onto the tasks below
+          void qc.invalidateQueries({ queryKey: ['workboard', 'byEvent', id] })
         }}
         event={event}
         contact={contact}
