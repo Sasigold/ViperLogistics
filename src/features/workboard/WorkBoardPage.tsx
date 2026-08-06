@@ -2,9 +2,10 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { addDays, endOfMonth, startOfMonth, startOfWeek } from 'date-fns'
+import { addDays, differenceInCalendarDays, eachDayOfInterval, endOfMonth, parseISO, startOfMonth, startOfWeek } from 'date-fns'
 import {
   AlertTriangle,
+  CalendarDays,
   ChevronDown,
   Columns3,
   Filter,
@@ -45,7 +46,9 @@ import { TaskDrawer } from '../tasks/TaskDrawer'
 import { RequirePermission } from '../auth/guards'
 import { BOARD_FIELDS, DEFAULT_HIDDEN_FIELDS } from './boardFields'
 import type { BoardLookups } from './boardFields'
-import type { WorkBoardRow } from '../../types/domain'
+import { COLOR_BY_OPTIONS, buildTones, clusterDay } from './grouping'
+import type { Cluster, ColorBy, GroupTone } from './grouping'
+import type { TaskRow, WorkBoardRow } from '../../types/domain'
 
 /* ── geometry ─────────────────────────────────────────────────────────────
    The board is transposed: days run across, task fields run down. The field
@@ -53,9 +56,17 @@ import type { WorkBoardRow } from '../../types/domain'
 
 const LEGEND_W = 150
 const SPINE_W = 46
+/** a day with nothing on it still gets a column — an empty Tuesday is
+ *  information, and a board that hides it reads as a board with no gaps */
+const EMPTY_W = 132
 const DAY_HEAD_H = 30
+/** the band that ties one event's task columns together */
+const GROUP_HEAD_H = 20
 const TASK_HEAD_H = 46
-const HEADER_H = DAY_HEAD_H + TASK_HEAD_H
+
+/** a range wider than this is a report, not a board — empty days stop earning
+ *  their width somewhere around a quarter */
+const MAX_EMPTY_DAY_SPAN = 120
 
 const DENSITY = {
   compact: { col: 168, row: 30, tall: 36 },
@@ -77,6 +88,8 @@ interface Prefs {
   hidden?: string[]
   density?: Density
   sort?: SortKey
+  colorBy?: ColorBy
+  emptyDays?: boolean
 }
 
 function loadPrefs(): Prefs {
@@ -88,8 +101,48 @@ function loadPrefs(): Prefs {
 }
 
 type BoardColumn =
-  | { kind: 'task'; id: string; row: WorkBoardRow; dayKey: string }
+  | {
+      kind: 'task'
+      id: string
+      row: WorkBoardRow
+      dayKey: string
+      /** the event (or customer) this column belongs to, and its colour */
+      groupKey: string
+      tone: GroupTone | null
+      /** edges of the group, so a run of columns reads as one block */
+      first: boolean
+      last: boolean
+    }
   | { kind: 'spine'; id: string; dayKey: string; count: number }
+  | { kind: 'empty'; id: string; dayKey: string }
+
+interface Band {
+  dayKey: string
+  start: number
+  width: number
+  count: number
+  overdue: number
+  collapsed: boolean
+}
+
+interface DayLayout {
+  dayKey: string
+  clusters: Cluster[]
+  count: number
+  overdue: number
+  collapsed: boolean
+}
+
+/** a group's run of columns inside one day, drawn as a band above them */
+interface GroupBand {
+  id: string
+  groupKey: string
+  label: string
+  count: number
+  tone: GroupTone | null
+  start: number
+  width: number
+}
 
 /** inline cell writes a single column with optimistic-concurrency on updated_at */
 function useInlineUpdate() {
@@ -123,7 +176,7 @@ export default function WorkBoardPage() {
   const [from, setFrom] = useState(params.get('date') || toISODate(weekStart))
   const [to, setTo] = useState(params.get('date') || toISODate(addDays(weekStart, 6)))
   const [filters, setFilters] = useState({ customer: '', status: '', type: '', contractor: '', q: '' })
-  const [drawer, setDrawer] = useState<{ open: boolean; taskId: string | null }>({
+  const [drawer, setDrawer] = useState<{ open: boolean; taskId: string | null; date?: string }>({
     open: !!params.get('task'),
     taskId: params.get('task'),
   })
@@ -133,14 +186,21 @@ export default function WorkBoardPage() {
   const [hidden, setHidden] = useState<Set<string>>(new Set(prefs.current.hidden ?? DEFAULT_HIDDEN_FIELDS))
   const [density, setDensity] = useState<Density>(prefs.current.density ?? 'comfortable')
   const [sortBy, setSortBy] = useState<SortKey>(prefs.current.sort ?? 'time')
+  const [colorBy, setColorBy] = useState<ColorBy>(prefs.current.colorBy ?? 'event')
+  const [showEmptyDays, setShowEmptyDays] = useState(prefs.current.emptyDays ?? true)
+  /** the group under the pointer — its whole run lights up, across days */
+  const [activeGroup, setActiveGroup] = useState<string | null>(null)
 
   useEffect(() => {
     try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ hidden: [...hidden], density, sort: sortBy }))
+      localStorage.setItem(
+        PREFS_KEY,
+        JSON.stringify({ hidden: [...hidden], density, sort: sortBy, colorBy, emptyDays: showEmptyDays }),
+      )
     } catch {
       /* view preferences are not worth failing over */
     }
-  }, [hidden, density, sortBy])
+  }, [hidden, density, sortBy, colorBy, showEmptyDays])
 
   const { data: customers = [] } = useCustomers()
   const { data: statuses = [] } = useStatuses('task')
@@ -183,6 +243,8 @@ export default function WorkBoardPage() {
 
   const fields = useMemo(() => BOARD_FIELDS.filter((f) => !hidden.has(f.key)), [hidden])
   const metrics = DENSITY[density]
+  const groupHeadH = colorBy === 'none' ? 0 : GROUP_HEAD_H
+  const headerH = DAY_HEAD_H + groupHeadH + TASK_HEAD_H
 
   /** one height array drives both the legend and every task column, so the
    *  grid can never drift out of alignment */
@@ -191,9 +253,28 @@ export default function WorkBoardPage() {
 
   const today = toISODate(new Date())
 
-  /* ── group by day, then lay the columns out left-to-right in reading order */
+  /* ── the day axis ─────────────────────────────────────────────────────────
+     Every day in the chosen range gets a column, whether or not anything is
+     scheduled on it. A quiet Tuesday is a fact worth seeing; a board built
+     only from the days that happen to have tasks silently closes the gaps. */
 
-  const { columns, bands, totalWidth, rowsByDay } = useMemo(() => {
+  const tones = useMemo(() => buildTones(rows, colorBy), [rows, colorBy])
+
+  const dayKeys = useMemo(() => {
+    const withRows = [...new Set(rows.map((r) => r.task_date))].sort()
+    if (!showEmptyDays || !from || !to) return withRows
+    const a = parseISO(from)
+    const b = parseISO(to)
+    const span = differenceInCalendarDays(b, a)
+    if (span < 0 || span > MAX_EMPTY_DAY_SPAN) return withRows
+    const all = new Set(eachDayOfInterval({ start: a, end: b }).map(toISODate))
+    for (const d of withRows) all.add(d)
+    return [...all].sort()
+  }, [rows, showEmptyDays, from, to])
+
+  /* ── group by day, then lay the columns out in reading order ───────────── */
+
+  const { columns, bands, groups, totalWidth, daysForList } = useMemo(() => {
     const byDay = new Map<string, WorkBoardRow[]>()
     for (const r of rows) {
       const list = byDay.get(r.task_date)
@@ -211,40 +292,60 @@ export default function WorkBoardPage() {
     }
 
     const cols: BoardColumn[] = []
-    const bandList: {
-      dayKey: string
-      start: number
-      width: number
-      count: number
-      overdue: number
-      collapsed: boolean
-    }[] = []
-    /** the same day-grouping the columns are built from, kept in sorted order
-     *  so the mobile list and the desktop grid can never disagree */
-    const sortedByDay = new Map<string, WorkBoardRow[]>()
+    const bandList: Band[] = []
+    const groupList: GroupBand[] = []
+    /** the same layout the grid is built from, so the mobile list and the
+     *  desktop grid can never disagree about order or colour */
+    const dayList: DayLayout[] = []
     let offset = 0
 
-    for (const dayKey of [...byDay.keys()].sort()) {
-      const dayRows = [...byDay.get(dayKey)!].sort(cmp)
-      sortedByDay.set(dayKey, dayRows)
+    for (const dayKey of dayKeys) {
+      const dayRows = byDay.get(dayKey) ?? []
+      const clusters = clusterDay(dayRows, colorBy, tones, cmp)
       const overdue = dayKey < today ? dayRows.filter((r) => !r.status_is_terminal).length : 0
       const collapsed = collapsedDays.has(dayKey)
       const start = offset
 
-      if (collapsed) {
+      if (dayRows.length === 0) {
+        cols.push({ kind: 'empty', id: `empty:${dayKey}`, dayKey })
+        offset += EMPTY_W
+      } else if (collapsed) {
         cols.push({ kind: 'spine', id: `spine:${dayKey}`, dayKey, count: dayRows.length })
         offset += SPINE_W
       } else {
-        for (const row of dayRows) {
-          cols.push({ kind: 'task', id: row.id, row, dayKey })
-          offset += metrics.col
+        for (const cluster of clusters) {
+          const groupStart = offset
+          cluster.rows.forEach((row, i) => {
+            cols.push({
+              kind: 'task',
+              id: row.id,
+              row,
+              dayKey,
+              groupKey: cluster.key,
+              tone: cluster.tone,
+              first: i === 0,
+              last: i === cluster.rows.length - 1,
+            })
+            offset += metrics.col
+          })
+          groupList.push({
+            id: `${dayKey}:${cluster.key}`,
+            groupKey: cluster.key,
+            label: cluster.label,
+            count: cluster.rows.length,
+            tone: cluster.tone,
+            start: groupStart,
+            width: offset - groupStart,
+          })
         }
       }
+
       bandList.push({ dayKey, start, width: offset - start, count: dayRows.length, overdue, collapsed })
+      dayList.push({ dayKey, clusters, count: dayRows.length, overdue, collapsed })
     }
 
-    return { columns: cols, bands: bandList, totalWidth: offset, rowsByDay: sortedByDay }
-  }, [rows, sortBy, collapsedDays, metrics.col, today])
+    return { columns: cols, bands: bandList, groups: groupList, totalWidth: offset, daysForList: dayList }
+  }, [rows, dayKeys, sortBy, collapsedDays, metrics.col, today, colorBy, tones])
 
   /* ── horizontal virtualization (RTL-aware) ───────────────────────────── */
 
@@ -254,10 +355,26 @@ export default function WorkBoardPage() {
     isRtl: true,
     count: columns.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (i) => (columns[i]?.kind === 'spine' ? SPINE_W : metrics.col),
+    estimateSize: (i) => {
+      const kind = columns[i]?.kind
+      if (kind === 'spine') return SPINE_W
+      if (kind === 'empty') return EMPTY_W
+      return metrics.col
+    },
     overscan: 6,
   })
   const virtualItems = virtualizer.getVirtualItems()
+
+  /* Day and group bands aren't virtualized — they're absolutely placed over the
+     same track — so they're clipped to what the viewport can actually reach. */
+  const viewport = useMemo(() => {
+    if (virtualItems.length === 0) return { start: 0, end: 0 }
+    const last = virtualItems[virtualItems.length - 1]
+    return { start: virtualItems[0].start, end: last.start + last.size }
+  }, [virtualItems])
+  const overlaps = (start: number, width: number) => start < viewport.end && start + width > viewport.start
+  const visibleBands = bands.filter((b) => overlaps(b.start, b.width))
+  const visibleGroups = groups.filter((g) => overlaps(g.start, g.width))
 
   /* ── selection ────────────────────────────────────────────────────────── */
 
@@ -275,6 +392,9 @@ export default function WorkBoardPage() {
     [],
   )
   const openTask = useCallback((id: string) => setDrawer({ open: true, taskId: id }), [])
+  /** an empty day's only affordance: start the day that isn't there yet */
+  const newTaskOn = useCallback((dayKey: string) => setDrawer({ open: true, taskId: null, date: dayKey }), [])
+  const hoverGroup = useCallback((key: string | null) => setActiveGroup(key), [])
 
   const toggleDay = (dayKey: string) =>
     setCollapsedDays((s) => {
@@ -305,6 +425,7 @@ export default function WorkBoardPage() {
     [rows, today],
   )
 
+  const workingDays = useMemo(() => bands.filter((b) => b.count > 0).length, [bands])
   const activeFilterCount = Object.values(filters).filter(Boolean).length
   const resetFilters = () => setFilters({ customer: '', status: '', type: '', contractor: '', q: '' })
 
@@ -410,7 +531,8 @@ export default function WorkBoardPage() {
           subtitle={
             <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="tabular">{rows.length} משימות</span>
-              <span className="tabular">{bands.length} ימים</span>
+              <span className="tabular">{workingDays} ימי עבודה</span>
+              {colorBy === 'event' && tones.size > 0 && <span className="tabular">{tones.size} אירועים</span>}
               {overdueTotal > 0 && (
                 <span className="inline-flex items-center gap-1 font-medium text-error-text">
                   <AlertTriangle size={ICON.xs} />
@@ -493,7 +615,28 @@ export default function WorkBoardPage() {
                 )}
               >
                 {() => (
-                  <div className="w-56 p-1.5">
+                  <div className="w-60 p-1.5">
+                    <MenuLabel>צביעה לפי</MenuLabel>
+                    <SegmentedControl
+                      block
+                      items={COLOR_BY_OPTIONS.map((o) => ({ key: o.key, label: o.label }))}
+                      value={colorBy}
+                      onChange={setColorBy}
+                    />
+                    <p className="px-0.5 pt-1 type-caption text-ink-tertiary">
+                      {colorBy === 'event'
+                        ? 'משימות של אותו אירוע נצבעות באותו גוון ומוצגות זו לצד זו'
+                        : colorBy === 'customer'
+                          ? 'כל לקוח בצבע שלו'
+                          : 'ללא צביעה — רק הסטטוס צבוע'}
+                    </p>
+                    <div className="mt-2 px-0.5">
+                      <Checkbox
+                        label="הצגת ימים ריקים"
+                        checked={showEmptyDays}
+                        onChange={setShowEmptyDays}
+                      />
+                    </div>
                     <MenuLabel>צפיפות</MenuLabel>
                     <SegmentedControl
                       block
@@ -512,7 +655,12 @@ export default function WorkBoardPage() {
                       onChange={setSortBy}
                     />
                     <div className="mt-2 flex gap-1.5 px-0.5">
-                      <Button size="sm" variant="ghost" block onClick={() => setCollapsedDays(new Set(bands.map((b) => b.dayKey)))}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        block
+                        onClick={() => setCollapsedDays(new Set(bands.filter((b) => b.count > 0).map((b) => b.dayKey)))}
+                      >
                         קפל הכל
                       </Button>
                       <Button size="sm" variant="ghost" block onClick={() => setCollapsedDays(new Set())}>
@@ -583,13 +731,14 @@ export default function WorkBoardPage() {
                phone the same data reads better as a day-by-day card list; the
                drawer still owns every edit. */
             <MobileBoard
-              bands={bands}
-              rowsByDay={rowsByDay}
+              days={daysForList}
               today={today}
               selected={selected}
+              canCreate={can('tasks', 'create')}
               onToggle={toggleOne}
               onOpen={openTask}
               onToggleDay={toggleDay}
+              onNewTask={newTaskOn}
             />
           ) : (
             <div ref={scrollRef} className="h-full overflow-auto">
@@ -601,7 +750,7 @@ export default function WorkBoardPage() {
                 >
                   <div
                     className="sticky top-0 z-10 flex items-end border-b border-line bg-subtle px-2.5 pb-2"
-                    style={{ height: HEADER_H }}
+                    style={{ height: headerH }}
                   >
                     <Checkbox
                       label={<span className="type-caption font-semibold">בחר הכל</span>}
@@ -623,10 +772,11 @@ export default function WorkBoardPage() {
 
                 {/* virtualized track */}
                 <div className="relative" style={{ width: totalWidth }}>
-                  {/* header band: day groups + per-task headers */}
-                  <div className="sticky top-0 z-20 bg-subtle" style={{ height: HEADER_H }}>
-                    {bands.map((b) => {
+                  {/* header band: day groups + event bands + per-task headers */}
+                  <div className="sticky top-0 z-20 bg-subtle" style={{ height: headerH }}>
+                    {visibleBands.map((b) => {
                       const isToday = b.dayKey === today
+                      const quiet = b.count === 0
                       return (
                         <div
                           key={b.dayKey}
@@ -637,19 +787,28 @@ export default function WorkBoardPage() {
                           style={{ insetInlineStart: b.start, width: b.width, height: DAY_HEAD_H }}
                         >
                           <button
-                            onClick={() => toggleDay(b.dayKey)}
-                            aria-expanded={!b.collapsed}
-                            aria-label={`${b.collapsed ? 'פריסת' : 'קיפול'} ${fmtDate(b.dayKey)}`}
-                            className="flex min-w-0 items-center gap-1 rounded transition-colors hover:text-ink focus-visible:outline-none focus-visible:focus-ring"
+                            onClick={() => !quiet && toggleDay(b.dayKey)}
+                            disabled={quiet}
+                            aria-expanded={quiet ? undefined : !b.collapsed}
+                            aria-label={quiet ? fmtDate(b.dayKey) : `${b.collapsed ? 'פריסת' : 'קיפול'} ${fmtDate(b.dayKey)}`}
+                            className="flex min-w-0 items-center gap-1 rounded transition-colors hover:text-ink focus-visible:outline-none focus-visible:focus-ring disabled:pointer-events-none"
                           >
-                            <ChevronDown
-                              size={ICON.xs}
-                              className={cx('shrink-0 transition-transform duration-200', b.collapsed && 'rotate-90 rtl:-rotate-90')}
-                            />
+                            {!quiet && (
+                              <ChevronDown
+                                size={ICON.xs}
+                                className={cx('shrink-0 transition-transform duration-200', b.collapsed && 'rotate-90 rtl:-rotate-90')}
+                              />
+                            )}
                             <span
                               className={cx(
                                 'truncate type-caption font-bold tabular',
-                                isToday ? 'text-primary-text' : b.overdue > 0 ? 'text-error-text' : 'text-ink-secondary',
+                                quiet
+                                  ? 'text-ink-tertiary'
+                                  : isToday
+                                    ? 'text-primary-text'
+                                    : b.overdue > 0
+                                      ? 'text-error-text'
+                                      : 'text-ink-secondary',
                               )}
                             >
                               {fmtDate(b.dayKey)}
@@ -668,29 +827,56 @@ export default function WorkBoardPage() {
                               </span>
                             </Tooltip>
                           )}
-                          <span className="ms-auto shrink-0 type-caption tabular text-ink-tertiary">{b.count}</span>
+                          {!quiet && <span className="ms-auto shrink-0 type-caption tabular text-ink-tertiary">{b.count}</span>}
                         </div>
                       )
                     })}
 
+                    {/* the event band — one run per group, the thing that makes
+                        "these three columns are the same job" readable */}
+                    {groupHeadH > 0 &&
+                      visibleGroups.map((g) => (
+                        <GroupHeader
+                          key={g.id}
+                          band={g}
+                          active={activeGroup === g.groupKey}
+                          onHover={hoverGroup}
+                          style={{ insetInlineStart: g.start, width: g.width, top: DAY_HEAD_H, height: groupHeadH }}
+                        />
+                      ))}
+
                     {virtualItems.map((vi) => {
                       const col = columns[vi.index]
                       if (!col) return null
+                      /* an empty day has no event band to sit under, so its
+                         header fills the space instead of leaving a white gap */
+                      const bare = col.kind === 'empty'
                       return (
                         <div
                           key={col.id}
                           className="absolute"
-                          style={{ insetInlineStart: vi.start, width: vi.size, top: DAY_HEAD_H, height: TASK_HEAD_H }}
+                          style={{
+                            insetInlineStart: vi.start,
+                            width: vi.size,
+                            top: bare ? DAY_HEAD_H : DAY_HEAD_H + groupHeadH,
+                            height: bare ? groupHeadH + TASK_HEAD_H : TASK_HEAD_H,
+                          }}
                         >
                           {col.kind === 'spine' ? (
                             <SpineHeader dayKey={col.dayKey} count={col.count} onExpand={() => toggleDay(col.dayKey)} />
+                          ) : col.kind === 'empty' ? (
+                            <div className="h-full border-b border-s border-line bg-subtle/40" />
                           ) : (
                             <TaskHeader
                               row={col.row}
                               today={today}
+                              tone={col.tone}
+                              groupKey={col.groupKey}
+                              active={activeGroup === col.groupKey}
                               selected={selected.has(col.row.id)}
                               onToggle={toggleOne}
                               onOpen={openTask}
+                              onHover={hoverGroup}
                             />
                           )}
                         </div>
@@ -711,6 +897,16 @@ export default function WorkBoardPage() {
                             style={{ insetInlineStart: vi.start, width: vi.size, height: bodyHeight }}
                           />
                         )
+                      if (col.kind === 'empty')
+                        return (
+                          <EmptyDayColumn
+                            key={col.id}
+                            dayKey={col.dayKey}
+                            canCreate={can('tasks', 'create')}
+                            onNewTask={newTaskOn}
+                            style={{ insetInlineStart: vi.start, width: vi.size, height: bodyHeight }}
+                          />
+                        )
                       return (
                         <TaskColumn
                           key={col.id}
@@ -721,6 +917,12 @@ export default function WorkBoardPage() {
                           fields={fields}
                           heights={rowHeights}
                           selected={selected.has(col.row.id)}
+                          tone={col.tone}
+                          groupKey={col.groupKey}
+                          first={col.first}
+                          last={col.last}
+                          active={activeGroup === col.groupKey}
+                          onHover={hoverGroup}
                           style={{ insetInlineStart: vi.start, width: vi.size }}
                         />
                       )
@@ -770,10 +972,24 @@ export default function WorkBoardPage() {
                 onChange={setSortBy}
               />
             </Field>
+            <Field label="צביעה לפי" hint="משימות של אותו אירוע מקבלות את אותו צבע">
+              <SegmentedControl
+                block
+                items={COLOR_BY_OPTIONS.map((o) => ({ key: o.key, label: o.label }))}
+                value={colorBy}
+                onChange={setColorBy}
+              />
+            </Field>
+            <Checkbox label="הצגת ימים ריקים" checked={showEmptyDays} onChange={setShowEmptyDays} />
           </div>
         </Modal>
 
-        <TaskDrawer open={drawer.open} onClose={() => setDrawer({ open: false, taskId: null })} taskId={drawer.taskId} />
+        <TaskDrawer
+          open={drawer.open}
+          onClose={() => setDrawer({ open: false, taskId: null })}
+          taskId={drawer.taskId}
+          initial={drawer.date ? ({ task_date: drawer.date } as Partial<TaskRow>) : undefined}
+        />
         <BulkEditModal
           open={bulkOpen}
           onClose={() => setBulkOpen(false)}
@@ -793,92 +1009,133 @@ export default function WorkBoardPage() {
    desktop grid offers through hover — open, select, fold a day — has a real
    target here, and nothing scrolls sideways.                               */
 
-interface Band {
-  dayKey: string
-  start: number
-  width: number
-  count: number
-  overdue: number
-  collapsed: boolean
-}
-
 function MobileBoard({
-  bands,
-  rowsByDay,
+  days,
   today,
   selected,
+  canCreate,
   onToggle,
   onOpen,
   onToggleDay,
+  onNewTask,
 }: {
-  bands: Band[]
-  rowsByDay: Map<string, WorkBoardRow[]>
+  days: DayLayout[]
   today: string
   selected: Set<string>
+  canCreate: boolean
   onToggle: (id: string) => void
   onOpen: (id: string) => void
   onToggleDay: (dayKey: string) => void
+  onNewTask: (dayKey: string) => void
 }) {
   return (
     <div className="h-full overflow-y-auto">
-      {bands.map((band) => {
-        const isToday = band.dayKey === today
-        const dayRows = rowsByDay.get(band.dayKey) ?? []
+      {days.map((day) => {
+        const isToday = day.dayKey === today
+        const quiet = day.count === 0
         return (
-          <section key={band.dayKey}>
+          <section key={day.dayKey}>
             <h3
               className={cx(
                 'sticky top-0 z-10 flex items-center gap-2 border-b border-line px-3 py-2 backdrop-blur-sm',
-                isToday ? 'bg-primary-subtle' : band.overdue > 0 ? 'bg-error-subtle' : 'bg-subtle',
+                isToday ? 'bg-primary-subtle' : day.overdue > 0 ? 'bg-error-subtle' : 'bg-subtle',
               )}
             >
               <button
-                onClick={() => onToggleDay(band.dayKey)}
-                aria-expanded={!band.collapsed}
-                className="flex min-w-0 flex-1 items-center gap-1.5 text-start focus-visible:outline-none focus-visible:focus-ring"
+                onClick={() => !quiet && onToggleDay(day.dayKey)}
+                disabled={quiet}
+                aria-expanded={quiet ? undefined : !day.collapsed}
+                className="flex min-w-0 flex-1 items-center gap-1.5 text-start focus-visible:outline-none focus-visible:focus-ring disabled:pointer-events-none"
               >
-                <ChevronDown
-                  size={ICON.sm}
-                  className={cx('shrink-0 transition-transform duration-200', band.collapsed && 'rotate-90 rtl:-rotate-90')}
-                />
+                {!quiet && (
+                  <ChevronDown
+                    size={ICON.sm}
+                    className={cx('shrink-0 transition-transform duration-200', day.collapsed && 'rotate-90 rtl:-rotate-90')}
+                  />
+                )}
                 <span
                   className={cx(
                     'truncate type-button tabular',
-                    isToday ? 'text-primary-text' : band.overdue > 0 ? 'text-error-text' : 'text-ink-secondary',
+                    quiet
+                      ? 'text-ink-tertiary'
+                      : isToday
+                        ? 'text-primary-text'
+                        : day.overdue > 0
+                          ? 'text-error-text'
+                          : 'text-ink-secondary',
                   )}
                 >
-                  {fmtDate(band.dayKey)}
+                  {fmtDate(day.dayKey)}
                 </span>
                 {isToday && (
                   <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
                     היום
                   </span>
                 )}
-                {band.overdue > 0 && !isToday && (
+                {day.overdue > 0 && !isToday && (
                   <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-error px-1.5 py-px text-[10px] font-bold tabular text-white">
                     <AlertTriangle size={9} />
-                    {band.overdue}
+                    {day.overdue}
                   </span>
                 )}
               </button>
-              <span className="shrink-0 type-caption tabular text-ink-tertiary">{band.count}</span>
+              {/* a quiet day is one line, not a section — a week with four of
+                  them shouldn't push the actual work off the screen */}
+              {quiet ? (
+                <>
+                  <span className="type-caption text-ink-tertiary">אין משימות</span>
+                  {canCreate && (
+                    <IconButton label={`משימה חדשה ל-${fmtDate(day.dayKey)}`} size="sm" bare onClick={() => onNewTask(day.dayKey)}>
+                      <Plus size={ICON.sm} strokeWidth={STROKE} />
+                    </IconButton>
+                  )}
+                </>
+              ) : (
+                <span className="shrink-0 type-caption tabular text-ink-tertiary">{day.count}</span>
+              )}
             </h3>
 
-            {!band.collapsed && (
-              <ul className="divide-y divide-line-subtle">
-                {dayRows.map((row) => (
-                  <li key={row.id}>
-                    <MobileTaskCard
-                      row={row}
-                      overdue={row.task_date < today && !row.status_is_terminal}
-                      selected={selected.has(row.id)}
-                      onToggle={onToggle}
-                      onOpen={onOpen}
-                    />
-                  </li>
-                ))}
-              </ul>
-            )}
+            {!quiet &&
+              !day.collapsed &&
+              day.clusters.map((cluster) => (
+                <div key={cluster.key}>
+                  {cluster.tone && (
+                    <div
+                      className="flex items-center gap-1.5 border-b border-line-subtle px-3 py-1"
+                      style={{ background: cluster.tone.tintStrong }}
+                    >
+                      <span
+                        className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold tabular text-white"
+                        style={{ background: cluster.tone.solid }}
+                      >
+                        {cluster.tone.index}
+                      </span>
+                      <span className="truncate type-caption font-semibold" style={{ color: cluster.tone.solid }}>
+                        {cluster.label}
+                      </span>
+                      {cluster.rows.length > 1 && (
+                        <span className="ms-auto shrink-0 type-caption tabular text-ink-tertiary">
+                          {cluster.rows.length} משימות
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <ul className="divide-y divide-line-subtle">
+                    {cluster.rows.map((row) => (
+                      <li key={row.id}>
+                        <MobileTaskCard
+                          row={row}
+                          tone={cluster.tone}
+                          overdue={row.task_date < today && !row.status_is_terminal}
+                          selected={selected.has(row.id)}
+                          onToggle={onToggle}
+                          onOpen={onOpen}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
           </section>
         )
       })}
@@ -888,12 +1145,14 @@ function MobileBoard({
 
 const MobileTaskCard = memo(function MobileTaskCard({
   row,
+  tone,
   overdue,
   selected,
   onToggle,
   onOpen,
 }: {
   row: WorkBoardRow
+  tone: GroupTone | null
   overdue: boolean
   selected: boolean
   onToggle: (id: string) => void
@@ -909,11 +1168,14 @@ const MobileTaskCard = memo(function MobileTaskCard({
   const short = row.worker_count > 0 && team.length < row.worker_count
 
   return (
-    <div className={cx('flex items-stretch gap-2 px-3 py-2.5', selected ? 'bg-selected' : overdue && 'bg-error-subtle/50')}>
+    <div
+      className={cx('flex items-stretch gap-2 px-3 py-2.5', selected ? 'bg-selected' : overdue && 'bg-error-subtle/50')}
+      style={!selected && tone ? { background: tone.tint } : undefined}
+    >
       <span
         aria-hidden
         className="w-1 shrink-0 rounded-full"
-        style={{ background: row.customer_color ?? 'var(--vl-border-strong)' }}
+        style={{ background: tone?.solid ?? row.customer_color ?? 'var(--vl-border-strong)' }}
       />
       <span className="flex items-start pt-0.5">
         <Checkbox checked={selected} onChange={() => onToggle(row.id)} />
@@ -975,34 +1237,59 @@ const MobileTaskCard = memo(function MobileTaskCard({
 const TaskHeader = memo(function TaskHeader({
   row,
   today,
+  tone,
+  groupKey,
+  active,
   selected,
   onToggle,
   onOpen,
+  onHover,
 }: {
   row: WorkBoardRow
   today: string
+  tone: GroupTone | null
+  groupKey: string
+  active: boolean
   selected: boolean
   onToggle: (id: string) => void
   onOpen: (id: string) => void
+  onHover: (key: string | null) => void
 }) {
   const overdue = row.task_date < today && !row.status_is_terminal
   const label = row.end_client_name || row.title || row.customer_name || row.task_type_name
   const time = fmtTime(row.onsite_start_time) || fmtTime(row.warehouse_start_time)
+  /* The group's colour outranks the overdue wash: lateness is already said
+     three times over — red day band, red time, the warning icon — and losing
+     the hue would break the one thing the colours exist for. */
+  const painted = tone && !selected
 
   return (
     <div
+      onMouseEnter={() => onHover(groupKey)}
+      onMouseLeave={() => onHover(null)}
       className={cx(
         'group relative flex h-full flex-col justify-center gap-0.5 border-b border-s border-line px-2',
         selected ? 'bg-selected' : overdue ? 'bg-error-subtle' : 'bg-surface',
       )}
+      style={painted ? { background: active ? tone.tintStrong : tone.tint } : undefined}
     >
       <span
         aria-hidden
-        className="absolute inset-x-0 top-0 h-0.5"
-        style={{ background: row.customer_color ?? 'var(--vl-border-strong)' }}
+        className="absolute inset-x-0 top-0 h-1"
+        style={{ background: tone?.solid ?? row.customer_color ?? 'var(--vl-border-strong)' }}
       />
       <div className="flex items-center gap-1.5">
         <Checkbox checked={selected} onChange={() => onToggle(row.id)} />
+        {tone && (
+          <Tooltip content={`קבוצה ${tone.index}`}>
+            <span
+              className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold tabular text-white"
+              style={{ background: tone.solid }}
+            >
+              {tone.index}
+            </span>
+          </Tooltip>
+        )}
         {time ? (
           <span className={cx('type-caption font-bold tabular', overdue ? 'text-error-text' : 'text-ink')} dir="ltr">
             {time}
@@ -1046,6 +1333,89 @@ function SpineHeader({ dayKey, count, onExpand }: { dayKey: string; count: numbe
   )
 }
 
+/* ===== the event band ======================================================
+   A run of columns belonging to one event, capped by a single strip. It is the
+   difference between "three columns that happen to be adjacent" and "one job
+   with three moving parts".                                                  */
+
+function GroupHeader({
+  band,
+  active,
+  onHover,
+  style,
+}: {
+  band: GroupBand
+  active: boolean
+  onHover: (key: string | null) => void
+  style: React.CSSProperties
+}) {
+  const { tone } = band
+  return (
+    <div
+      className="absolute flex items-center gap-1 overflow-hidden border-b border-s border-line px-1.5"
+      style={{
+        ...style,
+        background: tone ? (active ? tone.tintStrong : tone.tint) : 'var(--vl-subtle)',
+        borderBottomColor: tone?.border,
+      }}
+      onMouseEnter={() => onHover(band.groupKey)}
+      onMouseLeave={() => onHover(null)}
+    >
+      {tone ? (
+        <>
+          <span
+            aria-hidden
+            className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold tabular text-white"
+            style={{ background: tone.solid }}
+          >
+            {tone.index}
+          </span>
+          <Tooltip content={`${band.label} · ${band.count} משימות`}>
+            <span className="truncate text-[11px] font-bold" style={{ color: tone.solid }}>
+              {band.label}
+            </span>
+          </Tooltip>
+          {band.count > 1 && (
+            <span className="ms-auto shrink-0 text-[10px] font-bold tabular text-ink-tertiary">×{band.count}</span>
+          )}
+        </>
+      ) : (
+        <span className="truncate text-[11px] text-ink-tertiary">ללא אירוע</span>
+      )}
+    </div>
+  )
+}
+
+/* ===== a day with nothing on it =========================================== */
+
+function EmptyDayColumn({
+  dayKey,
+  canCreate,
+  onNewTask,
+  style,
+}: {
+  dayKey: string
+  canCreate: boolean
+  onNewTask: (dayKey: string) => void
+  style: React.CSSProperties
+}) {
+  return (
+    <div
+      className="absolute top-0 flex flex-col items-center justify-center gap-2 border-s border-line bg-subtle/40"
+      style={style}
+    >
+      <CalendarDays size={ICON.lg} className="text-ink-tertiary/60" strokeWidth={STROKE} />
+      <span className="type-caption text-ink-tertiary">אין משימות</span>
+      {canCreate && (
+        <Button size="sm" variant="ghost" onClick={() => onNewTask(dayKey)}>
+          <Plus size={ICON.sm} strokeWidth={STROKE} />
+          משימה
+        </Button>
+      )}
+    </div>
+  )
+}
+
 /* ===== one task's column of field cells =================================== */
 
 const TaskColumn = memo(
@@ -1057,6 +1427,12 @@ const TaskColumn = memo(
     fields,
     heights,
     selected,
+    tone,
+    groupKey,
+    first,
+    last,
+    active,
+    onHover,
     style,
   }: {
     row: WorkBoardRow
@@ -1066,12 +1442,36 @@ const TaskColumn = memo(
     fields: typeof BOARD_FIELDS
     heights: number[]
     selected: boolean
+    tone: GroupTone | null
+    groupKey: string
+    first: boolean
+    last: boolean
+    active: boolean
+    onHover: (key: string | null) => void
     style: React.CSSProperties
   }) {
+    /* The group's own colour draws its outer edges, so a run of columns reads
+       as one block; the seams inside the run stay quiet. */
+    const edges = tone
+      ? {
+          borderInlineStartColor: first ? tone.border : undefined,
+          boxShadow: last ? `inset -1px 0 0 0 ${tone.border}` : undefined,
+        }
+      : undefined
+
     return (
       <div
+        onMouseEnter={() => onHover(groupKey)}
+        onMouseLeave={() => onHover(null)}
         className={cx('absolute top-0 border-s border-line', selected ? 'bg-selected' : 'bg-surface')}
-        style={{ ...style, position: 'absolute' }}
+        style={{
+          ...style,
+          position: 'absolute',
+          ...(tone && !selected
+            ? { background: active ? tone.tintStrong : `color-mix(in srgb, ${tone.solid} 5%, transparent)` }
+            : null),
+          ...edges,
+        }}
       >
         {fields.map((f, i) => (
           <div
@@ -1092,6 +1492,10 @@ const TaskColumn = memo(
     a.fields === b.fields &&
     a.heights === b.heights &&
     a.lookups === b.lookups &&
+    a.tone === b.tone &&
+    a.active === b.active &&
+    a.first === b.first &&
+    a.last === b.last &&
     a.style.insetInlineStart === b.style.insetInlineStart &&
     a.style.width === b.style.width,
 )
