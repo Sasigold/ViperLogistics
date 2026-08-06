@@ -176,7 +176,7 @@ export default function EventsPage() {
             }
           >
             <SearchInput
-              className="w-64"
+              className="w-64 max-sm:w-full"
               inputSize="sm"
               placeholder="חיפוש לפי שם, מספר, מיקום..."
               value={q}
@@ -184,7 +184,7 @@ export default function EventsPage() {
               onClear={() => setQ('')}
               aria-label="חיפוש אירועים"
             />
-            <Select className="w-48" selectSize="sm" value={customer} onChange={(e) => setCustomer(e.target.value)} aria-label="סינון לפי לקוח">
+            <Select className="w-48 max-sm:w-full" selectSize="sm" value={customer} onChange={(e) => setCustomer(e.target.value)} aria-label="סינון לפי לקוח">
               <option value="">כל הלקוחות</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -206,6 +206,31 @@ export default function EventsPage() {
           storageKey="events"
           pageSize={25}
           defaultSort={{ key: 'event_date', dir: 'desc' }}
+          mobileCard={(e) => (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="type-caption font-semibold tabular text-primary-text">{fmtDate(e.event_date)}</span>
+                {e.event_number && <span className="type-caption tabular text-ink-tertiary">#{e.event_number}</span>}
+                {e.statuses && (
+                  <StatusPill color={e.statuses.color} className="ms-auto shrink-0">
+                    {e.statuses.name}
+                  </StatusPill>
+                )}
+              </div>
+              <p className="truncate type-body font-semibold">{e.end_client_name || '—'}</p>
+              <div className="flex flex-wrap items-center gap-x-2 type-caption text-ink-tertiary">
+                {e.customers && (
+                  <span className="inline-flex min-w-0 items-center gap-1">
+                    <span className="size-2 shrink-0 rounded-full" style={{ background: e.customers.color }} />
+                    <span className="truncate">{e.customers.name}</span>
+                  </span>
+                )}
+                {e.truck_count != null && <span className="tabular">· {e.truck_count} משאיות</span>}
+                {e.volume_m != null && <span className="tabular">· נפח {e.volume_m}</span>}
+              </div>
+              {e.location_text && <p className="truncate type-caption text-ink-tertiary">{e.location_text}</p>}
+            </div>
+          )}
           empty={
             <EmptyState
               art="calendar"

@@ -5,6 +5,7 @@ import { Button, IconButton, cx } from './primitives'
 import { Checkbox } from './inputs'
 import { EmptyState, SkeletonTable, ErrorState } from './feedback'
 import { MenuLabel, Popover } from './overlay'
+import { useIsPhone } from '../../lib/useMediaQuery'
 
 export interface Column<T> {
   key: string
@@ -74,6 +75,7 @@ export function DataTable<T>({
   defaultSort,
   className,
   maxHeight,
+  mobileCard,
 }: {
   rows: T[]
   columns: Column<T>[]
@@ -99,7 +101,16 @@ export function DataTable<T>({
   className?: string
   /** caps the scroll area so the sticky header has something to stick to */
   maxHeight?: string
+  /**
+   * Below `md`, render each row as a card instead of a table row. A ten-column
+   * table on a phone is a horizontal-scroll puzzle; the same record stacked
+   * into two or three lines is readable at a glance. Sorting, paging and
+   * selection all keep working — only the row's presentation changes.
+   */
+  mobileCard?: (row: T, index: number) => ReactNode
 }) {
+  const isPhone = useIsPhone()
+  const asCards = isPhone && !!mobileCard
   const persisted = useRef(loadState(storageKey))
   const [widths, setWidths] = useState<Record<string, number>>(persisted.current.widths ?? {})
   const [hidden, setHidden] = useState<Set<string>>(new Set(persisted.current.hidden ?? []))
@@ -201,7 +212,8 @@ export function DataTable<T>({
       {(toolbar || hideable.length > 0) && (
         <div className="mb-2 flex flex-wrap items-center gap-2">
           {toolbar}
-          {hideable.length > 0 && (
+          {/* the column picker has nothing to pick from once rows are cards */}
+          {hideable.length > 0 && !asCards && (
             <Popover
               className="ms-auto"
               trigger={({ toggle, ...aria }) => (
@@ -244,6 +256,41 @@ export function DataTable<T>({
           <ErrorState error={error} onRetry={onRetry} />
         ) : sorted.length === 0 ? (
           (empty ?? <EmptyState art="table" />)
+        ) : asCards ? (
+          <ul className="divide-y divide-line-subtle">
+            {selectable && (
+              <li className="flex items-center gap-2 bg-subtle px-3 py-2">
+                <Checkbox
+                  label={<span className="type-caption font-semibold">בחר הכל</span>}
+                  checked={allOnPageSelected}
+                  indeterminate={pageIds.some((id) => selected?.has(id))}
+                  onChange={toggleAll}
+                />
+              </li>
+            )}
+            {pageRows.map((row, i) => {
+              const id = getRowId(row)
+              const isSelected = !!selected?.has(id)
+              return (
+                <li
+                  key={id}
+                  className={cx('flex items-start gap-2 px-3', isSelected && 'bg-selected', rowClassName?.(row))}
+                >
+                  {selectable && (
+                    <span className="pt-3.5">
+                      <Checkbox checked={isSelected} onChange={() => toggleOne(id)} />
+                    </span>
+                  )}
+                  <div
+                    onClick={onRowClick ? () => onRowClick(row) : undefined}
+                    className={cx('min-w-0 flex-1 py-3', onRowClick && 'cursor-pointer')}
+                  >
+                    {mobileCard!(row, i)}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
         ) : (
           <div className="overflow-auto" style={{ maxHeight }} onPointerMove={onResizeMove} onPointerUp={endResize}>
             <table className="w-full table-fixed border-collapse" style={{ minWidth: totalWidth }}>
@@ -413,8 +460,8 @@ export function DataTable<T>({
 
 export function BulkBar({ count, onClear, children }: { count: number; onClear: () => void; children: ReactNode }) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4">
-      <div className="pointer-events-auto flex animate-slide-up items-center gap-3 rounded-2xl border border-line bg-raised px-3 py-2 shadow-overlay">
+    <div className="pointer-events-none fixed inset-x-0 z-40 flex justify-center px-3 bottom-shell lg:bottom-6">
+      <div className="pointer-events-auto flex max-w-full animate-slide-up flex-wrap items-center justify-center gap-2 rounded-2xl border border-line bg-raised px-3 py-2 shadow-overlay sm:flex-nowrap sm:gap-3">
         <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 type-caption font-bold tabular text-on-primary">
           {count}
         </span>

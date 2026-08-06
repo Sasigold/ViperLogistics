@@ -497,6 +497,53 @@ function TasksTab({ contractorId }: { contractorId: string }) {
         storageKey="contractor-terms"
         pageSize={20}
         defaultSort={{ key: 'date', dir: 'desc' }}
+        mobileCard={(r) => (
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="type-caption font-semibold tabular">{fmtDate(r.tasks.task_date)}</span>
+              {r.tasks.statuses && (
+                <StatusPill color={r.tasks.statuses.color} className="ms-auto shrink-0">
+                  {r.tasks.statuses.name}
+                </StatusPill>
+              )}
+            </div>
+            <p className="truncate type-body font-semibold">{r.tasks.title || r.tasks.task_types?.name}</p>
+            {r.tasks.customers?.name && (
+              <p className="truncate type-caption text-ink-tertiary">{r.tasks.customers.name}</p>
+            )}
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min="0"
+                inputSize="sm"
+                className="w-28"
+                aria-label="מחיר למשימה"
+                defaultValue={r.price}
+                disabled={!canEdit}
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  const v = Number(e.target.value) || 0
+                  if (v !== Number(r.price)) updatePrice.mutate({ taskId: r.task_id, price: v })
+                }}
+              />
+              <button
+                disabled={!canEdit}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setPaid.mutate({ taskId: r.task_id, paid: !r.paid_at })
+                }}
+                className={cx(
+                  'rounded-full px-2.5 py-1 type-caption font-semibold transition-colors disabled:pointer-events-none',
+                  r.paid_at
+                    ? 'bg-success-subtle text-success-text'
+                    : 'bg-warning-subtle text-warning-text',
+                )}
+              >
+                {r.paid_at ? `שולם · ${fmtDate(r.paid_at)}` : 'ממתין לתשלום'}
+              </button>
+            </div>
+          </div>
+        )}
         toolbar={
           <div className="flex flex-wrap items-end gap-2">
             <Field label="מתאריך" className="w-36">

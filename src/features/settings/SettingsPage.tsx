@@ -732,6 +732,23 @@ function AuditLogTab() {
       dense
       pageSize={25}
       storageKey="audit"
+      mobileCard={(r) => {
+        const cols = (r.changed_cols ?? []).filter((c) => !['updated_at', 'search_tsv'].includes(c))
+        return (
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <StatusPill color={AUDIT_COLORS[r.action]}>{AUDIT_LABELS[r.action]}</StatusPill>
+              <span className="font-mono type-caption text-ink-secondary">{r.table_name}</span>
+              <span className="ms-auto shrink-0 type-caption tabular text-ink-tertiary">
+                {fmtRelative(r.created_at)}
+              </span>
+            </div>
+            {cols.length > 0 && (
+              <p className="truncate font-mono text-[11px] text-ink-tertiary">{cols.join(', ')}</p>
+            )}
+          </div>
+        )
+      }}
       toolbar={
         <div className="flex items-center gap-2">
           <h2 className="type-title">יומן פעילות</h2>

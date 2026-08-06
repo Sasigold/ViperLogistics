@@ -34,6 +34,7 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { fmtDate, fmtTime, toISODate } from '../../lib/dates'
+import { useIsPhone } from '../../lib/useMediaQuery'
 import { useAuth } from '../../state/auth'
 import { RequirePermission } from '../auth/guards'
 import { TaskDrawer } from '../tasks/TaskDrawer'
@@ -167,31 +168,37 @@ export default function DashboardPage() {
           title="דשבורד"
           subtitle={`${fmtDate(from)} – ${fmtDate(to)}`}
           actions={
-            <div className="flex flex-wrap items-center gap-1.5">
-              {presets.map((p) => (
-                <button
-                  key={p.label}
-                  onClick={p.run}
-                  className="rounded-md px-2 py-1 type-caption font-medium text-ink-tertiary transition-colors hover:bg-hover hover:text-ink"
-                >
-                  {p.label}
-                </button>
-              ))}
-              <input
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                aria-label="מתאריך"
-                className="h-8 rounded-md border border-line bg-surface px-2 text-[0.8125rem] tabular outline-none focus:border-primary focus:ring-2 focus:ring-[var(--vl-focus-ring)]"
-              />
-              <span className="type-caption text-ink-tertiary">–</span>
-              <input
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                aria-label="עד תאריך"
-                className="h-8 rounded-md border border-line bg-surface px-2 text-[0.8125rem] tabular outline-none focus:border-primary focus:ring-2 focus:ring-[var(--vl-focus-ring)]"
-              />
+            /* on a phone this is the widest control on the screen, so the
+               presets scroll and the two date fields share one row */
+            <div className="flex w-full flex-col gap-1.5 sm:w-auto sm:flex-row sm:items-center">
+              <div className="scroll-row gap-1">
+                {presets.map((p) => (
+                  <button
+                    key={p.label}
+                    onClick={p.run}
+                    className="scroll-row-item rounded-md px-2 py-1 type-caption font-medium text-ink-tertiary transition-colors hover:bg-hover hover:text-ink"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={from}
+                  onChange={(e) => setFrom(e.target.value)}
+                  aria-label="מתאריך"
+                  className="h-9 min-w-0 flex-1 rounded-md border border-line bg-surface px-2 text-[0.8125rem] tabular outline-none focus:border-primary focus:ring-2 focus:ring-[var(--vl-focus-ring)] sm:h-8 sm:flex-none"
+                />
+                <span className="shrink-0 type-caption text-ink-tertiary">–</span>
+                <input
+                  type="date"
+                  value={to}
+                  onChange={(e) => setTo(e.target.value)}
+                  aria-label="עד תאריך"
+                  className="h-9 min-w-0 flex-1 rounded-md border border-line bg-surface px-2 text-[0.8125rem] tabular outline-none focus:border-primary focus:ring-2 focus:ring-[var(--vl-focus-ring)] sm:h-8 sm:flex-none"
+                />
+              </div>
             </div>
           }
         />
@@ -481,6 +488,10 @@ function ChartCard({
 function DayTimeline({ tasks, onOpen }: { tasks: WorkBoardRow[]; onOpen: (id: string) => void }) {
   const timed = tasks.filter((t) => t.onsite_start_time)
   const untimed = tasks.filter((t) => !t.onsite_start_time)
+  /* An hour axis needs horizontal room to mean anything: on a phone every bar
+     collapses to a sliver and the ruler's labels collide. There the same tasks
+     are simply listed in time order. */
+  const isPhone = useIsPhone()
 
   const { startHour, endHour } = useMemo(() => {
     if (timed.length === 0) return { startHour: 6, endHour: 22 }
@@ -509,7 +520,39 @@ function DayTimeline({ tasks, onOpen }: { tasks: WorkBoardRow[]; onOpen: (id: st
 
   return (
     <div className="space-y-3">
-      {timed.length > 0 && (
+      {timed.length > 0 && isPhone && (
+        <ul className="space-y-1.5">
+          {timed.map((t) => {
+            const label = t.end_client_name || t.title || t.customer_name || t.task_type_name
+            const team = [...(t.workers ?? []).map((w) => w.name), ...(t.drivers ?? []).map((d) => d.name)]
+            return (
+              <li key={t.id}>
+                <button
+                  onClick={() => onOpen(t.id)}
+                  className="flex w-full items-center gap-2 rounded-lg p-2 text-start transition-colors hover:bg-hover"
+                >
+                  <span
+                    aria-hidden
+                    className="h-8 w-1 shrink-0 rounded-full"
+                    style={{ background: t.customer_color ?? '#64748b' }}
+                  />
+                  <span className="shrink-0 type-caption font-bold tabular" dir="ltr">
+                    {fmtTime(t.onsite_start_time)}
+                    {t.onsite_end_time && `–${fmtTime(t.onsite_end_time)}`}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate type-body font-medium">{label}</span>
+                    <span className="block truncate type-caption text-ink-tertiary">{t.task_type_name}</span>
+                  </span>
+                  {team.length > 0 && <AvatarGroup names={team} max={2} size="xs" />}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {timed.length > 0 && !isPhone && (
         <div>
           {/* hour ruler */}
           <div className="relative mb-1.5 h-4">

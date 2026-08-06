@@ -207,7 +207,7 @@ export default function UsersPage() {
             }
           >
             <SearchInput
-              className="w-64"
+              className="w-64 max-sm:w-full"
               inputSize="sm"
               placeholder="חיפוש לפי שם או טלפון..."
               value={q}
@@ -216,6 +216,7 @@ export default function UsersPage() {
               aria-label="חיפוש משתמש"
             />
             <SegmentedControl
+              className="max-sm:w-full"
               items={[
                 { key: '', label: 'הכול' },
                 { key: 'staff', label: 'צוות' },
@@ -238,6 +239,31 @@ export default function UsersPage() {
           onRowClick={(p) => setEditing(p)}
           storageKey="users"
           pageSize={25}
+          mobileCard={(p) => (
+            <div className="flex items-center gap-2.5">
+              <Avatar name={p.full_name} size="md" />
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-1.5">
+                  <span className="truncate type-body font-semibold">{p.full_name}</span>
+                  {p.is_admin && <Badge tone="primary">אדמין</Badge>}
+                </p>
+                <p className="flex flex-wrap items-center gap-x-1.5 type-caption text-ink-tertiary">
+                  <span>{kindLabels[p.user_kind]}</span>
+                  {p.phone && (
+                    <span className="tabular" dir="ltr">
+                      · {p.phone}
+                    </span>
+                  )}
+                  {(p.staff_roles ?? []).length > 0 && (
+                    <span className="truncate">· {(p.staff_roles ?? []).map((r) => roleLabels[r.role]).join(', ')}</span>
+                  )}
+                </p>
+              </div>
+              <StatusPill color={p.is_active ? '#16a34a' : '#dc2626'} className="shrink-0">
+                {p.is_active ? 'פעיל' : 'מושבת'}
+              </StatusPill>
+            </div>
+          )}
           empty={
             <EmptyState
               art="people"
