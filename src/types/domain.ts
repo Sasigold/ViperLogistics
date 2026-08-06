@@ -143,6 +143,28 @@ export interface EventRow {
   statuses?: { name: string; color: string } | null
 }
 
+export type EventActivityKind = 'created' | 'changed' | 'note' | 'deleted' | 'restored'
+
+/**
+ * A line of an event's activity log, as `event_activity_feed` returns it: a
+ * tracked field the database saw move, or free text somebody wrote.
+ */
+export interface EventActivity {
+  id: number
+  event_id: string
+  kind: EventActivityKind
+  actor_profile_id: string | null
+  actor_name: string | null
+  /** 'changed' rows only — matches field_registry where an entry exists */
+  field_key: string | null
+  field_label: string | null
+  old_value: string | null
+  new_value: string | null
+  /** 'note' rows only */
+  note: string | null
+  created_at: string
+}
+
 export interface TaskRow {
   id: string
   event_id: string | null

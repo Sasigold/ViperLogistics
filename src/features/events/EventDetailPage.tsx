@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, History, ICON, Pencil, Plus, STROKE, Trash2 } from '../../components/ui/icons'
+import { Copy, ICON, Pencil, Plus, STROKE, Trash2 } from '../../components/ui/icons'
 import {
   AvatarGroup,
   Badge,
@@ -26,7 +26,7 @@ import { fmtDate, fmtDateLong, fmtHours, fmtTime } from '../../lib/dates'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { EventFormModal } from './EventFormModal'
 import { TaskDrawer } from '../tasks/TaskDrawer'
-import { AuditTrail } from '../settings/AuditTrail'
+import { EventActivityLog } from './EventActivityLog'
 import type { EventRow, WorkBoardRow } from '../../types/domain'
 
 export default function EventDetailPage() {
@@ -38,7 +38,6 @@ export default function EventDetailPage() {
   const { confirm, dialog } = useConfirm()
   const [editOpen, setEditOpen] = useState(false)
   const [taskDrawer, setTaskDrawer] = useState<{ open: boolean; taskId: string | null }>({ open: false, taskId: null })
-  const [auditOpen, setAuditOpen] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['events', 'one', id],
@@ -275,12 +274,6 @@ export default function EventDetailPage() {
         }
         actions={
           <>
-            {has(PERM.SETTINGS_AUDIT_LOG) && (
-              <Button size="sm" variant="ghost" onClick={() => setAuditOpen(true)}>
-                <History size={ICON.sm} strokeWidth={STROKE} />
-                היסטוריה
-              </Button>
-            )}
             {has(PERM.EVENTS_DUPLICATE) && (
               <Button size="sm" onClick={() => void duplicate()}>
                 <Copy size={ICON.sm} strokeWidth={STROKE} />
@@ -413,6 +406,8 @@ export default function EventDetailPage() {
         </div>
       </div>
 
+      {has(PERM.EVENTS_ACTIVITY_LOG) && <EventActivityLog eventId={event.id} />}
+
       <EventFormModal
         open={editOpen}
         onClose={() => {
@@ -420,6 +415,8 @@ export default function EventDetailPage() {
           void qc.invalidateQueries({ queryKey: ['events', 'one', id] })
           // the setup/teardown sections write onto the tasks below
           void qc.invalidateQueries({ queryKey: ['workboard', 'byEvent', id] })
+          // and whatever the save moved has just been written to the log
+          void qc.invalidateQueries({ queryKey: ['event_activity', id] })
         }}
         event={event}
         contact={contact}
@@ -434,7 +431,6 @@ export default function EventDetailPage() {
         taskId={taskDrawer.taskId}
         initial={{ event_id: event.id, customer_id: event.customer_id, task_date: event.event_date }}
       />
-      {auditOpen && <AuditTrail entity="events" rowId={event.id} onClose={() => setAuditOpen(false)} />}
     </div>
   )
 }

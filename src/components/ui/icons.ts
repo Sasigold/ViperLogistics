@@ -83,6 +83,7 @@ export {
   Loader2,
   Clock,
   History,
+  MessageSquarePlus,
   Bell,
   BellOff,
   TrendingUp,

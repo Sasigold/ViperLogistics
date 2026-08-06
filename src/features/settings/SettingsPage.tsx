@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Boxes,
   ClipboardList,
-  History,
   ICON,
   Plus,
   RotateCcw,
@@ -20,7 +19,6 @@ import {
   CardBody,
   CardHeader,
   Checkbox,
-  DataTable,
   EmptyState,
   Field,
   IconButton,
@@ -36,7 +34,6 @@ import {
   useConfirm,
   useToast,
 } from '../../components/ui'
-import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { useExecutionMethods, useStatuses, useTaskTypes, useTrucks } from '../../lib/queries'
@@ -47,7 +44,7 @@ import { RolesTab } from '../permissions/RolesTab'
 
 /**
  * Each tab names the permission that governs it, so a coordinator who may edit
- * statuses but not see the audit log lands on a screen with one tab rather than
+ * statuses but not the recycle bin lands on a screen with one tab rather than
  * on a wall of "אין הרשאה".
  */
 const TABS = [
@@ -57,7 +54,6 @@ const TABS = [
   { key: 'trucks', label: 'משאיות', icon: <Truck size={ICON.sm} />, perm: PERM.SETTINGS_TRUCKS },
   { key: 'roles', label: 'הרשאות ותפקידים', icon: <Shield size={ICON.sm} />, perm: PERM.SETTINGS_PERMISSIONS },
   { key: 'recycle', label: 'סל מיחזור', icon: <RotateCcw size={ICON.sm} />, perm: PERM.SETTINGS_RECYCLE_BIN },
-  { key: 'audit', label: 'יומן פעילות', icon: <History size={ICON.sm} />, perm: PERM.SETTINGS_AUDIT_LOG },
 ] as const
 
 export default function SettingsPage() {
@@ -79,7 +75,6 @@ export default function SettingsPage() {
         {active === 'trucks' && <TrucksTab />}
         {active === 'roles' && <RolesTab />}
         {active === 'recycle' && <RecycleBinTab />}
-        {active === 'audit' && <AuditLogTab />}
       </div>
     </RequirePermission>
   )
@@ -649,133 +644,6 @@ function RecycleBinTab() {
         )}
       </CardBody>
     </Card>
-  )
-}
-
-/* ===== audit log ========================================================== */
-
-interface AuditRow {
-  id: number
-  action: 'INSERT' | 'UPDATE' | 'DELETE'
-  table_name: string
-  changed_cols: string[] | null
-  created_at: string
-}
-
-const AUDIT_COLORS = { INSERT: '#16a34a', UPDATE: '#3563f0', DELETE: '#dc2626' }
-const AUDIT_LABELS = { INSERT: 'יצירה', UPDATE: 'עדכון', DELETE: 'מחיקה' }
-
-function AuditLogTab() {
-  const { me } = useAuth()
-  const [action, setAction] = useState<'' | AuditRow['action']>('')
-
-  const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['audit', 'global'],
-    enabled: !!me?.profile.is_admin,
-    queryFn: async () => {
-      const { data, error } = await supabase.from('audit_log').select('*').order('created_at', { ascending: false }).limit(200)
-      if (error) throw error
-      return data as AuditRow[]
-    },
-  })
-
-  const filtered = useMemo(() => (action ? rows.filter((r) => r.action === action) : rows), [rows, action])
-
-  const columns = useMemo<Column<AuditRow>[]>(
-    () => [
-      {
-        key: 'created_at',
-        header: 'זמן',
-        width: 170,
-        fixed: true,
-        sortValue: (r) => r.created_at,
-        render: (r) => (
-          <Tooltip content={fmtDateTime(r.created_at)}>
-            <span className="tabular">{fmtRelative(r.created_at)}</span>
-          </Tooltip>
-        ),
-      },
-      {
-        key: 'action',
-        header: 'פעולה',
-        width: 110,
-        sortValue: (r) => r.action,
-        render: (r) => <StatusPill color={AUDIT_COLORS[r.action]}>{AUDIT_LABELS[r.action]}</StatusPill>,
-      },
-      {
-        key: 'table_name',
-        header: 'טבלה',
-        width: 160,
-        sortValue: (r) => r.table_name,
-        render: (r) => <span className="font-mono type-caption">{r.table_name}</span>,
-      },
-      {
-        key: 'changed_cols',
-        header: 'שדות שהשתנו',
-        width: 320,
-        render: (r) => {
-          const cols = (r.changed_cols ?? []).filter((c) => !['updated_at', 'search_tsv'].includes(c))
-          if (cols.length === 0) return <span className="text-ink-tertiary">—</span>
-          return (
-            <Tooltip content={cols.join(', ')}>
-              <span className="flex flex-wrap gap-1">
-                {cols.slice(0, 4).map((c) => (
-                  <span key={c} className="rounded bg-subtle px-1.5 py-0.5 font-mono text-[11px] text-ink-secondary">
-                    {c}
-                  </span>
-                ))}
-                {cols.length > 4 && <span className="type-caption text-ink-tertiary">+{cols.length - 4}</span>}
-              </span>
-            </Tooltip>
-          )
-        },
-      },
-    ],
-    [],
-  )
-
-  if (!me?.profile.is_admin) return <AdminOnly what="יומן הפעילות" />
-
-  return (
-    <DataTable
-      className="max-w-4xl"
-      rows={filtered}
-      columns={columns}
-      getRowId={(r) => String(r.id)}
-      loading={isLoading}
-      dense
-      pageSize={25}
-      storageKey="audit"
-      mobileCard={(r) => {
-        const cols = (r.changed_cols ?? []).filter((c) => !['updated_at', 'search_tsv'].includes(c))
-        return (
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <StatusPill color={AUDIT_COLORS[r.action]}>{AUDIT_LABELS[r.action]}</StatusPill>
-              <span className="font-mono type-caption text-ink-secondary">{r.table_name}</span>
-              <span className="ms-auto shrink-0 type-caption tabular text-ink-tertiary">
-                {fmtRelative(r.created_at)}
-              </span>
-            </div>
-            {cols.length > 0 && (
-              <p className="truncate font-mono text-[11px] text-ink-tertiary">{cols.join(', ')}</p>
-            )}
-          </div>
-        )
-      }}
-      toolbar={
-        <div className="flex items-center gap-2">
-          <h2 className="type-title">יומן פעילות</h2>
-          <Select className="w-36" selectSize="sm" value={action} onChange={(e) => setAction(e.target.value as typeof action)} aria-label="סינון לפי פעולה">
-            <option value="">כל הפעולות</option>
-            <option value="INSERT">יצירה</option>
-            <option value="UPDATE">עדכון</option>
-            <option value="DELETE">מחיקה</option>
-          </Select>
-        </div>
-      }
-      empty={<EmptyState art="table" title="אין רשומות ביומן" description="200 הפעולות האחרונות יופיעו כאן" />}
-    />
   )
 }
 
