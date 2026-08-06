@@ -141,6 +141,23 @@
   --vl-info-subtle: #eff8ff;
   --vl-info-border: #b2ddff;
 
+  /* group ramp — one hue per event on the work board. Twelve hues spaced
+     around the wheel, each dark enough to read as text on a light surface.
+     Order matters: consecutive slots never sit next to each other on the
+     wheel, so two groups that land side by side stay easy to tell apart. */
+  --vl-ev-0: #3f56d6;
+  --vl-ev-1: #0e8a7d;
+  --vl-ev-2: #a86a08;
+  --vl-ev-3: #d0265c;
+  --vl-ev-4: #8a3fd4;
+  --vl-ev-5: #2f8340;
+  --vl-ev-6: #0c7ba6;
+  --vl-ev-7: #c44a22;
+  --vl-ev-8: #62801a;
+  --vl-ev-9: #b3327f;
+  --vl-ev-10: #8a5a3b;
+  --vl-ev-11: #4c6a94;
+
   /* elevation */
   --vl-shadow-xs: 0 1px 2px 0 rgb(16 24 40 / 0.05);
   --vl-shadow-sm: 0 1px 3px 0 rgb(16 24 40 / 0.06), 0 1px 2px -1px rgb(16 24 40 / 0.05);
@@ -219,6 +236,20 @@
   --vl-info-text: #93c5fd;
   --vl-info-subtle: rgb(59 130 246 / 0.15);
   --vl-info-border: rgb(59 130 246 / 0.34);
+
+  /* the same twelve hues, lifted so they carry on a dark surface */
+  --vl-ev-0: #9aabff;
+  --vl-ev-1: #4fd6c2;
+  --vl-ev-2: #f0bb5c;
+  --vl-ev-3: #ff8fac;
+  --vl-ev-4: #c9a3ff;
+  --vl-ev-5: #7fd68d;
+  --vl-ev-6: #6cc9ee;
+  --vl-ev-7: #ff9c78;
+  --vl-ev-8: #bcd46a;
+  --vl-ev-9: #f79ad4;
+  --vl-ev-10: #d6a582;
+  --vl-ev-11: #a8c0e6;
 
   --vl-shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.4);
   --vl-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.45), 0 1px 2px -1px rgb(0 0 0 / 0.35);
