@@ -21,7 +21,7 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import {
   useAllowedExecutionMethods,
-  useCustomerFormConfig,
+  useEffectiveFormConfig,
   useCustomers,
   useEventAutoTasks,
   useExecutionMethods,
@@ -95,6 +95,29 @@ const SECTION_LABELS = [
 const sectionFields = (code: 'setup' | 'teardown') =>
   [`${code}_date`, `${code}_time`, `${code}_worker_count`, `${code}_hours_count`, `${code}_execution_method`] as const
 
+/** The contact pair is one permission, not two — see the event_contacts policy. */
+const CONTACT_KEYS = ['contact_name', 'contact_phone']
+
+/**
+ * A form field can sit on several columns, and the two registries name them
+ * differently: `form_fields` is form-shaped, `field_registry` column-shaped.
+ * Keys absent here map to themselves; the setup/teardown keys have no registry
+ * entry and are governed by the form config alone.
+ */
+const FIELD_COLUMNS: Record<string, string[]> = {
+  location: ['location_text'],
+  addons: ['no_parking', 'porterage', 'supplier_pickup'],
+}
+const columnsOf = (key: string) => FIELD_COLUMNS[key] ?? [key]
+
+/** One configurable field can own several payload keys. */
+const PAYLOAD_KEYS: Record<string, string[]> = {
+  location: ['location_text', 'location_provider', 'location_place_id', 'location_lat', 'location_lng'],
+  addons: ['no_parking', 'porterage', 'supplier_pickup', 'supplier_ids'],
+  contact_name: ['contact_name'],
+  contact_phone: ['contact_phone'],
+}
+
 /** Which configurable field keys belong to which step. */
 const STEPS = [
   { key: 'basics', label: 'פרטי האירוע', icon: PartyPopper, fields: ['end_client_name', 'event_number', 'event_date'] },
@@ -119,7 +142,7 @@ export function EventFormModal({
 }) {
   const qc = useQueryClient()
   const toast = useToast()
-  const { me, has } = useAuth()
+  const { me, has, canViewField, canEditField } = useAuth()
   const isCustomer = me?.profile.user_kind === 'customer_user'
   const [form, setForm] = useState<EventForm>(empty)
   const [step, setStep] = useState(0)
@@ -128,7 +151,7 @@ export function EventFormModal({
   const { data: customers = [] } = useCustomers()
   const { data: statuses = [] } = useStatuses('event')
   const effectiveCustomerId = isCustomer ? me?.profile.customer_id : form.customer_id || null
-  const { data: config = [] } = useCustomerFormConfig(effectiveCustomerId)
+  const config = useEffectiveFormConfig(effectiveCustomerId)
   const { data: suppliers = [] } = useSuppliers(effectiveCustomerId)
 
   const { data: taskTypes = [] } = useTaskTypes()
@@ -204,16 +227,31 @@ export function EventFormModal({
     return (key: string): 'visible' | 'hidden' | 'required' => map.get(key) ?? 'visible'
   }, [config])
 
-  /** customers see their configured form; staff see everything but keep required markers */
+  /**
+   * customers see their configured form; staff see everything but keep required
+   * markers. On top of that, a per-field data rule can hide or freeze any field
+   * for one user: the config says what the form has, the permission says what
+   * this person gets.
+   */
   const show = useCallback(
     (key: string) => {
-      if (key === 'contact_phone' && !has(PERM.EVENTS_VIEW_CONTACTS)) return false
+      if (CONTACT_KEYS.includes(key) && !has(PERM.EVENTS_VIEW_CONTACTS)) return false
+      if (!columnsOf(key).every((c) => canViewField('event', c))) return false
       if (!isCustomer) return true
       return fieldState(key) !== 'hidden'
     },
-    [has, isCustomer, fieldState],
+    [has, canViewField, isCustomer, fieldState],
   )
-  const req = (key: string) => fieldState(key) === 'required'
+  /** A field nobody can see is never a missing required field. */
+  const req = useCallback((key: string) => show(key) && fieldState(key) === 'required', [show, fieldState])
+  /** Visible but not editable — rendered read-only rather than dropped. */
+  const ro = useCallback(
+    (key: string) => {
+      if (CONTACT_KEYS.includes(key)) return !has(PERM.EVENTS_MANAGE_CONTACTS)
+      return !columnsOf(key).every((c) => canEditField('event', c))
+    },
+    [has, canEditField],
+  )
 
   const set = (patch: Partial<EventForm>) => setForm((f) => ({ ...f, ...patch }))
 
@@ -280,15 +318,24 @@ export function EventFormModal({
         supplier_pickup: form.supplier_pickup,
         supplier_ids: form.supplier_pickup ? form.supplier_ids : [],
       }
-      if (has(PERM.EVENTS_MANAGE_CONTACTS)) {
-        payload.contact_name = form.contact_name
-        payload.contact_phone = form.contact_phone
+      payload.contact_name = form.contact_name
+      payload.contact_phone = form.contact_phone
+
+      // Drop anything this user may not see or change. The RPC does the same
+      // for clients; this covers staff, whose per-customer config the server
+      // does not apply to them, and stops a read-only field being sent back.
+      for (const key of Object.keys(PAYLOAD_KEYS)) {
+        if (show(key) && !ro(key)) continue
+        for (const k of PAYLOAD_KEYS[key]) delete payload[k]
+      }
+      for (const key of ['end_client_name', 'event_number', 'location_notes', 'volume_m', 'truck_count', 'notes']) {
+        if (!show(key) || ro(key)) delete payload[key]
       }
       // hidden sections are never sent, so the RPC leaves their tasks alone
       for (const { code } of SECTIONS) {
         if (!typeIdOf(code)) continue
         for (const key of sectionFields(code)) {
-          if (!show(key)) continue
+          if (!show(key) || ro(key)) continue
           // task_date is NOT NULL — omitting an empty date keeps the current one
           if (key.endsWith('_date') && !form[key]) continue
           payload[key] = form[key]
@@ -446,12 +493,12 @@ export function EventFormModal({
               required={req('end_client_name')}
               error={err('end_client_name', form.end_client_name)}
             >
-              <Input value={form.end_client_name} onChange={(e) => set({ end_client_name: e.target.value })} />
+              <Input value={form.end_client_name} onChange={(e) => set({ end_client_name: e.target.value })} disabled={ro('end_client_name')} />
             </Field>
           )}
           {show('event_number') && (
             <Field label="מספר אירוע" required={req('event_number')} error={err('event_number', form.event_number)}>
-              <Input value={form.event_number} onChange={(e) => set({ event_number: e.target.value })} />
+              <Input value={form.event_number} onChange={(e) => set({ event_number: e.target.value })} disabled={ro('event_number')} />
             </Field>
           )}
           {show('event_date') && (
@@ -515,6 +562,7 @@ export function EventFormModal({
               <Input
                 value={form.location_notes}
                 onChange={(e) => set({ location_notes: e.target.value })}
+                disabled={ro('location_notes')}
                 placeholder="למשל: כניסה מהחניון האחורי"
               />
             </Field>
@@ -527,7 +575,7 @@ export function EventFormModal({
                     leading={<User size={ICON.sm} strokeWidth={STROKE} />}
                     value={form.contact_name}
                     onChange={(e) => set({ contact_name: e.target.value })}
-                    disabled={!has(PERM.EVENTS_MANAGE_CONTACTS)}
+                    disabled={ro('contact_name')}
                   />
                 </Field>
               )}
@@ -553,12 +601,12 @@ export function EventFormModal({
           <div className="grid gap-4 sm:grid-cols-2">
             {show('volume_m') && (
               <Field label="נפח במטר" required={req('volume_m')} error={err('volume_m', form.volume_m)}>
-                <Input type="number" step="0.1" min="0" value={form.volume_m} onChange={(e) => set({ volume_m: e.target.value })} />
+                <Input type="number" step="0.1" min="0" value={form.volume_m} onChange={(e) => set({ volume_m: e.target.value })} disabled={ro('volume_m')} />
               </Field>
             )}
             {show('truck_count') && (
               <Field label="כמות משאיות" required={req('truck_count')} error={err('truck_count', form.truck_count)}>
-                <Input type="number" min="0" value={form.truck_count} onChange={(e) => set({ truck_count: e.target.value })} />
+                <Input type="number" min="0" value={form.truck_count} onChange={(e) => set({ truck_count: e.target.value })} disabled={ro('truck_count')} />
               </Field>
             )}
           </div>
@@ -567,9 +615,9 @@ export function EventFormModal({
             <div className="space-y-3 rounded-lg border border-line-subtle bg-subtle/50 p-3">
               <p className="type-overline">תוספות</p>
               <div className="grid gap-2 sm:grid-cols-3">
-                <Checkbox label="אין חניה" checked={form.no_parking} onChange={(v) => set({ no_parking: v })} />
-                <Checkbox label="סבלות" checked={form.porterage} onChange={(v) => set({ porterage: v })} />
-                <Checkbox label="איסוף מספקים" checked={form.supplier_pickup} onChange={(v) => set({ supplier_pickup: v })} />
+                <Checkbox label="אין חניה" checked={form.no_parking} onChange={(v) => set({ no_parking: v })} disabled={ro('addons')} />
+                <Checkbox label="סבלות" checked={form.porterage} onChange={(v) => set({ porterage: v })} disabled={ro('addons')} />
+                <Checkbox label="איסוף מספקים" checked={form.supplier_pickup} onChange={(v) => set({ supplier_pickup: v })} disabled={ro('addons')} />
               </div>
               {form.supplier_pickup && (
                 <Field label="ספקים לאיסוף">
@@ -592,7 +640,7 @@ export function EventFormModal({
 
           {show('notes') && (
             <Field label="הערות" required={req('notes')} error={err('notes', form.notes)}>
-              <Textarea autoGrow value={form.notes} onChange={(e) => set({ notes: e.target.value })} />
+              <Textarea autoGrow value={form.notes} onChange={(e) => set({ notes: e.target.value })} disabled={ro('notes')} />
             </Field>
           )}
         </div>
@@ -614,6 +662,7 @@ export function EventFormModal({
                 show={show}
                 req={req}
                 err={err}
+                ro={ro}
                 methods={code === 'setup' ? setupMethods : teardownMethods}
                 allMethods={allMethods}
               />
@@ -634,6 +683,7 @@ function TaskSection({
   show,
   req,
   err,
+  ro,
   methods,
   allMethods,
 }: {
@@ -644,6 +694,7 @@ function TaskSection({
   show: (key: string) => boolean
   req: (key: string) => boolean
   err: (key: string, value: string) => string | undefined
+  ro: (key: string) => boolean
   methods: ExecutionMethod[]
   allMethods: ExecutionMethod[]
 }) {
@@ -666,12 +717,12 @@ function TaskSection({
         <div className="grid gap-4 sm:grid-cols-2">
           {show(dateKey) && (
             <Field label="תאריך" required={req(dateKey)} error={err(dateKey, form[dateKey])}>
-              <Input type="date" value={form[dateKey]} onChange={(e) => set({ [dateKey]: e.target.value })} />
+              <Input type="date" value={form[dateKey]} onChange={(e) => set({ [dateKey]: e.target.value })} disabled={ro(dateKey)} />
             </Field>
           )}
           {show(timeKey) && (
             <Field label="שעה" required={req(timeKey)} error={err(timeKey, form[timeKey])} hint="שעת תחילה בשטח">
-              <Input type="time" value={form[timeKey]} onChange={(e) => set({ [timeKey]: e.target.value })} />
+              <Input type="time" value={form[timeKey]} onChange={(e) => set({ [timeKey]: e.target.value })} disabled={ro(timeKey)} />
             </Field>
           )}
           {show(workersKey) && (
@@ -681,6 +732,7 @@ function TaskSection({
                 min="0"
                 value={form[workersKey]}
                 onChange={(e) => set({ [workersKey]: e.target.value })}
+                disabled={ro(workersKey)}
               />
             </Field>
           )}
@@ -692,6 +744,7 @@ function TaskSection({
                 min="0"
                 value={form[hoursKey]}
                 onChange={(e) => set({ [hoursKey]: e.target.value })}
+                disabled={ro(hoursKey)}
               />
             </Field>
           )}
@@ -703,7 +756,7 @@ function TaskSection({
             error={err(methodKey, form[methodKey])}
             hint={methods.length ? undefined : 'לא הוגדרו אופני ביצוע זמינים ללקוח זה'}
           >
-            <Select value={form[methodKey]} onChange={(e) => set({ [methodKey]: e.target.value })}>
+            <Select value={form[methodKey]} onChange={(e) => set({ [methodKey]: e.target.value })} disabled={ro(methodKey)}>
               <option value="">בחירה...</option>
               {methods.map((m) => (
                 <option key={m.id} value={m.id}>

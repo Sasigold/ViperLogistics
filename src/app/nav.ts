@@ -89,4 +89,5 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/contractors': 'קבלנים',
   '/settings': 'הגדרות',
   '/portal': 'פורטל קבלן',
+  '/client': 'פורטל לקוח',
 }

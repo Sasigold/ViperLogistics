@@ -24,9 +24,19 @@ export function RequireAuth() {
   if (!booted) return <Booting />
   if (!session) return <Navigate to="/login" replace />
   if (!me) return <Booting />
-  // contractors live in their own portal
-  if (me.profile.user_kind === 'contractor_user' && !location.pathname.startsWith('/portal')) {
+  // Contractors and clients each live in their own portal. Routing them out of
+  // the staff shell is also what keeps a staff screen — including one added
+  // later, before anyone remembers to gate it — from being reachable by URL.
+  const path = location.pathname
+  if (me.profile.user_kind === 'contractor_user' && !path.startsWith('/portal')) {
     return <Navigate to="/portal" replace />
+  }
+  if (me.profile.user_kind === 'customer_user' && !path.startsWith('/client')) {
+    return <Navigate to="/client" replace />
+  }
+  // staff have no business in the client portal; admins may look, to preview it
+  if (me.profile.user_kind === 'staff' && !me.profile.is_admin && path.startsWith('/client')) {
+    return <Navigate to="/" replace />
   }
   return <Outlet />
 }

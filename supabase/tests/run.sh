@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Applies every migration to a throwaway PostgreSQL cluster and runs the
+# privilege-escalation suite against it. No Supabase project is touched.
+#
+#   ./supabase/tests/run.sh
+#
+# Needs a local postgres (`postgresql-16` or newer). The cluster lives under
+# /var/tmp/vlpg and is recreated on every run.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"
+BASE=/var/tmp/vlpg
+PORT=${VL_TEST_PORT:-55432}
+PGBIN=$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)
+[ -n "$PGBIN" ] && export PATH="$PGBIN:$PATH"
+
+PSQL="psql -h /var/tmp -p $PORT -U postgres -q"
+
+if ! $PSQL -d postgres -tAc 'select 1' >/dev/null 2>&1; then
+  echo "== starting a scratch cluster on port $PORT =="
+  rm -rf "$BASE"
+  mkdir -p "$BASE/pgdata"
+  # postgres refuses to run as root, so the cluster is owned by the postgres user
+  chown -R postgres:postgres "$BASE"
+  chmod 700 "$BASE/pgdata"
+  su postgres -c "PATH=$PGBIN:\$PATH initdb -D $BASE/pgdata -U postgres --auth=trust" >/dev/null
+  su postgres -c "PATH=$PGBIN:\$PATH pg_ctl -D $BASE/pgdata -o '-k /var/tmp -p $PORT -c listen_addresses=' -l $BASE/log start" >/dev/null
+  sleep 2
+fi
+
+$PSQL -v ON_ERROR_STOP=1 -d postgres -c 'drop database if exists vl;' -c 'create database vl;' >/dev/null
+$PSQL -v ON_ERROR_STOP=1 -d vl -f "$HERE/00_bootstrap.sql" >/dev/null
+$PSQL -d vl -c 'create publication supabase_realtime;' >/dev/null 2>&1 || true
+
+echo "== migrations =="
+for f in "$ROOT"/supabase/migrations/*.sql; do
+  if ! $PSQL -v ON_ERROR_STOP=1 -d vl -f "$f" >/tmp/vl-mig.log 2>&1; then
+    echo "FAILED: $(basename "$f")"; tail -10 /tmp/vl-mig.log; exit 1
+  fi
+done
+echo "all $(ls "$ROOT"/supabase/migrations/*.sql | wc -l) migrations applied"
+
+$PSQL -v ON_ERROR_STOP=1 -d vl -f "$HERE/01_seed.sql" >/dev/null
+
+echo
+echo "== privilege-escalation suite =="
+OUT=$($PSQL -d vl -f "$HERE/02_escalation.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT"
+echo
+FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
+echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
+[ "$FAILED" -eq 0 ]

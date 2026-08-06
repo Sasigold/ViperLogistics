@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import type { MyPermissions, PermissionAction } from '../types/domain'
+import type { FieldState, MyPermissions, PermissionAction } from '../types/domain'
 
 interface AuthState {
   session: Session | null
@@ -19,7 +19,24 @@ interface AuthState {
   can: (resource: string, action: PermissionAction) => boolean
   canViewField: (entity: string, field: string) => boolean
   canEditField: (entity: string, field: string) => boolean
+  /** merged company + per-user event-form config; 'visible' when unconfigured */
+  formFieldState: (key: string) => FieldState
+  /** form composition AND data access — what a client actually gets to see */
+  showsEventField: (key: string) => boolean
 }
+
+/**
+ * One form field can sit on several columns, and the two registries name them
+ * differently: `form_fields` is form-shaped ('location', 'addons'), while
+ * `field_registry` is column-shaped. Only the columns listed here carry a data
+ * rule; the setup/teardown keys have no registry entry and so are governed by
+ * the form config alone.
+ */
+const FIELD_COLUMNS: Record<string, string[]> = {
+  location: ['location_text'],
+  addons: ['no_parking', 'porterage', 'supplier_pickup'],
+}
+const columnsOf = (key: string) => FIELD_COLUMNS[key] ?? [key]
 
 function applyTheme(theme: 'light' | 'dark') {
   document.documentElement.dataset.theme = theme
@@ -100,5 +117,16 @@ export const useAuth = create<AuthState>((set, get) => ({
     if (me.profile.is_admin) return true
     const fp = me.field_permissions.find((f) => f.entity === entity && f.field_key === field)
     return fp ? fp.can_edit : true
+  },
+
+  formFieldState: (key) => get().me?.form_config?.find((f) => f.field_key === key)?.state ?? 'visible',
+
+  // A field disappears for two unrelated reasons: it was configured off the
+  // form, or the data behind it is out of reach. Lists and detail screens have
+  // to honour both, or a column reappears for a field the form never offered.
+  showsEventField: (key) => {
+    if (get().formFieldState(key) === 'hidden') return false
+    const canViewField = get().canViewField
+    return columnsOf(key).every((c) => canViewField('event', c))
   },
 }))

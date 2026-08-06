@@ -59,7 +59,19 @@ const SOURCE_LABELS: Record<string, string> = {
   none: 'ברירת מחדל — חסום',
 }
 
-export function PermissionMatrix({ subject }: { subject: MatrixSubject }) {
+export function PermissionMatrix({
+  subject,
+  canGrant,
+}: {
+  subject: MatrixSubject
+  /**
+   * Mirrors app.guard_permission_grant: a client admin cannot hand out a key
+   * they do not hold themselves. Cells that would be rejected render disabled
+   * with a reason rather than failing at the database. Omit for staff and
+   * admins, where the rule does not apply.
+   */
+  canGrant?: (key: string) => boolean
+}) {
   const toast = useToast()
   const qc = useQueryClient()
   const [q, setQ] = useState('')
@@ -290,11 +302,22 @@ export function PermissionMatrix({ subject }: { subject: MatrixSubject }) {
                       <span className="hidden type-caption text-ink-tertiary sm:inline">
                         {SOURCE_LABELS[eff.source]}
                       </span>
-                      <SegmentedControl
-                        items={STATES}
-                        value={state}
-                        onChange={(next) => update.mutate({ key: item.key, state: next })}
-                      />
+                      <Tooltip
+                        content={
+                          canGrant && !canGrant(item.key)
+                            ? 'אין לך את ההרשאה הזו, ולכן אינך יכול להעניק אותה'
+                            : ''
+                        }
+                      >
+                        <SegmentedControl
+                          items={STATES}
+                          value={state}
+                          onChange={(next) =>
+                            (!canGrant || canGrant(item.key)) && update.mutate({ key: item.key, state: next })
+                          }
+                          className={canGrant && !canGrant(item.key) ? 'pointer-events-none opacity-55' : undefined}
+                        />
+                      </Tooltip>
                     </div>
                   </li>
                 )
