@@ -25,6 +25,14 @@ const UsersPage = lazy(() => import('../features/users/UsersPage'))
 const ContractorsPage = lazy(() => import('../features/contractors/ContractorsPage'))
 const ContractorDetailPage = lazy(() => import('../features/contractors/ContractorDetailPage'))
 const PortalPage = lazy(() => import('../features/portal/PortalPage'))
+const ClientLayout = lazy(() => import('../features/client/ClientLayout'))
+const ClientIndexRedirect = lazy(() => import('../features/client/ClientIndexRedirect'))
+const ClientDashboardPage = lazy(() => import('../features/client/ClientDashboardPage'))
+const ClientEventsPage = lazy(() => import('../features/client/ClientEventsPage'))
+const ClientEventDetailPage = lazy(() => import('../features/client/ClientEventDetailPage'))
+const ClientCalendarPage = lazy(() => import('../features/client/ClientCalendarPage'))
+const ClientTasksPage = lazy(() => import('../features/client/ClientTasksPage'))
+const ClientUsersPage = lazy(() => import('../features/client/ClientUsersPage'))
 const SettingsPage = lazy(() => import('../features/settings/SettingsPage'))
 
 /** Shaped like a real screen so the chunk swap doesn't flash an empty page. */
@@ -54,6 +62,20 @@ export const router = createBrowserRouter([
     element: <RequireAuth />,
     children: [
       { path: '/portal', element: page(<PortalPage />) },
+      // the client portal carries its own chrome, so it sits outside AppLayout
+      {
+        path: '/client',
+        element: page(<ClientLayout />),
+        children: [
+          { index: true, element: page(<ClientIndexRedirect />) },
+          { path: 'dashboard', element: page(<ClientDashboardPage />) },
+          { path: 'events', element: page(<ClientEventsPage />) },
+          { path: 'events/:id', element: page(<ClientEventDetailPage />) },
+          { path: 'calendar', element: page(<ClientCalendarPage />) },
+          { path: 'tasks', element: page(<ClientTasksPage />) },
+          { path: 'users', element: page(<ClientUsersPage />) },
+        ],
+      },
       {
         element: <AppLayout />,
         children: [

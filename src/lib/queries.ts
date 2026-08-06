@@ -1,18 +1,21 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from './supabase'
+import { useAuth } from '../state/auth'
 import type {
   Contractor,
   ContractorWorker,
   Customer,
   EventAutoTask,
   ExecutionMethod,
+  FieldState,
   FormField,
   Profile,
   Status,
   Supplier,
   TaskType,
   Truck,
+  UserFormField,
 } from '../types/domain'
 
 async function fetchList<T>(table: string, order = 'name'): Promise<T[]> {
@@ -116,6 +119,59 @@ export function useCustomerFormConfig(customerId?: string | null) {
       const { data, error } = await supabase.from('customer_form_fields').select('*').eq('customer_id', customerId)
       if (error) throw error
       return data as { customer_id: string; field_key: string; state: 'visible' | 'hidden' | 'required' }[]
+    },
+  })
+}
+
+/**
+ * The event-form config that actually applies to the signed-in user.
+ *
+ * Staff see the plain per-customer config for whichever customer they picked.
+ * A client's config is the company config intersected with their personal
+ * overrides, which get_my_permissions already merged server-side — reading it
+ * from there rather than joining in the browser keeps it right even though
+ * customer_form_fields is world-readable while user_form_fields is not.
+ */
+export function useEffectiveFormConfig(customerId?: string | null) {
+  const me = useAuth((s) => s.me)
+  const isCustomer = me?.profile.user_kind === 'customer_user'
+  const perCustomer = useCustomerFormConfig(isCustomer ? null : customerId)
+  return useMemo(
+    () =>
+      isCustomer
+        ? ((me?.form_config ?? []) as { field_key: string; state: FieldState }[])
+        : (perCustomer.data ?? []).map((c) => ({ field_key: c.field_key, state: c.state })),
+    [isCustomer, me?.form_config, perCustomer.data],
+  )
+}
+
+export function useUserFormFields(profileId?: string | null) {
+  return useQuery({
+    queryKey: ['user_form_fields', profileId],
+    enabled: !!profileId,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('user_form_fields').select('*').eq('profile_id', profileId)
+      if (error) throw error
+      return data as UserFormField[]
+    },
+  })
+}
+
+/** Sub-users of one customer — the list a client admin manages. */
+export function useCustomerUsers(customerId?: string | null) {
+  return useQuery({
+    queryKey: ['profiles', 'byCustomer', customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('customer_id', customerId)
+        .eq('user_kind', 'customer_user')
+        .is('deleted_at', null)
+        .order('full_name')
+      if (error) throw error
+      return data as Profile[]
     },
   })
 }

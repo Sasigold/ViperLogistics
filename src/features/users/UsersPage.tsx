@@ -403,7 +403,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
   const resetPassword = useMutation({
     mutationFn: async () => {
       if (!login.password) throw new Error('חובה להזין סיסמה חדשה')
-      await invokeFunction('admin-users', { action: 'set_password', user_id: profile?.user_id, password: login.password })
+      await invokeFunction('admin-users', { action: 'set_password', profile_id: profile?.id, password: login.password })
     },
     onSuccess: () => {
       toast.success('הסיסמה עודכנה')

@@ -118,6 +118,13 @@ export interface CustomerFormField {
   state: FieldState
 }
 
+/** Per-user narrowing on top of CustomerFormField — see app.form_config. */
+export interface UserFormField {
+  profile_id: string
+  field_key: string
+  state: FieldState
+}
+
 export interface EventRow {
   id: string
   customer_id: string
@@ -340,6 +347,24 @@ export interface MyPermissions {
   capabilities: Record<string, boolean>
   field_permissions: FieldPermission[]
   scopes: MyScope[]
+  /** company form config already intersected with this user's overrides */
+  form_config: { field_key: string; state: FieldState }[]
+}
+
+export interface CustomerDashboard {
+  events_count: number
+  events_upcoming: number
+  events_done: number
+  tasks_count: number
+  tasks_open: number
+  by_status: { name: string; color: string; cnt: number }[]
+  next_events: {
+    id: string
+    event_date: string
+    end_client_name: string | null
+    event_number: string | null
+    location_text: string | null
+  }[]
 }
 
 export interface Notification {
