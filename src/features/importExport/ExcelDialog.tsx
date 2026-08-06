@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import ExcelJS from 'exceljs'
-import { Download, Upload } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
+import { AlertTriangle, CircleCheck, Download, FileSpreadsheet, ICON, STROKE, Upload } from '../../components/ui/icons'
 import { supabase } from '../../lib/supabase'
 import { Button, Modal, Spinner, useToast } from '../../components/ui'
 import { useCustomers } from '../../lib/queries'
@@ -138,21 +138,40 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="ייבוא / ייצוא אירועים (Excel)">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="ייבוא / ייצוא אירועים"
+      description="קובצי Excel בפורמט xlsx, עם כותרות בעברית"
+      footer={<Button onClick={onClose}>סגירה</Button>}
+    >
       {busy ? (
-        <Spinner full />
+        <div className="flex flex-col items-center gap-3 py-10">
+          <Spinner size={28} />
+          <p className="type-body text-ink-secondary">מעבד את הקובץ...</p>
+        </div>
       ) : (
         <div className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => void exportEvents()}>
-              <Download size={14} /> ייצוא כל האירועים
-            </Button>
-            <Button onClick={() => void downloadTemplate()}>
-              <Download size={14} /> הורדת תבנית ייבוא
-            </Button>
-            <Button variant="primary" onClick={() => fileRef.current?.click()}>
-              <Upload size={14} /> ייבוא מקובץ
-            </Button>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <ActionTile
+              icon={<Download size={ICON.xl} strokeWidth={STROKE} />}
+              title="ייצוא אירועים"
+              description="כל האירועים הפעילים לקובץ"
+              onClick={() => void exportEvents()}
+            />
+            <ActionTile
+              icon={<FileSpreadsheet size={ICON.xl} strokeWidth={STROKE} />}
+              title="הורדת תבנית"
+              description="קובץ ריק עם הכותרות הנכונות"
+              onClick={() => void downloadTemplate()}
+            />
+            <ActionTile
+              icon={<Upload size={ICON.xl} strokeWidth={STROKE} />}
+              title="ייבוא מקובץ"
+              description="בחירת xlsx להעלאה"
+              primary
+              onClick={() => fileRef.current?.click()}
+            />
             <input
               ref={fileRef}
               type="file"
@@ -164,18 +183,35 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
               }}
             />
           </div>
-          <p className="text-xs text-[var(--muted)]">
-            הייבוא מזהה לקוח לפי "שם לקוח במערכת" ומחיל את שדות החובה שהוגדרו לכל לקוח. כל אירוע שנוצר מקבל אוטומטית משימות הקמה ופירוק.
-          </p>
+
+          <div className="rounded-lg border border-info-border bg-info-subtle px-3 py-2.5">
+            <p className="type-caption text-info-text">
+              הייבוא מזהה לקוח לפי "שם לקוח במערכת" ומחיל את שדות החובה שהוגדרו לכל לקוח.
+              כל אירוע שנוצר מקבל אוטומטית משימות הקמה ופירוק.
+            </p>
+          </div>
+
           {result && (
-            <div className="rounded-lg border border-[var(--border)] p-3 text-sm">
-              <p className="font-medium text-emerald-600">{result.imported} אירועים יובאו בהצלחה</p>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 rounded-lg border border-success-border bg-success-subtle px-3 py-2.5">
+                <CircleCheck size={ICON.md} className="shrink-0 text-success-text" strokeWidth={STROKE} />
+                <p className="type-body font-medium text-success-text">
+                  {result.imported} אירועים יובאו בהצלחה
+                </p>
+              </div>
               {result.errors.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  <p className="font-medium text-red-500">{result.errors.length} שגיאות:</p>
-                  {result.errors.map((e) => (
-                    <p key={e.row} className="text-xs text-[var(--muted)]">שורה {e.row}: {e.error}</p>
-                  ))}
+                <div className="rounded-lg border border-error-border bg-error-subtle p-3">
+                  <p className="mb-1.5 flex items-center gap-1.5 type-body font-medium text-error-text">
+                    <AlertTriangle size={ICON.sm} strokeWidth={STROKE} />
+                    {result.errors.length} שורות נכשלו
+                  </p>
+                  <ul className="max-h-40 space-y-0.5 overflow-y-auto">
+                    {result.errors.map((e) => (
+                      <li key={e.row} className="type-caption text-error-text">
+                        <span className="tabular font-semibold">שורה {e.row}:</span> {e.error}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </div>
@@ -183,5 +219,37 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
         </div>
       )}
     </Modal>
+  )
+}
+
+function ActionTile({
+  icon,
+  title,
+  description,
+  onClick,
+  primary,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  onClick: () => void
+  primary?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        'flex flex-col items-center gap-1.5 rounded-xl border p-4 text-center transition-all duration-150 ' +
+        'hover:-translate-y-px hover:shadow-md focus-visible:outline-none focus-visible:focus-ring ' +
+        (primary
+          ? 'border-primary-border bg-primary-subtle text-primary-text'
+          : 'border-line bg-surface hover:border-line-strong')
+      }
+    >
+      <span className={primary ? 'text-primary' : 'text-ink-tertiary'}>{icon}</span>
+      <span className="type-body font-semibold text-ink">{title}</span>
+      <span className="type-caption text-ink-tertiary">{description}</span>
+    </button>
   )
 }

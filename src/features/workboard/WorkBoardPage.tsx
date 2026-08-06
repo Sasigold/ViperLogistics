@@ -1,19 +1,92 @@
-import { useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { addDays, startOfWeek } from 'date-fns'
-import { Plus, Pencil } from 'lucide-react'
+import { addDays, endOfMonth, startOfMonth, startOfWeek } from 'date-fns'
+import {
+  AlertTriangle,
+  ChevronDown,
+  Columns3,
+  ICON,
+  Pencil,
+  Plus,
+  STROKE,
+  SlidersHorizontal,
+} from '../../components/ui/icons'
+import {
+  BulkBar,
+  Button,
+  Checkbox,
+  EmptyState,
+  Field,
+  IconButton,
+  Input,
+  MenuLabel,
+  Modal,
+  PageHeader,
+  Popover,
+  SegmentedControl,
+  Select,
+  SkeletonTable,
+  Tooltip,
+  cx,
+  useToast,
+} from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { Button, Field, Input, Modal, Select, Spinner, EmptyState, useToast, cx } from '../../components/ui'
 import { useContractors, useCustomers, useExecutionMethods, useStatuses, useTaskTypes, useTrucks } from '../../lib/queries'
-import { toISODate, fmtDate, fmtHours, fmtTime } from '../../lib/dates'
+import { fmtDate, fmtTime, toISODate } from '../../lib/dates'
 import { TaskDrawer } from '../tasks/TaskDrawer'
 import { RequirePermission } from '../auth/guards'
+import { BOARD_FIELDS, DEFAULT_HIDDEN_FIELDS } from './boardFields'
+import type { BoardLookups } from './boardFields'
 import type { WorkBoardRow } from '../../types/domain'
 
-/** inline cell that writes a single column with optimistic-concurrency on updated_at */
+/* ── geometry ─────────────────────────────────────────────────────────────
+   The board is transposed: days run across, task fields run down. The field
+   legend on the inline-start edge is sticky and never scrolls away.       */
+
+const LEGEND_W = 150
+const SPINE_W = 46
+const DAY_HEAD_H = 30
+const TASK_HEAD_H = 46
+const HEADER_H = DAY_HEAD_H + TASK_HEAD_H
+
+const DENSITY = {
+  compact: { col: 168, row: 30, tall: 36 },
+  comfortable: { col: 208, row: 38, tall: 46 },
+} as const
+type Density = keyof typeof DENSITY
+
+const SORTS = [
+  { key: 'time', label: 'שעה' },
+  { key: 'customer', label: 'לקוח' },
+  { key: 'status', label: 'סטטוס' },
+  { key: 'type', label: 'סוג' },
+] as const
+type SortKey = (typeof SORTS)[number]['key']
+
+const PREFS_KEY = 'vl-board-prefs'
+
+interface Prefs {
+  hidden?: string[]
+  density?: Density
+  sort?: SortKey
+}
+
+function loadPrefs(): Prefs {
+  try {
+    return JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Prefs
+  } catch {
+    return {}
+  }
+}
+
+type BoardColumn =
+  | { kind: 'task'; id: string; row: WorkBoardRow; dayKey: string }
+  | { kind: 'spine'; id: string; dayKey: string; count: number }
+
+/** inline cell writes a single column with optimistic-concurrency on updated_at */
 function useInlineUpdate() {
   const qc = useQueryClient()
   const toast = useToast()
@@ -37,6 +110,8 @@ export default function WorkBoardPage() {
   const { can } = useAuth()
   const canEdit = can('tasks', 'edit')
   const [params] = useSearchParams()
+  const prefs = useRef(loadPrefs())
+
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 })
   const [from, setFrom] = useState(params.get('date') || toISODate(weekStart))
   const [to, setTo] = useState(params.get('date') || toISODate(addDays(weekStart, 6)))
@@ -47,6 +122,18 @@ export default function WorkBoardPage() {
   })
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkOpen, setBulkOpen] = useState(false)
+  const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
+  const [hidden, setHidden] = useState<Set<string>>(new Set(prefs.current.hidden ?? DEFAULT_HIDDEN_FIELDS))
+  const [density, setDensity] = useState<Density>(prefs.current.density ?? 'comfortable')
+  const [sortBy, setSortBy] = useState<SortKey>(prefs.current.sort ?? 'time')
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ hidden: [...hidden], density, sort: sortBy }))
+    } catch {
+      /* view preferences are not worth failing over */
+    }
+  }, [hidden, density, sortBy])
 
   const { data: customers = [] } = useCustomers()
   const { data: statuses = [] } = useStatuses('task')
@@ -81,283 +168,463 @@ export default function WorkBoardPage() {
     },
   })
 
-  const parentRef = useRef<HTMLDivElement>(null)
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 44,
-    overscan: 12,
-  })
+  const lookups = useMemo<BoardLookups>(() => ({ statuses, trucks, methods }), [statuses, trucks, methods])
+  const patchCell = useCallback(
+    (row: WorkBoardRow, patch: Record<string, unknown>) => inline.mutate({ row, patch }),
+    [inline],
+  )
 
-  const allSelected = rows.length > 0 && selected.size === rows.length
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.id)))
-  const toggleOne = (id: string) =>
-    setSelected((s) => {
+  const fields = useMemo(() => BOARD_FIELDS.filter((f) => !hidden.has(f.key)), [hidden])
+  const metrics = DENSITY[density]
+
+  /** one height array drives both the legend and every task column, so the
+   *  grid can never drift out of alignment */
+  const rowHeights = useMemo(() => fields.map((f) => (f.tall ? metrics.tall : metrics.row)), [fields, metrics])
+  const bodyHeight = rowHeights.reduce((a, b) => a + b, 0)
+
+  const today = toISODate(new Date())
+
+  /* ── group by day, then lay the columns out left-to-right in reading order */
+
+  const { columns, bands, totalWidth } = useMemo(() => {
+    const byDay = new Map<string, WorkBoardRow[]>()
+    for (const r of rows) {
+      const list = byDay.get(r.task_date)
+      if (list) list.push(r)
+      else byDay.set(r.task_date, [r])
+    }
+
+    const cmp = (a: WorkBoardRow, b: WorkBoardRow) => {
+      if (sortBy === 'customer') return (a.customer_name ?? '').localeCompare(b.customer_name ?? '', 'he')
+      if (sortBy === 'status') return a.status_name.localeCompare(b.status_name, 'he')
+      if (sortBy === 'type') return a.task_type_name.localeCompare(b.task_type_name, 'he')
+      const at = a.onsite_start_time ?? a.warehouse_start_time ?? '99:99'
+      const bt = b.onsite_start_time ?? b.warehouse_start_time ?? '99:99'
+      return at.localeCompare(bt)
+    }
+
+    const cols: BoardColumn[] = []
+    const bandList: {
+      dayKey: string
+      start: number
+      width: number
+      count: number
+      overdue: number
+      collapsed: boolean
+    }[] = []
+    let offset = 0
+
+    for (const dayKey of [...byDay.keys()].sort()) {
+      const dayRows = [...byDay.get(dayKey)!].sort(cmp)
+      const overdue = dayKey < today ? dayRows.filter((r) => !r.status_is_terminal).length : 0
+      const collapsed = collapsedDays.has(dayKey)
+      const start = offset
+
+      if (collapsed) {
+        cols.push({ kind: 'spine', id: `spine:${dayKey}`, dayKey, count: dayRows.length })
+        offset += SPINE_W
+      } else {
+        for (const row of dayRows) {
+          cols.push({ kind: 'task', id: row.id, row, dayKey })
+          offset += metrics.col
+        }
+      }
+      bandList.push({ dayKey, start, width: offset - start, count: dayRows.length, overdue, collapsed })
+    }
+
+    return { columns: cols, bands: bandList, totalWidth: offset }
+  }, [rows, sortBy, collapsedDays, metrics.col, today])
+
+  /* ── horizontal virtualization (RTL-aware) ───────────────────────────── */
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const virtualizer = useVirtualizer({
+    horizontal: true,
+    isRtl: true,
+    count: columns.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (i) => (columns[i]?.kind === 'spine' ? SPINE_W : metrics.col),
+    overscan: 6,
+  })
+  const virtualItems = virtualizer.getVirtualItems()
+
+  /* ── selection ────────────────────────────────────────────────────────── */
+
+  const taskIds = useMemo(() => rows.map((r) => r.id), [rows])
+  const allSelected = taskIds.length > 0 && selected.size === taskIds.length
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(taskIds))
+  const toggleOne = useCallback(
+    (id: string) =>
+      setSelected((s) => {
+        const n = new Set(s)
+        if (n.has(id)) n.delete(id)
+        else n.add(id)
+        return n
+      }),
+    [],
+  )
+  const openTask = useCallback((id: string) => setDrawer({ open: true, taskId: id }), [])
+
+  const toggleDay = (dayKey: string) =>
+    setCollapsedDays((s) => {
       const n = new Set(s)
-      if (n.has(id)) n.delete(id)
-      else n.add(id)
+      if (n.has(dayKey)) n.delete(dayKey)
+      else n.add(dayKey)
       return n
     })
 
-  const cols = useMemo(
-    () => [
-      { key: 'sel', label: '', w: 'w-8' },
-      { key: 'customer', label: 'לקוח', w: 'w-32' },
-      { key: 'end_client', label: 'לקוח האירוע', w: 'w-32' },
-      { key: 'event_number', label: "מס' אירוע", w: 'w-20' },
-      { key: 'location', label: 'מיקום', w: 'w-40' },
-      { key: 'type', label: 'סוג משימה', w: 'w-24' },
-      { key: 'date', label: 'תאריך', w: 'w-24' },
-      { key: 'warehouse', label: 'התחלה במחסן', w: 'w-24' },
-      { key: 'onsite', label: 'התחלה בשטח', w: 'w-24' },
-      { key: 'end', label: 'סיום בשטח', w: 'w-20' },
-      { key: 'duration', label: 'משך', w: 'w-16' },
-      { key: 'workers_count', label: 'עובדים', w: 'w-16' },
-      { key: 'trucks_count', label: 'משאיות', w: 'w-16' },
-      { key: 'volume', label: 'נפח', w: 'w-14' },
-      { key: 'truck', label: 'משאית', w: 'w-32' },
-      { key: 'method', label: 'אופן ביצוע', w: 'w-32' },
-      { key: 'lead', label: 'ראש צוות', w: 'w-28' },
-      { key: 'team', label: 'עובדים ונהגים', w: 'w-44' },
-      { key: 'contractor', label: 'קבלן', w: 'w-28' },
-      { key: 'status', label: 'סטטוס', w: 'w-28' },
-      { key: 'notes', label: 'הערות', w: 'w-40' },
-      { key: 'edit', label: '', w: 'w-10' },
-    ],
-    [],
+  const setRange = (a: Date, b: Date) => {
+    setFrom(toISODate(a))
+    setTo(toISODate(b))
+  }
+  const now = new Date()
+  const presets = [
+    { label: 'היום', run: () => setRange(now, now) },
+    { label: 'השבוע', run: () => setRange(startOfWeek(now, { weekStartsOn: 0 }), addDays(startOfWeek(now, { weekStartsOn: 0 }), 6)) },
+    {
+      label: 'שבוע הבא',
+      run: () =>
+        setRange(addDays(startOfWeek(now, { weekStartsOn: 0 }), 7), addDays(startOfWeek(now, { weekStartsOn: 0 }), 13)),
+    },
+    { label: 'החודש', run: () => setRange(startOfMonth(now), endOfMonth(now)) },
+  ]
+
+  const overdueTotal = useMemo(
+    () => rows.filter((r) => r.task_date < today && !r.status_is_terminal).length,
+    [rows, today],
   )
 
   return (
     <RequirePermission resource="tasks">
-      <div className="flex h-full flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-xl font-bold">לוח עבודה</h1>
-          <span className="text-sm text-[var(--muted)]">{rows.length} משימות</span>
-          <div className="ms-auto flex flex-wrap gap-2">
-            {selected.size > 0 && canEdit && (
-              <Button onClick={() => setBulkOpen(true)}>
-                <Pencil size={14} /> עריכה מרובה ({selected.size})
-              </Button>
-            )}
-            {can('tasks', 'create') && (
-              <Button variant="primary" onClick={() => setDrawer({ open: true, taskId: null })}>
-                <Plus size={14} /> משימה חדשה
-              </Button>
-            )}
+      <div className="flex h-full min-h-0 flex-col gap-3">
+        <PageHeader
+          title="לוח עבודה"
+          subtitle={
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="tabular">{rows.length} משימות</span>
+              <span className="tabular">{bands.length} ימים</span>
+              {overdueTotal > 0 && (
+                <span className="inline-flex items-center gap-1 font-medium text-error-text">
+                  <AlertTriangle size={ICON.xs} />
+                  {overdueTotal} באיחור
+                </span>
+              )}
+            </span>
+          }
+          actions={
+            <>
+              {selected.size > 0 && canEdit && (
+                <Button size="sm" onClick={() => setBulkOpen(true)}>
+                  <Pencil size={ICON.sm} strokeWidth={STROKE} />
+                  עריכה מרובה ({selected.size})
+                </Button>
+              )}
+              {can('tasks', 'create') && (
+                <Button size="sm" variant="primary" onClick={() => setDrawer({ open: true, taskId: null })}>
+                  <Plus size={ICON.sm} strokeWidth={STROKE} />
+                  משימה חדשה
+                </Button>
+              )}
+            </>
+          }
+        >
+          <div className="surface flex flex-wrap items-center gap-2 p-2.5">
+            <div className="flex items-center gap-1.5">
+              <Input type="date" inputSize="sm" className="w-36" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="מתאריך" />
+              <span className="type-caption text-ink-tertiary">עד</span>
+              <Input type="date" inputSize="sm" className="w-36" value={to} onChange={(e) => setTo(e.target.value)} aria-label="עד תאריך" />
+            </div>
+            <div className="flex items-center gap-0.5">
+              {presets.map((p) => (
+                <button
+                  key={p.label}
+                  onClick={p.run}
+                  className="rounded-md px-2 py-1 type-caption font-medium text-ink-tertiary transition-colors hover:bg-hover hover:text-ink"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            <Input
+              className="w-44"
+              inputSize="sm"
+              placeholder="חיפוש..."
+              value={filters.q}
+              onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
+              aria-label="חיפוש חופשי"
+            />
+            <Select className="w-36" selectSize="sm" value={filters.customer} onChange={(e) => setFilters((f) => ({ ...f, customer: e.target.value }))} aria-label="לקוח">
+              <option value="">כל הלקוחות</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </Select>
+            <Select className="w-32" selectSize="sm" value={filters.type} onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))} aria-label="סוג משימה">
+              <option value="">כל הסוגים</option>
+              {taskTypes.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </Select>
+            <Select className="w-32" selectSize="sm" value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))} aria-label="סטטוס">
+              <option value="">כל הסטטוסים</option>
+              {statuses.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </Select>
+            <Select className="w-32" selectSize="sm" value={filters.contractor} onChange={(e) => setFilters((f) => ({ ...f, contractor: e.target.value }))} aria-label="קבלן">
+              <option value="">כל הקבלנים</option>
+              {contractors.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </Select>
+
+            <div className="ms-auto flex items-center gap-1.5">
+              <Popover
+                trigger={({ toggle, ...aria }) => (
+                  <Button size="sm" variant="ghost" onClick={toggle} {...aria}>
+                    <SlidersHorizontal size={ICON.sm} strokeWidth={STROKE} />
+                    תצוגה
+                  </Button>
+                )}
+              >
+                {() => (
+                  <div className="w-56 p-1.5">
+                    <MenuLabel>צפיפות</MenuLabel>
+                    <SegmentedControl
+                      className="w-full"
+                      items={[
+                        { key: 'comfortable', label: 'מרווח' },
+                        { key: 'compact', label: 'צפוף' },
+                      ]}
+                      value={density}
+                      onChange={setDensity}
+                    />
+                    <MenuLabel>מיון בתוך היום</MenuLabel>
+                    <SegmentedControl
+                      className="w-full"
+                      items={SORTS.map((s) => ({ key: s.key, label: s.label }))}
+                      value={sortBy}
+                      onChange={setSortBy}
+                    />
+                    <div className="mt-2 flex gap-1.5 px-0.5">
+                      <Button size="sm" variant="ghost" block onClick={() => setCollapsedDays(new Set(bands.map((b) => b.dayKey)))}>
+                        קפל הכל
+                      </Button>
+                      <Button size="sm" variant="ghost" block onClick={() => setCollapsedDays(new Set())}>
+                        פרוס הכל
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </Popover>
+
+              <Popover
+                trigger={({ toggle, ...aria }) => (
+                  <Button size="sm" variant="ghost" onClick={toggle} {...aria}>
+                    <Columns3 size={ICON.sm} strokeWidth={STROKE} />
+                    שדות
+                    <span className="tabular text-ink-tertiary">
+                      {fields.length}/{BOARD_FIELDS.length}
+                    </span>
+                  </Button>
+                )}
+              >
+                {() => (
+                  <div className="max-h-80 w-56 overflow-y-auto">
+                    <MenuLabel>שורות מוצגות</MenuLabel>
+                    {BOARD_FIELDS.map((f) => (
+                      <div key={f.key} className="px-2.5 py-1.5">
+                        <Checkbox
+                          label={f.label}
+                          checked={!hidden.has(f.key)}
+                          onChange={(on) =>
+                            setHidden((h) => {
+                              const n = new Set(h)
+                              if (on) n.delete(f.key)
+                              else n.add(f.key)
+                              return n
+                            })
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Popover>
+            </div>
           </div>
-        </div>
+        </PageHeader>
 
-        <div className="surface flex flex-wrap items-center gap-2 p-2.5">
-          <Input type="date" className="w-36" value={from} onChange={(e) => setFrom(e.target.value)} />
-          <span className="text-xs text-[var(--muted)]">עד</span>
-          <Input type="date" className="w-36" value={to} onChange={(e) => setTo(e.target.value)} />
-          <Input className="w-44" placeholder="חיפוש..." value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} />
-          <Select className="w-36" value={filters.customer} onChange={(e) => setFilters((f) => ({ ...f, customer: e.target.value }))}>
-            <option value="">כל הלקוחות</option>
-            {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </Select>
-          <Select className="w-32" value={filters.type} onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}>
-            <option value="">כל הסוגים</option>
-            {taskTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </Select>
-          <Select className="w-32" value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
-            <option value="">כל הסטטוסים</option>
-            {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </Select>
-          <Select className="w-32" value={filters.contractor} onChange={(e) => setFilters((f) => ({ ...f, contractor: e.target.value }))}>
-            <option value="">כל הקבלנים</option>
-            {contractors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </Select>
-        </div>
-
+        {/* ── the board ──────────────────────────────────────────────────── */}
         <div className="surface min-h-0 flex-1 overflow-hidden">
           {isLoading ? (
-            <Spinner full />
+            <SkeletonTable rows={8} cols={6} />
           ) : rows.length === 0 ? (
-            <EmptyState text="אין משימות בטווח שנבחר" />
+            <EmptyState
+              art="calendar"
+              title="אין משימות בטווח שנבחר"
+              description="שנה את טווח התאריכים או נקה את הסינון כדי לראות משימות"
+              action={
+                can('tasks', 'create') && (
+                  <Button variant="primary" size="sm" onClick={() => setDrawer({ open: true, taskId: null })}>
+                    <Plus size={ICON.sm} />
+                    משימה חדשה
+                  </Button>
+                )
+              }
+            />
           ) : (
-            <div ref={parentRef} className="h-full overflow-auto">
-              <div className="min-w-[2100px]">
-                <div className="sticky top-0 z-10 flex border-b border-[var(--border)] bg-[var(--panel)] text-xs font-semibold text-[var(--muted)]">
-                  {cols.map((c) => (
-                    <div key={c.key} className={cx('shrink-0 px-2 py-2', c.w)}>
-                      {c.key === 'sel' ? (
-                        <input type="checkbox" className="accent-brand-600" checked={allSelected} onChange={toggleAll} />
-                      ) : (
-                        c.label
-                      )}
+            <div ref={scrollRef} className="h-full overflow-auto">
+              <div className="relative flex" style={{ width: LEGEND_W + totalWidth, minHeight: '100%' }}>
+                {/* sticky field legend */}
+                <div
+                  className="sticky z-30 shrink-0 border-e border-line bg-surface"
+                  style={{ insetInlineStart: 0, width: LEGEND_W }}
+                >
+                  <div
+                    className="sticky top-0 z-10 flex items-end border-b border-line bg-subtle px-2.5 pb-2"
+                    style={{ height: HEADER_H }}
+                  >
+                    <Checkbox
+                      label={<span className="type-caption font-semibold">בחר הכל</span>}
+                      checked={allSelected}
+                      indeterminate={selected.size > 0}
+                      onChange={toggleAll}
+                    />
+                  </div>
+                  {fields.map((f, i) => (
+                    <div
+                      key={f.key}
+                      className="flex items-center border-b border-line-subtle px-2.5 type-caption font-semibold text-ink-secondary"
+                      style={{ height: rowHeights[i] }}
+                    >
+                      <span className="truncate">{f.label}</span>
                     </div>
                   ))}
                 </div>
-                <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-                  {virtualizer.getVirtualItems().map((vi) => {
-                    const r = rows[vi.index]
-                    return (
-                      <div
-                        key={r.id}
-                        className="absolute inset-x-0 flex items-center border-b border-[var(--border)] text-sm hover:bg-[var(--bg)]"
-                        style={{ top: 0, transform: `translateY(${vi.start}px)`, height: vi.size }}
-                      >
-                        <div className="w-8 shrink-0 px-2">
-                          <input type="checkbox" className="accent-brand-600" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} />
-                        </div>
-                        <div className="w-32 shrink-0 truncate px-2">
-                          {r.customer_name && (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="size-2 shrink-0 rounded-full" style={{ background: r.customer_color ?? '#64748b' }} />
-                              <span className="truncate">{r.customer_name}</span>
-                            </span>
+
+                {/* virtualized track */}
+                <div className="relative" style={{ width: totalWidth }}>
+                  {/* header band: day groups + per-task headers */}
+                  <div className="sticky top-0 z-20 bg-subtle" style={{ height: HEADER_H }}>
+                    {bands.map((b) => {
+                      const isToday = b.dayKey === today
+                      return (
+                        <div
+                          key={b.dayKey}
+                          className={cx(
+                            'absolute top-0 flex items-center gap-1.5 overflow-hidden border-b border-s border-line px-2',
+                            isToday ? 'bg-primary-subtle' : b.overdue > 0 ? 'bg-error-subtle' : 'bg-subtle',
                           )}
-                        </div>
-                        <div className="w-32 shrink-0 truncate px-2">{r.end_client_name ?? r.title}</div>
-                        <div className="w-20 shrink-0 truncate px-2">{r.event_number}</div>
-                        <div className="w-40 shrink-0 truncate px-2" title={r.location_text ?? ''}>{r.location_text}</div>
-                        <div className="w-24 shrink-0 truncate px-2 font-medium">{r.task_type_name}</div>
-                        <div className="w-24 shrink-0 whitespace-nowrap px-2">{fmtDate(r.task_date)}</div>
-                        <div className="w-24 shrink-0 px-1">
-                          <input
-                            type="time"
-                            defaultValue={fmtTime(r.warehouse_start_time)}
-                            disabled={!canEdit}
-                            onBlur={(e) => {
-                              const v = e.target.value || null
-                              if ((v ?? '') !== fmtTime(r.warehouse_start_time)) inline.mutate({ row: r, patch: { warehouse_start_time: v } })
-                            }}
-                            className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-sm hover:border-[var(--border)] focus:border-brand-500 focus:outline-none"
-                          />
-                        </div>
-                        <div className="w-24 shrink-0 px-1">
-                          <input
-                            type="time"
-                            defaultValue={fmtTime(r.onsite_start_time)}
-                            disabled={!canEdit}
-                            onBlur={(e) => {
-                              const v = e.target.value || null
-                              if ((v ?? '') !== fmtTime(r.onsite_start_time)) inline.mutate({ row: r, patch: { onsite_start_time: v } })
-                            }}
-                            className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-sm hover:border-[var(--border)] focus:border-brand-500 focus:outline-none"
-                          />
-                        </div>
-                        <div className="w-20 shrink-0 px-2" dir="ltr">{fmtTime(r.onsite_end_time)}</div>
-                        <div className="w-16 shrink-0 px-1">
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="0"
-                            defaultValue={r.hours_count ?? ''}
-                            disabled={!canEdit}
-                            title={fmtHours(r.hours_count)}
-                            onBlur={(e) => {
-                              const v = e.target.value === '' ? null : Number(e.target.value)
-                              if (v !== r.hours_count) inline.mutate({ row: r, patch: { hours_count: v } })
-                            }}
-                            className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-sm hover:border-[var(--border)] focus:border-brand-500 focus:outline-none"
-                          />
-                        </div>
-                        <div className="w-16 shrink-0 px-1">
-                          <input
-                            type="number"
-                            min="0"
-                            defaultValue={r.worker_count}
-                            disabled={!canEdit}
-                            onBlur={(e) => {
-                              const v = Number(e.target.value) || 0
-                              if (v !== r.worker_count) inline.mutate({ row: r, patch: { worker_count: v } })
-                            }}
-                            className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-sm hover:border-[var(--border)] focus:border-brand-500 focus:outline-none"
-                          />
-                        </div>
-                        <div className="w-16 shrink-0 px-2">{r.event_truck_count ?? ''}</div>
-                        <div className="w-14 shrink-0 px-2">{r.volume_m ?? ''}</div>
-                        <div className="w-32 shrink-0 px-1">
-                          <select
-                            value={r.truck_id ?? ''}
-                            disabled={!canEdit}
-                            onChange={(e) => inline.mutate({ row: r, patch: { truck_id: e.target.value || null } })}
-                            className="w-full truncate rounded border border-transparent bg-transparent px-1 py-0.5 text-sm hover:border-[var(--border)] focus:border-brand-500 focus:outline-none"
-                          >
-                            <option value="">{r.truck_free_text || '—'}</option>
-                            {trucks.filter((t) => t.is_active).map((t) => (
-                              <option key={t.id} value={t.id}>{t.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="w-32 shrink-0 px-1">
-                          <select
-                            value={r.execution_method_id ?? ''}
-                            disabled={!canEdit}
-                            onChange={(e) => inline.mutate({ row: r, patch: { execution_method_id: e.target.value || null } })}
-                            className="w-full truncate rounded border border-transparent bg-transparent px-1 py-0.5 text-sm hover:border-[var(--border)] focus:border-brand-500 focus:outline-none"
-                          >
-                            <option value="">—</option>
-                            {methods.filter((m) => m.is_active).map((m) => (
-                              <option key={m.id} value={m.id}>{m.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="w-28 shrink-0 truncate px-2">{r.team_lead_name}</div>
-                        <div className="w-44 shrink-0 truncate px-2 text-xs" title={[...(r.workers ?? []).map((w) => w.name), ...(r.drivers ?? []).map((d) => `${d.name}${d.truck_name ? ` (${d.truck_name})` : ''}`)].join(', ')}>
-                          {(r.workers ?? []).map((w) => w.name).join(', ')}
-                          {(r.drivers ?? []).length > 0 && (
-                            <span className="text-[var(--muted)]">
-                              {(r.workers ?? []).length > 0 && ' · '}
-                              🚚 {(r.drivers ?? []).map((d) => `${d.name}${d.truck_name ? ` (${d.truck_name})` : ''}`).join(', ')}
-                            </span>
-                          )}
-                          {(r.contractor_worker_list ?? []).length > 0 && (
-                            <span className="text-amber-600 dark:text-amber-400">
-                              {' '}👷 {(r.contractor_worker_list ?? []).map((w) => w.name).join(', ')}
-                            </span>
-                          )}
-                        </div>
-                        <div className="w-28 shrink-0 truncate px-2">{r.contractor_name}</div>
-                        <div className="w-28 shrink-0 px-1">
-                          <select
-                            value={r.status_id}
-                            disabled={!canEdit}
-                            onChange={(e) => inline.mutate({ row: r, patch: { status_id: e.target.value } })}
-                            className="w-full truncate rounded border px-1 py-0.5 text-xs font-medium focus:outline-none"
-                            style={{
-                              background: `color-mix(in srgb, ${r.status_color} 14%, transparent)`,
-                              color: r.status_color,
-                              borderColor: 'transparent',
-                            }}
-                          >
-                            {statuses.map((s) => (
-                              <option key={s.id} value={s.id} style={{ color: 'var(--text)', background: 'var(--panel)' }}>
-                                {s.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="w-40 shrink-0 px-1">
-                          <input
-                            defaultValue={r.notes ?? ''}
-                            disabled={!canEdit}
-                            onBlur={(e) => {
-                              const v = e.target.value || null
-                              if (v !== r.notes) inline.mutate({ row: r, patch: { notes: v } })
-                            }}
-                            className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-sm hover:border-[var(--border)] focus:border-brand-500 focus:outline-none"
-                          />
-                        </div>
-                        <div className="w-10 shrink-0 px-1">
+                          style={{ insetInlineStart: b.start, width: b.width, height: DAY_HEAD_H }}
+                        >
                           <button
-                            onClick={() => setDrawer({ open: true, taskId: r.id })}
-                            className="rounded p-1 text-[var(--muted)] hover:bg-[var(--border)] hover:text-[var(--text)]"
-                            title="פתיחת משימה"
+                            onClick={() => toggleDay(b.dayKey)}
+                            aria-expanded={!b.collapsed}
+                            aria-label={`${b.collapsed ? 'פריסת' : 'קיפול'} ${fmtDate(b.dayKey)}`}
+                            className="flex min-w-0 items-center gap-1 rounded transition-colors hover:text-ink focus-visible:outline-none focus-visible:focus-ring"
                           >
-                            <Pencil size={13} />
+                            <ChevronDown
+                              size={ICON.xs}
+                              className={cx('shrink-0 transition-transform duration-200', b.collapsed && 'rotate-90 rtl:-rotate-90')}
+                            />
+                            <span
+                              className={cx(
+                                'truncate type-caption font-bold tabular',
+                                isToday ? 'text-primary-text' : b.overdue > 0 ? 'text-error-text' : 'text-ink-secondary',
+                              )}
+                            >
+                              {fmtDate(b.dayKey)}
+                            </span>
                           </button>
+                          {isToday && (
+                            <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
+                              היום
+                            </span>
+                          )}
+                          {b.overdue > 0 && !isToday && (
+                            <Tooltip content={`${b.overdue} משימות פתוחות שעברו את מועדן`}>
+                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-error px-1.5 py-px text-[10px] font-bold tabular text-white">
+                                <AlertTriangle size={9} />
+                                {b.overdue}
+                              </span>
+                            </Tooltip>
+                          )}
+                          <span className="ms-auto shrink-0 type-caption tabular text-ink-tertiary">{b.count}</span>
                         </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+
+                    {virtualItems.map((vi) => {
+                      const col = columns[vi.index]
+                      if (!col) return null
+                      return (
+                        <div
+                          key={col.id}
+                          className="absolute"
+                          style={{ insetInlineStart: vi.start, width: vi.size, top: DAY_HEAD_H, height: TASK_HEAD_H }}
+                        >
+                          {col.kind === 'spine' ? (
+                            <SpineHeader dayKey={col.dayKey} count={col.count} onExpand={() => toggleDay(col.dayKey)} />
+                          ) : (
+                            <TaskHeader
+                              row={col.row}
+                              today={today}
+                              selected={selected.has(col.row.id)}
+                              onToggle={toggleOne}
+                              onOpen={openTask}
+                            />
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* body cells */}
+                  <div className="relative" style={{ height: bodyHeight }}>
+                    {virtualItems.map((vi) => {
+                      const col = columns[vi.index]
+                      if (!col) return null
+                      if (col.kind === 'spine')
+                        return (
+                          <div
+                            key={col.id}
+                            className="absolute top-0 border-s border-line bg-subtle/60"
+                            style={{ insetInlineStart: vi.start, width: vi.size, height: bodyHeight }}
+                          />
+                        )
+                      return (
+                        <TaskColumn
+                          key={col.id}
+                          row={col.row}
+                          canEdit={canEdit}
+                          patch={patchCell}
+                          lookups={lookups}
+                          fields={fields}
+                          heights={rowHeights}
+                          selected={selected.has(col.row.id)}
+                          style={{ insetInlineStart: vi.start, width: vi.size }}
+                        />
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
           )}
         </div>
+
+        {selected.size > 0 && (
+          <BulkBar count={selected.size} onClear={() => setSelected(new Set())}>
+            {canEdit && (
+              <Button size="sm" variant="primary" onClick={() => setBulkOpen(true)}>
+                <Pencil size={ICON.sm} />
+                עריכה מרובה
+              </Button>
+            )}
+          </BulkBar>
+        )}
 
         <TaskDrawer open={drawer.open} onClose={() => setDrawer({ open: false, taskId: null })} taskId={drawer.taskId} />
         <BulkEditModal
@@ -373,6 +640,134 @@ export default function WorkBoardPage() {
     </RequirePermission>
   )
 }
+
+/* ===== column header ====================================================== */
+
+const TaskHeader = memo(function TaskHeader({
+  row,
+  today,
+  selected,
+  onToggle,
+  onOpen,
+}: {
+  row: WorkBoardRow
+  today: string
+  selected: boolean
+  onToggle: (id: string) => void
+  onOpen: (id: string) => void
+}) {
+  const overdue = row.task_date < today && !row.status_is_terminal
+  const label = row.end_client_name || row.title || row.customer_name || row.task_type_name
+  const time = fmtTime(row.onsite_start_time) || fmtTime(row.warehouse_start_time)
+
+  return (
+    <div
+      className={cx(
+        'group relative flex h-full flex-col justify-center gap-0.5 border-b border-s border-line px-2',
+        selected ? 'bg-selected' : overdue ? 'bg-error-subtle' : 'bg-surface',
+      )}
+    >
+      <span
+        aria-hidden
+        className="absolute inset-x-0 top-0 h-0.5"
+        style={{ background: row.customer_color ?? 'var(--vl-border-strong)' }}
+      />
+      <div className="flex items-center gap-1.5">
+        <Checkbox checked={selected} onChange={() => onToggle(row.id)} />
+        {time ? (
+          <span className={cx('type-caption font-bold tabular', overdue ? 'text-error-text' : 'text-ink')} dir="ltr">
+            {time}
+          </span>
+        ) : (
+          <span className="type-caption text-ink-tertiary">ללא שעה</span>
+        )}
+        {overdue && (
+          <Tooltip content="משימה פתוחה שעברה את מועדה">
+            <AlertTriangle size={11} className="shrink-0 text-error" />
+          </Tooltip>
+        )}
+        <IconButton
+          label="פתיחת המשימה"
+          size="sm"
+          bare
+          className="ms-auto size-6 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          onClick={() => onOpen(row.id)}
+        >
+          <Pencil size={12} />
+        </IconButton>
+      </div>
+      <Tooltip content={label}>
+        <span className="truncate type-caption font-medium text-ink-secondary">{label}</span>
+      </Tooltip>
+    </div>
+  )
+})
+
+function SpineHeader({ dayKey, count, onExpand }: { dayKey: string; count: number; onExpand: () => void }) {
+  return (
+    <button
+      onClick={onExpand}
+      aria-label={`פריסת ${fmtDate(dayKey)}`}
+      className="flex h-full w-full flex-col items-center justify-center gap-1 border-b border-s border-line bg-subtle transition-colors hover:bg-hover"
+    >
+      <span className="rounded-full bg-ink-tertiary/15 px-1.5 py-px type-caption font-bold tabular text-ink-secondary">
+        {count}
+      </span>
+    </button>
+  )
+}
+
+/* ===== one task's column of field cells =================================== */
+
+const TaskColumn = memo(
+  function TaskColumn({
+    row,
+    canEdit,
+    patch,
+    lookups,
+    fields,
+    heights,
+    selected,
+    style,
+  }: {
+    row: WorkBoardRow
+    canEdit: boolean
+    patch: (row: WorkBoardRow, patch: Record<string, unknown>) => void
+    lookups: BoardLookups
+    fields: typeof BOARD_FIELDS
+    heights: number[]
+    selected: boolean
+    style: React.CSSProperties
+  }) {
+    return (
+      <div
+        className={cx('absolute top-0 border-s border-line', selected ? 'bg-selected' : 'bg-surface')}
+        style={{ ...style, position: 'absolute' }}
+      >
+        {fields.map((f, i) => (
+          <div
+            key={f.key}
+            className="flex items-center overflow-hidden border-b border-line-subtle transition-colors hover:bg-hover"
+            style={{ height: heights[i] }}
+          >
+            <div className="min-w-0 flex-1">{f.render({ row, canEdit, patch, lookups })}</div>
+          </div>
+        ))}
+      </div>
+    )
+  },
+  (a, b) =>
+    a.row === b.row &&
+    a.canEdit === b.canEdit &&
+    a.selected === b.selected &&
+    a.fields === b.fields &&
+    a.heights === b.heights &&
+    a.lookups === b.lookups &&
+    a.style.insetInlineStart === b.style.insetInlineStart &&
+    a.style.width === b.style.width,
+)
+
+/* ===== bulk edit ========================================================== */
 
 function BulkEditModal({ open, onClose, taskIds, onDone }: { open: boolean; onClose: () => void; taskIds: string[]; onDone: () => void }) {
   const qc = useQueryClient()
@@ -402,14 +797,30 @@ function BulkEditModal({ open, onClose, taskIds, onDone }: { open: boolean; onCl
   })
 
   const setIf = (key: string, value: string) => setPatch((p) => ({ ...p, [key]: value }))
+  const changed = Object.values(patch).filter((v) => v !== '__skip__').length
 
   return (
-    <Modal open={open} onClose={onClose} title={`עריכה מרובה — ${taskIds.length} משימות`}>
-      <div className="space-y-3">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="עריכה מרובה"
+      description={`השינויים יחולו על ${taskIds.length} משימות שנבחרו`}
+      footer={
+        <>
+          <Button onClick={onClose}>ביטול</Button>
+          <Button variant="primary" loading={apply.isPending} disabled={changed === 0} onClick={() => apply.mutate()}>
+            עדכון {changed > 0 && `(${changed} שדות)`}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
         <Field label="סטטוס">
           <Select value={patch.status_id ?? '__skip__'} onChange={(e) => setIf('status_id', e.target.value)}>
             <option value="__skip__">ללא שינוי</option>
-            {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {statuses.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
           </Select>
         </Field>
         <Field label="תאריך">
@@ -418,23 +829,23 @@ function BulkEditModal({ open, onClose, taskIds, onDone }: { open: boolean; onCl
         <Field label="אופן ביצוע">
           <Select value={patch.execution_method_id ?? '__skip__'} onChange={(e) => setIf('execution_method_id', e.target.value)}>
             <option value="__skip__">ללא שינוי</option>
-            {methods.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {methods.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
           </Select>
         </Field>
         <Field label="קבלן">
           <Select value={patch.contractor_id ?? '__skip__'} onChange={(e) => setIf('contractor_id', e.target.value)}>
             <option value="__skip__">ללא שינוי</option>
             <option value="">הסרת קבלן</option>
-            {contractors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {contractors.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
           </Select>
         </Field>
         <Field label="שעת התחלה במחסן">
           <Input type="time" value={patch.warehouse_start_time ?? ''} onChange={(e) => setIf('warehouse_start_time', e.target.value || '__skip__')} />
         </Field>
-        <div className="flex justify-end gap-2 pt-2">
-          <Button onClick={onClose}>ביטול</Button>
-          <Button variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>עדכון</Button>
-        </div>
       </div>
     </Modal>
   )

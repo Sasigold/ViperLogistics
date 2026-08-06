@@ -1,9 +1,45 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { LogOut, Moon, Sun, Users } from 'lucide-react'
+import {
+  Banknote,
+  Briefcase,
+  CalendarDays,
+  CircleCheck,
+  Clock,
+  ICON,
+  LogOut,
+  MapPin,
+  Moon,
+  STROKE,
+  Sun,
+  Truck,
+  Users,
+  Wallet,
+} from '../../components/ui/icons'
+import {
+  Avatar,
+  Card,
+  CardBody,
+  CardHeader,
+  EmptyState,
+  Field,
+  IconButton,
+  Input,
+  MultiSelect,
+  ProgressBar,
+  Skeleton,
+  SkeletonCard,
+  SkeletonList,
+  StatCard,
+  StatusPill,
+  Tabs,
+  Tooltip,
+  cx,
+  relativeDayLabel,
+  useToast,
+} from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { Badge, Field, Input, MultiSelect, Spinner, EmptyState, useToast, cx } from '../../components/ui'
 import { useContractorWorkers } from '../../lib/queries'
 import { fmtDate, fmtMoney, fmtTime } from '../../lib/dates'
 import { WorkersTab } from '../contractors/ContractorDetailPage'
@@ -18,6 +54,11 @@ interface PortalStats {
   upcoming_count: number
 }
 
+const TABS = [
+  { key: 'tasks' as const, label: 'המשימות שלי', icon: <Briefcase size={ICON.sm} /> },
+  { key: 'workers' as const, label: 'העובדים שלי', icon: <Users size={ICON.sm} /> },
+]
+
 export default function PortalPage() {
   const { me, theme, toggleTheme, signOut } = useAuth()
   const contractorId = me?.profile.contractor_id ?? null
@@ -25,82 +66,130 @@ export default function PortalPage() {
   const [to, setTo] = useState('')
   const [tab, setTab] = useState<'tasks' | 'workers'>('tasks')
 
-  const { data: stats } = useQuery({
+  const { data: stats, isLoading } = useQuery({
     queryKey: ['portal', 'stats', from, to],
     enabled: !!contractorId,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('contractor_dashboard', {
-        p_from: from || null,
-        p_to: to || null,
-      })
+      const { data, error } = await supabase.rpc('contractor_dashboard', { p_from: from || null, p_to: to || null })
       if (error) throw error
       return data as PortalStats
     },
   })
 
-  if (!me) return <Spinner full />
+  if (!me)
+    return (
+      <div className="mx-auto max-w-5xl space-y-4 p-4">
+        <Skeleton className="h-14 w-full" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    )
+
+  const paidRatio = stats && stats.expected_total > 0 ? (stats.paid_total / stats.expected_total) * 100 : 0
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-4">
-      <header className="flex items-center gap-2">
-        <div>
-          <h1 className="text-xl font-bold">פורטל קבלן</h1>
-          <p className="text-sm text-[var(--muted)]">שלום, {me.profile.full_name}</p>
-        </div>
-        <div className="ms-auto flex gap-1">
-          <button onClick={toggleTheme} className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--panel)]">
-            {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
-          </button>
-          <button onClick={() => void signOut()} className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--panel)]" title="התנתקות">
-            <LogOut size={16} />
-          </button>
+    <div className="min-h-full bg-canvas">
+      {/* the portal lives outside AppLayout, so it carries its own chrome */}
+      <header className="sticky top-0 z-30 border-b border-line bg-surface/85 backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-5xl items-center gap-2.5 px-4">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary" aria-hidden>
+            <Truck size={ICON.md} strokeWidth={STROKE} />
+          </span>
+          <div className="min-w-0">
+            <h1 className="truncate type-title leading-tight">פורטל קבלן</h1>
+            <p className="truncate type-caption text-ink-tertiary">{me.profile.full_name}</p>
+          </div>
+          <div className="ms-auto flex items-center gap-0.5">
+            <IconButton
+              label={theme === 'light' ? 'מעבר למצב כהה' : 'מעבר למצב בהיר'}
+              size="sm"
+              onClick={toggleTheme}
+            >
+              {theme === 'light' ? <Moon size={ICON.md} strokeWidth={STROKE} /> : <Sun size={ICON.md} strokeWidth={STROKE} />}
+            </IconButton>
+            <IconButton label="התנתקות" size="sm" onClick={() => void signOut()}>
+              <LogOut size={ICON.md} strokeWidth={STROKE} />
+            </IconButton>
+            <Avatar name={me.profile.full_name} size="md" className="ms-1" />
+          </div>
         </div>
       </header>
 
-      <div className="flex flex-wrap items-end gap-2">
-        <Field label="מתאריך"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
-        <Field label="עד תאריך"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+      <div className="mx-auto max-w-5xl space-y-4 p-4">
+        {/* ── financial summary ─────────────────────────────────────────── */}
+        {isLoading ? (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonCard key={i} lines={0} />
+            ))}
+          </div>
+        ) : (
+          stats && (
+            <>
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <StatCard
+                  icon={<Briefcase size={ICON.xl} strokeWidth={STROKE} />}
+                  label="משימות"
+                  value={stats.tasks_count}
+                  hint={`${stats.completed_count} בוצעו · ${stats.upcoming_count} עתידיות`}
+                />
+                <StatCard icon={<Wallet size={ICON.xl} strokeWidth={STROKE} />} label="סכום צפוי" value={fmtMoney(stats.expected_total)} />
+                <StatCard
+                  icon={<CircleCheck size={ICON.xl} strokeWidth={STROKE} />}
+                  label="שולם"
+                  value={fmtMoney(stats.paid_total)}
+                  tone="#16a34a"
+                />
+                <StatCard
+                  icon={<Banknote size={ICON.xl} strokeWidth={STROKE} />}
+                  label="יתרה"
+                  value={fmtMoney(stats.unpaid_total)}
+                  tone="#f59e0b"
+                />
+              </div>
+
+              {stats.expected_total > 0 && (
+                <Card padded>
+                  <ProgressBar
+                    value={stats.paid_total}
+                    max={stats.expected_total}
+                    tone="success"
+                    label="התקדמות תשלומים"
+                    hint={`${Math.round(paidRatio)}% · ${fmtMoney(stats.paid_total)} מתוך ${fmtMoney(stats.expected_total)}`}
+                  />
+                </Card>
+              )}
+            </>
+          )
+        )}
+
+        <Card padded className="flex flex-wrap items-end gap-3">
+          <Field label="מתאריך" className="w-40">
+            <Input type="date" inputSize="sm" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </Field>
+          <Field label="עד תאריך" className="w-40">
+            <Input type="date" inputSize="sm" value={to} onChange={(e) => setTo(e.target.value)} />
+          </Field>
+          {(from || to) && (
+            <button
+              onClick={() => {
+                setFrom('')
+                setTo('')
+              }}
+              className="mb-1.5 rounded-md px-2 py-1 type-caption text-ink-tertiary transition-colors hover:bg-hover hover:text-ink"
+            >
+              ניקוי
+            </button>
+          )}
+        </Card>
+
+        <Tabs items={TABS} value={tab} onChange={setTab} />
+
+        {tab === 'tasks' ? (
+          <PortalTasks contractorId={contractorId!} from={from} to={to} />
+        ) : (
+          contractorId && <WorkersTab contractorId={contractorId} />
+        )}
       </div>
-
-      {stats && (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          {[
-            ['משימות', String(stats.tasks_count)],
-            ['סכום צפוי', fmtMoney(stats.expected_total)],
-            ['שולם', fmtMoney(stats.paid_total)],
-            ['יתרה', fmtMoney(stats.unpaid_total)],
-            ['בוצעו', String(stats.completed_count)],
-            ['עתידיות', String(stats.upcoming_count)],
-          ].map(([label, value]) => (
-            <div key={label} className="surface p-3">
-              <p className="text-xs text-[var(--muted)]">{label}</p>
-              <p className="text-lg font-bold">{value}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="flex gap-1 border-b border-[var(--border)]">
-        {([['tasks', 'המשימות שלי'], ['workers', 'העובדים שלי']] as const).map(([k, label]) => (
-          <button
-            key={k}
-            onClick={() => setTab(k)}
-            className={cx(
-              'flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium',
-              tab === k ? 'border-brand-600 text-brand-600 dark:text-brand-300' : 'border-transparent text-[var(--muted)]',
-            )}
-          >
-            {k === 'workers' && <Users size={14} />}
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'tasks' ? (
-        <PortalTasks contractorId={contractorId!} from={from} to={to} />
-      ) : (
-        contractorId && <WorkersTab contractorId={contractorId} />
-      )}
     </div>
   )
 }
@@ -127,15 +216,23 @@ function PortalTasks({ contractorId, from, to }: { contractorId: string; from: s
     },
   })
 
-  if (isLoading) return <Spinner full />
-  if (tasks.length === 0) return <EmptyState text="אין משימות" />
+  if (isLoading) return <SkeletonList rows={4} />
+  if (tasks.length === 0)
+    return (
+      <Card>
+        <EmptyState
+          art="calendar"
+          title="אין משימות בטווח"
+          description="משימות שיואצלו אליך יופיעו כאן, ותוכל לשבץ אליהן את העובדים שלך"
+        />
+      </Card>
+    )
 
   return (
     <div className="space-y-3">
-      {tasks.map((t) => {
-        const term = terms.find((x) => x.task_id === t.id)
-        return <PortalTaskCard key={t.id} task={t} term={term} contractorId={contractorId} />
-      })}
+      {tasks.map((t) => (
+        <PortalTaskCard key={t.id} task={t} term={terms.find((x) => x.task_id === t.id)} contractorId={contractorId} />
+      ))}
     </div>
   )
 }
@@ -153,6 +250,8 @@ function PortalTaskCard({
   const toast = useToast()
   const { data: roster = [] } = useContractorWorkers(contractorId)
   const chosen = (task.contractor_worker_list ?? []).map((w) => w.id)
+  const dayLabel = relativeDayLabel(task.task_date)
+  const full = task.worker_count > 0 && chosen.length >= task.worker_count
 
   const toggleWorker = async (workerId: string) => {
     if (chosen.includes(workerId)) {
@@ -167,42 +266,91 @@ function PortalTaskCard({
         .from('task_contractor_workers')
         .insert({ task_id: task.id, contractor_worker_id: workerId })
       if (error) {
-        return toast.error(error.message.includes('חריגה') ? error.message : 'לא ניתן להוסיף עובד — ייתכן שחרגת מכמות העובדים למשימה')
+        return toast.error(
+          error.message.includes('חריגה') ? error.message : 'לא ניתן להוסיף עובד — ייתכן שחרגת מכמות העובדים למשימה',
+        )
       }
     }
     void qc.invalidateQueries({ queryKey: ['portal', 'tasks'] })
   }
 
   return (
-    <div className="surface p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-bold">{task.title || task.task_type_name}</span>
-        <Badge color={task.status_color}>{task.status_name}</Badge>
-        {term && (
-          <Badge color={term.paid_at ? '#22c55e' : '#f59e0b'}>
-            {term.paid_at ? `שולם ${fmtMoney(term.paid_amount ?? term.price)}` : `צפוי ${fmtMoney(term.price)}`}
-          </Badge>
-        )}
-        <span className="ms-auto text-sm font-medium">{fmtDate(task.task_date)}</span>
-      </div>
-      {/* location/time/counts are read-only for contractors — enforced by RLS */}
-      <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-[var(--muted)] sm:grid-cols-4">
-        <span>מיקום: <b className="text-[var(--text)]">{task.location_text || '—'}</b></span>
-        <span>שעה: <b className="text-[var(--text)]" dir="ltr">{fmtTime(task.onsite_start_time) || '—'}</b></span>
-        <span>כמות עובדים: <b className="text-[var(--text)]">{task.worker_count}</b></span>
-        <span>לקוח: <b className="text-[var(--text)]">{task.customer_name || '—'}</b></span>
-      </div>
-      <div className="mt-3">
-        <p className="mb-1 text-xs font-medium text-[var(--muted)]">
-          העובדים שלי למשימה ({chosen.length}/{task.worker_count || '∞'})
-        </p>
-        <MultiSelect
-          options={roster.map((w) => ({ id: w.id, label: w.full_name }))}
-          values={chosen}
-          onToggle={(id) => void toggleWorker(id)}
-          placeholder="בחירת עובדים מהסגל שלך..."
-        />
-      </div>
+    <Card>
+      <CardHeader
+        title={
+          <span className="flex flex-wrap items-center gap-2">
+            {task.title || task.task_type_name}
+            <StatusPill color={task.status_color}>{task.status_name}</StatusPill>
+            {term && (
+              <StatusPill color={term.paid_at ? '#16a34a' : '#f59e0b'}>
+                {term.paid_at ? `שולם ${fmtMoney(term.paid_amount ?? term.price)}` : `צפוי ${fmtMoney(term.price)}`}
+              </StatusPill>
+            )}
+          </span>
+        }
+        subtitle={
+          <span className="flex flex-wrap items-center gap-x-2">
+            <span className="tabular">{fmtDate(task.task_date)}</span>
+            {dayLabel && <span className="font-semibold text-primary-text">· {dayLabel}</span>}
+            {task.customer_name && <span>· {task.customer_name}</span>}
+          </span>
+        }
+      />
+      <CardBody className="space-y-3">
+        {/* location / time / counts are read-only for contractors — enforced by RLS */}
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <PortalFact icon={<MapPin size={ICON.sm} strokeWidth={STROKE} />} label="מיקום" value={task.location_text || '—'} />
+          <PortalFact
+            icon={<Clock size={ICON.sm} strokeWidth={STROKE} />}
+            label="שעה בשטח"
+            value={fmtTime(task.onsite_start_time) || '—'}
+            ltr
+          />
+          <PortalFact
+            icon={<CalendarDays size={ICON.sm} strokeWidth={STROKE} />}
+            label="כמות עובדים"
+            value={String(task.worker_count || '—')}
+          />
+        </dl>
+
+        <div>
+          <div className="mb-1.5 flex items-center gap-2">
+            <p className="type-caption font-semibold text-ink-secondary">העובדים שלי למשימה</p>
+            <span
+              className={cx(
+                'rounded-full px-1.5 py-0.5 type-caption font-bold tabular',
+                full ? 'bg-success-subtle text-success-text' : 'bg-warning-subtle text-warning-text',
+              )}
+            >
+              {chosen.length}/{task.worker_count || '∞'}
+            </span>
+          </div>
+          <MultiSelect
+            options={roster.map((w) => ({ id: w.id, label: w.full_name }))}
+            values={chosen}
+            onToggle={(id) => void toggleWorker(id)}
+            placeholder="בחירת עובדים מהסגל שלך..."
+          />
+        </div>
+      </CardBody>
+    </Card>
+  )
+}
+
+function PortalFact({ icon, label, value, ltr }: { icon: React.ReactNode; label: string; value: string; ltr?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <dt className="flex items-center gap-1 type-caption text-ink-tertiary">
+        <span className="shrink-0" aria-hidden>
+          {icon}
+        </span>
+        {label}
+      </dt>
+      <Tooltip content={value.length > 24 ? value : ''}>
+        <dd className={cx('mt-0.5 truncate type-body font-medium', ltr && 'tabular')} dir={ltr ? 'ltr' : undefined}>
+          {value}
+        </dd>
+      </Tooltip>
     </div>
   )
 }

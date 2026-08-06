@@ -1,16 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
-import { Bell } from 'lucide-react'
+import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Bell, CheckCheck, ICON, STROKE } from '../../components/ui/icons'
+import { Button, EmptyState, IconButton, Popover, cx, fmtRelative, useToast } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { Button, useToast } from '../../components/ui'
 import { fmtDateTime } from '../../lib/dates'
 import type { Notification } from '../../types/domain'
 
 export function NotificationsBell() {
   const me = useAuth((s) => s.me)
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
   const qc = useQueryClient()
   const toast = useToast()
 
@@ -38,7 +36,7 @@ export function NotificationsBell() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${me.profile.id}` },
         (payload) => {
-          toast.success((payload.new as Notification).title)
+          toast.info((payload.new as Notification).title)
           void qc.invalidateQueries({ queryKey: ['notifications'] })
         },
       )
@@ -49,51 +47,82 @@ export function NotificationsBell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.profile.id])
 
-  useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [])
-
   const markAllRead = async () => {
     await supabase.rpc('mark_notifications_read')
     void qc.invalidateQueries({ queryKey: ['notifications'] })
   }
 
   return (
-    <div ref={ref} className="relative">
-      <button onClick={() => setOpen((v) => !v)} className="relative rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--bg)]">
-        <Bell size={16} />
-        {unread > 0 && (
-          <span className="absolute -top-0.5 -start-0.5 flex size-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-            {unread > 9 ? '9+' : unread}
-          </span>
-        )}
-      </button>
-      {open && (
-        <div className="absolute end-0 z-40 mt-1 w-80 rounded-xl border border-[var(--border)] bg-[var(--panel)] shadow-xl">
-          <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
-            <span className="text-sm font-bold">התראות</span>
+    <Popover
+      panelClassName="w-[min(22rem,calc(100vw-2rem))] p-0 overflow-hidden"
+      trigger={({ toggle, ...aria }) => (
+        <span className="relative inline-flex">
+          <IconButton
+            label={unread > 0 ? `התראות (${unread} שלא נקראו)` : 'התראות'}
+            size="sm"
+            onClick={toggle}
+            {...aria}
+          >
+            <Bell size={ICON.md} strokeWidth={STROKE} />
+          </IconButton>
+          {unread > 0 && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -top-0.5 end-0 flex size-4 items-center justify-center rounded-full bg-error text-[9px] font-bold tabular text-white ring-2 ring-surface"
+            >
+              {unread > 9 ? '9+' : unread}
+            </span>
+          )}
+        </span>
+      )}
+    >
+      {() => (
+        <>
+          <div className="flex items-center gap-2 border-b border-line-subtle px-3 py-2.5">
+            <h3 className="type-title">התראות</h3>
             {unread > 0 && (
-              <Button variant="ghost" className="text-xs" onClick={() => void markAllRead()}>
-                סמן הכל כנקרא
+              <span className="rounded-full bg-primary-subtle px-1.5 py-0.5 type-caption font-bold tabular text-primary-text">
+                {unread}
+              </span>
+            )}
+            {unread > 0 && (
+              <Button size="sm" variant="ghost" className="ms-auto" onClick={() => void markAllRead()}>
+                <CheckCheck size={ICON.sm} />
+                סמן הכל
               </Button>
             )}
           </div>
-          <div className="max-h-80 overflow-y-auto">
-            {notifications.length === 0 && <p className="p-4 text-center text-sm text-[var(--muted)]">אין התראות</p>}
-            {notifications.map((n) => (
-              <div key={n.id} className={`border-b border-[var(--border)] px-3 py-2 last:border-0 ${n.read_at ? 'opacity-60' : ''}`}>
-                <p className="text-sm font-medium">{n.title}</p>
-                {n.body && <p className="text-xs text-[var(--muted)]">{n.body}</p>}
-                <p className="mt-0.5 text-[10px] text-[var(--muted)]">{fmtDateTime(n.created_at)}</p>
-              </div>
-            ))}
+
+          <div className="max-h-96 overflow-y-auto">
+            {notifications.length === 0 ? (
+              <EmptyState compact art="check" title="אין התראות" description="כשמשהו ידרוש את תשומת ליבך, זה יופיע כאן" />
+            ) : (
+              <ul>
+                {notifications.map((n) => (
+                  <li
+                    key={n.id}
+                    className={cx(
+                      'relative border-b border-line-subtle px-3 py-2.5 last:border-0 transition-colors hover:bg-hover',
+                      !n.read_at && 'bg-primary-subtle/40',
+                    )}
+                  >
+                    {!n.read_at && (
+                      <span className="absolute end-2.5 top-3 size-1.5 rounded-full bg-primary" aria-label="לא נקרא" />
+                    )}
+                    <p className={cx('pe-4 type-body', n.read_at ? 'text-ink-secondary' : 'font-medium text-ink')}>
+                      {n.title}
+                    </p>
+                    {n.body && <p className="mt-0.5 type-caption text-ink-tertiary">{n.body}</p>}
+                    <p className="mt-1 type-caption text-ink-tertiary" title={fmtDateTime(n.created_at)}>
+                      {fmtRelative(n.created_at)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        </div>
+        </>
       )}
-    </div>
+    </Popover>
   )
 }

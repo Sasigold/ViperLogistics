@@ -1,118 +1,341 @@
-import { NavLink, Outlet } from 'react-router'
+import { useEffect, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation } from 'react-router'
 import {
-  Calendar,
-  ClipboardList,
-  LayoutDashboard,
-  PartyPopper,
-  Users,
-  Building2,
-  HardHat,
-  Settings,
-  Moon,
-  Sun,
+  ChevronLeft,
+  ICON,
   LogOut,
-  Search,
-  Truck,
   Menu,
-} from 'lucide-react'
-import { useState } from 'react'
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  STROKE,
+  Search,
+  Sun,
+  Truck,
+  User,
+  X,
+} from '../components/ui/icons'
+import { Avatar, Divider, IconButton, Kbd, MenuItem, MenuSeparator, Popover, Tooltip, cx } from '../components/ui'
 import { useAuth } from '../state/auth'
-import { cx } from '../components/ui'
 import { NotificationsBell } from '../features/notifications/NotificationsBell'
 import { CommandPalette } from '../features/search/CommandPalette'
+import { useOverdueCount } from '../features/tasks/useOverdueCount'
+import { NAV_SECTIONS, ROUTE_LABELS } from './nav'
+import { PageTitleProvider, useCurrentPageTitle } from './breadcrumbs'
 
-const nav = [
-  { to: '/', label: 'דשבורד', icon: LayoutDashboard, resource: 'dashboard' },
-  { to: '/calendar', label: 'לוח שנה', icon: Calendar, resource: 'events' },
-  { to: '/board', label: 'לוח עבודה', icon: ClipboardList, resource: 'tasks' },
-  { to: '/events', label: 'אירועים', icon: PartyPopper, resource: 'events' },
-  { to: '/customers', label: 'לקוחות', icon: Building2, resource: 'customers' },
-  { to: '/users', label: 'עובדים', icon: Users, resource: 'users' },
-  { to: '/contractors', label: 'קבלנים', icon: HardHat, resource: 'contractors' },
-  { to: '/settings', label: 'הגדרות', icon: Settings, resource: 'settings' },
-]
+const COLLAPSE_KEY = 'vl-nav-collapsed'
+
+const KIND_LABELS: Record<string, string> = {
+  staff: 'צוות',
+  customer_user: 'משתמש לקוח',
+  contractor_user: 'קבלן',
+}
 
 export default function AppLayout() {
   const { me, theme, toggleTheme, signOut, can } = useAuth()
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
-  const items = nav.filter((n) => can(n.resource, 'view'))
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1')
+  const location = useLocation()
+
+  const canSeeTasks = can('tasks', 'view')
+  const { data: overdue = 0 } = useOverdueCount(canSeeTasks)
+
+  useEffect(() => localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0'), [collapsed])
+  useEffect(() => setMobileNav(false), [location.pathname])
+
+  // Ctrl/Cmd+K anywhere opens the palette
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [])
+
+  const sections = NAV_SECTIONS.map((s) => ({ ...s, items: s.items.filter((n) => can(n.resource, 'view')) })).filter(
+    (s) => s.items.length > 0,
+  )
 
   return (
-    <div className="flex h-full">
-      {/* sidebar */}
-      <aside
-        className={cx(
-          'fixed inset-y-0 start-0 z-40 w-56 shrink-0 border-e border-[var(--border)] bg-[var(--panel)] transition-transform lg:static lg:translate-x-0',
-          mobileNav ? 'translate-x-0' : 'translate-x-full lg:translate-x-0',
-        )}
-      >
-        <div className="flex items-center gap-2 px-4 py-4">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-brand-600 text-white">
-            <Truck size={16} />
-          </div>
-          <span className="font-bold">ViperLogistics</span>
-        </div>
-        <nav className="space-y-0.5 px-2">
-          {items.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
-              onClick={() => setMobileNav(false)}
-              className={({ isActive }) =>
-                cx(
-                  'flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-brand-500/10 text-brand-600 dark:text-brand-300'
-                    : 'text-[var(--muted)] hover:bg-[var(--bg)] hover:text-[var(--text)]',
-                )
-              }
-            >
-              <Icon size={16} />
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-      </aside>
-      {mobileNav && <div className="fixed inset-0 z-30 bg-black/30 lg:hidden" onClick={() => setMobileNav(false)} />}
+    <PageTitleProvider>
+      <div className="flex h-full bg-canvas">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:start-3 focus:z-[90] focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:type-button focus:text-on-primary"
+        >
+          דילוג לתוכן הראשי
+        </a>
 
-      {/* main */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--panel)] px-4 py-2">
-          <button className="lg:hidden" onClick={() => setMobileNav(true)}>
-            <Menu size={18} />
-          </button>
-          <button
-            onClick={() => setSearchOpen(true)}
-            className="flex w-64 max-w-full items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-1.5 text-sm text-[var(--muted)] hover:border-brand-400"
-          >
-            <Search size={14} />
-            חיפוש...
-            <kbd className="ms-auto rounded border border-[var(--border)] px-1 text-[10px]">Ctrl+K</kbd>
-          </button>
-          <div className="ms-auto flex items-center gap-1">
-            <NotificationsBell />
-            <button
-              onClick={toggleTheme}
-              className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--bg)]"
-              title="מצב תצוגה"
+        {/* ── sidebar ─────────────────────────────────────────────────────── */}
+        <aside
+          className={cx(
+            'fixed inset-y-0 start-0 z-50 flex shrink-0 flex-col border-e border-line bg-surface',
+            'transition-[width,transform] duration-200 ease-[cubic-bezier(.4,0,.2,1)]',
+            'lg:static lg:translate-x-0',
+            collapsed ? 'w-60 lg:w-[4.25rem]' : 'w-60',
+            mobileNav ? 'translate-x-0 shadow-overlay' : 'ltr:-translate-x-full rtl:translate-x-full',
+          )}
+        >
+          <div className={cx('flex h-14 shrink-0 items-center gap-2.5 px-3', collapsed && 'lg:justify-center')}>
+            <Link
+              to="/"
+              className="flex min-w-0 items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:focus-ring"
             >
-              {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
-            </button>
-            <div className="mx-2 hidden text-sm sm:block">
-              <span className="font-medium">{me?.profile.full_name}</span>
-            </div>
-            <button onClick={() => void signOut()} className="rounded-lg p-2 text-[var(--muted)] hover:bg-[var(--bg)]" title="התנתקות">
-              <LogOut size={16} />
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary shadow-xs">
+                <Truck size={ICON.md} strokeWidth={STROKE} />
+              </span>
+              <span className={cx('truncate type-title', collapsed && 'lg:hidden')}>ViperLogistics</span>
+            </Link>
+            <IconButton
+              label="סגירת התפריט"
+              size="sm"
+              bare
+              className="ms-auto lg:hidden"
+              onClick={() => setMobileNav(false)}
+            >
+              <X size={ICON.md} />
+            </IconButton>
+          </div>
+
+          <nav className="min-h-0 flex-1 space-y-4 overflow-y-auto px-2 pb-3" aria-label="ניווט ראשי">
+            {sections.map((section) => (
+              <div key={section.title}>
+                <p className={cx('px-3 pb-1.5 type-overline', collapsed && 'lg:hidden')}>{section.title}</p>
+                {collapsed && <div className="mx-auto mb-2 hidden h-px w-6 bg-line-subtle lg:block" aria-hidden />}
+                <ul className="space-y-0.5">
+                  {section.items.map(({ to, label, icon: Icon, badge, end }) => {
+                    const count = badge === 'overdue' ? overdue : 0
+                    const link = (
+                      <NavLink
+                        to={to}
+                        end={end}
+                        className={({ isActive }) =>
+                          cx(
+                            'group relative flex items-center gap-2.5 rounded-lg px-3 py-2 type-button transition-colors duration-150',
+                            'focus-visible:outline-none focus-visible:focus-ring',
+                            collapsed && 'lg:justify-center lg:px-0',
+                            isActive
+                              ? 'bg-selected text-primary-text'
+                              : 'text-ink-secondary hover:bg-hover hover:text-ink',
+                          )
+                        }
+                      >
+                        {({ isActive }) => (
+                          <>
+                            {/* active rail on the inline-start edge */}
+                            <span
+                              aria-hidden
+                              className={cx(
+                                'absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-primary transition-opacity duration-150',
+                                isActive ? 'opacity-100' : 'opacity-0',
+                              )}
+                            />
+                            <Icon size={ICON.md} strokeWidth={STROKE} className="shrink-0" />
+                            <span className={cx('truncate', collapsed && 'lg:hidden')}>{label}</span>
+                            {count > 0 && (
+                              <span
+                                className={cx(
+                                  'inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 type-caption font-bold tabular text-white',
+                                  collapsed
+                                    ? 'lg:absolute lg:end-1.5 lg:top-1 lg:h-3.5 lg:min-w-3.5 lg:px-0.5 lg:text-[9px]'
+                                    : 'ms-auto',
+                                )}
+                                title={`${count} משימות באיחור`}
+                              >
+                                {count > 99 ? '99+' : count}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </NavLink>
+                    )
+                    return (
+                      <li key={to}>
+                        {collapsed ? (
+                          <Tooltip content={count > 0 ? `${label} · ${count} באיחור` : label} placement="end">
+                            {link}
+                          </Tooltip>
+                        ) : (
+                          link
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            ))}
+          </nav>
+
+          <div className="hidden shrink-0 border-t border-line-subtle p-2 lg:block">
+            <button
+              onClick={() => setCollapsed((v) => !v)}
+              aria-label={collapsed ? 'הרחבת התפריט' : 'כיווץ התפריט'}
+              className={cx(
+                'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 type-button text-ink-tertiary transition-colors',
+                'hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:focus-ring',
+                collapsed && 'justify-center px-0',
+              )}
+            >
+              {collapsed ? <PanelLeftOpen size={ICON.md} strokeWidth={STROKE} /> : <PanelLeftClose size={ICON.md} strokeWidth={STROKE} />}
+              {!collapsed && <span>כיווץ</span>}
             </button>
           </div>
-        </header>
-        <main className="min-h-0 flex-1 overflow-y-auto p-4">
-          <Outlet />
-        </main>
+        </aside>
+
+        {mobileNav && (
+          <div
+            className="fixed inset-0 z-40 scrim lg:hidden"
+            onClick={() => setMobileNav(false)}
+            aria-hidden
+          />
+        )}
+
+        {/* ── main column ─────────────────────────────────────────────────── */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface/85 px-3 backdrop-blur-md sm:px-4">
+            <IconButton label="פתיחת התפריט" size="sm" bare className="lg:hidden" onClick={() => setMobileNav(true)}>
+              <Menu size={ICON.lg} />
+            </IconButton>
+
+            <Breadcrumbs />
+
+            <button
+              onClick={() => setSearchOpen(true)}
+              className={cx(
+                'ms-auto flex h-9 items-center gap-2 rounded-lg border border-line bg-canvas px-3 type-body text-ink-tertiary',
+                'transition-colors hover:border-line-strong hover:text-ink-secondary focus-visible:outline-none focus-visible:focus-ring',
+                'w-9 justify-center md:w-60 md:justify-start',
+              )}
+              aria-label="חיפוש גלובלי"
+            >
+              <Search size={ICON.sm} className="shrink-0" strokeWidth={STROKE} />
+              <span className="hidden md:inline">חיפוש...</span>
+              <Kbd className="ms-auto hidden md:inline-flex">Ctrl K</Kbd>
+            </button>
+
+            <div className="flex items-center gap-0.5">
+              <NotificationsBell />
+              <IconButton
+                label={theme === 'light' ? 'מעבר למצב כהה' : 'מעבר למצב בהיר'}
+                size="sm"
+                onClick={toggleTheme}
+              >
+                {theme === 'light' ? <Moon size={ICON.md} strokeWidth={STROKE} /> : <Sun size={ICON.md} strokeWidth={STROKE} />}
+              </IconButton>
+
+              <Popover
+                trigger={({ toggle, ...aria }) => (
+                  <button
+                    onClick={toggle}
+                    {...aria}
+                    className="ms-1 flex items-center gap-2 rounded-lg p-1 transition-colors hover:bg-hover focus-visible:outline-none focus-visible:focus-ring"
+                  >
+                    <Avatar name={me?.profile.full_name ?? '?'} size="md" />
+                    <span className="hidden min-w-0 text-start lg:block">
+                      <span className="block max-w-32 truncate type-body font-medium leading-tight">
+                        {me?.profile.full_name}
+                      </span>
+                      <span className="block type-caption text-ink-tertiary">
+                        {me?.profile.is_admin ? 'מנהל מערכת' : KIND_LABELS[me?.profile.user_kind ?? ''] ?? ''}
+                      </span>
+                    </span>
+                  </button>
+                )}
+              >
+                {(close) => (
+                  <div className="w-60">
+                    <div className="flex items-center gap-2.5 px-2.5 py-2">
+                      <Avatar name={me?.profile.full_name ?? '?'} size="lg" />
+                      <div className="min-w-0">
+                        <p className="truncate type-body font-semibold">{me?.profile.full_name}</p>
+                        <p className="truncate type-caption text-ink-tertiary" dir="ltr">
+                          {me?.profile.email ?? '—'}
+                        </p>
+                      </div>
+                    </div>
+                    <MenuSeparator />
+                    <div className="px-2.5 pb-1 pt-0.5">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-subtle px-2 py-0.5 type-caption font-medium text-ink-secondary">
+                        <User size={ICON.xs} />
+                        {me?.profile.is_admin ? 'מנהל מערכת' : KIND_LABELS[me?.profile.user_kind ?? ''] ?? 'משתמש'}
+                      </span>
+                    </div>
+                    <MenuSeparator />
+                    <MenuItem
+                      icon={theme === 'light' ? <Moon size={ICON.sm} /> : <Sun size={ICON.sm} />}
+                      onClick={() => {
+                        toggleTheme()
+                        close()
+                      }}
+                    >
+                      {theme === 'light' ? 'מצב כהה' : 'מצב בהיר'}
+                    </MenuItem>
+                    <MenuItem icon={<LogOut size={ICON.sm} />} danger onClick={() => void signOut()}>
+                      התנתקות
+                    </MenuItem>
+                  </div>
+                )}
+              </Popover>
+            </div>
+          </header>
+
+          <main id="main" className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
+            <Outlet />
+          </main>
+        </div>
+
+        <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
       </div>
-      <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
-    </div>
+    </PageTitleProvider>
   )
 }
+
+/* ===== Breadcrumbs ========================================================
+   Section > page > entity. The entity name arrives from the detail screen
+   through PageTitleProvider once its data has loaded.                     */
+
+function Breadcrumbs() {
+  const { pathname } = useLocation()
+  const detailTitle = useCurrentPageTitle()
+
+  const segments = pathname.split('/').filter(Boolean)
+  const rootPath = segments.length === 0 ? '/' : `/${segments[0]}`
+  const rootLabel = ROUTE_LABELS[rootPath] ?? rootPath
+  const isDetail = segments.length > 1
+
+  return (
+    <nav aria-label="מיקום נוכחי" className="hidden min-w-0 sm:block">
+      <ol className="flex min-w-0 items-center gap-1">
+        <li className="min-w-0">
+          {isDetail ? (
+            <Link
+              to={rootPath}
+              className="truncate rounded type-body text-ink-tertiary transition-colors hover:text-ink focus-visible:outline-none focus-visible:focus-ring"
+            >
+              {rootLabel}
+            </Link>
+          ) : (
+            <span className="truncate type-body font-semibold text-ink">{rootLabel}</span>
+          )}
+        </li>
+        {isDetail && (
+          <>
+            <ChevronLeft size={ICON.sm} className="shrink-0 text-ink-tertiary" aria-hidden />
+            <li className="min-w-0">
+              <span className="block max-w-[16rem] truncate type-body font-semibold text-ink">
+                {detailTitle ?? 'פרטים'}
+              </span>
+            </li>
+          </>
+        )}
+      </ol>
+    </nav>
+  )
+}
+
+/** exported for the portal shell, which sits outside AppLayout */
+export { Divider }

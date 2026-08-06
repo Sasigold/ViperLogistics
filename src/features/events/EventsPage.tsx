@@ -1,26 +1,42 @@
-import { useState } from 'react'
-import { Link } from 'react-router'
+import { Suspense, lazy, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, FileSpreadsheet } from 'lucide-react'
+import { FileSpreadsheet, ICON, Plus, STROKE } from '../../components/ui/icons'
+import {
+  Button,
+  DataTable,
+  EmptyState,
+  FilterBar,
+  PageHeader,
+  SearchInput,
+  Select,
+  Spinner,
+  StatusPill,
+  Tooltip,
+} from '../../components/ui'
+import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { Badge, Button, EmptyState, Input, Select, Spinner } from '../../components/ui'
 import { useCustomers } from '../../lib/queries'
 import { fmtDate } from '../../lib/dates'
 import { EventFormModal } from './EventFormModal'
-import { ExcelDialog } from '../importExport/ExcelDialog'
 import { RequirePermission } from '../auth/guards'
 import type { EventRow } from '../../types/domain'
 
+/* ExcelJS is ~1MB — keep it out of the initial bundle and load it only when
+   the import/export dialog is actually opened. */
+const ExcelDialog = lazy(() => import('../importExport/ExcelDialog').then((m) => ({ default: m.ExcelDialog })))
+
 export default function EventsPage() {
   const { can } = useAuth()
+  const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [customer, setCustomer] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [excelOpen, setExcelOpen] = useState(false)
   const { data: customers = [] } = useCustomers()
 
-  const { data: events = [], isLoading } = useQuery({
+  const { data: events = [], isLoading, error, refetch } = useQuery({
     queryKey: ['events', 'list', q, customer],
     queryFn: async () => {
       let query = supabase
@@ -37,83 +53,204 @@ export default function EventsPage() {
     },
   })
 
+  const columns = useMemo<Column<EventRow>[]>(
+    () => [
+      {
+        key: 'event_date',
+        header: 'תאריך',
+        width: 120,
+        sticky: true,
+        fixed: true,
+        sortValue: (e) => e.event_date,
+        render: (e) => (
+          <Link
+            to={`/events/${e.id}`}
+            onClick={(ev) => ev.stopPropagation()}
+            className="rounded font-medium tabular text-primary-text hover:underline"
+          >
+            {fmtDate(e.event_date)}
+          </Link>
+        ),
+      },
+      {
+        key: 'customer',
+        header: 'לקוח',
+        width: 160,
+        sortValue: (e) => e.customers?.name,
+        render: (e) =>
+          e.customers ? (
+            <span className="flex items-center gap-1.5">
+              <span className="size-2 shrink-0 rounded-full" style={{ background: e.customers.color }} />
+              <span className="truncate">{e.customers.name}</span>
+            </span>
+          ) : (
+            <span className="text-ink-tertiary">—</span>
+          ),
+      },
+      {
+        key: 'end_client_name',
+        header: 'לקוח האירוע',
+        width: 180,
+        sortValue: (e) => e.end_client_name,
+        render: (e) => <span className="font-medium">{e.end_client_name || '—'}</span>,
+      },
+      {
+        key: 'event_number',
+        header: "מס' אירוע",
+        width: 110,
+        sortValue: (e) => e.event_number,
+        render: (e) => <span className="tabular">{e.event_number || '—'}</span>,
+      },
+      {
+        key: 'location_text',
+        header: 'מיקום',
+        width: 240,
+        sortValue: (e) => e.location_text,
+        render: (e) =>
+          e.location_text ? (
+            <Tooltip content={e.location_text}>
+              <span className="block truncate">{e.location_text}</span>
+            </Tooltip>
+          ) : (
+            <span className="text-ink-tertiary">—</span>
+          ),
+      },
+      {
+        key: 'volume_m',
+        header: 'נפח',
+        width: 80,
+        align: 'end',
+        sortValue: (e) => e.volume_m,
+        render: (e) => <span className="tabular">{e.volume_m ?? '—'}</span>,
+      },
+      {
+        key: 'truck_count',
+        header: 'משאיות',
+        width: 90,
+        align: 'end',
+        sortValue: (e) => e.truck_count,
+        render: (e) => <span className="tabular">{e.truck_count ?? '—'}</span>,
+      },
+      {
+        key: 'status',
+        header: 'סטטוס',
+        width: 130,
+        sortValue: (e) => e.statuses?.name,
+        render: (e) => (e.statuses ? <StatusPill color={e.statuses.color}>{e.statuses.name}</StatusPill> : null),
+      },
+    ],
+    [],
+  )
+
+  const filtered = !!q || !!customer
+
   return (
     <RequirePermission resource="events">
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-xl font-bold">אירועים</h1>
-          <div className="ms-auto flex gap-2">
-            <Button onClick={() => setExcelOpen(true)}>
-              <FileSpreadsheet size={14} /> ייבוא / ייצוא
-            </Button>
-            {can('events', 'create') && (
-              <Button variant="primary" onClick={() => setCreateOpen(true)}>
-                <Plus size={14} /> אירוע חדש
+      <div className="space-y-4">
+        <PageHeader
+          title="אירועים"
+          subtitle={isLoading ? 'טוען...' : `${events.length} אירועים${filtered ? ' (מסונן)' : ''}`}
+          actions={
+            <>
+              <Button size="sm" onClick={() => setExcelOpen(true)}>
+                <FileSpreadsheet size={ICON.sm} strokeWidth={STROKE} />
+                ייבוא / ייצוא
               </Button>
-            )}
-          </div>
-        </div>
+              {can('events', 'create') && (
+                <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
+                  <Plus size={ICON.sm} strokeWidth={STROKE} />
+                  אירוע חדש
+                </Button>
+              )}
+            </>
+          }
+        >
+          <FilterBar
+            onReset={
+              filtered
+                ? () => {
+                    setQ('')
+                    setCustomer('')
+                  }
+                : undefined
+            }
+          >
+            <SearchInput
+              className="w-64"
+              inputSize="sm"
+              placeholder="חיפוש לפי שם, מספר, מיקום..."
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onClear={() => setQ('')}
+              aria-label="חיפוש אירועים"
+            />
+            <Select className="w-48" selectSize="sm" value={customer} onChange={(e) => setCustomer(e.target.value)} aria-label="סינון לפי לקוח">
+              <option value="">כל הלקוחות</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </FilterBar>
+        </PageHeader>
 
-        <div className="surface flex flex-wrap gap-2 p-2.5">
-          <Input className="w-56" placeholder="חיפוש לפי שם, מספר, מיקום..." value={q} onChange={(e) => setQ(e.target.value)} />
-          <Select className="w-44" value={customer} onChange={(e) => setCustomer(e.target.value)}>
-            <option value="">כל הלקוחות</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </Select>
-        </div>
-
-        <div className="surface overflow-x-auto">
-          {isLoading ? (
-            <Spinner full />
-          ) : events.length === 0 ? (
-            <EmptyState text="אין אירועים" />
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] text-start text-xs text-[var(--muted)]">
-                  <th className="px-3 py-2 text-start">תאריך</th>
-                  <th className="px-3 py-2 text-start">לקוח</th>
-                  <th className="px-3 py-2 text-start">לקוח האירוע</th>
-                  <th className="px-3 py-2 text-start">מס' אירוע</th>
-                  <th className="px-3 py-2 text-start">מיקום</th>
-                  <th className="px-3 py-2 text-start">נפח</th>
-                  <th className="px-3 py-2 text-start">משאיות</th>
-                  <th className="px-3 py-2 text-start">סטטוס</th>
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((e) => (
-                  <tr key={e.id} className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg)]">
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      <Link to={`/events/${e.id}`} className="font-medium text-brand-600 hover:underline dark:text-brand-300">
-                        {fmtDate(e.event_date)}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="size-2.5 rounded-full" style={{ background: e.customers?.color }} />
-                        {e.customers?.name}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">{e.end_client_name}</td>
-                    <td className="px-3 py-2">{e.event_number}</td>
-                    <td className="max-w-56 truncate px-3 py-2">{e.location_text}</td>
-                    <td className="px-3 py-2">{e.volume_m ?? ''}</td>
-                    <td className="px-3 py-2">{e.truck_count ?? ''}</td>
-                    <td className="px-3 py-2">
-                      {e.statuses && <Badge color={e.statuses.color}>{e.statuses.name}</Badge>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+        <DataTable
+          rows={events}
+          columns={columns}
+          getRowId={(e) => e.id}
+          loading={isLoading}
+          error={error}
+          onRetry={() => void refetch()}
+          onRowClick={(e) => navigate(`/events/${e.id}`)}
+          storageKey="events"
+          pageSize={25}
+          defaultSort={{ key: 'event_date', dir: 'desc' }}
+          empty={
+            <EmptyState
+              art="calendar"
+              title={filtered ? 'אין אירועים תואמים' : 'עדיין אין אירועים'}
+              description={
+                filtered
+                  ? 'נסה לשנות את מונחי החיפוש או לבחור לקוח אחר'
+                  : 'צור אירוע ראשון — משימות ההקמה והפירוק ייווצרו אוטומטית'
+              }
+              action={
+                filtered ? (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setQ('')
+                      setCustomer('')
+                    }}
+                  >
+                    ניקוי סינון
+                  </Button>
+                ) : (
+                  can('events', 'create') && (
+                    <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
+                      <Plus size={ICON.sm} />
+                      אירוע חדש
+                    </Button>
+                  )
+                )
+              }
+            />
+          }
+        />
 
         <EventFormModal open={createOpen} onClose={() => setCreateOpen(false)} />
-        <ExcelDialog open={excelOpen} onClose={() => setExcelOpen(false)} />
+        {excelOpen && (
+          <Suspense
+            fallback={
+              <div className="fixed inset-0 z-50 flex items-center justify-center scrim">
+                <Spinner size={28} />
+              </div>
+            }
+          >
+            <ExcelDialog open onClose={() => setExcelOpen(false)} />
+          </Suspense>
+        )}
       </div>
     </RequirePermission>
   )

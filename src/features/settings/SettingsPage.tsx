@@ -1,42 +1,65 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, RotateCcw, Trash2 } from 'lucide-react'
+import {
+  Boxes,
+  ClipboardList,
+  History,
+  ICON,
+  Plus,
+  RotateCcw,
+  STROKE,
+  Trash2,
+  Truck,
+  Zap,
+} from '../../components/ui/icons'
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Checkbox,
+  DataTable,
+  EmptyState,
+  Field,
+  IconButton,
+  Input,
+  PageHeader,
+  Select,
+  Skeleton,
+  StatusPill,
+  Tabs,
+  Tooltip,
+  cx,
+  fmtRelative,
+  useConfirm,
+  useToast,
+} from '../../components/ui'
+import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { Badge, Button, Checkbox, Field, Input, Select, Spinner, EmptyState, useConfirm, useToast, cx } from '../../components/ui'
 import { useExecutionMethods, useStatuses, useTaskTypes, useTrucks } from '../../lib/queries'
 import { fmtDateTime } from '../../lib/dates'
 import { RequirePermission } from '../auth/guards'
 
-const tabs = [
-  { key: 'task_types', label: 'סוגי משימות' },
-  { key: 'execution_methods', label: 'אופני ביצוע' },
-  { key: 'statuses', label: 'סטטוסים' },
-  { key: 'trucks', label: 'משאיות' },
-  { key: 'recycle', label: 'סל מיחזור' },
-  { key: 'audit', label: 'יומן פעילות' },
+const TABS = [
+  { key: 'task_types', label: 'סוגי משימות', icon: <ClipboardList size={ICON.sm} /> },
+  { key: 'execution_methods', label: 'אופני ביצוע', icon: <Boxes size={ICON.sm} /> },
+  { key: 'statuses', label: 'סטטוסים', icon: <Zap size={ICON.sm} /> },
+  { key: 'trucks', label: 'משאיות', icon: <Truck size={ICON.sm} /> },
+  { key: 'recycle', label: 'סל מיחזור', icon: <RotateCcw size={ICON.sm} /> },
+  { key: 'audit', label: 'יומן פעילות', icon: <History size={ICON.sm} /> },
 ] as const
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<(typeof tabs)[number]['key']>('task_types')
+  const [tab, setTab] = useState<(typeof TABS)[number]['key']>('task_types')
   return (
     <RequirePermission resource="settings">
       <div className="space-y-4">
-        <h1 className="text-xl font-bold">הגדרות</h1>
-        <div className="flex flex-wrap gap-1 border-b border-[var(--border)]">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={cx(
-                'border-b-2 px-4 py-2 text-sm font-medium',
-                tab === t.key ? 'border-brand-600 text-brand-600 dark:text-brand-300' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]',
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <PageHeader title="הגדרות" subtitle="נתוני הבסיס שמזינים את כל שאר המסכים">
+          <Tabs items={TABS} value={tab} onChange={setTab} />
+        </PageHeader>
+
         {tab === 'task_types' && <TaskTypesTab />}
         {tab === 'execution_methods' && <MethodsTab />}
         {tab === 'statuses' && <StatusesTab />}
@@ -61,11 +84,42 @@ function useSoftDelete(invalidate: string) {
   })
 }
 
+/** The "label + add button" header shared by every settings list. */
+function AddRow({
+  children,
+  onSubmit,
+  pending,
+  disabled,
+}: {
+  children: React.ReactNode
+  onSubmit: () => void
+  pending?: boolean
+  disabled?: boolean
+}) {
+  return (
+    <form
+      className="flex flex-wrap items-end gap-2 border-b border-line-subtle bg-subtle/40 p-4"
+      onSubmit={(e) => {
+        e.preventDefault()
+        onSubmit()
+      }}
+    >
+      {children}
+      <Button type="submit" size="sm" variant="primary" loading={pending} disabled={disabled}>
+        <Plus size={ICON.sm} strokeWidth={STROKE} />
+        הוספה
+      </Button>
+    </form>
+  )
+}
+
+/* ===== task types ========================================================= */
+
 function TaskTypesTab() {
   const qc = useQueryClient()
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
-  const { data: types = [] } = useTaskTypes()
+  const { data: types = [], isLoading } = useTaskTypes()
   const [name, setName] = useState('')
   const del = useSoftDelete('task_types')
 
@@ -76,6 +130,7 @@ function TaskTypesTab() {
       if (error) throw error
     },
     onSuccess: () => {
+      toast.success('סוג המשימה נוסף')
       setName('')
       void qc.invalidateQueries({ queryKey: ['task_types'] })
     },
@@ -83,40 +138,67 @@ function TaskTypesTab() {
   })
 
   return (
-    <div className="surface max-w-2xl space-y-3 p-4">
+    <Card className="max-w-2xl">
       {dialog}
-      <div className="flex items-end gap-2">
-        <Field label="סוג משימה חדש"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Button variant="primary" onClick={() => add.mutate()}><Plus size={14} /> הוספה</Button>
-      </div>
-      <div className="divide-y divide-[var(--border)]">
-        {types.map((t) => (
-          <div key={t.id} className="flex items-center gap-2 py-2">
-            <span className="text-sm font-medium">{t.name}</span>
-            {t.is_system && <Badge color="#8b5cf6">מערכת</Badge>}
-            {t.auto_create_on_event && <Badge color="#22c55e">נוצר אוטומטית</Badge>}
-            {!t.is_system && (
-              <button
-                className="ms-auto text-[var(--muted)] hover:text-red-500"
-                onClick={async () => {
-                  if (await confirm(`למחוק את "${t.name}"?`)) del.mutate({ table: 'task_types', id: t.id })
-                }}
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
+      <CardHeader
+        title="סוגי משימות"
+        subtitle={`${types.length} סוגים · סוגי מערכת אינם ניתנים למחיקה`}
+        icon={<ClipboardList size={ICON.md} strokeWidth={STROKE} />}
+      />
+      <AddRow onSubmit={() => add.mutate()} pending={add.isPending} disabled={!name.trim()}>
+        <Field label="סוג משימה חדש" className="min-w-48 flex-1">
+          <Input inputSize="sm" value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+      </AddRow>
+      <CardBody padded={false}>
+        {isLoading ? (
+          <div className="p-4">
+            <Skeleton className="h-32 w-full" />
           </div>
-        ))}
-      </div>
-    </div>
+        ) : types.length === 0 ? (
+          <EmptyState compact art="box" title="לא הוגדרו סוגי משימות" />
+        ) : (
+          <ul>
+            {types.map((t) => (
+              <li key={t.id} className="flex items-center gap-2 border-b border-line-subtle px-4 py-2.5 last:border-0 hover:bg-hover">
+                <span className="type-body font-medium">{t.name}</span>
+                {t.is_system && <Badge tone="primary">מערכת</Badge>}
+                {t.auto_create_on_event && (
+                  <Tooltip content="משימה מסוג זה נוצרת אוטומטית עם כל אירוע חדש">
+                    <Badge tone="success">נוצר אוטומטית</Badge>
+                  </Tooltip>
+                )}
+                {!t.is_system && (
+                  <IconButton
+                    label={`מחיקת ${t.name}`}
+                    size="sm"
+                    className="ms-auto hover:text-error"
+                    onClick={async () => {
+                      if (await confirm(`למחוק את "${t.name}"?`, { title: 'מחיקת סוג משימה', confirmLabel: 'מחיקה' }))
+                        del.mutate({ table: 'task_types', id: t.id })
+                    }}
+                  >
+                    <Trash2 size={ICON.sm} strokeWidth={STROKE} />
+                  </IconButton>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardBody>
+    </Card>
   )
 }
+
+/* ===== execution methods ==================================================
+   The method x task-type matrix is the densest control in settings; a real
+   grid with a sticky first column beats a bare table of checkboxes.       */
 
 function MethodsTab() {
   const qc = useQueryClient()
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
-  const { data: methods = [] } = useExecutionMethods()
+  const { data: methods = [], isLoading } = useExecutionMethods()
   const { data: types = [] } = useTaskTypes()
   const [name, setName] = useState('')
   const del = useSoftDelete('execution_methods')
@@ -133,12 +215,19 @@ function MethodsTab() {
   const add = useMutation({
     mutationFn: async () => {
       if (!name.trim()) throw new Error('חובה להזין שם')
-      const { data, error } = await supabase.from('execution_methods').insert({ name, sort_order: methods.length + 1 }).select('id').single()
+      const { data, error } = await supabase
+        .from('execution_methods')
+        .insert({ name, sort_order: methods.length + 1 })
+        .select('id')
+        .single()
       if (error) throw error
       // new methods are available for all task types by default
-      await supabase.from('task_type_execution_methods').insert(types.map((t) => ({ task_type_id: t.id, execution_method_id: data.id })))
+      await supabase
+        .from('task_type_execution_methods')
+        .insert(types.map((t) => ({ task_type_id: t.id, execution_method_id: data.id })))
     },
     onSuccess: () => {
+      toast.success('אופן הביצוע נוסף')
       setName('')
       void qc.invalidateQueries({ queryKey: ['execution_methods'] })
       void qc.invalidateQueries({ queryKey: ['task_type_execution_methods'] })
@@ -149,10 +238,16 @@ function MethodsTab() {
   const toggleMap = useMutation({
     mutationFn: async ({ typeId, methodId, on }: { typeId: string; methodId: string; on: boolean }) => {
       if (on) {
-        const { error } = await supabase.from('task_type_execution_methods').insert({ task_type_id: typeId, execution_method_id: methodId })
+        const { error } = await supabase
+          .from('task_type_execution_methods')
+          .insert({ task_type_id: typeId, execution_method_id: methodId })
         if (error) throw error
       } else {
-        const { error } = await supabase.from('task_type_execution_methods').delete().eq('task_type_id', typeId).eq('execution_method_id', methodId)
+        const { error } = await supabase
+          .from('task_type_execution_methods')
+          .delete()
+          .eq('task_type_id', typeId)
+          .eq('execution_method_id', methodId)
         if (error) throw error
       }
     },
@@ -161,73 +256,107 @@ function MethodsTab() {
   })
 
   return (
-    <div className="surface space-y-3 p-4">
+    <Card>
       {dialog}
-      <div className="flex max-w-md items-end gap-2">
-        <Field label="אופן ביצוע חדש"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Button variant="primary" onClick={() => add.mutate()}><Plus size={14} /> הוספה</Button>
-      </div>
-      <p className="text-xs text-[var(--muted)]">סימון אילו אופני ביצוע זמינים לכל סוג משימה:</p>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-xs text-[var(--muted)]">
-              <th className="px-2 py-1.5 text-start">אופן ביצוע</th>
-              {types.map((t) => <th key={t.id} className="px-2 py-1.5 text-center">{t.name}</th>)}
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {methods.map((m) => (
-              <tr key={m.id} className="border-t border-[var(--border)]">
-                <td className="px-2 py-2 font-medium">{m.name}</td>
-                {types.map((t) => {
-                  const on = mapping.some((x) => x.task_type_id === t.id && x.execution_method_id === m.id)
-                  return (
-                    <td key={t.id} className="px-2 py-2 text-center">
-                      <input
-                        type="checkbox"
-                        className="accent-brand-600"
-                        checked={on}
-                        onChange={(e) => toggleMap.mutate({ typeId: t.id, methodId: m.id, on: e.target.checked })}
-                      />
-                    </td>
-                  )
-                })}
-                <td className="px-2 py-2">
-                  <button
-                    className="text-[var(--muted)] hover:text-red-500"
-                    onClick={async () => {
-                      if (await confirm(`למחוק את "${m.name}"?`)) del.mutate({ table: 'execution_methods', id: m.id })
-                    }}
+      <CardHeader
+        title="אופני ביצוע"
+        subtitle="סימון אילו אופני ביצוע זמינים לכל סוג משימה"
+        icon={<Boxes size={ICON.md} strokeWidth={STROKE} />}
+      />
+      <AddRow onSubmit={() => add.mutate()} pending={add.isPending} disabled={!name.trim()}>
+        <Field label="אופן ביצוע חדש" className="w-64">
+          <Input inputSize="sm" value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+      </AddRow>
+      <CardBody padded={false}>
+        {isLoading ? (
+          <div className="p-4">
+            <Skeleton className="h-40 w-full" />
+          </div>
+        ) : methods.length === 0 ? (
+          <EmptyState compact art="box" title="לא הוגדרו אופני ביצוע" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-subtle">
+                  <th className="sticky bg-inherit px-4 py-2 text-start type-table-head" style={{ insetInlineStart: 0 }}>
+                    אופן ביצוע
+                  </th>
+                  {types.map((t) => (
+                    <th key={t.id} className="px-2 py-2 text-center type-table-head">
+                      <span className="block max-w-24 truncate">{t.name}</span>
+                    </th>
+                  ))}
+                  <th className="w-12" />
+                </tr>
+              </thead>
+              <tbody>
+                {methods.map((m, i) => (
+                  <tr
+                    key={m.id}
+                    className={cx('border-t border-line-subtle hover:bg-hover', i % 2 === 1 ? 'bg-subtle/40' : 'bg-surface')}
                   >
-                    <Trash2 size={14} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+                    <td className="sticky bg-inherit px-4 py-2 type-body font-medium" style={{ insetInlineStart: 0 }}>
+                      {m.name}
+                    </td>
+                    {types.map((t) => {
+                      const on = mapping.some((x) => x.task_type_id === t.id && x.execution_method_id === m.id)
+                      return (
+                        <td key={t.id} className="px-2 py-2 text-center">
+                          <span className="inline-flex">
+                            <Checkbox
+                              checked={on}
+                              onChange={(v) => toggleMap.mutate({ typeId: t.id, methodId: m.id, on: v })}
+                            />
+                          </span>
+                        </td>
+                      )
+                    })}
+                    <td className="px-2 py-2">
+                      <IconButton
+                        label={`מחיקת ${m.name}`}
+                        size="sm"
+                        className="hover:text-error"
+                        onClick={async () => {
+                          if (await confirm(`למחוק את "${m.name}"?`, { title: 'מחיקת אופן ביצוע', confirmLabel: 'מחיקה' }))
+                            del.mutate({ table: 'execution_methods', id: m.id })
+                        }}
+                      >
+                        <Trash2 size={ICON.sm} strokeWidth={STROKE} />
+                      </IconButton>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardBody>
+    </Card>
   )
 }
+
+/* ===== statuses =========================================================== */
+
+const STATUS_COLORS = ['#3563f0', '#8b5cf6', '#0ea5e9', '#1fa189', '#16a34a', '#f59e0b', '#ef4444', '#8a93a5']
 
 function StatusesTab() {
   const qc = useQueryClient()
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
-  const { data: statuses = [] } = useStatuses()
-  const [form, setForm] = useState({ name: '', entity: 'task', color: '#3b82f6', is_terminal: false })
+  const { data: statuses = [], isLoading } = useStatuses()
+  const [form, setForm] = useState({ name: '', entity: 'task', color: '#3563f0', is_terminal: false })
   const del = useSoftDelete('statuses')
 
   const add = useMutation({
     mutationFn: async () => {
       if (!form.name.trim()) throw new Error('חובה להזין שם')
-      const { error } = await supabase.from('statuses').insert({ ...form, sort_order: statuses.length + 1 })
+      const { error } = await supabase.from('statuses').insert({ ...form, sort_order: (statuses?.length ?? 0) + 1 })
       if (error) throw error
     },
     onSuccess: () => {
+      toast.success('הסטטוס נוסף')
       setForm((f) => ({ ...f, name: '' }))
       void qc.invalidateQueries({ queryKey: ['statuses'] })
     },
@@ -235,56 +364,102 @@ function StatusesTab() {
   })
 
   return (
-    <div className="surface max-w-3xl space-y-3 p-4">
+    <Card className="max-w-3xl">
       {dialog}
-      <div className="flex flex-wrap items-end gap-2">
-        <Field label="סטטוס חדש"><Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
-        <Field label="עבור">
-          <Select value={form.entity} onChange={(e) => setForm((f) => ({ ...f, entity: e.target.value }))}>
+      <CardHeader
+        title="סטטוסים"
+        subtitle="סטטוס סוגר מסמן שהמשימה הושלמה או בוטלה — משפיע על חישוב האיחורים"
+        icon={<Zap size={ICON.md} strokeWidth={STROKE} />}
+      />
+      <AddRow onSubmit={() => add.mutate()} pending={add.isPending} disabled={!form.name.trim()}>
+        <Field label="סטטוס חדש" className="min-w-40 flex-1">
+          <Input inputSize="sm" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+        </Field>
+        <Field label="עבור" className="w-32">
+          <Select selectSize="sm" value={form.entity} onChange={(e) => setForm((f) => ({ ...f, entity: e.target.value }))}>
             <option value="task">משימות</option>
             <option value="event">אירועים</option>
           </Select>
         </Field>
         <Field label="צבע">
-          <input type="color" value={form.color} onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))} className="h-9 w-14 cursor-pointer rounded border border-[var(--border)] bg-transparent" />
-        </Field>
-        <Checkbox label="סטטוס סוגר (הושלם/בוטל)" checked={form.is_terminal} onChange={(v) => setForm((f) => ({ ...f, is_terminal: v }))} />
-        <Button variant="primary" onClick={() => add.mutate()}><Plus size={14} /> הוספה</Button>
-      </div>
-      {(['task', 'event'] as const).map((entity) => (
-        <div key={entity}>
-          <h3 className="mb-1 text-xs font-bold text-[var(--muted)]">{entity === 'task' ? 'סטטוסי משימות' : 'סטטוסי אירועים'}</h3>
-          <div className="flex flex-wrap gap-2">
-            {statuses.filter((s) => s.entity === entity).map((s) => (
-              <span key={s.id} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] px-2.5 py-1 text-sm">
-                <span className="size-2.5 rounded-full" style={{ background: s.color }} />
-                {s.name}
-                {s.is_default && <Badge>ברירת מחדל</Badge>}
-                {s.is_terminal && <Badge>סוגר</Badge>}
-                {!s.is_default && (
-                  <button
-                    className="text-[var(--muted)] hover:text-red-500"
-                    onClick={async () => {
-                      if (await confirm(`למחוק את "${s.name}"?`)) del.mutate({ table: 'statuses', id: s.id })
-                    }}
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                )}
-              </span>
+          <div className="flex items-center gap-1">
+            {STATUS_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                aria-label={`צבע ${c}`}
+                aria-pressed={form.color === c}
+                onClick={() => setForm((f) => ({ ...f, color: c }))}
+                className="size-6 rounded-md transition-transform hover:scale-110 focus-visible:outline-none focus-visible:focus-ring"
+                style={{ background: c, boxShadow: form.color === c ? `0 0 0 2px var(--vl-surface), 0 0 0 4px ${c}` : undefined }}
+              />
             ))}
           </div>
+        </Field>
+        <div className="pb-1.5">
+          <Checkbox
+            label="סטטוס סוגר"
+            checked={form.is_terminal}
+            onChange={(v) => setForm((f) => ({ ...f, is_terminal: v }))}
+          />
         </div>
-      ))}
-    </div>
+      </AddRow>
+      <CardBody className="space-y-5">
+        {isLoading ? (
+          <Skeleton className="h-32 w-full" />
+        ) : (
+          (['task', 'event'] as const).map((entity) => {
+            const list = (statuses ?? []).filter((s) => s.entity === entity)
+            return (
+              <div key={entity}>
+                <h3 className="mb-2 type-overline">{entity === 'task' ? 'סטטוסי משימות' : 'סטטוסי אירועים'}</h3>
+                {list.length === 0 ? (
+                  <p className="type-caption text-ink-tertiary">אין סטטוסים</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {list.map((s) => (
+                      <span
+                        key={s.id}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-line py-1 pe-1.5 ps-2.5 type-body"
+                      >
+                        <span className="size-2.5 shrink-0 rounded-full" style={{ background: s.color }} />
+                        {s.name}
+                        {s.is_default && <Badge tone="primary">ברירת מחדל</Badge>}
+                        {s.is_terminal && <Badge tone="success">סוגר</Badge>}
+                        {!s.is_default && (
+                          <IconButton
+                            label={`מחיקת ${s.name}`}
+                            size="sm"
+                            bare
+                            className="size-5 hover:text-error"
+                            onClick={async () => {
+                              if (await confirm(`למחוק את "${s.name}"?`, { title: 'מחיקת סטטוס', confirmLabel: 'מחיקה' }))
+                                del.mutate({ table: 'statuses', id: s.id })
+                            }}
+                          >
+                            <Trash2 size={12} />
+                          </IconButton>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })
+        )}
+      </CardBody>
+    </Card>
   )
 }
+
+/* ===== trucks ============================================================= */
 
 function TrucksTab() {
   const qc = useQueryClient()
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
-  const { data: trucks = [] } = useTrucks()
+  const { data: trucks = [], isLoading } = useTrucks()
   const [form, setForm] = useState({ name: '', plate_number: '' })
   const del = useSoftDelete('trucks')
 
@@ -295,6 +470,7 @@ function TrucksTab() {
       if (error) throw error
     },
     onSuccess: () => {
+      toast.success('המשאית נוספה')
       setForm({ name: '', plate_number: '' })
       void qc.invalidateQueries({ queryKey: ['trucks'] })
     },
@@ -302,35 +478,81 @@ function TrucksTab() {
   })
 
   return (
-    <div className="surface max-w-2xl space-y-3 p-4">
+    <Card className="max-w-2xl">
       {dialog}
-      <div className="flex flex-wrap items-end gap-2">
-        <Field label="שם משאית"><Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
-        <Field label="מספר רישוי"><Input dir="ltr" value={form.plate_number} onChange={(e) => setForm((f) => ({ ...f, plate_number: e.target.value }))} /></Field>
-        <Button variant="primary" onClick={() => add.mutate()}><Plus size={14} /> הוספה</Button>
-      </div>
-      <div className="divide-y divide-[var(--border)]">
-        {trucks.length === 0 && <p className="py-3 text-sm text-[var(--muted)]">אין משאיות</p>}
-        {trucks.map((t) => (
-          <div key={t.id} className="flex items-center justify-between py-2">
-            <div>
-              <p className="text-sm font-medium">{t.name}</p>
-              <p className="text-xs text-[var(--muted)]" dir="ltr">{t.plate_number}</p>
-            </div>
-            <button
-              className="text-[var(--muted)] hover:text-red-500"
-              onClick={async () => {
-                if (await confirm(`למחוק את "${t.name}"?`)) del.mutate({ table: 'trucks', id: t.id })
-              }}
-            >
-              <Trash2 size={14} />
-            </button>
+      <CardHeader
+        title="צי משאיות"
+        subtitle={`${trucks.length} משאיות · ${trucks.filter((t) => t.is_active).length} פעילות`}
+        icon={<Truck size={ICON.md} strokeWidth={STROKE} />}
+      />
+      <AddRow onSubmit={() => add.mutate()} pending={add.isPending} disabled={!form.name.trim()}>
+        <Field label="שם משאית" className="min-w-40 flex-1">
+          <Input inputSize="sm" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+        </Field>
+        <Field label="מספר רישוי" className="w-36">
+          <Input
+            inputSize="sm"
+            dir="ltr"
+            value={form.plate_number}
+            onChange={(e) => setForm((f) => ({ ...f, plate_number: e.target.value }))}
+          />
+        </Field>
+      </AddRow>
+      <CardBody padded={false}>
+        {isLoading ? (
+          <div className="p-4">
+            <Skeleton className="h-24 w-full" />
           </div>
-        ))}
-      </div>
-    </div>
+        ) : trucks.length === 0 ? (
+          <EmptyState compact art="box" title="אין משאיות" description="הוסף משאיות כדי לשייך אותן לנהגים ולמשימות" />
+        ) : (
+          <ul>
+            {trucks.map((t) => (
+              <li key={t.id} className="flex items-center gap-3 border-b border-line-subtle px-4 py-2.5 last:border-0 hover:bg-hover">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-subtle text-ink-tertiary" aria-hidden>
+                  <Truck size={ICON.sm} strokeWidth={STROKE} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate type-body font-medium">{t.name}</p>
+                  <p className="truncate type-caption tabular text-ink-tertiary" dir="ltr">
+                    {t.plate_number || '—'}
+                  </p>
+                </div>
+                {!t.is_active && <StatusPill color="#8a93a5">לא פעילה</StatusPill>}
+                <IconButton
+                  label={`מחיקת ${t.name}`}
+                  size="sm"
+                  className="hover:text-error"
+                  onClick={async () => {
+                    if (await confirm(`למחוק את "${t.name}"?`, { title: 'מחיקת משאית', confirmLabel: 'מחיקה' }))
+                      del.mutate({ table: 'trucks', id: t.id })
+                  }}
+                >
+                  <Trash2 size={ICON.sm} strokeWidth={STROKE} />
+                </IconButton>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardBody>
+    </Card>
   )
 }
+
+/* ===== recycle bin ======================================================== */
+
+const RECYCLE_TABLES = [
+  { value: 'events', label: 'אירועים' },
+  { value: 'tasks', label: 'משימות' },
+  { value: 'customers', label: 'לקוחות' },
+  { value: 'contractors', label: 'קבלנים' },
+  { value: 'profiles', label: 'משתמשים' },
+  { value: 'suppliers', label: 'ספקים' },
+  { value: 'trucks', label: 'משאיות' },
+  { value: 'task_types', label: 'סוגי משימות' },
+  { value: 'execution_methods', label: 'אופני ביצוע' },
+  { value: 'statuses', label: 'סטטוסים' },
+]
 
 function RecycleBinTab() {
   const { me } = useAuth()
@@ -340,6 +562,7 @@ function RecycleBinTab() {
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['recycle', table],
+    enabled: !!me?.profile.is_admin,
     queryFn: async () => {
       const { data, error } = await supabase
         .from(table)
@@ -364,100 +587,175 @@ function RecycleBinTab() {
     onError: (e) => toast.error((e as Error).message),
   })
 
-  if (!me?.profile.is_admin) return <p className="text-sm text-[var(--muted)]">סל המיחזור זמין למנהלי מערכת בלבד.</p>
+  if (!me?.profile.is_admin) return <AdminOnly what="סל המיחזור" />
 
   const labelOf = (r: Record<string, unknown>) =>
     (r.name as string) || (r.end_client_name as string) || (r.full_name as string) || (r.title as string) || (r.id as string)
 
   return (
-    <div className="surface max-w-2xl space-y-3 p-4">
-      <Select className="max-w-52" value={table} onChange={(e) => setTable(e.target.value)}>
-        <option value="events">אירועים</option>
-        <option value="tasks">משימות</option>
-        <option value="customers">לקוחות</option>
-        <option value="contractors">קבלנים</option>
-        <option value="profiles">משתמשים</option>
-        <option value="suppliers">ספקים</option>
-        <option value="trucks">משאיות</option>
-        <option value="task_types">סוגי משימות</option>
-        <option value="execution_methods">אופני ביצוע</option>
-        <option value="statuses">סטטוסים</option>
-      </Select>
-      {isLoading ? (
-        <Spinner full />
-      ) : rows.length === 0 ? (
-        <EmptyState text="סל המיחזור ריק" />
-      ) : (
-        <div className="divide-y divide-[var(--border)]">
-          {rows.map((r) => (
-            <div key={r.id as string} className="flex items-center justify-between py-2">
-              <div>
-                <p className="text-sm font-medium">{labelOf(r)}</p>
-                <p className="text-xs text-[var(--muted)]">נמחק: {fmtDateTime(r.deleted_at as string)}</p>
-              </div>
-              <Button onClick={() => restore.mutate(r.id as string)}>
-                <RotateCcw size={13} /> שחזור
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <Card className="max-w-2xl">
+      <CardHeader
+        title="סל מיחזור"
+        subtitle="פריטים שנמחקו מחיקה רכה — ניתן לשחזר אותם למצבם הקודם"
+        icon={<RotateCcw size={ICON.md} strokeWidth={STROKE} />}
+        actions={
+          <Select className="w-44" selectSize="sm" value={table} onChange={(e) => setTable(e.target.value)} aria-label="סוג הפריטים">
+            {RECYCLE_TABLES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </Select>
+        }
+      />
+      <CardBody padded={false}>
+        {isLoading ? (
+          <div className="p-4">
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ) : rows.length === 0 ? (
+          <EmptyState compact art="check" title="סל המיחזור ריק" description="לא נמחקו פריטים מסוג זה" />
+        ) : (
+          <ul>
+            {rows.map((r) => (
+              <li key={r.id as string} className="flex items-center gap-3 border-b border-line-subtle px-4 py-2.5 last:border-0 hover:bg-hover">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate type-body font-medium">{labelOf(r)}</p>
+                  <p className="type-caption text-ink-tertiary" title={fmtDateTime(r.deleted_at as string)}>
+                    נמחק {fmtRelative(r.deleted_at as string)}
+                  </p>
+                </div>
+                <Button size="sm" loading={restore.isPending} onClick={() => restore.mutate(r.id as string)}>
+                  <RotateCcw size={ICON.sm} strokeWidth={STROKE} />
+                  שחזור
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardBody>
+    </Card>
   )
 }
 
+/* ===== audit log ========================================================== */
+
+interface AuditRow {
+  id: number
+  action: 'INSERT' | 'UPDATE' | 'DELETE'
+  table_name: string
+  changed_cols: string[] | null
+  created_at: string
+}
+
+const AUDIT_COLORS = { INSERT: '#16a34a', UPDATE: '#3563f0', DELETE: '#dc2626' }
+const AUDIT_LABELS = { INSERT: 'יצירה', UPDATE: 'עדכון', DELETE: 'מחיקה' }
+
 function AuditLogTab() {
   const { me } = useAuth()
+  const [action, setAction] = useState<'' | AuditRow['action']>('')
+
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['audit', 'global'],
     enabled: !!me?.profile.is_admin,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('audit_log')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(200)
+      const { data, error } = await supabase.from('audit_log').select('*').order('created_at', { ascending: false }).limit(200)
       if (error) throw error
-      return data as {
-        id: number
-        action: 'INSERT' | 'UPDATE' | 'DELETE'
-        table_name: string
-        changed_cols: string[] | null
-        created_at: string
-      }[]
+      return data as AuditRow[]
     },
   })
 
-  if (!me?.profile.is_admin) return <p className="text-sm text-[var(--muted)]">יומן הפעילות זמין למנהלי מערכת בלבד.</p>
-  if (isLoading) return <Spinner full />
+  const filtered = useMemo(() => (action ? rows.filter((r) => r.action === action) : rows), [rows, action])
 
-  const colors = { INSERT: '#22c55e', UPDATE: '#3b82f6', DELETE: '#ef4444' }
-  const labels = { INSERT: 'יצירה', UPDATE: 'עדכון', DELETE: 'מחיקה' }
+  const columns = useMemo<Column<AuditRow>[]>(
+    () => [
+      {
+        key: 'created_at',
+        header: 'זמן',
+        width: 170,
+        fixed: true,
+        sortValue: (r) => r.created_at,
+        render: (r) => (
+          <Tooltip content={fmtDateTime(r.created_at)}>
+            <span className="tabular">{fmtRelative(r.created_at)}</span>
+          </Tooltip>
+        ),
+      },
+      {
+        key: 'action',
+        header: 'פעולה',
+        width: 110,
+        sortValue: (r) => r.action,
+        render: (r) => <StatusPill color={AUDIT_COLORS[r.action]}>{AUDIT_LABELS[r.action]}</StatusPill>,
+      },
+      {
+        key: 'table_name',
+        header: 'טבלה',
+        width: 160,
+        sortValue: (r) => r.table_name,
+        render: (r) => <span className="font-mono type-caption">{r.table_name}</span>,
+      },
+      {
+        key: 'changed_cols',
+        header: 'שדות שהשתנו',
+        width: 320,
+        render: (r) => {
+          const cols = (r.changed_cols ?? []).filter((c) => !['updated_at', 'search_tsv'].includes(c))
+          if (cols.length === 0) return <span className="text-ink-tertiary">—</span>
+          return (
+            <Tooltip content={cols.join(', ')}>
+              <span className="flex flex-wrap gap-1">
+                {cols.slice(0, 4).map((c) => (
+                  <span key={c} className="rounded bg-subtle px-1.5 py-0.5 font-mono text-[11px] text-ink-secondary">
+                    {c}
+                  </span>
+                ))}
+                {cols.length > 4 && <span className="type-caption text-ink-tertiary">+{cols.length - 4}</span>}
+              </span>
+            </Tooltip>
+          )
+        },
+      },
+    ],
+    [],
+  )
+
+  if (!me?.profile.is_admin) return <AdminOnly what="יומן הפעילות" />
 
   return (
-    <div className="surface max-w-3xl overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-[var(--border)] text-xs text-[var(--muted)]">
-            <th className="px-3 py-2 text-start">זמן</th>
-            <th className="px-3 py-2 text-start">פעולה</th>
-            <th className="px-3 py-2 text-start">טבלה</th>
-            <th className="px-3 py-2 text-start">שדות שהשתנו</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} className="border-b border-[var(--border)] last:border-0">
-              <td className="px-3 py-2 whitespace-nowrap text-xs">{fmtDateTime(r.created_at)}</td>
-              <td className="px-3 py-2"><Badge color={colors[r.action]}>{labels[r.action]}</Badge></td>
-              <td className="px-3 py-2 text-xs">{r.table_name}</td>
-              <td className="max-w-64 truncate px-3 py-2 text-xs text-[var(--muted)]">
-                {(r.changed_cols ?? []).filter((c) => !['updated_at', 'search_tsv'].includes(c)).join(', ')}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      className="max-w-4xl"
+      rows={filtered}
+      columns={columns}
+      getRowId={(r) => String(r.id)}
+      loading={isLoading}
+      dense
+      pageSize={25}
+      storageKey="audit"
+      toolbar={
+        <div className="flex items-center gap-2">
+          <h2 className="type-title">יומן פעילות</h2>
+          <Select className="w-36" selectSize="sm" value={action} onChange={(e) => setAction(e.target.value as typeof action)} aria-label="סינון לפי פעולה">
+            <option value="">כל הפעולות</option>
+            <option value="INSERT">יצירה</option>
+            <option value="UPDATE">עדכון</option>
+            <option value="DELETE">מחיקה</option>
+          </Select>
+        </div>
+      }
+      empty={<EmptyState art="table" title="אין רשומות ביומן" description="200 הפעולות האחרונות יופיעו כאן" />}
+    />
+  )
+}
+
+function AdminOnly({ what }: { what: string }) {
+  return (
+    <Card className="max-w-md">
+      <EmptyState
+        art="alert"
+        title="גישה למנהלי מערכת בלבד"
+        description={`${what} זמין למנהלי מערכת. פנה למנהל אם דרושה לך גישה.`}
+      />
+    </Card>
   )
 }

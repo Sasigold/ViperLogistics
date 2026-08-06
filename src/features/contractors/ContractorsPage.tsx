@@ -1,51 +1,136 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import { HardHat, ICON, Mail, Phone, Plus, STROKE, User, Wallet } from '../../components/ui/icons'
+import {
+  Avatar,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  Input,
+  Modal,
+  PageHeader,
+  SearchInput,
+  SkeletonCard,
+  StatusPill,
+  useToast,
+} from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { Badge, Button, Field, Input, Modal, Spinner, EmptyState, useToast } from '../../components/ui'
 import { useContractors } from '../../lib/queries'
+import { fmtMoney } from '../../lib/dates'
 import { RequirePermission } from '../auth/guards'
 
 export default function ContractorsPage() {
   const { can } = useAuth()
   const { data: contractors = [], isLoading } = useContractors()
   const [createOpen, setCreateOpen] = useState(false)
+  const [q, setQ] = useState('')
+
+  const needle = q.trim().toLowerCase()
+  const filtered = contractors.filter(
+    (c) =>
+      !needle ||
+      c.name.toLowerCase().includes(needle) ||
+      (c.contact_name ?? '').toLowerCase().includes(needle) ||
+      (c.phone ?? '').includes(needle),
+  )
 
   return (
     <RequirePermission resource="contractors">
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold">קבלנים</h1>
-          <div className="ms-auto">
-            {can('contractors', 'create') && (
-              <Button variant="primary" onClick={() => setCreateOpen(true)}>
-                <Plus size={14} /> קבלן חדש
+      <div className="space-y-4">
+        <PageHeader
+          title="קבלנים"
+          subtitle={isLoading ? 'טוען...' : `${contractors.length} קבלנים · ${contractors.filter((c) => c.is_active).length} פעילים`}
+          actions={
+            can('contractors', 'create') && (
+              <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
+                <Plus size={ICON.sm} strokeWidth={STROKE} />
+                קבלן חדש
               </Button>
-            )}
-          </div>
-        </div>
+            )
+          }
+        >
+          <SearchInput
+            className="max-w-xs"
+            inputSize="sm"
+            placeholder="חיפוש קבלן..."
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onClear={() => setQ('')}
+            aria-label="חיפוש קבלן"
+          />
+        </PageHeader>
+
         {isLoading ? (
-          <Spinner full />
-        ) : contractors.length === 0 ? (
-          <EmptyState text="אין קבלנים" />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <SkeletonCard key={i} lines={1} />
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <Card>
+            <EmptyState
+              art="people"
+              title={needle ? 'אין קבלנים תואמים' : 'עדיין אין קבלנים'}
+              description={
+                needle
+                  ? 'נסה מונח חיפוש אחר'
+                  : 'קבלן מקבל פורטל משלו שבו הוא משבץ את עובדיו למשימות שהואצלו אליו'
+              }
+              action={
+                needle ? (
+                  <Button size="sm" onClick={() => setQ('')}>
+                    ניקוי חיפוש
+                  </Button>
+                ) : (
+                  can('contractors', 'create') && (
+                    <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
+                      <Plus size={ICON.sm} />
+                      קבלן חדש
+                    </Button>
+                  )
+                )
+              }
+            />
+          </Card>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {contractors.map((c) => (
-              <Link key={c.id} to={`/contractors/${c.id}`} className="surface p-4 transition-shadow hover:shadow-md">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold">{c.name}</span>
-                  {!c.is_active && <Badge>לא פעיל</Badge>}
-                </div>
-                <p className="mt-1 text-sm text-[var(--muted)]">{[c.contact_name, c.phone].filter(Boolean).join(' · ') || '—'}</p>
-                {c.default_task_price != null && (
-                  <p className="mt-1 text-xs text-[var(--muted)]">מחיר ברירת מחדל: ₪{c.default_task_price}</p>
-                )}
-              </Link>
+            {filtered.map((c) => (
+              <Card key={c.id} as="article" interactive>
+                <Link to={`/contractors/${c.id}`} className="block p-4 focus-visible:outline-none focus-visible:focus-ring">
+                  <div className="flex items-start gap-2.5">
+                    <Avatar name={c.name} size="lg" />
+                    <div className="min-w-0 flex-1">
+                      <h2 className="truncate type-title">{c.name}</h2>
+                      <p className="mt-0.5 truncate type-caption text-ink-tertiary">
+                        {c.contact_name || 'ללא איש קשר'}
+                      </p>
+                    </div>
+                    {!c.is_active && <StatusPill color="#8a93a5">לא פעיל</StatusPill>}
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    {c.phone && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-subtle px-2 py-0.5 type-caption tabular text-ink-secondary" dir="ltr">
+                        <Phone size={10} />
+                        {c.phone}
+                      </span>
+                    )}
+                    {c.default_task_price != null && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-subtle px-2 py-0.5 type-caption tabular text-ink-secondary">
+                        <Wallet size={10} />
+                        {fmtMoney(c.default_task_price)} למשימה
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              </Card>
             ))}
           </div>
         )}
+
         <CreateContractorModal open={createOpen} onClose={() => setCreateOpen(false)} />
       </div>
     </RequirePermission>
@@ -56,6 +141,7 @@ function CreateContractorModal({ open, onClose }: { open: boolean; onClose: () =
   const qc = useQueryClient()
   const toast = useToast()
   const [form, setForm] = useState({ name: '', contact_name: '', phone: '', email: '', default_task_price: '' })
+  const [touched, setTouched] = useState(false)
 
   const save = useMutation({
     mutationFn: async () => {
@@ -70,34 +156,70 @@ function CreateContractorModal({ open, onClose }: { open: boolean; onClose: () =
       toast.success('הקבלן נוצר')
       void qc.invalidateQueries({ queryKey: ['contractors'] })
       setForm({ name: '', contact_name: '', phone: '', email: '', default_task_price: '' })
+      setTouched(false)
       onClose()
     },
     onError: (e) => toast.error((e as Error).message),
   })
 
   return (
-    <Modal open={open} onClose={onClose} title="קבלן חדש">
-      <div className="space-y-3">
-        <Field label="שם" required>
-          <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="קבלן חדש"
+      description="לאחר היצירה ניתן להוסיף לו סגל עובדים ולהאציל אליו משימות"
+      footer={
+        <>
+          <Button onClick={onClose}>ביטול</Button>
+          <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
+            יצירה
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Field label="שם הקבלן" required error={touched && !form.name.trim() ? 'חובה להזין שם קבלן' : undefined}>
+          <Input
+            data-autofocus
+            leading={<HardHat size={ICON.sm} strokeWidth={STROKE} />}
+            value={form.name}
+            onBlur={() => setTouched(true)}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="איש קשר">
-            <Input value={form.contact_name} onChange={(e) => setForm((f) => ({ ...f, contact_name: e.target.value }))} />
+            <Input
+              leading={<User size={ICON.sm} />}
+              value={form.contact_name}
+              onChange={(e) => setForm((f) => ({ ...f, contact_name: e.target.value }))}
+            />
           </Field>
           <Field label="טלפון">
-            <Input dir="ltr" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+            <Input
+              dir="ltr"
+              leading={<Phone size={ICON.sm} />}
+              value={form.phone}
+              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            />
           </Field>
           <Field label="אימייל">
-            <Input dir="ltr" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+            <Input
+              dir="ltr"
+              type="email"
+              leading={<Mail size={ICON.sm} />}
+              value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            />
           </Field>
-          <Field label="מחיר ברירת מחדל למשימה (₪)">
-            <Input type="number" min="0" value={form.default_task_price} onChange={(e) => setForm((f) => ({ ...f, default_task_price: e.target.value }))} />
+          <Field label="מחיר ברירת מחדל" hint="בשקלים, למשימה">
+            <Input
+              type="number"
+              min="0"
+              value={form.default_task_price}
+              onChange={(e) => setForm((f) => ({ ...f, default_task_price: e.target.value }))}
+            />
           </Field>
-        </div>
-        <div className="flex justify-end gap-2 pt-2">
-          <Button onClick={onClose}>ביטול</Button>
-          <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>יצירה</Button>
         </div>
       </div>
     </Modal>

@@ -1,11 +1,28 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Pencil, Plus, Trash2, History } from 'lucide-react'
+import { Copy, History, ICON, Pencil, Plus, STROKE, Trash2 } from '../../components/ui/icons'
+import {
+  AvatarGroup,
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  DataTable,
+  EmptyState,
+  PageHeader,
+  SkeletonCard,
+  SkeletonTable,
+  StatusPill,
+  useConfirm,
+  useToast,
+} from '../../components/ui'
+import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { Badge, Button, Spinner, useConfirm, useToast } from '../../components/ui'
 import { fmtDate, fmtDateLong, fmtHours, fmtTime } from '../../lib/dates'
+import { usePageTitle } from '../../app/breadcrumbs'
 import { EventFormModal } from './EventFormModal'
 import { TaskDrawer } from '../tasks/TaskDrawer'
 import { AuditTrail } from '../settings/AuditTrail'
@@ -39,7 +56,7 @@ export default function EventDetailPage() {
     },
   })
 
-  const { data: tasks = [] } = useQuery({
+  const { data: tasks = [], isLoading: loadingTasks } = useQuery({
     queryKey: ['workboard', 'byEvent', id],
     queryFn: async () => {
       const { data, error } = await supabase.from('work_board_view').select('*').eq('event_id', id).order('task_date')
@@ -48,11 +65,123 @@ export default function EventDetailPage() {
     },
   })
 
-  if (isLoading || !data) return <Spinner full />
+  usePageTitle(data?.event.end_client_name ?? null)
+
+  const columns = useMemo<Column<WorkBoardRow>[]>(
+    () => [
+      {
+        key: 'type',
+        header: 'משימה',
+        width: 160,
+        fixed: true,
+        sortValue: (t) => t.title ?? t.task_type_name,
+        render: (t) => <span className="font-medium">{t.title || t.task_type_name}</span>,
+      },
+      {
+        key: 'date',
+        header: 'תאריך',
+        width: 110,
+        sortValue: (t) => t.task_date,
+        render: (t) => <span className="tabular">{fmtDate(t.task_date)}</span>,
+      },
+      {
+        key: 'window',
+        header: 'שעות בשטח',
+        width: 130,
+        sortValue: (t) => t.onsite_start_time,
+        render: (t) => (
+          <span className="tabular" dir="ltr">
+            {fmtTime(t.onsite_start_time) || '—'}
+            {t.onsite_end_time ? `–${fmtTime(t.onsite_end_time)}` : ''}
+          </span>
+        ),
+      },
+      {
+        key: 'hours',
+        header: 'משך',
+        width: 80,
+        align: 'end',
+        sortValue: (t) => t.hours_count,
+        render: (t) => <span className="tabular">{fmtHours(t.hours_count) || '—'}</span>,
+      },
+      {
+        key: 'team',
+        header: 'צוות',
+        width: 150,
+        render: (t) => {
+          const names = [
+            ...(t.workers ?? []).map((w) => w.name),
+            ...(t.drivers ?? []).map((d) => d.name),
+            ...(t.contractor_worker_list ?? []).map((w) => w.name),
+          ]
+          return names.length ? (
+            <span className="flex items-center gap-1.5">
+              <AvatarGroup names={names} max={3} size="xs" />
+              <span className="type-caption tabular text-ink-tertiary">
+                {names.length}/{t.worker_count || '—'}
+              </span>
+            </span>
+          ) : (
+            <span className="type-caption text-ink-tertiary">לא שובץ</span>
+          )
+        },
+      },
+      {
+        key: 'method',
+        header: 'אופן ביצוע',
+        width: 140,
+        sortValue: (t) => t.execution_method_name,
+        render: (t) => t.execution_method_name || <span className="text-ink-tertiary">—</span>,
+      },
+      {
+        key: 'lead',
+        header: 'ראש צוות',
+        width: 130,
+        sortValue: (t) => t.team_lead_name,
+        render: (t) => t.team_lead_name || <span className="text-ink-tertiary">—</span>,
+      },
+      {
+        key: 'contractor',
+        header: 'קבלן',
+        width: 130,
+        sortValue: (t) => t.contractor_name,
+        render: (t) => t.contractor_name || <span className="text-ink-tertiary">—</span>,
+      },
+      {
+        key: 'status',
+        header: 'סטטוס',
+        width: 130,
+        sortValue: (t) => t.status_name,
+        render: (t) => <StatusPill color={t.status_color}>{t.status_name}</StatusPill>,
+      },
+    ],
+    [],
+  )
+
+  if (isLoading || !data) {
+    return (
+      <div className="space-y-4">
+        <SkeletonCard lines={1} />
+        <div className="grid gap-4 lg:grid-cols-3">
+          <SkeletonCard className="lg:col-span-1" lines={6} />
+          <div className="surface lg:col-span-2">
+            <SkeletonTable rows={5} cols={5} />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const { event, contact, suppliers } = data
 
   const remove = async () => {
-    if (!(await confirm('למחוק את האירוע וכל המשימות שלו? ניתן לשחזר מסל המיחזור.'))) return
+    if (
+      !(await confirm('למחוק את האירוע וכל המשימות שלו? ניתן לשחזר מסל המיחזור.', {
+        title: 'מחיקת אירוע',
+        confirmLabel: 'מחיקה',
+      }))
+    )
+      return
     const { error } = await supabase.rpc('soft_delete', { p_table: 'events', p_id: event.id })
     if (error) return toast.error(error.message)
     toast.success('האירוע נמחק')
@@ -69,7 +198,15 @@ export default function EventDetailPage() {
   }
 
   const info: [string, React.ReactNode][] = [
-    ['לקוח במערכת', <span key="c" className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full" style={{ background: event.customers?.color }} />{event.customers?.name}</span>],
+    [
+      'לקוח במערכת',
+      event.customers ? (
+        <span key="customer" className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full" style={{ background: event.customers.color }} />
+          {event.customers.name}
+        </span>
+      ) : null,
+    ],
     ['שם לקוח האירוע', event.end_client_name],
     ['מספר אירוע', event.event_number],
     ['מיקום', event.location_text],
@@ -77,7 +214,17 @@ export default function EventDetailPage() {
     ['נפח במטר', event.volume_m],
     ['כמות משאיות', event.truck_count],
     ...(canViewField('event', 'contact_phone')
-      ? ([['איש קשר', contact?.contact_name], ['טלפון איש קשר', contact?.contact_phone]] as [string, React.ReactNode][])
+      ? ([
+          ['איש קשר', contact?.contact_name],
+          [
+            'טלפון איש קשר',
+            contact?.contact_phone ? (
+              <a key="phone" href={`tel:${contact.contact_phone}`} dir="ltr" className="text-primary-text hover:underline">
+                {contact.contact_phone}
+              </a>
+            ) : null,
+          ],
+        ] as [string, React.ReactNode][])
       : []),
     ['הערות', event.notes],
   ]
@@ -91,100 +238,128 @@ export default function EventDetailPage() {
   return (
     <div className="space-y-4">
       {dialog}
-      <div className="flex flex-wrap items-center gap-2">
-        <div>
-          <h1 className="text-xl font-bold">{event.end_client_name || 'אירוע'}</h1>
-          <p className="text-sm text-[var(--muted)]">{fmtDateLong(event.event_date)}</p>
-        </div>
-        {event.statuses && <Badge color={event.statuses.color}>{event.statuses.name}</Badge>}
-        <div className="ms-auto flex flex-wrap gap-2">
-          {me?.profile.is_admin && (
-            <Button onClick={() => setAuditOpen(true)}><History size={14} /> היסטוריה</Button>
-          )}
-          {can('events', 'create') && (
-            <Button onClick={() => void duplicate()}><Copy size={14} /> שכפול</Button>
-          )}
-          {can('events', 'edit') && (
-            <Button onClick={() => setEditOpen(true)}><Pencil size={14} /> עריכה</Button>
-          )}
-          {can('events', 'delete') && (
-            <Button variant="danger" onClick={() => void remove()}><Trash2 size={14} /> מחיקה</Button>
-          )}
-        </div>
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="surface p-4 lg:col-span-1">
-          <h2 className="mb-3 text-sm font-bold">פרטי האירוע</h2>
-          <dl className="space-y-2 text-sm">
-            {info.filter(([, v]) => v != null && v !== '').map(([k, v]) => (
-              <div key={k} className="flex justify-between gap-2">
-                <dt className="text-[var(--muted)]">{k}</dt>
-                <dd className="text-end font-medium">{v}</dd>
-              </div>
-            ))}
-            {addons.length > 0 && (
-              <div className="flex justify-between gap-2">
-                <dt className="text-[var(--muted)]">תוספות</dt>
-                <dd className="flex flex-wrap justify-end gap-1">{addons.map((a) => <Badge key={String(a)}>{a}</Badge>)}</dd>
-              </div>
-            )}
-            {suppliers.length > 0 && (
-              <div className="flex justify-between gap-2">
-                <dt className="text-[var(--muted)]">ספקים לאיסוף</dt>
-                <dd className="flex flex-wrap justify-end gap-1">{suppliers.map((s) => <Badge key={s.supplier_id}>{s.suppliers.name}</Badge>)}</dd>
-              </div>
-            )}
-          </dl>
-        </div>
-
-        <div className="surface p-4 lg:col-span-2">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-bold">משימות האירוע</h2>
-            {can('tasks', 'create') && (
-              <Button onClick={() => setTaskDrawer({ open: true, taskId: null })}>
-                <Plus size={14} /> משימה
+      <PageHeader
+        title={
+          <span className="flex flex-wrap items-center gap-2.5">
+            {event.end_client_name || 'אירוע'}
+            {event.statuses && <StatusPill color={event.statuses.color}>{event.statuses.name}</StatusPill>}
+          </span>
+        }
+        subtitle={
+          <span className="flex flex-wrap items-center gap-x-3">
+            <span>{fmtDateLong(event.event_date)}</span>
+            {event.event_number && <span className="tabular">· אירוע #{event.event_number}</span>}
+            {event.location_text && <span>· {event.location_text}</span>}
+          </span>
+        }
+        actions={
+          <>
+            {me?.profile.is_admin && (
+              <Button size="sm" variant="ghost" onClick={() => setAuditOpen(true)}>
+                <History size={ICON.sm} strokeWidth={STROKE} />
+                היסטוריה
               </Button>
             )}
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border)] text-xs text-[var(--muted)]">
-                  <th className="px-2 py-1.5 text-start">סוג</th>
-                  <th className="px-2 py-1.5 text-start">תאריך</th>
-                  <th className="px-2 py-1.5 text-start">שטח</th>
-                  <th className="px-2 py-1.5 text-start">משך</th>
-                  <th className="px-2 py-1.5 text-start">עובדים</th>
-                  <th className="px-2 py-1.5 text-start">אופן ביצוע</th>
-                  <th className="px-2 py-1.5 text-start">ראש צוות</th>
-                  <th className="px-2 py-1.5 text-start">קבלן</th>
-                  <th className="px-2 py-1.5 text-start">סטטוס</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map((t) => (
-                  <tr
-                    key={t.id}
-                    onClick={() => setTaskDrawer({ open: true, taskId: t.id })}
-                    className="cursor-pointer border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg)]"
-                  >
-                    <td className="px-2 py-2 font-medium">{t.title || t.task_type_name}</td>
-                    <td className="px-2 py-2 whitespace-nowrap">{fmtDate(t.task_date)}</td>
-                    <td className="px-2 py-2 whitespace-nowrap" dir="ltr">
-                      {fmtTime(t.onsite_start_time)}{t.onsite_end_time ? `–${fmtTime(t.onsite_end_time)}` : ''}
-                    </td>
-                    <td className="px-2 py-2">{fmtHours(t.hours_count)}</td>
-                    <td className="px-2 py-2">{t.worker_count}</td>
-                    <td className="px-2 py-2">{t.execution_method_name}</td>
-                    <td className="px-2 py-2">{t.team_lead_name}</td>
-                    <td className="px-2 py-2">{t.contractor_name}</td>
-                    <td className="px-2 py-2"><Badge color={t.status_color}>{t.status_name}</Badge></td>
-                  </tr>
+            {can('events', 'create') && (
+              <Button size="sm" onClick={() => void duplicate()}>
+                <Copy size={ICON.sm} strokeWidth={STROKE} />
+                שכפול
+              </Button>
+            )}
+            {can('events', 'edit') && (
+              <Button size="sm" variant="primary" onClick={() => setEditOpen(true)}>
+                <Pencil size={ICON.sm} strokeWidth={STROKE} />
+                עריכה
+              </Button>
+            )}
+            {can('events', 'delete') && (
+              <Button size="sm" variant="danger" onClick={() => void remove()}>
+                <Trash2 size={ICON.sm} strokeWidth={STROKE} />
+                מחיקה
+              </Button>
+            )}
+          </>
+        }
+      />
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-1">
+          <CardHeader title="פרטי האירוע" />
+          <CardBody>
+            <dl className="divide-y divide-line-subtle">
+              {info
+                .filter(([, v]) => v != null && v !== '')
+                .map(([k, v]) => (
+                  <div key={k} className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0">
+                    <dt className="shrink-0 type-caption text-ink-tertiary">{k}</dt>
+                    <dd className="min-w-0 text-end type-body font-medium">{v}</dd>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              {addons.length > 0 && (
+                <div className="flex items-start justify-between gap-3 py-2">
+                  <dt className="shrink-0 type-caption text-ink-tertiary">תוספות</dt>
+                  <dd className="flex flex-wrap justify-end gap-1">
+                    {addons.map((a) => (
+                      <Badge key={String(a)} tone="info">
+                        {a}
+                      </Badge>
+                    ))}
+                  </dd>
+                </div>
+              )}
+              {suppliers.length > 0 && (
+                <div className="flex items-start justify-between gap-3 py-2 last:pb-0">
+                  <dt className="shrink-0 type-caption text-ink-tertiary">ספקים לאיסוף</dt>
+                  <dd className="flex flex-wrap justify-end gap-1">
+                    {suppliers.map((s) => (
+                      <Badge key={s.supplier_id}>{s.suppliers.name}</Badge>
+                    ))}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </CardBody>
+        </Card>
+
+        <div className="lg:col-span-2">
+          <DataTable
+            rows={tasks}
+            columns={columns}
+            getRowId={(t) => t.id}
+            loading={loadingTasks}
+            dense
+            storageKey="event-tasks"
+            onRowClick={(t) => setTaskDrawer({ open: true, taskId: t.id })}
+            defaultSort={{ key: 'date', dir: 'asc' }}
+            toolbar={
+              <div className="flex w-full items-center gap-2">
+                <h2 className="type-title">משימות האירוע</h2>
+                <span className="type-caption tabular text-ink-tertiary">{tasks.length}</span>
+                {can('tasks', 'create') && (
+                  <Button size="sm" className="ms-auto" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
+                    <Plus size={ICON.sm} strokeWidth={STROKE} />
+                    משימה
+                  </Button>
+                )}
+              </div>
+            }
+            empty={
+              <EmptyState
+                art="table"
+                title="אין משימות לאירוע"
+                description="משימות הקמה ופירוק נוצרות אוטומטית עם האירוע; ניתן להוסיף משימות נוספות ידנית"
+                action={
+                  can('tasks', 'create') && (
+                    <Button size="sm" variant="primary" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
+                      <Plus size={ICON.sm} />
+                      משימה חדשה
+                    </Button>
+                  )
+                }
+              />
+            }
+          />
         </div>
       </div>
 

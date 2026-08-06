@@ -1,12 +1,34 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Trash2 } from 'lucide-react'
+import { Banknote, Briefcase, ICON, Plus, STROKE, Trash2, User, Wallet } from '../../components/ui/icons'
+import {
+  Avatar,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  DataTable,
+  EmptyState,
+  Field,
+  IconButton,
+  Input,
+  PageHeader,
+  Skeleton,
+  StatCard,
+  StatusPill,
+  Switch,
+  Tabs,
+  cx,
+  useConfirm,
+  useToast,
+} from '../../components/ui'
+import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { Badge, Button, Field, Input, Spinner, useConfirm, useToast, cx } from '../../components/ui'
 import { useContractorWorkers } from '../../lib/queries'
 import { fmtDate, fmtMoney } from '../../lib/dates'
+import { usePageTitle } from '../../app/breadcrumbs'
 import { RequirePermission } from '../auth/guards'
 import type { Contractor, ContractorWorker } from '../../types/domain'
 
@@ -25,9 +47,15 @@ interface ContractorTaskRow {
   }
 }
 
+const TABS = [
+  { key: 'details', label: 'פרטים' },
+  { key: 'workers', label: 'עובדי הקבלן' },
+  { key: 'tasks', label: 'משימות ותשלומים' },
+] as const
+
 export default function ContractorDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const [tab, setTab] = useState<'details' | 'workers' | 'tasks'>('details')
+  const [tab, setTab] = useState<(typeof TABS)[number]['key']>('details')
 
   const { data: contractor, isLoading } = useQuery({
     queryKey: ['contractors', 'one', id],
@@ -38,26 +66,33 @@ export default function ContractorDetailPage() {
     },
   })
 
-  if (isLoading || !contractor) return <Spinner full />
+  usePageTitle(contractor?.name ?? null)
+
+  if (isLoading || !contractor)
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-56" />
+        <Skeleton className="h-10 w-full max-w-md" />
+        <Skeleton className="h-64 w-full max-w-2xl" />
+      </div>
+    )
 
   return (
     <RequirePermission resource="contractors">
       <div className="space-y-4">
-        <h1 className="text-xl font-bold">{contractor.name}</h1>
-        <div className="flex gap-1 border-b border-[var(--border)]">
-          {([['details', 'פרטים'], ['workers', 'עובדי הקבלן'], ['tasks', 'משימות ותשלומים']] as const).map(([k, label]) => (
-            <button
-              key={k}
-              onClick={() => setTab(k)}
-              className={cx(
-                'border-b-2 px-4 py-2 text-sm font-medium',
-                tab === k ? 'border-brand-600 text-brand-600 dark:text-brand-300' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]',
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <PageHeader
+          title={
+            <span className="flex flex-wrap items-center gap-2.5">
+              <Avatar name={contractor.name} size="lg" />
+              {contractor.name}
+              {!contractor.is_active && <StatusPill color="#8a93a5">לא פעיל</StatusPill>}
+            </span>
+          }
+          subtitle={[contractor.contact_name, contractor.phone].filter(Boolean).join(' · ') || 'ללא פרטי קשר'}
+        >
+          <Tabs items={TABS} value={tab} onChange={setTab} />
+        </PageHeader>
+
         {tab === 'details' && <DetailsTab contractor={contractor} />}
         {tab === 'workers' && <WorkersTab contractorId={contractor.id} />}
         {tab === 'tasks' && <TasksTab contractorId={contractor.id} />}
@@ -65,6 +100,8 @@ export default function ContractorDetailPage() {
     </RequirePermission>
   )
 }
+
+/* ===== details ============================================================ */
 
 function DetailsTab({ contractor }: { contractor: Contractor }) {
   const qc = useQueryClient()
@@ -74,8 +111,17 @@ function DetailsTab({ contractor }: { contractor: Contractor }) {
   const [form, setForm] = useState(contractor)
   useEffect(() => setForm(contractor), [contractor])
 
+  const dirty = useMemo(
+    () =>
+      (['name', 'contact_name', 'phone', 'email', 'notes', 'default_task_price', 'is_active'] as const).some(
+        (k) => form[k] !== contractor[k],
+      ),
+    [form, contractor],
+  )
+
   const save = useMutation({
     mutationFn: async () => {
+      if (!form.name.trim()) throw new Error('חובה להזין שם קבלן')
       const { error } = await supabase
         .from('contractors')
         .update({
@@ -98,41 +144,101 @@ function DetailsTab({ contractor }: { contractor: Contractor }) {
   })
 
   return (
-    <div className="surface max-w-2xl space-y-3 p-4">
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="שם" required>
-          <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} disabled={!canEdit} />
-        </Field>
-        <Field label="איש קשר">
-          <Input value={form.contact_name ?? ''} onChange={(e) => setForm((f) => ({ ...f, contact_name: e.target.value }))} disabled={!canEdit} />
-        </Field>
-        <Field label="טלפון">
-          <Input dir="ltr" value={form.phone ?? ''} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} disabled={!canEdit} />
-        </Field>
-        <Field label="מחיר ברירת מחדל למשימה (₪)">
-          <Input
-            type="number"
-            min="0"
-            value={form.default_task_price ?? ''}
-            onChange={(e) => setForm((f) => ({ ...f, default_task_price: e.target.value === '' ? null : Number(e.target.value) }))}
-            disabled={!canEdit}
-          />
-        </Field>
-      </div>
-      {canEdit && (
-        <div className="flex justify-end">
-          <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>שמירה</Button>
+    <Card className="max-w-2xl">
+      <CardHeader title="פרטי הקבלן" icon={<Briefcase size={ICON.md} strokeWidth={STROKE} />} />
+      <CardBody className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="שם" required error={!form.name.trim() ? 'שדה חובה' : undefined}>
+            <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} disabled={!canEdit} />
+          </Field>
+          <Field label="איש קשר">
+            <Input
+              value={form.contact_name ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, contact_name: e.target.value }))}
+              disabled={!canEdit}
+            />
+          </Field>
+          <Field label="טלפון">
+            <Input dir="ltr" value={form.phone ?? ''} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} disabled={!canEdit} />
+          </Field>
+          <Field label="אימייל">
+            <Input
+              dir="ltr"
+              type="email"
+              value={form.email ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+              disabled={!canEdit}
+            />
+          </Field>
+          <Field label="מחיר ברירת מחדל למשימה" hint="בשקלים, משמש כמחיר התחלתי בהאצלת משימה">
+            <Input
+              type="number"
+              min="0"
+              value={form.default_task_price ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, default_task_price: e.target.value === '' ? null : Number(e.target.value) }))}
+              disabled={!canEdit}
+            />
+          </Field>
         </div>
+        <Field label="הערות">
+          <Input value={form.notes ?? ''} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} disabled={!canEdit} />
+        </Field>
+        <Switch
+          checked={form.is_active}
+          onChange={(v) => setForm((f) => ({ ...f, is_active: v }))}
+          disabled={!canEdit}
+          label="קבלן פעיל"
+          description="קבלן לא פעיל לא יופיע ברשימות ההאצלה"
+        />
+      </CardBody>
+      {canEdit && (
+        <StickySaveBar dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} onReset={() => setForm(contractor)} />
       )}
+    </Card>
+  )
+}
+
+/** Save bar that only asserts itself once something actually changed. */
+export function StickySaveBar({
+  dirty,
+  saving,
+  onSave,
+  onReset,
+}: {
+  dirty: boolean
+  saving?: boolean
+  onSave: () => void
+  onReset?: () => void
+}) {
+  return (
+    <div
+      className={cx(
+        'sticky bottom-0 flex items-center gap-2 border-t border-line-subtle px-4 py-3 transition-colors',
+        dirty ? 'bg-warning-subtle' : 'bg-subtle/50',
+      )}
+    >
+      <span className="type-caption text-ink-tertiary">{dirty ? 'יש שינויים שלא נשמרו' : 'הכול שמור'}</span>
+      <div className="ms-auto flex gap-2">
+        {dirty && onReset && (
+          <Button size="sm" variant="ghost" onClick={onReset}>
+            ביטול שינויים
+          </Button>
+        )}
+        <Button size="sm" variant="primary" loading={saving} disabled={!dirty} onClick={onSave}>
+          שמירה
+        </Button>
+      </div>
     </div>
   )
 }
+
+/* ===== workers ============================================================ */
 
 export function WorkersTab({ contractorId, canManage = true }: { contractorId: string; canManage?: boolean }) {
   const qc = useQueryClient()
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
-  const { data: workers = [] } = useContractorWorkers(contractorId)
+  const { data: workers = [], isLoading } = useContractorWorkers(contractorId)
   const [form, setForm] = useState({ full_name: '', phone: '', id_number: '' })
 
   const add = useMutation({
@@ -142,6 +248,7 @@ export function WorkersTab({ contractorId, canManage = true }: { contractorId: s
       if (error) throw error
     },
     onSuccess: () => {
+      toast.success('העובד נוסף לסגל')
       setForm({ full_name: '', phone: '', id_number: '' })
       void qc.invalidateQueries({ queryKey: ['contractor_workers'] })
     },
@@ -149,42 +256,90 @@ export function WorkersTab({ contractorId, canManage = true }: { contractorId: s
   })
 
   const remove = async (w: ContractorWorker) => {
-    if (!(await confirm(`להסיר את ${w.full_name} מהסגל?`))) return
+    if (!(await confirm(`להסיר את ${w.full_name} מהסגל?`, { title: 'הסרת עובד', confirmLabel: 'הסרה' }))) return
     const { error } = await supabase.from('contractor_workers').update({ deleted_at: new Date().toISOString() }).eq('id', w.id)
     if (error) toast.error(error.message)
-    else void qc.invalidateQueries({ queryKey: ['contractor_workers'] })
+    else {
+      toast.success('העובד הוסר')
+      void qc.invalidateQueries({ queryKey: ['contractor_workers'] })
+    }
   }
 
   return (
-    <div className="surface max-w-2xl space-y-3 p-4">
+    <Card className="max-w-2xl">
       {dialog}
+      <CardHeader
+        title="סגל העובדים"
+        subtitle={`${workers.length} עובדים`}
+        icon={<User size={ICON.md} strokeWidth={STROKE} />}
+      />
       {canManage && (
-        <div className="flex flex-wrap items-end gap-2">
-          <Field label="שם מלא"><Input value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} /></Field>
-          <Field label="טלפון"><Input dir="ltr" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} /></Field>
-          <Field label="ת.ז."><Input dir="ltr" value={form.id_number} onChange={(e) => setForm((f) => ({ ...f, id_number: e.target.value }))} /></Field>
-          <Button variant="primary" loading={add.isPending} onClick={() => add.mutate()}>הוספה</Button>
+        <div className="border-b border-line-subtle bg-subtle/40 p-4">
+          <form
+            className="flex flex-wrap items-end gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              add.mutate()
+            }}
+          >
+            <Field label="שם מלא" className="min-w-40 flex-1">
+              <Input
+                inputSize="sm"
+                value={form.full_name}
+                onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
+              />
+            </Field>
+            <Field label="טלפון" className="w-36">
+              <Input inputSize="sm" dir="ltr" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+            </Field>
+            <Field label="ת.ז." className="w-36">
+              <Input inputSize="sm" dir="ltr" value={form.id_number} onChange={(e) => setForm((f) => ({ ...f, id_number: e.target.value }))} />
+            </Field>
+            <Button type="submit" size="sm" variant="primary" loading={add.isPending} disabled={!form.full_name.trim()}>
+              <Plus size={ICON.sm} strokeWidth={STROKE} />
+              הוספה
+            </Button>
+          </form>
         </div>
       )}
-      <div className="divide-y divide-[var(--border)]">
-        {workers.length === 0 && <p className="py-3 text-sm text-[var(--muted)]">אין עובדים בסגל</p>}
-        {workers.map((w) => (
-          <div key={w.id} className="flex items-center justify-between py-2">
-            <div>
-              <p className="text-sm font-medium">{w.full_name}</p>
-              <p className="text-xs text-[var(--muted)]">{[w.phone, w.id_number].filter(Boolean).join(' · ')}</p>
-            </div>
-            {canManage && (
-              <button onClick={() => void remove(w)} className="text-[var(--muted)] hover:text-red-500">
-                <Trash2 size={14} />
-              </button>
-            )}
+      <CardBody padded={false}>
+        {isLoading ? (
+          <div className="p-4">
+            <Skeleton className="h-24 w-full" />
           </div>
-        ))}
-      </div>
-    </div>
+        ) : workers.length === 0 ? (
+          <EmptyState
+            compact
+            art="people"
+            title="אין עובדים בסגל"
+            description={canManage ? 'הוסף עובדים כדי לשבץ אותם למשימות שהואצלו לקבלן' : undefined}
+          />
+        ) : (
+          <ul>
+            {workers.map((w) => (
+              <li key={w.id} className="flex items-center gap-3 border-b border-line-subtle px-4 py-2.5 last:border-0 hover:bg-hover">
+                <Avatar name={w.full_name} size="md" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate type-body font-medium">{w.full_name}</p>
+                  <p className="truncate type-caption tabular text-ink-tertiary" dir="ltr">
+                    {[w.phone, w.id_number].filter(Boolean).join(' · ') || '—'}
+                  </p>
+                </div>
+                {canManage && (
+                  <IconButton label={`הסרת ${w.full_name}`} size="sm" onClick={() => void remove(w)} className="hover:text-error">
+                    <Trash2 size={ICON.sm} strokeWidth={STROKE} />
+                  </IconButton>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardBody>
+    </Card>
   )
 }
+
+/* ===== tasks & payments =================================================== */
 
 function TasksTab({ contractorId }: { contractorId: string }) {
   const qc = useQueryClient()
@@ -199,7 +354,9 @@ function TasksTab({ contractorId }: { contractorId: string }) {
     queryFn: async () => {
       let q = supabase
         .from('task_contractor_terms')
-        .select('task_id, price, paid_at, paid_amount, tasks!inner(id, task_date, title, deleted_at, task_types(name), customers(name), statuses(name, color, is_terminal))')
+        .select(
+          'task_id, price, paid_at, paid_amount, tasks!inner(id, task_date, title, deleted_at, task_types(name), customers(name), statuses(name, color, is_terminal))',
+        )
         .eq('contractor_id', contractorId)
         .is('tasks.deleted_at', null)
       if (from) q = q.gte('tasks.task_date', from)
@@ -234,73 +391,130 @@ function TasksTab({ contractorId }: { contractorId: string }) {
 
   const expected = rows.reduce((s, r) => s + Number(r.price), 0)
   const paid = rows.filter((r) => r.paid_at).reduce((s, r) => s + Number(r.paid_amount ?? r.price), 0)
+  const unpaidCount = rows.filter((r) => !r.paid_at).length
+
+  const columns = useMemo<Column<ContractorTaskRow>[]>(
+    () => [
+      {
+        key: 'date',
+        header: 'תאריך',
+        width: 110,
+        fixed: true,
+        sortValue: (r) => r.tasks.task_date,
+        render: (r) => <span className="tabular">{fmtDate(r.tasks.task_date)}</span>,
+      },
+      {
+        key: 'task',
+        header: 'משימה',
+        width: 180,
+        sortValue: (r) => r.tasks.title ?? r.tasks.task_types?.name,
+        render: (r) => <span className="font-medium">{r.tasks.title || r.tasks.task_types?.name}</span>,
+      },
+      {
+        key: 'customer',
+        header: 'לקוח',
+        width: 150,
+        sortValue: (r) => r.tasks.customers?.name,
+        render: (r) => r.tasks.customers?.name ?? <span className="text-ink-tertiary">—</span>,
+      },
+      {
+        key: 'status',
+        header: 'סטטוס',
+        width: 130,
+        sortValue: (r) => r.tasks.statuses?.name,
+        render: (r) =>
+          r.tasks.statuses ? <StatusPill color={r.tasks.statuses.color}>{r.tasks.statuses.name}</StatusPill> : null,
+      },
+      {
+        key: 'price',
+        header: 'מחיר (₪)',
+        width: 120,
+        align: 'end',
+        sortValue: (r) => Number(r.price),
+        render: (r) => (
+          <Input
+            type="number"
+            min="0"
+            inputSize="sm"
+            className="w-24"
+            aria-label="מחיר למשימה"
+            defaultValue={r.price}
+            disabled={!canEdit}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={(e) => {
+              const v = Number(e.target.value) || 0
+              if (v !== Number(r.price)) updatePrice.mutate({ taskId: r.task_id, price: v })
+            }}
+          />
+        ),
+      },
+      {
+        key: 'paid',
+        header: 'תשלום',
+        width: 160,
+        sortValue: (r) => (r.paid_at ? 1 : 0),
+        render: (r) => (
+          <button
+            disabled={!canEdit}
+            onClick={(e) => {
+              e.stopPropagation()
+              setPaid.mutate({ taskId: r.task_id, paid: !r.paid_at })
+            }}
+            className={cx(
+              'rounded-full px-2.5 py-1 type-caption font-semibold transition-colors disabled:pointer-events-none',
+              r.paid_at
+                ? 'bg-success-subtle text-success-text hover:brightness-95'
+                : 'bg-warning-subtle text-warning-text hover:brightness-95',
+            )}
+          >
+            {r.paid_at ? `שולם · ${fmtDate(r.paid_at)}` : 'ממתין לתשלום'}
+          </button>
+        ),
+      },
+    ],
+    [canEdit, setPaid, updatePrice],
+  )
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-2">
-        <Field label="מתאריך"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
-        <Field label="עד תאריך"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
-        <div className="ms-auto flex gap-3 text-sm">
-          <span>סה"כ צפוי: <b>{fmtMoney(expected)}</b></span>
-          <span>שולם: <b className="text-emerald-600">{fmtMoney(paid)}</b></span>
-          <span>יתרה: <b className="text-amber-600">{fmtMoney(expected - paid)}</b></span>
-        </div>
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatCard icon={<Wallet size={ICON.xl} strokeWidth={STROKE} />} label="סה״כ צפוי" value={fmtMoney(expected)} />
+        <StatCard icon={<Banknote size={ICON.xl} strokeWidth={STROKE} />} label="שולם" value={fmtMoney(paid)} tone="#16a34a" />
+        <StatCard
+          icon={<Banknote size={ICON.xl} strokeWidth={STROKE} />}
+          label="יתרה לתשלום"
+          value={fmtMoney(expected - paid)}
+          tone="#f59e0b"
+          hint={unpaidCount > 0 ? `${unpaidCount} משימות פתוחות` : 'הכול שולם'}
+        />
       </div>
-      <div className="surface overflow-x-auto">
-        {isLoading ? (
-          <Spinner full />
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[var(--border)] text-xs text-[var(--muted)]">
-                <th className="px-3 py-2 text-start">תאריך</th>
-                <th className="px-3 py-2 text-start">משימה</th>
-                <th className="px-3 py-2 text-start">לקוח</th>
-                <th className="px-3 py-2 text-start">סטטוס</th>
-                <th className="px-3 py-2 text-start">מחיר (₪)</th>
-                <th className="px-3 py-2 text-start">תשלום</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.task_id} className="border-b border-[var(--border)] last:border-0">
-                  <td className="px-3 py-2 whitespace-nowrap">{fmtDate(r.tasks.task_date)}</td>
-                  <td className="px-3 py-2">{r.tasks.title || r.tasks.task_types?.name}</td>
-                  <td className="px-3 py-2">{r.tasks.customers?.name}</td>
-                  <td className="px-3 py-2">
-                    {r.tasks.statuses && <Badge color={r.tasks.statuses.color}>{r.tasks.statuses.name}</Badge>}
-                  </td>
-                  <td className="px-3 py-2">
-                    <Input
-                      type="number"
-                      min="0"
-                      className="w-24"
-                      defaultValue={r.price}
-                      disabled={!canEdit}
-                      onBlur={(e) => {
-                        const v = Number(e.target.value) || 0
-                        if (v !== Number(r.price)) updatePrice.mutate({ taskId: r.task_id, price: v })
-                      }}
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <button
-                      disabled={!canEdit}
-                      onClick={() => setPaid.mutate({ taskId: r.task_id, paid: !r.paid_at })}
-                      className={cx(
-                        'rounded-full px-2.5 py-1 text-xs font-medium',
-                        r.paid_at ? 'bg-emerald-500/15 text-emerald-600' : 'bg-amber-500/15 text-amber-600',
-                      )}
-                    >
-                      {r.paid_at ? `שולם ${fmtDate(r.paid_at)}` : 'ממתין לתשלום'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+
+      <DataTable
+        rows={rows}
+        columns={columns}
+        getRowId={(r) => r.task_id}
+        loading={isLoading}
+        storageKey="contractor-terms"
+        pageSize={20}
+        defaultSort={{ key: 'date', dir: 'desc' }}
+        toolbar={
+          <div className="flex flex-wrap items-end gap-2">
+            <Field label="מתאריך" className="w-36">
+              <Input type="date" inputSize="sm" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </Field>
+            <Field label="עד תאריך" className="w-36">
+              <Input type="date" inputSize="sm" value={to} onChange={(e) => setTo(e.target.value)} />
+            </Field>
+          </div>
+        }
+        empty={
+          <EmptyState
+            art="table"
+            title="אין משימות שהואצלו לקבלן"
+            description="משימות שיואצלו לקבלן יופיעו כאן יחד עם התמחור ומצב התשלום"
+          />
+        }
+      />
     </div>
   )
 }

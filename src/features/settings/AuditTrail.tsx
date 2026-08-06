@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
+import { ICON, STROKE, History } from '../../components/ui/icons'
+import { EmptyState, Modal, Skeleton, StatusPill, Tooltip, fmtRelative } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
-import { Modal, Spinner, EmptyState, Badge } from '../../components/ui'
 import { fmtDateTime } from '../../lib/dates'
 
 interface AuditRow {
@@ -15,7 +16,13 @@ interface AuditRow {
 }
 
 const actionLabels = { INSERT: 'נוצר', UPDATE: 'עודכן', DELETE: 'נמחק' }
-const actionColors = { INSERT: '#22c55e', UPDATE: '#3b82f6', DELETE: '#ef4444' }
+const actionColors = { INSERT: '#16a34a', UPDATE: '#3563f0', DELETE: '#dc2626' }
+
+const fmtValue = (v: unknown) => {
+  if (v == null || v === '') return '—'
+  if (typeof v === 'boolean') return v ? 'כן' : 'לא'
+  return String(v)
+}
 
 export function AuditTrail({ entity, rowId, onClose }: { entity: string; rowId: string; onClose: () => void }) {
   const { data: rows = [], isLoading } = useQuery({
@@ -33,43 +40,68 @@ export function AuditTrail({ entity, rowId, onClose }: { entity: string; rowId: 
   })
 
   return (
-    <Modal open onClose={onClose} title="היסטוריית שינויים" wide>
+    <Modal open onClose={onClose} title="היסטוריית שינויים" description={`${rows.length} רשומות`} wide>
       {isLoading ? (
-        <Spinner full />
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-20 w-full" />
+          ))}
+        </div>
       ) : rows.length === 0 ? (
-        <EmptyState text="אין היסטוריה" />
+        <EmptyState art="table" title="אין היסטוריה" description="שינויים ברשומה זו יתועדו כאן" />
       ) : (
-        <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+        /* a vertical rail turns a list of events into a readable timeline */
+        <ol className="relative max-h-[60vh] space-y-3 overflow-y-auto ps-6">
+          <span aria-hidden className="absolute inset-y-1 start-2 w-px bg-line" />
           {rows.map((r) => {
             const isSoftDelete = r.action === 'UPDATE' && r.changed_cols?.length === 1 && r.changed_cols[0] === 'deleted_at'
+            const color = isSoftDelete ? actionColors.DELETE : actionColors[r.action]
+            const cols = (r.changed_cols ?? []).filter((c) => !['updated_at', 'search_tsv'].includes(c))
             return (
-              <div key={r.id} className="rounded-lg border border-[var(--border)] p-3 text-sm">
-                <div className="flex items-center gap-2">
-                  <Badge color={isSoftDelete ? '#ef4444' : actionColors[r.action]}>
-                    {isSoftDelete ? 'נמחק (רך)' : actionLabels[r.action]}
-                  </Badge>
-                  <span className="text-xs text-[var(--muted)]">{r.table_name}</span>
-                  <span className="ms-auto text-xs text-[var(--muted)]">{fmtDateTime(r.created_at)}</span>
-                </div>
-                {r.action === 'UPDATE' && !isSoftDelete && r.changed_cols && (
-                  <div className="mt-2 space-y-1 text-xs">
-                    {r.changed_cols
-                      .filter((c) => !['updated_at', 'search_tsv'].includes(c))
-                      .map((c) => (
-                        <div key={c} className="flex flex-wrap gap-1">
-                          <span className="font-medium">{c}:</span>
-                          <span className="text-red-500 line-through">{String(r.old_data?.[c] ?? '—')}</span>
-                          <span>←</span>
-                          <span className="text-emerald-600">{String(r.new_data?.[c] ?? '—')}</span>
-                        </div>
-                      ))}
+              <li key={r.id} className="relative">
+                <span
+                  aria-hidden
+                  className="absolute -start-[1.375rem] top-3 size-2.5 rounded-full ring-4 ring-surface"
+                  style={{ background: color }}
+                />
+                <div className="rounded-lg border border-line-subtle bg-surface p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusPill color={color}>{isSoftDelete ? 'נמחק (רך)' : actionLabels[r.action]}</StatusPill>
+                    <span className="font-mono type-caption text-ink-tertiary">{r.table_name}</span>
+                    <Tooltip content={fmtDateTime(r.created_at)}>
+                      <span className="ms-auto type-caption tabular text-ink-tertiary">{fmtRelative(r.created_at)}</span>
+                    </Tooltip>
                   </div>
-                )}
-              </div>
+
+                  {r.action === 'UPDATE' && !isSoftDelete && cols.length > 0 && (
+                    <table className="mt-2.5 w-full">
+                      <tbody>
+                        {cols.map((c) => (
+                          <tr key={c} className="border-t border-line-subtle first:border-0">
+                            <td className="py-1 pe-2 align-top font-mono type-caption text-ink-tertiary">{c}</td>
+                            <td className="py-1 type-caption">
+                              <span className="text-error-text line-through decoration-error/40">
+                                {fmtValue(r.old_data?.[c])}
+                              </span>
+                              <span className="mx-1.5 text-ink-tertiary" aria-label="השתנה ל">
+                                ←
+                              </span>
+                              <span className="font-medium text-success-text">{fmtValue(r.new_data?.[c])}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </li>
             )
           })}
-        </div>
+        </ol>
       )}
     </Modal>
   )
 }
+
+/* History icon is the trigger's affordance elsewhere; kept in one import site. */
+export const AUDIT_ICON = <History size={ICON.md} strokeWidth={STROKE} />

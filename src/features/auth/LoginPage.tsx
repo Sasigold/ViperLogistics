@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router'
+import { AlertCircle, ICON, STROKE, Truck } from '../../components/ui/icons'
+import { Button, Field, Input } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { Button, Field, Input } from '../../components/ui'
-import { Truck } from 'lucide-react'
 
 export default function LoginPage() {
   const { session, booted } = useAuth()
@@ -24,27 +24,77 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center p-4">
-      <div className="surface w-full max-w-sm p-6 shadow-lg">
-        <div className="mb-6 flex flex-col items-center gap-2">
-          <div className="flex size-12 items-center justify-center rounded-xl bg-brand-600 text-white">
-            <Truck size={24} />
+    <div className="relative flex min-h-full items-center justify-center overflow-hidden bg-canvas p-4">
+      {/* two soft brand washes give the page depth without a background image */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-40 start-1/4 size-[32rem] rounded-full opacity-[0.13] blur-3xl"
+        style={{ background: 'radial-gradient(circle, var(--vl-primary), transparent 70%)' }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-40 end-1/4 size-[28rem] rounded-full opacity-[0.1] blur-3xl"
+        style={{ background: 'radial-gradient(circle, var(--color-accent-500), transparent 70%)' }}
+      />
+
+      <div className="relative w-full max-w-sm">
+        <div className="mb-7 flex flex-col items-center gap-3 text-center">
+          <span className="flex size-14 items-center justify-center rounded-2xl bg-primary text-on-primary shadow-lg">
+            <Truck size={26} strokeWidth={STROKE} />
+          </span>
+          <div>
+            <h1 className="type-heading">ViperLogistics</h1>
+            <p className="mt-0.5 type-caption text-ink-tertiary">מערכת ניהול כוח אדם לאירועים</p>
           </div>
-          <h1 className="text-lg font-bold">ViperLogistics</h1>
-          <p className="text-sm text-[var(--muted)]">מערכת ניהול כוח אדם לאירועים</p>
         </div>
-        <form onSubmit={submit} className="space-y-4">
-          <Field label="אימייל" required>
-            <Input type="email" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus required />
-          </Field>
-          <Field label="סיסמה" required>
-            <Input type="password" dir="ltr" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          </Field>
-          {error && <p className="text-sm text-red-500">{error}</p>}
-          <Button type="submit" variant="primary" className="w-full" loading={loading}>
-            התחברות
-          </Button>
-        </form>
+
+        <div className="surface-raised p-6">
+          <form onSubmit={submit} className="space-y-4" noValidate>
+            <Field label="אימייל" required>
+              <Input
+                type="email"
+                dir="ltr"
+                inputSize="lg"
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                invalid={!!error}
+                autoFocus
+                required
+              />
+            </Field>
+            <Field label="סיסמה" required>
+              <Input
+                type="password"
+                dir="ltr"
+                inputSize="lg"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                invalid={!!error}
+                required
+              />
+            </Field>
+
+            {error && (
+              <div
+                role="alert"
+                className="flex animate-slide-up items-center gap-2 rounded-lg border border-error-border bg-error-subtle px-3 py-2 type-body text-error-text"
+              >
+                <AlertCircle size={ICON.md} className="shrink-0" strokeWidth={STROKE} />
+                {error}
+              </div>
+            )}
+
+            <Button type="submit" variant="primary" size="lg" block loading={loading}>
+              התחברות
+            </Button>
+          </form>
+        </div>
+
+        <p className="mt-6 text-center type-caption text-ink-tertiary">
+          מערכת פנימית · הגישה מוגבלת למשתמשים מורשים
+        </p>
       </div>
     </div>
   )

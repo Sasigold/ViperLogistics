@@ -1,8 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Check, ICON, MapPin, Package, PartyPopper, Phone, STROKE, User } from '../../components/ui/icons'
+import {
+  Button,
+  Checkbox,
+  Field,
+  Input,
+  Modal,
+  MultiSelect,
+  Select,
+  Textarea,
+  cx,
+  useToast,
+} from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { Button, Checkbox, Field, Input, Modal, MultiSelect, Select, Textarea, useToast } from '../../components/ui'
 import { useCustomerFormConfig, useCustomers, useStatuses, useSuppliers } from '../../lib/queries'
 import { AddressAutocomplete } from './AddressAutocomplete'
 import type { EventRow } from '../../types/domain'
@@ -39,6 +51,13 @@ const empty: EventForm = {
 
 const DRAFT_KEY = 'vl-event-draft'
 
+/** Which configurable field keys belong to which step. */
+const STEPS = [
+  { key: 'basics', label: 'פרטי האירוע', icon: PartyPopper, fields: ['end_client_name', 'event_number', 'event_date'] },
+  { key: 'location', label: 'מיקום ואיש קשר', icon: MapPin, fields: ['location', 'location_notes', 'contact_name', 'contact_phone'] },
+  { key: 'logistics', label: 'לוגיסטיקה ותוספות', icon: Package, fields: ['volume_m', 'truck_count', 'addons', 'notes'] },
+] as const
+
 export function EventFormModal({
   open,
   onClose,
@@ -58,6 +77,8 @@ export function EventFormModal({
   const { me, canViewField, canEditField } = useAuth()
   const isCustomer = me?.profile.user_kind === 'customer_user'
   const [form, setForm] = useState<EventForm>(empty)
+  const [step, setStep] = useState(0)
+  const [touched, setTouched] = useState(false)
 
   const { data: customers = [] } = useCustomers()
   const { data: statuses = [] } = useStatuses('event')
@@ -67,6 +88,8 @@ export function EventFormModal({
 
   useEffect(() => {
     if (!open) return
+    setStep(0)
+    setTouched(false)
     if (event) {
       setForm({
         ...empty,
@@ -110,14 +133,49 @@ export function EventFormModal({
   }, [config])
 
   /** customers see their configured form; staff see everything but keep required markers */
-  const show = (key: string) => {
-    if (key === 'contact_phone' && !canViewField('event', 'contact_phone')) return false
-    if (!isCustomer) return true
-    return fieldState(key) !== 'hidden'
-  }
+  const show = useCallback(
+    (key: string) => {
+      if (key === 'contact_phone' && !canViewField('event', 'contact_phone')) return false
+      if (!isCustomer) return true
+      return fieldState(key) !== 'hidden'
+    },
+    [canViewField, isCustomer, fieldState],
+  )
   const req = (key: string) => fieldState(key) === 'required'
 
   const set = (patch: Partial<EventForm>) => setForm((f) => ({ ...f, ...patch }))
+
+  /** Steps with no visible field are dropped entirely rather than shown empty. */
+  const steps = useMemo(() => STEPS.filter((s) => s.fields.some((f) => show(f))), [show])
+
+  /** A step is incomplete when a field the customer marked "required" is empty. */
+  const missingIn = (stepKey: string): string[] => {
+    const s = steps.find((x) => x.key === stepKey)
+    if (!s) return []
+    const out: string[] = []
+    if (stepKey === 'basics') {
+      if (!isCustomer && !form.customer_id) out.push('לקוח במערכת')
+      if (!form.event_date) out.push('תאריך אירוע')
+      if (req('end_client_name') && !form.end_client_name.trim()) out.push('שם לקוח האירוע')
+      if (req('event_number') && !form.event_number.trim()) out.push('מספר אירוע')
+    }
+    if (stepKey === 'location') {
+      if (req('location') && !form.location_text.trim()) out.push('מיקום')
+      if (req('location_notes') && !form.location_notes.trim()) out.push('הערות למיקום')
+      if (req('contact_name') && !form.contact_name.trim()) out.push('איש קשר')
+      if (req('contact_phone') && !form.contact_phone.trim()) out.push('טלפון איש קשר')
+    }
+    if (stepKey === 'logistics') {
+      if (req('volume_m') && !form.volume_m) out.push('נפח במטר')
+      if (req('truck_count') && !form.truck_count) out.push('כמות משאיות')
+      if (req('notes') && !form.notes.trim()) out.push('הערות')
+    }
+    return out
+  }
+
+  const stepMissing = steps.map((s) => missingIn(s.key))
+  const allMissing = stepMissing.flat()
+  const isLast = step === steps.length - 1
 
   const save = useMutation({
     mutationFn: async () => {
@@ -155,131 +213,282 @@ export function EventFormModal({
       return data as string
     },
     onSuccess: () => {
-      toast.success(event ? 'האירוע עודכן' : 'האירוע נוצר עם משימות הקמה ופירוק')
+      toast.success(event ? 'האירוע עודכן' : 'האירוע נוצר', {
+        description: event ? undefined : 'משימות הקמה ופירוק נוצרו אוטומטית',
+      })
       localStorage.removeItem(DRAFT_KEY)
       void qc.invalidateQueries({ queryKey: ['events'] })
       void qc.invalidateQueries({ queryKey: ['calendar'] })
       void qc.invalidateQueries({ queryKey: ['workboard'] })
+      void qc.invalidateQueries({ queryKey: ['dashboard'] })
       onClose()
     },
     onError: (e) => toast.error((e as Error).message),
   })
 
-  return (
-    <Modal open={open} onClose={onClose} title={event ? 'עריכת אירוע' : 'אירוע חדש'} wide>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {!isCustomer && (
-          <Field label="לקוח במערכת" required>
-            <Select value={form.customer_id} onChange={(e) => set({ customer_id: e.target.value, supplier_ids: [] })} disabled={!!event}>
-              <option value="">בחירת לקוח...</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </Select>
-          </Field>
-        )}
-        {show('end_client_name') && (
-          <Field label="שם לקוח האירוע" required={req('end_client_name')}>
-            <Input value={form.end_client_name} onChange={(e) => set({ end_client_name: e.target.value })} />
-          </Field>
-        )}
-        {show('event_number') && (
-          <Field label="מספר אירוע" required={req('event_number')}>
-            <Input value={form.event_number} onChange={(e) => set({ event_number: e.target.value })} />
-          </Field>
-        )}
-        {show('event_date') && (
-          <Field label="תאריך אירוע" required>
-            <Input type="date" value={form.event_date} onChange={(e) => set({ event_date: e.target.value })} />
-          </Field>
-        )}
-        {show('location') && (
-          <Field label="מיקום" required={req('location')}>
-            <AddressAutocomplete
-              value={form.location_text}
-              onChange={(text) => set({ location_text: text, location_place_id: '', location_provider: '' })}
-              onPick={(s) => set({ location_text: s.label, location_place_id: s.place_id, location_provider: s.provider, location_lat: s.lat, location_lng: s.lng })}
-            />
-          </Field>
-        )}
-        {show('location_notes') && (
-          <Field label="הערות למיקום" required={req('location_notes')}>
-            <Input value={form.location_notes} onChange={(e) => set({ location_notes: e.target.value })} />
-          </Field>
-        )}
-        {show('volume_m') && (
-          <Field label="נפח במטר" required={req('volume_m')}>
-            <Input type="number" step="0.1" min="0" value={form.volume_m} onChange={(e) => set({ volume_m: e.target.value })} />
-          </Field>
-        )}
-        {show('truck_count') && (
-          <Field label="כמות משאיות" required={req('truck_count')}>
-            <Input type="number" min="0" value={form.truck_count} onChange={(e) => set({ truck_count: e.target.value })} />
-          </Field>
-        )}
-        {show('contact_name') && (
-          <Field label="איש קשר" required={req('contact_name')}>
-            <Input value={form.contact_name} onChange={(e) => set({ contact_name: e.target.value })} disabled={!canEditField('event', 'contact_phone')} />
-          </Field>
-        )}
-        {show('contact_phone') && (
-          <Field label="טלפון איש קשר" required={req('contact_phone')}>
-            <Input dir="ltr" value={form.contact_phone} onChange={(e) => set({ contact_phone: e.target.value })} disabled={!canEditField('event', 'contact_phone')} />
-          </Field>
-        )}
-        {!isCustomer && (
-          <Field label="סטטוס">
-            <Select value={form.status_id} onChange={(e) => set({ status_id: e.target.value })}>
-              <option value="">ברירת מחדל</option>
-              {statuses.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </Select>
-          </Field>
-        )}
-      </div>
+  const submit = () => {
+    setTouched(true)
+    if (allMissing.length > 0) {
+      const firstBad = stepMissing.findIndex((m) => m.length > 0)
+      setStep(firstBad)
+      toast.warning('חסרים שדות חובה', { description: allMissing.join(', ') })
+      return
+    }
+    save.mutate()
+  }
 
-      {show('notes') && (
-        <div className="mt-3">
-          <Field label="הערות" required={req('notes')}>
-            <Textarea value={form.notes} onChange={(e) => set({ notes: e.target.value })} />
-          </Field>
-        </div>
+  const current = steps[step]
+  const err = (key: string, value: string) => (touched && req(key) && !value.trim() ? 'שדה חובה' : undefined)
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      wide
+      title={event ? 'עריכת אירוע' : 'אירוע חדש'}
+      description={event ? undefined : 'הטופס נשמר אוטומטית כטיוטה עד לשליחה'}
+      footer={
+        <>
+          {step > 0 && (
+            <Button onClick={() => setStep((s) => s - 1)}>הקודם</Button>
+          )}
+          <Button className="ms-auto" onClick={onClose}>
+            ביטול
+          </Button>
+          {!isLast && (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setTouched(true)
+                if (stepMissing[step].length > 0) {
+                  toast.warning('חסרים שדות חובה בשלב זה', { description: stepMissing[step].join(', ') })
+                  return
+                }
+                setStep((s) => s + 1)
+              }}
+            >
+              הבא
+            </Button>
+          )}
+          <Button variant="primary" loading={save.isPending} onClick={submit}>
+            {event ? 'שמירה' : 'יצירת אירוע'}
+          </Button>
+        </>
+      }
+    >
+      {/* ── stepper ────────────────────────────────────────────────────────
+          Each step reports its own completeness so a required field two
+          steps back is visible without hunting for it.                    */}
+      {steps.length > 1 && (
+        <ol className="mb-5 flex items-center gap-1">
+          {steps.map((s, i) => {
+            const Icon = s.icon
+            const missing = stepMissing[i].length > 0
+            const done = i < step && !missing
+            const active = i === step
+            return (
+              <li key={s.key} className="flex min-w-0 flex-1 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setStep(i)}
+                  aria-current={active ? 'step' : undefined}
+                  className={cx(
+                    'flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-2 text-start transition-colors',
+                    'focus-visible:outline-none focus-visible:focus-ring',
+                    active ? 'bg-selected' : 'hover:bg-hover',
+                  )}
+                >
+                  <span
+                    className={cx(
+                      'flex size-7 shrink-0 items-center justify-center rounded-full transition-colors',
+                      done
+                        ? 'bg-success text-white'
+                        : touched && missing
+                          ? 'bg-error text-white'
+                          : active
+                            ? 'bg-primary text-on-primary'
+                            : 'bg-subtle text-ink-tertiary',
+                    )}
+                  >
+                    {done ? <Check size={ICON.sm} strokeWidth={3} /> : <Icon size={ICON.sm} strokeWidth={STROKE} />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className={cx('block truncate type-caption font-semibold', active ? 'text-ink' : 'text-ink-tertiary')}>
+                      {s.label}
+                    </span>
+                    {touched && missing && (
+                      <span className="block truncate type-caption text-error-text">{stepMissing[i].length} שדות חסרים</span>
+                    )}
+                  </span>
+                </button>
+                {i < steps.length - 1 && <span className="h-px w-4 shrink-0 bg-line" aria-hidden />}
+              </li>
+            )
+          })}
+        </ol>
       )}
 
-      {show('addons') && (
-        <div className="mt-3 space-y-2 rounded-lg border border-[var(--border)] p-3">
-          <h3 className="text-xs font-bold text-[var(--muted)]">תוספות</h3>
-          <div className="flex flex-wrap gap-4">
-            <Checkbox label="אין חניה" checked={form.no_parking} onChange={(v) => set({ no_parking: v })} />
-            <Checkbox label="סבלות" checked={form.porterage} onChange={(v) => set({ porterage: v })} />
-            <Checkbox label="איסוף מספקים" checked={form.supplier_pickup} onChange={(v) => set({ supplier_pickup: v })} />
-          </div>
-          {form.supplier_pickup && (
-            <Field label="ספקים לאיסוף">
-              <MultiSelect
-                options={suppliers.map((s) => ({ id: s.id, label: s.name }))}
-                values={form.supplier_ids}
-                onToggle={(id) =>
-                  set({
-                    supplier_ids: form.supplier_ids.includes(id)
-                      ? form.supplier_ids.filter((x) => x !== id)
-                      : [...form.supplier_ids, id],
-                  })
-                }
-                placeholder={suppliers.length ? 'בחירת ספקים...' : 'אין ספקים מוגדרים ללקוח זה'}
-              />
+      {/* ── step 1: basics ─────────────────────────────────────────────── */}
+      {current?.key === 'basics' && (
+        <div className="grid animate-fade-in gap-4 sm:grid-cols-2">
+          {!isCustomer && (
+            <Field label="לקוח במערכת" required error={touched && !form.customer_id ? 'שדה חובה' : undefined}>
+              <Select
+                data-autofocus
+                value={form.customer_id}
+                onChange={(e) => set({ customer_id: e.target.value, supplier_ids: [] })}
+                disabled={!!event}
+              >
+                <option value="">בחירת לקוח...</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+          {show('end_client_name') && (
+            <Field
+              label="שם לקוח האירוע"
+              required={req('end_client_name')}
+              error={err('end_client_name', form.end_client_name)}
+            >
+              <Input value={form.end_client_name} onChange={(e) => set({ end_client_name: e.target.value })} />
+            </Field>
+          )}
+          {show('event_number') && (
+            <Field label="מספר אירוע" required={req('event_number')} error={err('event_number', form.event_number)}>
+              <Input value={form.event_number} onChange={(e) => set({ event_number: e.target.value })} />
+            </Field>
+          )}
+          {show('event_date') && (
+            <Field label="תאריך אירוע" required error={touched && !form.event_date ? 'שדה חובה' : undefined}>
+              <Input type="date" value={form.event_date} onChange={(e) => set({ event_date: e.target.value })} />
+            </Field>
+          )}
+          {!isCustomer && (
+            <Field label="סטטוס">
+              <Select value={form.status_id} onChange={(e) => set({ status_id: e.target.value })}>
+                <option value="">ברירת מחדל</option>
+                {statuses.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
             </Field>
           )}
         </div>
       )}
 
-      <div className="mt-4 flex justify-end gap-2">
-        <Button onClick={onClose}>ביטול</Button>
-        <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
-          {event ? 'שמירה' : 'יצירת אירוע'}
-        </Button>
-      </div>
+      {/* ── step 2: location & contact ─────────────────────────────────── */}
+      {current?.key === 'location' && (
+        <div className="animate-fade-in space-y-4">
+          {show('location') && (
+            <Field label="מיקום" required={req('location')} error={err('location', form.location_text)} hint="בחירה מהרשימה שומרת גם קואורדינטות">
+              <AddressAutocomplete
+                value={form.location_text}
+                onChange={(text) => set({ location_text: text, location_place_id: '', location_provider: '' })}
+                onPick={(s) =>
+                  set({
+                    location_text: s.label,
+                    location_place_id: s.place_id,
+                    location_provider: s.provider,
+                    location_lat: s.lat,
+                    location_lng: s.lng,
+                  })
+                }
+              />
+            </Field>
+          )}
+          {show('location_notes') && (
+            <Field label="הערות למיקום" required={req('location_notes')} error={err('location_notes', form.location_notes)}>
+              <Input
+                value={form.location_notes}
+                onChange={(e) => set({ location_notes: e.target.value })}
+                placeholder="למשל: כניסה מהחניון האחורי"
+              />
+            </Field>
+          )}
+          {(show('contact_name') || show('contact_phone')) && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {show('contact_name') && (
+                <Field label="איש קשר" required={req('contact_name')} error={err('contact_name', form.contact_name)}>
+                  <Input
+                    leading={<User size={ICON.sm} strokeWidth={STROKE} />}
+                    value={form.contact_name}
+                    onChange={(e) => set({ contact_name: e.target.value })}
+                    disabled={!canEditField('event', 'contact_phone')}
+                  />
+                </Field>
+              )}
+              {show('contact_phone') && (
+                <Field label="טלפון איש קשר" required={req('contact_phone')} error={err('contact_phone', form.contact_phone)}>
+                  <Input
+                    dir="ltr"
+                    leading={<Phone size={ICON.sm} strokeWidth={STROKE} />}
+                    value={form.contact_phone}
+                    onChange={(e) => set({ contact_phone: e.target.value })}
+                    disabled={!canEditField('event', 'contact_phone')}
+                  />
+                </Field>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── step 3: logistics & add-ons ────────────────────────────────── */}
+      {current?.key === 'logistics' && (
+        <div className="animate-fade-in space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {show('volume_m') && (
+              <Field label="נפח במטר" required={req('volume_m')} error={err('volume_m', form.volume_m)}>
+                <Input type="number" step="0.1" min="0" value={form.volume_m} onChange={(e) => set({ volume_m: e.target.value })} />
+              </Field>
+            )}
+            {show('truck_count') && (
+              <Field label="כמות משאיות" required={req('truck_count')} error={err('truck_count', form.truck_count)}>
+                <Input type="number" min="0" value={form.truck_count} onChange={(e) => set({ truck_count: e.target.value })} />
+              </Field>
+            )}
+          </div>
+
+          {show('addons') && (
+            <div className="space-y-3 rounded-lg border border-line-subtle bg-subtle/50 p-3">
+              <p className="type-overline">תוספות</p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <Checkbox label="אין חניה" checked={form.no_parking} onChange={(v) => set({ no_parking: v })} />
+                <Checkbox label="סבלות" checked={form.porterage} onChange={(v) => set({ porterage: v })} />
+                <Checkbox label="איסוף מספקים" checked={form.supplier_pickup} onChange={(v) => set({ supplier_pickup: v })} />
+              </div>
+              {form.supplier_pickup && (
+                <Field label="ספקים לאיסוף">
+                  <MultiSelect
+                    options={suppliers.map((s) => ({ id: s.id, label: s.name }))}
+                    values={form.supplier_ids}
+                    onToggle={(id) =>
+                      set({
+                        supplier_ids: form.supplier_ids.includes(id)
+                          ? form.supplier_ids.filter((x) => x !== id)
+                          : [...form.supplier_ids, id],
+                      })
+                    }
+                    placeholder={suppliers.length ? 'בחירת ספקים...' : 'אין ספקים מוגדרים ללקוח זה'}
+                  />
+                </Field>
+              )}
+            </div>
+          )}
+
+          {show('notes') && (
+            <Field label="הערות" required={req('notes')} error={err('notes', form.notes)}>
+              <Textarea autoGrow value={form.notes} onChange={(e) => set({ notes: e.target.value })} />
+            </Field>
+          )}
+        </div>
+      )}
     </Modal>
   )
 }

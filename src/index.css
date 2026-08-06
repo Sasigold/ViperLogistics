@@ -2,106 +2,744 @@
 
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
+/* ============================================================================
+   ViperLogistics Design System
+   ----------------------------------------------------------------------------
+   Layers:
+     1. @theme            static ramps, fonts, radii, motion  (compile-time)
+     2. :root / [dark]    semantic runtime tokens             (theme-swappable)
+     3. @theme inline     semantic tokens -> Tailwind utilities
+     4. legacy aliases    keeps pre-existing markup working during migration
+     5. @utility          typography scale, surfaces, helpers
+     6. base + keyframes
+     7. FullCalendar theming
+   ========================================================================== */
+
+/* ── 1. static scales ─────────────────────────────────────────────────────── */
+
 @theme {
-  --font-sans: 'Heebo', system-ui, sans-serif;
-  --color-brand-50: #eef4ff;
-  --color-brand-100: #dbe6fe;
-  --color-brand-200: #bfd3fe;
-  --color-brand-300: #93b4fd;
-  --color-brand-400: #6090fa;
-  --color-brand-500: #3b6ef6;
-  --color-brand-600: #2450eb;
-  --color-brand-700: #1c3dd8;
-  --color-brand-800: #1d34af;
-  --color-brand-900: #1d308a;
-  --color-brand-950: #172054;
+  --font-sans: 'Heebo', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* primary / brand ramp — used as `brand-*` everywhere */
+  --color-brand-50: #eef3ff;
+  --color-brand-100: #dae5ff;
+  --color-brand-200: #bcd0ff;
+  --color-brand-300: #8eb0ff;
+  --color-brand-400: #5b86fb;
+  --color-brand-500: #3563f0;
+  --color-brand-600: #2148db;
+  --color-brand-700: #1c3ab4;
+  --color-brand-800: #1c338f;
+  --color-brand-900: #1c2f71;
+  --color-brand-950: #141f45;
+
+  /* secondary / accent ramp — teal, for non-primary emphasis */
+  --color-accent-50: #eefbf7;
+  --color-accent-100: #d3f5ea;
+  --color-accent-200: #a8ead8;
+  --color-accent-300: #71d8c0;
+  --color-accent-400: #3cbca3;
+  --color-accent-500: #1fa189;
+  --color-accent-600: #14806f;
+  --color-accent-700: #14675b;
+  --color-accent-800: #15524a;
+  --color-accent-900: #15453f;
+  --color-accent-950: #062825;
+
+  /* radius scale */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
+  --radius-3xl: 24px;
+
+  /* 8px spacing rhythm (Tailwind's 4px scale still applies; these name the beats) */
+  --spacing-half: 4px;
+  --spacing-1x: 8px;
+  --spacing-1_5x: 12px;
+  --spacing-2x: 16px;
+  --spacing-3x: 24px;
+  --spacing-4x: 32px;
+  --spacing-6x: 48px;
+  --spacing-8x: 64px;
+
+  /* motion */
+  --vl-dur-fast: 150ms;
+  --vl-dur: 200ms;
+  --vl-dur-slow: 250ms;
+  --vl-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --vl-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-fade-in: vl-fade-in var(--vl-dur) var(--vl-ease);
+  --animate-scale-in: vl-scale-in var(--vl-dur) var(--vl-ease-out);
+  --animate-slide-in: vl-slide-in var(--vl-dur-slow) var(--vl-ease-out);
+  --animate-slide-up: vl-slide-up var(--vl-dur) var(--vl-ease-out);
+  --animate-shimmer: vl-shimmer 1.4s ease-in-out infinite;
 }
+
+/* ── 2. semantic runtime tokens — LIGHT ───────────────────────────────────── */
 
 :root {
-  --bg: #f7f8fb;
-  --panel: #ffffff;
-  --border: #e5e8ef;
-  --text: #16181d;
-  --muted: #667085;
   color-scheme: light;
+
+  /* surfaces */
+  --vl-canvas: #f6f7f9;
+  --vl-surface: #ffffff;
+  --vl-raised: #ffffff;
+  --vl-subtle: #f2f4f7;
+  --vl-inset: #eceff4;
+
+  /* borders */
+  --vl-border-subtle: #eef0f4;
+  --vl-border: #e2e6ec;
+  --vl-border-strong: #cdd3de;
+
+  /* text */
+  --vl-text: #101828;
+  --vl-text-secondary: #475467;
+  --vl-text-tertiary: #8a93a5;
+  --vl-text-inverse: #ffffff;
+
+  /* interaction states */
+  --vl-hover: rgb(16 24 40 / 0.04);
+  --vl-active: rgb(16 24 40 / 0.075);
+  --vl-selected: rgb(53 99 240 / 0.09);
+  --vl-selected-strong: rgb(53 99 240 / 0.16);
+  --vl-disabled-bg: #f2f4f7;
+  --vl-disabled-fg: #a6adbb;
+  --vl-focus-ring: rgb(53 99 240 / 0.35);
+
+  /* primary, resolved per theme so dark can lift the tone */
+  --vl-primary: #3563f0;
+  --vl-primary-hover: #2148db;
+  --vl-primary-active: #1c3ab4;
+  --vl-primary-text: #2148db;
+  --vl-primary-subtle: rgb(53 99 240 / 0.09);
+  --vl-primary-border: rgb(53 99 240 / 0.28);
+  --vl-on-primary: #ffffff;
+
+  /* semantic status quads */
+  --vl-success: #16a34a;
+  --vl-success-text: #067647;
+  --vl-success-subtle: #ecfdf3;
+  --vl-success-border: #a6efc4;
+
+  --vl-warning: #f59e0b;
+  --vl-warning-text: #b54708;
+  --vl-warning-subtle: #fffaeb;
+  --vl-warning-border: #fedf89;
+
+  --vl-error: #dc2626;
+  --vl-error-text: #b42318;
+  --vl-error-subtle: #fef3f2;
+  --vl-error-border: #fecdca;
+
+  --vl-info: #2e90fa;
+  --vl-info-text: #175cd3;
+  --vl-info-subtle: #eff8ff;
+  --vl-info-border: #b2ddff;
+
+  /* elevation */
+  --vl-shadow-xs: 0 1px 2px 0 rgb(16 24 40 / 0.05);
+  --vl-shadow-sm: 0 1px 3px 0 rgb(16 24 40 / 0.06), 0 1px 2px -1px rgb(16 24 40 / 0.05);
+  --vl-shadow-md: 0 4px 10px -2px rgb(16 24 40 / 0.07), 0 2px 4px -2px rgb(16 24 40 / 0.04);
+  --vl-shadow-lg: 0 12px 28px -6px rgb(16 24 40 / 0.1), 0 4px 10px -4px rgb(16 24 40 / 0.05);
+  --vl-shadow-overlay: 0 24px 56px -12px rgb(16 24 40 / 0.2);
+
+  /* scrim behind dialogs */
+  --vl-scrim: rgb(16 24 40 / 0.35);
+
+  /* logical slide origin — flipped for RTL below */
+  --vl-slide-from: -100%;
 }
+
+/* ── 2b. semantic runtime tokens — DARK (a separate palette, not an inversion) */
 
 [data-theme='dark'] {
-  --bg: #0e1117;
-  --panel: #161b24;
-  --border: #262d3a;
-  --text: #e8eaf0;
-  --muted: #8b93a5;
   color-scheme: dark;
+
+  /* surfaces lift as they come forward, they don't darken */
+  --vl-canvas: #0b0d12;
+  --vl-surface: #141821;
+  --vl-raised: #1a1f2b;
+  --vl-subtle: #1e2431;
+  --vl-inset: #10141c;
+
+  --vl-border-subtle: rgb(255 255 255 / 0.055);
+  --vl-border: rgb(255 255 255 / 0.1);
+  --vl-border-strong: rgb(255 255 255 / 0.17);
+
+  --vl-text: #e9ecf3;
+  --vl-text-secondary: #a3acbd;
+  --vl-text-tertiary: #6f7a8d;
+  --vl-text-inverse: #0b0d12;
+
+  --vl-hover: rgb(255 255 255 / 0.05);
+  --vl-active: rgb(255 255 255 / 0.085);
+  --vl-selected: rgb(91 134 251 / 0.16);
+  --vl-selected-strong: rgb(91 134 251 / 0.26);
+  --vl-disabled-bg: rgb(255 255 255 / 0.05);
+  --vl-disabled-fg: #5c6675;
+  --vl-focus-ring: rgb(142 176 255 / 0.45);
+
+  /* lifted so it clears 4.5:1 on dark surfaces */
+  --vl-primary: #4a76f7;
+  --vl-primary-hover: #5b86fb;
+  --vl-primary-active: #8eb0ff;
+  --vl-primary-text: #8eb0ff;
+  --vl-primary-subtle: rgb(91 134 251 / 0.16);
+  --vl-primary-border: rgb(91 134 251 / 0.38);
+  --vl-on-primary: #ffffff;
+
+  --vl-success: #16a34a;
+  --vl-success-text: #6ee7a8;
+  --vl-success-subtle: rgb(22 163 74 / 0.15);
+  --vl-success-border: rgb(22 163 74 / 0.34);
+
+  --vl-warning: #f59e0b;
+  --vl-warning-text: #fbbf24;
+  --vl-warning-subtle: rgb(245 158 11 / 0.15);
+  --vl-warning-border: rgb(245 158 11 / 0.34);
+
+  --vl-error: #ef4444;
+  --vl-error-text: #fca5a5;
+  --vl-error-subtle: rgb(239 68 68 / 0.15);
+  --vl-error-border: rgb(239 68 68 / 0.36);
+
+  --vl-info: #3b82f6;
+  --vl-info-text: #93c5fd;
+  --vl-info-subtle: rgb(59 130 246 / 0.15);
+  --vl-info-border: rgb(59 130 246 / 0.34);
+
+  --vl-shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --vl-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.45), 0 1px 2px -1px rgb(0 0 0 / 0.35);
+  --vl-shadow-md: 0 4px 10px -2px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.35);
+  --vl-shadow-lg: 0 12px 28px -6px rgb(0 0 0 / 0.55), 0 4px 10px -4px rgb(0 0 0 / 0.4);
+  --vl-shadow-overlay: 0 24px 56px -12px rgb(0 0 0 / 0.65);
+
+  --vl-scrim: rgb(3 5 9 / 0.6);
 }
 
-html,
-body,
-#root {
-  height: 100%;
+[dir='rtl'] {
+  --vl-slide-from: 100%;
 }
 
-body {
-  font-family: var(--font-sans);
-  background: var(--bg);
-  color: var(--text);
-  -webkit-font-smoothing: antialiased;
+/* ── 3. semantic tokens -> Tailwind utilities ─────────────────────────────── */
+
+@theme inline {
+  --color-canvas: var(--vl-canvas);
+  --color-surface: var(--vl-surface);
+  --color-raised: var(--vl-raised);
+  --color-subtle: var(--vl-subtle);
+  --color-inset: var(--vl-inset);
+
+  --color-line-subtle: var(--vl-border-subtle);
+  --color-line: var(--vl-border);
+  --color-line-strong: var(--vl-border-strong);
+
+  --color-ink: var(--vl-text);
+  --color-ink-secondary: var(--vl-text-secondary);
+  --color-ink-tertiary: var(--vl-text-tertiary);
+  --color-ink-inverse: var(--vl-text-inverse);
+
+  --color-primary: var(--vl-primary);
+  --color-primary-hover: var(--vl-primary-hover);
+  --color-primary-text: var(--vl-primary-text);
+  --color-primary-subtle: var(--vl-primary-subtle);
+  --color-primary-border: var(--vl-primary-border);
+  --color-on-primary: var(--vl-on-primary);
+
+  --color-success: var(--vl-success);
+  --color-success-text: var(--vl-success-text);
+  --color-success-subtle: var(--vl-success-subtle);
+  --color-success-border: var(--vl-success-border);
+
+  --color-warning: var(--vl-warning);
+  --color-warning-text: var(--vl-warning-text);
+  --color-warning-subtle: var(--vl-warning-subtle);
+  --color-warning-border: var(--vl-warning-border);
+
+  --color-error: var(--vl-error);
+  --color-error-text: var(--vl-error-text);
+  --color-error-subtle: var(--vl-error-subtle);
+  --color-error-border: var(--vl-error-border);
+
+  --color-info: var(--vl-info);
+  --color-info-text: var(--vl-info-text);
+  --color-info-subtle: var(--vl-info-subtle);
+  --color-info-border: var(--vl-info-border);
+
+  --color-hover: var(--vl-hover);
+  --color-selected: var(--vl-selected);
+  --color-selected-strong: var(--vl-selected-strong);
+
+  --shadow-xs: var(--vl-shadow-xs);
+  --shadow-sm: var(--vl-shadow-sm);
+  --shadow-md: var(--vl-shadow-md);
+  --shadow-lg: var(--vl-shadow-lg);
+  --shadow-overlay: var(--vl-shadow-overlay);
 }
 
-/* ===== utility aliases used across the app ===== */
-@utility surface {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
+/* ── 4. legacy aliases ────────────────────────────────────────────────────────
+   Pre-existing markup reads --bg/--panel/--border/--text/--muted directly.
+   Mapping them onto the new tokens keeps every untouched screen correct while
+   the migration proceeds screen by screen.                                    */
+
+:root,
+[data-theme='dark'] {
+  --bg: var(--vl-canvas);
+  --panel: var(--vl-surface);
+  --border: var(--vl-border);
+  --text: var(--vl-text);
+  --muted: var(--vl-text-secondary);
 }
 
-/* ===== FullCalendar RTL/theme tuning ===== */
-.fc {
-  --fc-border-color: var(--border);
-  --fc-page-bg-color: var(--panel);
-  --fc-today-bg-color: color-mix(in srgb, var(--color-brand-500) 7%, transparent);
-  --fc-button-bg-color: var(--panel);
-  --fc-button-border-color: var(--border);
-  --fc-button-text-color: var(--text);
-  --fc-button-hover-bg-color: var(--bg);
-  --fc-button-hover-border-color: var(--border);
-  --fc-button-active-bg-color: var(--color-brand-600);
-  --fc-button-active-border-color: var(--color-brand-600);
-  font-size: 0.85rem;
-}
-.fc .fc-toolbar-title {
-  font-size: 1.05rem;
+/* ── 5. utilities ─────────────────────────────────────────────────────────── */
+
+/* Typography scale */
+@utility type-display {
+  font-size: 1.75rem;
+  line-height: 2.25rem;
   font-weight: 700;
+  letter-spacing: -0.022em;
 }
-.fc .fc-button {
-  border-radius: 0.5rem;
-  padding: 0.3rem 0.7rem;
+@utility type-heading {
+  font-size: 1.375rem;
+  line-height: 1.875rem;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+}
+@utility type-title {
+  font-size: 1.0625rem;
+  line-height: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.011em;
+}
+@utility type-subtitle {
+  font-size: 0.9375rem;
+  line-height: 1.375rem;
   font-weight: 500;
 }
-.fc .fc-button-active {
-  color: #fff !important;
+@utility type-body {
+  font-size: 0.875rem;
+  line-height: 1.3125rem;
+  font-weight: 400;
 }
-.fc .fc-event {
-  border-radius: 0.375rem;
-  border: none;
-  padding: 1px 4px;
-  font-size: 0.78rem;
-  cursor: pointer;
+@utility type-caption {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 400;
+}
+@utility type-button {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+@utility type-table {
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  font-weight: 400;
+}
+@utility type-table-head {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--vl-text-tertiary);
+}
+@utility type-overline {
+  font-size: 0.6875rem;
+  line-height: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--vl-text-tertiary);
+}
+
+/* Numerals that don't dance as values change — essential on a dispatch board */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* Surfaces */
+@utility surface {
+  background: var(--vl-surface);
+  border: 1px solid var(--vl-border);
+  border-radius: var(--radius-xl);
+}
+@utility surface-plain {
+  background: var(--vl-surface);
+  border: 1px solid var(--vl-border);
+}
+@utility surface-raised {
+  background: var(--vl-raised);
+  border: 1px solid var(--vl-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--vl-shadow-sm);
+}
+@utility surface-overlay {
+  background: var(--vl-raised);
+  border: 1px solid var(--vl-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--vl-shadow-overlay);
+}
+
+/* One focus treatment for the entire product */
+@utility focus-ring {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 2px var(--vl-surface),
+    0 0 0 4px var(--vl-focus-ring);
+}
+
+@utility scrim {
+  background: var(--vl-scrim);
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+}
+
+/* Skeleton shimmer */
+@utility skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--vl-subtle);
+  border-radius: var(--radius-sm);
+}
+
+/* ── 6. base ──────────────────────────────────────────────────────────────── */
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--vl-canvas);
+    color: var(--vl-text);
+    font-size: 0.875rem;
+    line-height: 1.3125rem;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Keyboard focus is visible everywhere; pointer focus stays quiet. */
+  :focus-visible {
+    outline: 2px solid var(--vl-primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+
+  ::selection {
+    background: var(--vl-selected-strong);
+  }
+
+  /* Native controls follow the theme instead of the OS default */
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  input[type='date'],
+  input[type='time'],
+  input[type='number'] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  [data-theme='dark'] input[type='date']::-webkit-calendar-picker-indicator,
+  [data-theme='dark'] input[type='time']::-webkit-calendar-picker-indicator {
+    filter: invert(0.75);
+  }
+
+  /* Spinners on number inputs are noise in a dense grid */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  ::placeholder {
+    color: var(--vl-text-tertiary);
+    opacity: 1;
+  }
+
+  /* thin, theme-aware scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--vl-border-strong) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--vl-border-strong);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--vl-text-tertiary);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+@keyframes vl-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes vl-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes vl-slide-in {
+  from {
+    transform: translateX(var(--vl-slide-from));
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes vl-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes vl-shimmer {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Motion is a garnish, never a dependency. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── 7. FullCalendar theming ──────────────────────────────────────────────── */
+
+.fc {
+  --fc-border-color: var(--vl-border-subtle);
+  --fc-page-bg-color: var(--vl-surface);
+  --fc-neutral-bg-color: var(--vl-subtle);
+  --fc-today-bg-color: var(--vl-primary-subtle);
+  --fc-now-indicator-color: var(--vl-error);
+  --fc-button-bg-color: var(--vl-surface);
+  --fc-button-border-color: var(--vl-border);
+  --fc-button-text-color: var(--vl-text-secondary);
+  --fc-button-hover-bg-color: var(--vl-subtle);
+  --fc-button-hover-border-color: var(--vl-border-strong);
+  --fc-button-active-bg-color: var(--vl-primary);
+  --fc-button-active-border-color: var(--vl-primary);
+  font-size: 0.8125rem;
+}
+
+.fc .fc-toolbar {
+  gap: 0.5rem;
+}
+.fc .fc-toolbar-title {
+  font-size: 1.0625rem;
+  line-height: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.011em;
+}
+
+/* Segmented-control look for the view switcher */
+.fc .fc-button-group {
+  gap: 2px;
+  padding: 3px;
+  background: var(--vl-subtle);
+  border-radius: var(--radius-lg);
+}
+.fc .fc-button {
+  border-radius: var(--radius-md) !important;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  box-shadow: none !important;
+  transition:
+    background-color var(--vl-dur-fast) var(--vl-ease),
+    color var(--vl-dur-fast) var(--vl-ease);
+}
+.fc .fc-button-group .fc-button {
+  background: transparent;
+  border-color: transparent;
+}
+.fc .fc-button:focus-visible {
+  outline: 2px solid var(--vl-primary);
+  outline-offset: 1px;
+}
+.fc .fc-button-primary:not(:disabled).fc-button-active,
+.fc .fc-button-primary:not(:disabled):active {
+  background: var(--vl-surface);
+  border-color: transparent;
+  color: var(--vl-text);
+  box-shadow: var(--vl-shadow-xs) !important;
+}
+.fc .fc-button-group .fc-button-active {
+  background: var(--vl-surface) !important;
+  color: var(--vl-text) !important;
+}
+.fc .fc-button-primary:disabled {
+  opacity: 0.45;
+}
+
+.fc .fc-col-header-cell {
+  background: var(--vl-subtle);
+  padding: 0.5rem 0;
+  font-weight: 600;
 }
 .fc .fc-daygrid-day-number,
 .fc .fc-col-header-cell-cushion {
-  color: var(--text);
+  color: var(--vl-text-secondary);
   text-decoration: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.375rem 0.5rem;
 }
-.fc .fc-list-event:hover td {
-  background: var(--bg);
+.fc .fc-day-today .fc-daygrid-day-number {
+  color: var(--vl-on-primary);
+  background: var(--vl-primary);
+  border-radius: 999px;
+  min-width: 1.5rem;
+  text-align: center;
+  margin: 0.25rem;
+  padding: 0.125rem 0.375rem;
 }
-.fc .fc-list-day-cushion {
-  background: var(--bg);
+.fc .fc-day-other .fc-daygrid-day-number {
+  opacity: 0.4;
 }
 
-/* thin scrollbars */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+.fc .fc-daygrid-day-frame {
+  padding: 1px;
+}
+.fc .fc-daygrid-day:hover {
+  background: var(--vl-hover);
+}
+
+/* Events are rendered by eventContent; strip FullCalendar's own chrome. */
+.fc .fc-event {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 1px 2px;
+  cursor: pointer;
+}
+.fc .fc-event:focus-visible {
+  outline: 2px solid var(--vl-primary);
+  outline-offset: 1px;
+}
+.fc .fc-event .fc-event-main {
+  padding: 0;
+  color: inherit;
+}
+.fc .fc-daygrid-event-harness {
+  margin-top: 2px;
+}
+.fc .fc-event-dragging {
+  opacity: 0.65;
+}
+.fc .fc-event-resizing {
+  opacity: 0.85;
+}
+.fc .fc-timegrid-event {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.fc .fc-timegrid-slot-label-cushion,
+.fc .fc-timegrid-axis-cushion {
+  font-size: 0.6875rem;
+  color: var(--vl-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.fc .fc-timegrid-now-indicator-line {
+  border-width: 2px 0 0;
+}
+
+.fc .fc-daygrid-more-link {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--vl-primary-text);
+  padding: 0 0.25rem;
+}
+.fc .fc-popover {
+  border-radius: var(--radius-lg);
+  border-color: var(--vl-border);
+  box-shadow: var(--vl-shadow-lg);
+  overflow: hidden;
+}
+.fc .fc-popover-header {
+  background: var(--vl-subtle);
+  color: var(--vl-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.fc .fc-list {
+  border-radius: var(--radius-lg);
+}
+.fc .fc-list-day-cushion {
+  background: var(--vl-subtle);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.fc .fc-list-event:hover td {
+  background: var(--vl-hover);
+}
+.fc .fc-list-event-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--vl-text-secondary);
+}
+.fc .fc-list-empty {
+  background: transparent;
+  color: var(--vl-text-tertiary);
 }

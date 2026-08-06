@@ -1,14 +1,29 @@
 import type { ReactNode } from 'react'
-import { Navigate, Outlet } from 'react-router'
+import { Navigate, Outlet, useLocation } from 'react-router'
+import { Truck } from '../../components/ui/icons'
+import { Card, EmptyState, Spinner } from '../../components/ui'
 import { useAuth } from '../../state/auth'
-import { Spinner } from '../../components/ui'
 import type { PermissionAction } from '../../types/domain'
+
+/** Branded boot screen — better than a bare spinner on a cold load. */
+function Booting() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 bg-canvas" role="status" aria-label="טוען">
+      <span className="flex size-12 animate-shimmer items-center justify-center rounded-2xl bg-primary text-on-primary shadow-lg">
+        <Truck size={24} strokeWidth={1.75} />
+      </span>
+      <Spinner size={20} />
+    </div>
+  )
+}
 
 export function RequireAuth() {
   const { session, booted, me } = useAuth()
-  if (!booted) return <Spinner full />
+  const location = useLocation()
+
+  if (!booted) return <Booting />
   if (!session) return <Navigate to="/login" replace />
-  if (!me) return <Spinner full />
+  if (!me) return <Booting />
   // contractors live in their own portal
   if (me.profile.user_kind === 'contractor_user' && !location.pathname.startsWith('/portal')) {
     return <Navigate to="/portal" replace />
@@ -28,10 +43,13 @@ export function RequirePermission({
   const can = useAuth((s) => s.can)
   if (!can(resource, action)) {
     return (
-      <div className="flex h-60 flex-col items-center justify-center gap-2 text-[var(--muted)]">
-        <p className="text-lg font-semibold">אין הרשאה</p>
-        <p className="text-sm">אין לך הרשאה לצפות בעמוד זה</p>
-      </div>
+      <Card className="mx-auto max-w-md">
+        <EmptyState
+          art="alert"
+          title="אין הרשאה"
+          description="אין לך הרשאה לצפות בעמוד זה. פנה למנהל המערכת אם דרושה לך גישה."
+        />
+      </Card>
     )
   }
   return <>{children}</>
