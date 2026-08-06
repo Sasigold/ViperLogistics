@@ -7,13 +7,16 @@ import {
   AlertTriangle,
   ChevronDown,
   Columns3,
+  Filter,
   ICON,
+  MapPin,
   Pencil,
   Plus,
   STROKE,
   SlidersHorizontal,
 } from '../../components/ui/icons'
 import {
+  AvatarGroup,
   BulkBar,
   Button,
   Checkbox,
@@ -28,6 +31,7 @@ import {
   SegmentedControl,
   Select,
   SkeletonTable,
+  StatusPill,
   Tooltip,
   cx,
   useToast,
@@ -36,6 +40,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { useContractors, useCustomers, useExecutionMethods, useStatuses, useTaskTypes, useTrucks } from '../../lib/queries'
 import { fmtDate, fmtTime, toISODate } from '../../lib/dates'
+import { useIsMobile } from '../../lib/useMediaQuery'
 import { TaskDrawer } from '../tasks/TaskDrawer'
 import { RequirePermission } from '../auth/guards'
 import { BOARD_FIELDS, DEFAULT_HIDDEN_FIELDS } from './boardFields'
@@ -111,6 +116,8 @@ export default function WorkBoardPage() {
   const canEdit = can('tasks', 'edit')
   const [params] = useSearchParams()
   const prefs = useRef(loadPrefs())
+  const isMobile = useIsMobile()
+  const [filterSheet, setFilterSheet] = useState(false)
 
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 })
   const [from, setFrom] = useState(params.get('date') || toISODate(weekStart))
@@ -186,7 +193,7 @@ export default function WorkBoardPage() {
 
   /* ── group by day, then lay the columns out left-to-right in reading order */
 
-  const { columns, bands, totalWidth } = useMemo(() => {
+  const { columns, bands, totalWidth, rowsByDay } = useMemo(() => {
     const byDay = new Map<string, WorkBoardRow[]>()
     for (const r of rows) {
       const list = byDay.get(r.task_date)
@@ -212,10 +219,14 @@ export default function WorkBoardPage() {
       overdue: number
       collapsed: boolean
     }[] = []
+    /** the same day-grouping the columns are built from, kept in sorted order
+     *  so the mobile list and the desktop grid can never disagree */
+    const sortedByDay = new Map<string, WorkBoardRow[]>()
     let offset = 0
 
     for (const dayKey of [...byDay.keys()].sort()) {
       const dayRows = [...byDay.get(dayKey)!].sort(cmp)
+      sortedByDay.set(dayKey, dayRows)
       const overdue = dayKey < today ? dayRows.filter((r) => !r.status_is_terminal).length : 0
       const collapsed = collapsedDays.has(dayKey)
       const start = offset
@@ -232,7 +243,7 @@ export default function WorkBoardPage() {
       bandList.push({ dayKey, start, width: offset - start, count: dayRows.length, overdue, collapsed })
     }
 
-    return { columns: cols, bands: bandList, totalWidth: offset }
+    return { columns: cols, bands: bandList, totalWidth: offset, rowsByDay: sortedByDay }
   }, [rows, sortBy, collapsedDays, metrics.col, today])
 
   /* ── horizontal virtualization (RTL-aware) ───────────────────────────── */
@@ -294,6 +305,103 @@ export default function WorkBoardPage() {
     [rows, today],
   )
 
+  const activeFilterCount = Object.values(filters).filter(Boolean).length
+  const resetFilters = () => setFilters({ customer: '', status: '', type: '', contractor: '', q: '' })
+
+  /* ── filter controls ──────────────────────────────────────────────────────
+     One definition, two homes: a single toolbar row on desktop, and a dialog
+     on mobile. Left inline, the six controls stacked to about 400px — most of
+     a phone screen — before the board even started.                        */
+
+  const dateFields = (
+    <div className="flex items-center gap-1.5">
+      <Input
+        type="date"
+        inputSize="sm"
+        className="w-full min-w-0 lg:w-36"
+        value={from}
+        onChange={(e) => setFrom(e.target.value)}
+        aria-label="מתאריך"
+      />
+      <span className="shrink-0 type-caption text-ink-tertiary">עד</span>
+      <Input
+        type="date"
+        inputSize="sm"
+        className="w-full min-w-0 lg:w-36"
+        value={to}
+        onChange={(e) => setTo(e.target.value)}
+        aria-label="עד תאריך"
+      />
+    </div>
+  )
+
+  const presetRow = (
+    <div className="scroll-row gap-1">
+      {presets.map((p) => (
+        <button
+          key={p.label}
+          onClick={p.run}
+          className="scroll-row-item rounded-md px-2 py-1 type-caption font-medium text-ink-tertiary transition-colors hover:bg-hover hover:text-ink"
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  )
+
+  const lookupFilters = (
+    <>
+      <Select
+        className="w-full lg:w-36"
+        selectSize="sm"
+        value={filters.customer}
+        onChange={(e) => setFilters((f) => ({ ...f, customer: e.target.value }))}
+        aria-label="לקוח"
+      >
+        <option value="">כל הלקוחות</option>
+        {customers.map((c) => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </Select>
+      <Select
+        className="w-full lg:w-32"
+        selectSize="sm"
+        value={filters.type}
+        onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
+        aria-label="סוג משימה"
+      >
+        <option value="">כל הסוגים</option>
+        {taskTypes.map((t) => (
+          <option key={t.id} value={t.id}>{t.name}</option>
+        ))}
+      </Select>
+      <Select
+        className="w-full lg:w-32"
+        selectSize="sm"
+        value={filters.status}
+        onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
+        aria-label="סטטוס"
+      >
+        <option value="">כל הסטטוסים</option>
+        {statuses.map((s) => (
+          <option key={s.id} value={s.id}>{s.name}</option>
+        ))}
+      </Select>
+      <Select
+        className="w-full lg:w-32"
+        selectSize="sm"
+        value={filters.contractor}
+        onChange={(e) => setFilters((f) => ({ ...f, contractor: e.target.value }))}
+        aria-label="קבלן"
+      >
+        <option value="">כל הקבלנים</option>
+        {contractors.map((c) => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </Select>
+    </>
+  )
+
   return (
     <RequirePermission resource="tasks">
       <div className="flex h-full min-h-0 flex-col gap-3">
@@ -328,23 +436,42 @@ export default function WorkBoardPage() {
             </>
           }
         >
-          <div className="surface flex flex-wrap items-center gap-2 p-2.5">
+          {/* ── mobile toolbar: two rows, everything else behind "סינון" ──── */}
+          <div className="surface space-y-2 p-2 lg:hidden">
+            {presetRow}
             <div className="flex items-center gap-1.5">
-              <Input type="date" inputSize="sm" className="w-36" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="מתאריך" />
-              <span className="type-caption text-ink-tertiary">עד</span>
-              <Input type="date" inputSize="sm" className="w-36" value={to} onChange={(e) => setTo(e.target.value)} aria-label="עד תאריך" />
+              <Input
+                className="min-w-0 flex-1"
+                inputSize="sm"
+                placeholder="חיפוש..."
+                value={filters.q}
+                onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
+                aria-label="חיפוש חופשי"
+              />
+              <Button
+                size="sm"
+                variant={activeFilterCount > 0 ? 'outlined' : 'secondary'}
+                className="shrink-0"
+                onClick={() => setFilterSheet(true)}
+              >
+                <Filter size={ICON.sm} strokeWidth={STROKE} />
+                סינון
+                {activeFilterCount > 0 && (
+                  <span className="inline-flex size-4 items-center justify-center rounded-full bg-primary type-caption font-bold tabular text-on-primary">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </Button>
             </div>
-            <div className="flex items-center gap-0.5">
-              {presets.map((p) => (
-                <button
-                  key={p.label}
-                  onClick={p.run}
-                  className="rounded-md px-2 py-1 type-caption font-medium text-ink-tertiary transition-colors hover:bg-hover hover:text-ink"
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
+            <p className="type-caption tabular text-ink-tertiary">
+              {fmtDate(from)} – {fmtDate(to)}
+            </p>
+          </div>
+
+          {/* ── desktop toolbar: everything inline ───────────────────────── */}
+          <div className="surface hidden flex-wrap items-center gap-2 p-2.5 lg:flex">
+            {dateFields}
+            {presetRow}
 
             <Input
               className="w-44"
@@ -354,30 +481,7 @@ export default function WorkBoardPage() {
               onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
               aria-label="חיפוש חופשי"
             />
-            <Select className="w-36" selectSize="sm" value={filters.customer} onChange={(e) => setFilters((f) => ({ ...f, customer: e.target.value }))} aria-label="לקוח">
-              <option value="">כל הלקוחות</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </Select>
-            <Select className="w-32" selectSize="sm" value={filters.type} onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))} aria-label="סוג משימה">
-              <option value="">כל הסוגים</option>
-              {taskTypes.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </Select>
-            <Select className="w-32" selectSize="sm" value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))} aria-label="סטטוס">
-              <option value="">כל הסטטוסים</option>
-              {statuses.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </Select>
-            <Select className="w-32" selectSize="sm" value={filters.contractor} onChange={(e) => setFilters((f) => ({ ...f, contractor: e.target.value }))} aria-label="קבלן">
-              <option value="">כל הקבלנים</option>
-              {contractors.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </Select>
+            {lookupFilters}
 
             <div className="ms-auto flex items-center gap-1.5">
               <Popover
@@ -392,7 +496,7 @@ export default function WorkBoardPage() {
                   <div className="w-56 p-1.5">
                     <MenuLabel>צפיפות</MenuLabel>
                     <SegmentedControl
-                      className="w-full"
+                      block
                       items={[
                         { key: 'comfortable', label: 'מרווח' },
                         { key: 'compact', label: 'צפוף' },
@@ -402,7 +506,7 @@ export default function WorkBoardPage() {
                     />
                     <MenuLabel>מיון בתוך היום</MenuLabel>
                     <SegmentedControl
-                      className="w-full"
+                      block
                       items={SORTS.map((s) => ({ key: s.key, label: s.label }))}
                       value={sortBy}
                       onChange={setSortBy}
@@ -473,6 +577,19 @@ export default function WorkBoardPage() {
                   </Button>
                 )
               }
+            />
+          ) : isMobile ? (
+            /* A transposed 19-row grid needs a mouse and a wide viewport. On a
+               phone the same data reads better as a day-by-day card list; the
+               drawer still owns every edit. */
+            <MobileBoard
+              bands={bands}
+              rowsByDay={rowsByDay}
+              today={today}
+              selected={selected}
+              onToggle={toggleOne}
+              onOpen={openTask}
+              onToggleDay={toggleDay}
             />
           ) : (
             <div ref={scrollRef} className="h-full overflow-auto">
@@ -626,6 +743,36 @@ export default function WorkBoardPage() {
           </BulkBar>
         )}
 
+        <Modal
+          open={filterSheet}
+          onClose={() => setFilterSheet(false)}
+          title="סינון לוח העבודה"
+          description={`${rows.length} משימות בטווח הנוכחי`}
+          footer={
+            <>
+              <Button onClick={resetFilters} disabled={activeFilterCount === 0}>
+                ניקוי
+              </Button>
+              <Button variant="primary" onClick={() => setFilterSheet(false)}>
+                הצגה
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <Field label="טווח תאריכים">{dateFields}</Field>
+            <div className="grid gap-3">{lookupFilters}</div>
+            <Field label="מיון בתוך היום">
+              <SegmentedControl
+                block
+                items={SORTS.map((s) => ({ key: s.key, label: s.label }))}
+                value={sortBy}
+                onChange={setSortBy}
+              />
+            </Field>
+          </div>
+        </Modal>
+
         <TaskDrawer open={drawer.open} onClose={() => setDrawer({ open: false, taskId: null })} taskId={drawer.taskId} />
         <BulkEditModal
           open={bulkOpen}
@@ -640,6 +787,188 @@ export default function WorkBoardPage() {
     </RequirePermission>
   )
 }
+
+/* ===== mobile board =======================================================
+   Days stack vertically, tasks inside them are cards. Every affordance the
+   desktop grid offers through hover — open, select, fold a day — has a real
+   target here, and nothing scrolls sideways.                               */
+
+interface Band {
+  dayKey: string
+  start: number
+  width: number
+  count: number
+  overdue: number
+  collapsed: boolean
+}
+
+function MobileBoard({
+  bands,
+  rowsByDay,
+  today,
+  selected,
+  onToggle,
+  onOpen,
+  onToggleDay,
+}: {
+  bands: Band[]
+  rowsByDay: Map<string, WorkBoardRow[]>
+  today: string
+  selected: Set<string>
+  onToggle: (id: string) => void
+  onOpen: (id: string) => void
+  onToggleDay: (dayKey: string) => void
+}) {
+  return (
+    <div className="h-full overflow-y-auto">
+      {bands.map((band) => {
+        const isToday = band.dayKey === today
+        const dayRows = rowsByDay.get(band.dayKey) ?? []
+        return (
+          <section key={band.dayKey}>
+            <h3
+              className={cx(
+                'sticky top-0 z-10 flex items-center gap-2 border-b border-line px-3 py-2 backdrop-blur-sm',
+                isToday ? 'bg-primary-subtle' : band.overdue > 0 ? 'bg-error-subtle' : 'bg-subtle',
+              )}
+            >
+              <button
+                onClick={() => onToggleDay(band.dayKey)}
+                aria-expanded={!band.collapsed}
+                className="flex min-w-0 flex-1 items-center gap-1.5 text-start focus-visible:outline-none focus-visible:focus-ring"
+              >
+                <ChevronDown
+                  size={ICON.sm}
+                  className={cx('shrink-0 transition-transform duration-200', band.collapsed && 'rotate-90 rtl:-rotate-90')}
+                />
+                <span
+                  className={cx(
+                    'truncate type-button tabular',
+                    isToday ? 'text-primary-text' : band.overdue > 0 ? 'text-error-text' : 'text-ink-secondary',
+                  )}
+                >
+                  {fmtDate(band.dayKey)}
+                </span>
+                {isToday && (
+                  <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
+                    היום
+                  </span>
+                )}
+                {band.overdue > 0 && !isToday && (
+                  <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-error px-1.5 py-px text-[10px] font-bold tabular text-white">
+                    <AlertTriangle size={9} />
+                    {band.overdue}
+                  </span>
+                )}
+              </button>
+              <span className="shrink-0 type-caption tabular text-ink-tertiary">{band.count}</span>
+            </h3>
+
+            {!band.collapsed && (
+              <ul className="divide-y divide-line-subtle">
+                {dayRows.map((row) => (
+                  <li key={row.id}>
+                    <MobileTaskCard
+                      row={row}
+                      overdue={row.task_date < today && !row.status_is_terminal}
+                      selected={selected.has(row.id)}
+                      onToggle={onToggle}
+                      onOpen={onOpen}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
+const MobileTaskCard = memo(function MobileTaskCard({
+  row,
+  overdue,
+  selected,
+  onToggle,
+  onOpen,
+}: {
+  row: WorkBoardRow
+  overdue: boolean
+  selected: boolean
+  onToggle: (id: string) => void
+  onOpen: (id: string) => void
+}) {
+  const label = row.end_client_name || row.title || row.customer_name || row.task_type_name
+  const time = fmtTime(row.onsite_start_time) || fmtTime(row.warehouse_start_time)
+  const team = [
+    ...(row.workers ?? []).map((w) => w.name),
+    ...(row.drivers ?? []).map((d) => d.name),
+    ...(row.contractor_worker_list ?? []).map((w) => w.name),
+  ]
+  const short = row.worker_count > 0 && team.length < row.worker_count
+
+  return (
+    <div className={cx('flex items-stretch gap-2 px-3 py-2.5', selected ? 'bg-selected' : overdue && 'bg-error-subtle/50')}>
+      <span
+        aria-hidden
+        className="w-1 shrink-0 rounded-full"
+        style={{ background: row.customer_color ?? 'var(--vl-border-strong)' }}
+      />
+      <span className="flex items-start pt-0.5">
+        <Checkbox checked={selected} onChange={() => onToggle(row.id)} />
+      </span>
+      <button onClick={() => onOpen(row.id)} className="min-w-0 flex-1 space-y-1 text-start">
+        <span className="flex items-center gap-2">
+          {time ? (
+            <span className={cx('shrink-0 type-button tabular', overdue ? 'text-error-text' : 'text-ink')} dir="ltr">
+              {time}
+            </span>
+          ) : (
+            <span className="shrink-0 type-caption text-ink-tertiary">ללא שעה</span>
+          )}
+          {overdue && <AlertTriangle size={12} className="shrink-0 text-error" aria-label="באיחור" />}
+          <StatusPill color={row.status_color} className="ms-auto shrink-0">
+            {row.status_name}
+          </StatusPill>
+        </span>
+
+        <span className="block truncate type-body font-semibold">{label}</span>
+
+        <span className="flex flex-wrap items-center gap-x-2 type-caption text-ink-tertiary">
+          <span className="truncate">{row.task_type_name}</span>
+          {row.customer_name && <span className="truncate">· {row.customer_name}</span>}
+          {row.contractor_name && <span className="truncate">· {row.contractor_name}</span>}
+        </span>
+
+        {row.location_text && (
+          <span className="flex items-center gap-1 type-caption text-ink-tertiary">
+            <MapPin size={ICON.xs} className="shrink-0" />
+            <span className="truncate">{row.location_text}</span>
+          </span>
+        )}
+
+        <span className="flex items-center gap-2 pt-0.5">
+          {team.length > 0 ? (
+            <AvatarGroup names={team} max={4} size="xs" />
+          ) : (
+            <span className="type-caption text-ink-tertiary">לא שובץ</span>
+          )}
+          {row.worker_count > 0 && (
+            <span
+              className={cx(
+                'rounded px-1 type-caption font-bold tabular',
+                short ? 'bg-warning-subtle text-warning-text' : 'bg-success-subtle text-success-text',
+              )}
+            >
+              {team.length}/{row.worker_count}
+            </span>
+          )}
+        </span>
+      </button>
+    </div>
+  )
+})
 
 /* ===== column header ====================================================== */
 

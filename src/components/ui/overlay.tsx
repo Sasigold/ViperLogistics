@@ -139,7 +139,7 @@ export function Modal({
   return createPortal(
     <div
       className={cx(
-        'fixed inset-0 z-50 flex items-start justify-center overflow-y-auto scrim p-4 py-8 sm:py-14',
+        'fixed inset-0 z-50 flex items-start justify-center overflow-y-auto scrim p-3 py-6 sm:p-4 sm:py-14',
         'transition-opacity duration-150',
         open ? 'opacity-100' : 'opacity-0',
       )}
@@ -158,7 +158,7 @@ export function Modal({
         )}
       >
         {!bare && (
-          <div className="flex items-start gap-3 border-b border-line-subtle px-5 py-3.5">
+          <div className="flex items-start gap-3 border-b border-line-subtle px-4 py-3.5 sm:px-5">
             <div className="min-w-0 flex-1">
               <h2 id={labelId} className="type-title">
                 {title}
@@ -174,9 +174,11 @@ export function Modal({
             </IconButton>
           </div>
         )}
-        <div className="max-h-[calc(100vh-14rem)] overflow-y-auto p-5">{children}</div>
+        {/* dvh, not vh: mobile browsers shrink the viewport when the URL bar
+            and the on-screen keyboard appear, and vh does not follow */}
+        <div className="max-h-[70dvh] overflow-y-auto p-4 sm:max-h-[calc(100dvh-14rem)] sm:p-5">{children}</div>
         {footer && (
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line-subtle bg-subtle/60 px-5 py-3">
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line-subtle bg-subtle/60 px-4 py-3 sm:px-5">
             {footer}
           </div>
         )}
@@ -229,7 +231,7 @@ export function Drawer({
           open ? 'translate-x-0' : 'ltr:-translate-x-full rtl:translate-x-full',
         )}
       >
-        <div className="flex items-start gap-3 border-b border-line-subtle px-5 py-3.5">
+        <div className="flex items-start gap-3 border-b border-line-subtle px-4 py-3.5 sm:px-5">
           <div className="min-w-0 flex-1">
             <h2 id={labelId} className="type-title">
               {title}
@@ -240,9 +242,9 @@ export function Drawer({
             <X size={16} />
           </IconButton>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">{children}</div>
         {footer && (
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line-subtle bg-subtle/60 px-5 py-3">
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line-subtle bg-subtle/60 px-4 py-3 pb-[calc(0.75rem+var(--vl-safe-bottom))] sm:px-5">
             {footer}
           </div>
         )}
@@ -516,7 +518,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       {createPortal(
         <div
-          className="pointer-events-none fixed bottom-4 start-4 z-[80] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2"
+          className={cx(
+            'pointer-events-none fixed start-3 z-[80] flex flex-col gap-2 sm:start-4',
+            // clears the mobile bottom bar; back to the corner once it's gone
+            'bottom-shell lg:bottom-4',
+            'w-[min(24rem,calc(100vw-1.5rem))]',
+          )}
           role="region"
           aria-live="polite"
           aria-label="התראות מערכת"

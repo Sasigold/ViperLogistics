@@ -20,7 +20,8 @@ import { useAuth } from '../state/auth'
 import { NotificationsBell } from '../features/notifications/NotificationsBell'
 import { CommandPalette } from '../features/search/CommandPalette'
 import { useOverdueCount } from '../features/tasks/useOverdueCount'
-import { NAV_SECTIONS, ROUTE_LABELS } from './nav'
+import { NAV_SECTIONS, ROUTE_LABELS, bottomNavItems } from './nav'
+import type { NavItem, NavSection } from './nav'
 import { PageTitleProvider, useCurrentPageTitle } from './breadcrumbs'
 
 const COLLAPSE_KEY = 'vl-nav-collapsed'
@@ -76,7 +77,8 @@ export default function AppLayout() {
             'fixed inset-y-0 start-0 z-50 flex shrink-0 flex-col border-e border-line bg-surface',
             'transition-[width,transform] duration-200 ease-[cubic-bezier(.4,0,.2,1)]',
             'lg:static lg:translate-x-0',
-            collapsed ? 'w-60 lg:w-[4.25rem]' : 'w-60',
+            // wider as a mobile drawer, where it is the only thing on screen
+            collapsed ? 'w-72 lg:w-[4.25rem]' : 'w-72 lg:w-60',
             mobileNav ? 'translate-x-0 shadow-overlay' : 'ltr:-translate-x-full rtl:translate-x-full',
           )}
         >
@@ -197,9 +199,15 @@ export default function AppLayout() {
         {/* ── main column ─────────────────────────────────────────────────── */}
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface/85 px-3 backdrop-blur-md sm:px-4">
-            <IconButton label="פתיחת התפריט" size="sm" bare className="lg:hidden" onClick={() => setMobileNav(true)}>
-              <Menu size={ICON.lg} />
-            </IconButton>
+            {/* on mobile the sidebar is reached from the bottom bar's "עוד", so
+                the header wears the brand mark instead of a hamburger */}
+            <Link
+              to="/"
+              aria-label="ViperLogistics — לדף הבית"
+              className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary shadow-xs focus-visible:outline-none focus-visible:focus-ring lg:hidden"
+            >
+              <Truck size={ICON.md} strokeWidth={STROKE} />
+            </Link>
 
             <Breadcrumbs />
 
@@ -214,7 +222,11 @@ export default function AppLayout() {
             >
               <Search size={ICON.sm} className="shrink-0" strokeWidth={STROKE} />
               <span className="hidden md:inline">חיפוש...</span>
-              <Kbd className="ms-auto hidden md:inline-flex">Ctrl K</Kbd>
+              {/* the hint lives on a wrapper: `hidden` on Kbd itself would fight
+                  the component's own `inline-flex` and lose */}
+              <span className="ms-auto hidden md:block">
+                <Kbd>Ctrl K</Kbd>
+              </span>
             </button>
 
             <div className="flex items-center gap-0.5">
@@ -283,14 +295,107 @@ export default function AppLayout() {
             </div>
           </header>
 
-          <main id="main" className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6">
+          <main id="main" className="min-h-0 flex-1 overflow-y-auto p-3 pb-shell sm:p-4 sm:pb-shell lg:p-6 lg:pb-6">
             <Outlet />
           </main>
         </div>
 
+        <BottomNav sections={sections} overdue={overdue} onMore={() => setMobileNav(true)} />
+
         <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
       </div>
     </PageTitleProvider>
+  )
+}
+
+/* ===== BottomNav ==========================================================
+   The phone's primary navigation. Four destinations plus "עוד", which opens
+   the same sidebar the desktop shows permanently — so nothing is reachable
+   on one form factor and lost on the other.                                */
+
+function BottomNav({
+  sections,
+  overdue,
+  onMore,
+}: {
+  sections: NavSection[]
+  overdue: number
+  onMore: () => void
+}) {
+  const items = bottomNavItems(sections)
+  if (items.length === 0) return null
+
+  return (
+    <nav
+      aria-label="ניווט ראשי"
+      /* below the sidebar's scrim (z-40) so opening "עוד" dims the bar too */
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 pb-safe backdrop-blur-md lg:hidden"
+    >
+      <ul className="flex items-stretch">
+        {items.map((item) => (
+          <li key={item.to} className="min-w-0 flex-1">
+            <BottomNavLink item={item} count={item.badge === 'overdue' ? overdue : 0} />
+          </li>
+        ))}
+        <li className="min-w-0 flex-1">
+          <button
+            onClick={onMore}
+            aria-label="פתיחת התפריט המלא"
+            className={cx(
+              'flex h-14 w-full flex-col items-center justify-center gap-0.5 px-1 text-ink-tertiary',
+              'transition-colors duration-150 active:bg-hover focus-visible:outline-none focus-visible:focus-ring',
+            )}
+          >
+            <Menu size={ICON.lg} strokeWidth={STROKE} aria-hidden />
+            <span className="type-caption font-medium leading-none">עוד</span>
+          </button>
+        </li>
+      </ul>
+    </nav>
+  )
+}
+
+function BottomNavLink({ item, count }: { item: NavItem; count: number }) {
+  const { to, label, shortLabel, icon: Icon, end } = item
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        cx(
+          'relative flex h-14 flex-col items-center justify-center gap-0.5 px-1',
+          'transition-colors duration-150 active:bg-hover focus-visible:outline-none focus-visible:focus-ring',
+          isActive ? 'text-primary-text' : 'text-ink-tertiary',
+        )
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <span
+            aria-hidden
+            className={cx(
+              'absolute inset-x-3 top-0 h-0.5 rounded-b-full bg-primary transition-opacity duration-150',
+              isActive ? 'opacity-100' : 'opacity-0',
+            )}
+          />
+          <span className="relative">
+            <Icon size={ICON.lg} strokeWidth={isActive ? 2.25 : STROKE} aria-hidden />
+            {count > 0 && (
+              <span
+                className="absolute -end-2 -top-1 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-error px-0.5 text-[9px] font-bold tabular text-white"
+                aria-hidden
+              >
+                {count > 99 ? '99+' : count}
+              </span>
+            )}
+          </span>
+          <span className="max-w-full truncate type-caption font-medium leading-none">
+            {shortLabel ?? label}
+          </span>
+          {count > 0 && <span className="sr-only">{count} משימות באיחור</span>}
+        </>
+      )}
+    </NavLink>
   )
 }
 
@@ -308,9 +413,11 @@ function Breadcrumbs() {
   const isDetail = segments.length > 1
 
   return (
-    <nav aria-label="מיקום נוכחי" className="hidden min-w-0 sm:block">
+    <nav aria-label="מיקום נוכחי" className="min-w-0 flex-1">
       <ol className="flex min-w-0 items-center gap-1">
-        <li className="min-w-0">
+        {/* on a phone the trail collapses to the deepest crumb — the parent is
+            one tap away in the bottom bar, so spelling it out only steals width */}
+        <li className={cx('min-w-0', isDetail && 'hidden sm:block')}>
           {isDetail ? (
             <Link
               to={rootPath}
@@ -324,9 +431,9 @@ function Breadcrumbs() {
         </li>
         {isDetail && (
           <>
-            <ChevronLeft size={ICON.sm} className="shrink-0 text-ink-tertiary" aria-hidden />
+            <ChevronLeft size={ICON.sm} className="hidden shrink-0 text-ink-tertiary sm:block" aria-hidden />
             <li className="min-w-0">
-              <span className="block max-w-[16rem] truncate type-body font-semibold text-ink">
+              <span className="block truncate type-body font-semibold text-ink sm:max-w-[16rem]">
                 {detailTitle ?? 'פרטים'}
               </span>
             </li>

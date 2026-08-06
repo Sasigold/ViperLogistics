@@ -44,7 +44,9 @@ export function Tabs<K extends string>({
     <div
       ref={ref}
       role="tablist"
-      className={cx('flex flex-wrap items-center gap-1 border-b border-line', className)}
+      /* below `sm` the strip scrolls sideways: seven tabs wrapping onto three
+         rows costs more vertical space than the panel below them */
+      className={cx('flex items-center gap-1 border-b border-line max-sm:scroll-row sm:flex-wrap', className)}
       onKeyDown={(e) => {
         // in RTL the visual "next" tab is the one to the left
         if (e.key === 'ArrowLeft') {
@@ -69,7 +71,7 @@ export function Tabs<K extends string>({
             disabled={t.disabled}
             onClick={() => onChange(t.key)}
             className={cx(
-              'relative -mb-px inline-flex items-center gap-1.5 border-b-2 type-button transition-colors duration-150',
+              'relative -mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 type-button transition-colors duration-150',
               'focus-visible:outline-none focus-visible:bg-hover focus-visible:rounded-t-md',
               size === 'sm' ? 'px-3 py-1.5' : 'px-4 py-2.5',
               'disabled:pointer-events-none disabled:opacity-45',
@@ -106,14 +108,24 @@ export function SegmentedControl<K extends string>({
   value,
   onChange,
   className,
+  block,
 }: {
   items: readonly { key: K; label: ReactNode; icon?: ReactNode }[]
   value: K
   onChange: (key: K) => void
   className?: string
+  /** fill the container, splitting the width evenly between the segments */
+  block?: boolean
 }) {
   return (
-    <div className={cx('inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-subtle p-0.5', className)} role="group">
+    <div
+      className={cx(
+        'items-center gap-0.5 rounded-lg bg-subtle p-0.5',
+        block ? 'flex w-full' : 'inline-flex shrink-0',
+        className,
+      )}
+      role="group"
+    >
       {items.map((it) => {
         const active = it.key === value
         return (
@@ -123,8 +135,9 @@ export function SegmentedControl<K extends string>({
             aria-pressed={active}
             onClick={() => onChange(it.key)}
             className={cx(
-              'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 type-caption font-semibold transition-all duration-150',
+              'inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1 type-caption font-semibold transition-all duration-150',
               'focus-visible:outline-none focus-visible:focus-ring',
+              block && 'min-w-0 flex-1',
               active ? 'bg-surface text-ink shadow-xs' : 'text-ink-tertiary hover:text-ink',
             )}
           >

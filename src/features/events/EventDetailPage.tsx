@@ -332,6 +332,36 @@ export default function EventDetailPage() {
             storageKey="event-tasks"
             onRowClick={(t) => setTaskDrawer({ open: true, taskId: t.id })}
             defaultSort={{ key: 'date', dir: 'asc' }}
+            mobileCard={(t) => {
+              const names = [
+                ...(t.workers ?? []).map((w) => w.name),
+                ...(t.drivers ?? []).map((d) => d.name),
+                ...(t.contractor_worker_list ?? []).map((w) => w.name),
+              ]
+              return (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="type-caption font-semibold tabular">{fmtDate(t.task_date)}</span>
+                    <span className="type-caption tabular text-ink-tertiary" dir="ltr">
+                      {fmtTime(t.onsite_start_time) || '—'}
+                      {t.onsite_end_time ? `–${fmtTime(t.onsite_end_time)}` : ''}
+                    </span>
+                    <StatusPill color={t.status_color} className="ms-auto shrink-0">
+                      {t.status_name}
+                    </StatusPill>
+                  </div>
+                  <p className="truncate type-body font-semibold">{t.title || t.task_type_name}</p>
+                  <div className="flex items-center gap-2">
+                    {names.length > 0 ? (
+                      <AvatarGroup names={names} max={4} size="xs" />
+                    ) : (
+                      <span className="type-caption text-ink-tertiary">לא שובץ</span>
+                    )}
+                    {t.contractor_name && <span className="truncate type-caption text-ink-tertiary">{t.contractor_name}</span>}
+                  </div>
+                </div>
+              )
+            }}
             toolbar={
               <div className="flex w-full items-center gap-2">
                 <h2 className="type-title">משימות האירוע</h2>

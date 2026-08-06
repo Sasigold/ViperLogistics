@@ -153,6 +153,13 @@
 
   /* logical slide origin — flipped for RTL below */
   --vl-slide-from: -100%;
+
+  /* mobile chrome: the bottom navigation bar's height, plus the notch inset.
+     Anything that floats at the bottom of the screen (toasts, bulk bars, the
+     scroll padding of the main column) measures itself against this. */
+  --vl-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --vl-bottom-nav: 3.5rem;
+  --vl-bottom-gap: calc(var(--vl-bottom-nav) + var(--vl-safe-bottom) + 0.75rem);
 }
 
 /* ── 2b. semantic runtime tokens — DARK (a separate palette, not an inversion) */
@@ -402,6 +409,35 @@
   -webkit-backdrop-filter: blur(6px) saturate(120%);
 }
 
+/* Bottom-of-screen spacing on mobile: clears the navigation bar and the notch.
+   `pb-shell` pads a scroll container; `bottom-shell` positions a floating one. */
+@utility pb-shell {
+  padding-bottom: var(--vl-bottom-gap);
+}
+@utility bottom-shell {
+  bottom: var(--vl-bottom-gap);
+}
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+@utility pb-safe {
+  padding-bottom: var(--vl-safe-bottom);
+}
+
+/* Horizontal chip/preset rows that scroll instead of wrapping into a wall. */
+@utility scroll-row {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+@utility scroll-row-item {
+  flex: none;
+}
+
 /* Skeleton shimmer */
 @utility skeleton {
   position: relative;
@@ -428,6 +464,35 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    /* a tap should never paint a grey box over our own pressed states, and the
+       page itself should never rubber-band behind the fixed shell */
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  .scroll-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Touch pointers get no hover, so controls sized for a cursor are too small.
+     Every button-ish control keeps a 40px target on coarse pointers. */
+  @media (pointer: coarse) {
+    button,
+    [role='button'],
+    a[href],
+    select,
+    summary {
+      touch-action: manipulation;
+    }
+  }
+
+  /* iOS zooms the page when a control smaller than 16px takes focus. */
+  @media (max-width: 767.98px) {
+    input,
+    select,
+    textarea {
+      font-size: max(16px, 1em);
+    }
   }
 
   /* Keyboard focus is visible everywhere; pointer focus stays quiet. */
@@ -742,4 +807,66 @@
 .fc .fc-list-empty {
   background: transparent;
   color: var(--vl-text-tertiary);
+}
+
+/* ── 8. FullCalendar on small screens ─────────────────────────────────────────
+   Events are scheduled by date, never by clock time, so the agenda's time
+   column would read "כל היום" on every single row — hence the rule below.
+
+   The default toolbar lays three chunks on one row; below ~640px that squeezes
+   the month title to nothing. Stacking the chunks and letting the view switcher
+   span the full width keeps every control tappable.                           */
+
+.vl-calendar .fc-list-event-time {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .fc .fc-toolbar.fc-header-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+  .fc .fc-toolbar-chunk {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* title first, then navigation, then the view switcher */
+  .fc .fc-toolbar-chunk:nth-child(2) {
+    order: -1;
+  }
+  .fc .fc-toolbar-title {
+    font-size: 0.9375rem;
+  }
+  .fc .fc-button-group {
+    width: 100%;
+    justify-content: center;
+  }
+  .fc .fc-button-group .fc-button {
+    flex: 1;
+  }
+  .fc .fc-button {
+    min-height: 2.25rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+  .fc .fc-col-header-cell-cushion,
+  .fc .fc-daygrid-day-number {
+    padding: 0.25rem 0.3125rem;
+    font-size: 0.6875rem;
+  }
+  .fc .fc-daygrid-day-frame {
+    min-height: 4.25rem;
+  }
+  .fc .fc-list-event-title,
+  .fc .fc-list-event-time,
+  .fc .fc-list-day-cushion {
+    padding: 0.5rem 0.625rem;
+  }
+  /* a hidden time column would otherwise eat a third of the row */
+  .fc .fc-list-event-graphic {
+    display: none;
+  }
 }
