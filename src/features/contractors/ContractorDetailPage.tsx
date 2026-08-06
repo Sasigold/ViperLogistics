@@ -30,6 +30,7 @@ import { useContractorWorkers } from '../../lib/queries'
 import { fmtDate, fmtMoney } from '../../lib/dates'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { RequirePermission } from '../auth/guards'
+import { PERM } from '../../lib/permissions'
 import type { Contractor, ContractorWorker } from '../../types/domain'
 
 interface ContractorTaskRow {
@@ -78,7 +79,7 @@ export default function ContractorDetailPage() {
     )
 
   return (
-    <RequirePermission resource="contractors">
+    <RequirePermission perm={PERM.CONTRACTORS_VIEW}>
       <div className="space-y-4">
         <PageHeader
           title={
@@ -106,8 +107,8 @@ export default function ContractorDetailPage() {
 function DetailsTab({ contractor }: { contractor: Contractor }) {
   const qc = useQueryClient()
   const toast = useToast()
-  const { can } = useAuth()
-  const canEdit = can('contractors', 'edit')
+  const { has } = useAuth()
+  const canEdit = has(PERM.CONTRACTORS_EDIT)
   const [form, setForm] = useState(contractor)
   useEffect(() => setForm(contractor), [contractor])
 
@@ -234,9 +235,23 @@ export function StickySaveBar({
 
 /* ===== workers ============================================================ */
 
-export function WorkersTab({ contractorId, canManage = true }: { contractorId: string; canManage?: boolean }) {
+/**
+ * `canManage` used to default to true, and neither caller passed it — the write
+ * UI was always on. It now defaults to the permission, and the two callers pass
+ * the key that matches where they are: staff managing a contractor's roster
+ * versus a contractor managing their own.
+ */
+export function WorkersTab({
+  contractorId,
+  canManage,
+}: {
+  contractorId: string
+  canManage?: boolean
+}) {
   const qc = useQueryClient()
   const toast = useToast()
+  const has = useAuth((s) => s.has)
+  const mayManage = canManage ?? has(PERM.CONTRACTORS_MANAGE_WORKERS)
   const { confirm, dialog } = useConfirm()
   const { data: workers = [], isLoading } = useContractorWorkers(contractorId)
   const [form, setForm] = useState({ full_name: '', phone: '', id_number: '' })
@@ -273,7 +288,7 @@ export function WorkersTab({ contractorId, canManage = true }: { contractorId: s
         subtitle={`${workers.length} עובדים`}
         icon={<User size={ICON.md} strokeWidth={STROKE} />}
       />
-      {canManage && (
+      {mayManage && (
         <div className="border-b border-line-subtle bg-subtle/40 p-4">
           <form
             className="flex flex-wrap items-end gap-2"
@@ -312,7 +327,7 @@ export function WorkersTab({ contractorId, canManage = true }: { contractorId: s
             compact
             art="people"
             title="אין עובדים בסגל"
-            description={canManage ? 'הוסף עובדים כדי לשבץ אותם למשימות שהואצלו לקבלן' : undefined}
+            description={mayManage ? 'הוסף עובדים כדי לשבץ אותם למשימות שהואצלו לקבלן' : undefined}
           />
         ) : (
           <ul>
@@ -325,7 +340,7 @@ export function WorkersTab({ contractorId, canManage = true }: { contractorId: s
                     {[w.phone, w.id_number].filter(Boolean).join(' · ') || '—'}
                   </p>
                 </div>
-                {canManage && (
+                {mayManage && (
                   <IconButton label={`הסרת ${w.full_name}`} size="sm" onClick={() => void remove(w)} className="hover:text-error">
                     <Trash2 size={ICON.sm} strokeWidth={STROKE} />
                   </IconButton>
@@ -344,8 +359,9 @@ export function WorkersTab({ contractorId, canManage = true }: { contractorId: s
 function TasksTab({ contractorId }: { contractorId: string }) {
   const qc = useQueryClient()
   const toast = useToast()
-  const { can } = useAuth()
-  const canEdit = can('contractors', 'edit')
+  const { has } = useAuth()
+  const canEditPricing = has(PERM.CONTRACTORS_EDIT_PRICING)
+  const canMarkPaid = has(PERM.CONTRACTORS_MARK_PAID)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
 
@@ -439,7 +455,7 @@ function TasksTab({ contractorId }: { contractorId: string }) {
             className="w-24"
             aria-label="מחיר למשימה"
             defaultValue={r.price}
-            disabled={!canEdit}
+            disabled={!canEditPricing}
             onClick={(e) => e.stopPropagation()}
             onBlur={(e) => {
               const v = Number(e.target.value) || 0
@@ -455,7 +471,7 @@ function TasksTab({ contractorId }: { contractorId: string }) {
         sortValue: (r) => (r.paid_at ? 1 : 0),
         render: (r) => (
           <button
-            disabled={!canEdit}
+            disabled={!canMarkPaid}
             onClick={(e) => {
               e.stopPropagation()
               setPaid.mutate({ taskId: r.task_id, paid: !r.paid_at })
@@ -472,7 +488,7 @@ function TasksTab({ contractorId }: { contractorId: string }) {
         ),
       },
     ],
-    [canEdit, setPaid, updatePrice],
+    [canEditPricing, canMarkPaid, setPaid, updatePrice],
   )
 
   return (
@@ -519,7 +535,7 @@ function TasksTab({ contractorId }: { contractorId: string }) {
                 className="w-28"
                 aria-label="מחיר למשימה"
                 defaultValue={r.price}
-                disabled={!canEdit}
+                disabled={!canEditPricing}
                 onClick={(e) => e.stopPropagation()}
                 onBlur={(e) => {
                   const v = Number(e.target.value) || 0
@@ -527,7 +543,7 @@ function TasksTab({ contractorId }: { contractorId: string }) {
                 }}
               />
               <button
-                disabled={!canEdit}
+                disabled={!canMarkPaid}
                 onClick={(e) => {
                   e.stopPropagation()
                   setPaid.mutate({ taskId: r.task_id, paid: !r.paid_at })

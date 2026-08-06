@@ -18,12 +18,13 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
+import { PERM } from '../../lib/permissions'
 import { useContractors } from '../../lib/queries'
 import { fmtMoney } from '../../lib/dates'
 import { RequirePermission } from '../auth/guards'
 
 export default function ContractorsPage() {
-  const { can } = useAuth()
+  const { has } = useAuth()
   const { data: contractors = [], isLoading } = useContractors()
   const [createOpen, setCreateOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -38,13 +39,13 @@ export default function ContractorsPage() {
   )
 
   return (
-    <RequirePermission resource="contractors">
+    <RequirePermission perm={PERM.CONTRACTORS_VIEW}>
       <div className="space-y-4">
         <PageHeader
           title="קבלנים"
           subtitle={isLoading ? 'טוען...' : `${contractors.length} קבלנים · ${contractors.filter((c) => c.is_active).length} פעילים`}
           actions={
-            can('contractors', 'create') && (
+            has(PERM.CONTRACTORS_CREATE) && (
               <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
                 <Plus size={ICON.sm} strokeWidth={STROKE} />
                 קבלן חדש
@@ -85,7 +86,7 @@ export default function ContractorsPage() {
                     ניקוי חיפוש
                   </Button>
                 ) : (
-                  can('contractors', 'create') && (
+                  has(PERM.CONTRACTORS_CREATE) && (
                     <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
                       <Plus size={ICON.sm} />
                       קבלן חדש

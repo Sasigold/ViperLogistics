@@ -25,6 +25,7 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
+import { PERM } from '../../lib/permissions'
 import { useCustomers, useStatuses } from '../../lib/queries'
 import { fmtDate } from '../../lib/dates'
 import { useIsMobile } from '../../lib/useMediaQuery'
@@ -78,7 +79,7 @@ export default function CalendarPage() {
   const qc = useQueryClient()
   const toast = useToast()
   const navigate = useNavigate()
-  const { me, can } = useAuth()
+  const { me, has } = useAuth()
   const { openMenu, menu } = useContextMenu()
   const { prompt, dialog: promptDialog } = usePrompt()
   const isMobile = useIsMobile()
@@ -89,7 +90,9 @@ export default function CalendarPage() {
   const [eventModal, setEventModal] = useState(false)
   const calRef = useRef<FullCalendar>(null)
 
-  const canEdit = can('events', 'edit')
+  // dragging an event rewrites events.event_date, which the column trigger
+  // judges against events.change_date — gate the UI by the same key
+  const canEdit = has(PERM.CALENDAR_DRAG)
 
   const { data: customers = [] } = useCustomers()
   const { data: statuses = [] } = useStatuses('event')
@@ -454,7 +457,7 @@ export default function CalendarPage() {
             >
               <Save size={ICON.md} strokeWidth={STROKE} />
             </IconButton>
-            {can('events', 'create') && (
+            {has(PERM.EVENTS_CREATE) && (
               <Button size="sm" variant="primary" onClick={() => setEventModal(true)}>
                 <Plus size={ICON.sm} strokeWidth={STROKE} />
                 אירוע חדש

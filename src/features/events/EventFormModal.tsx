@@ -18,6 +18,7 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
+import { PERM } from '../../lib/permissions'
 import {
   useAllowedExecutionMethods,
   useCustomerFormConfig,
@@ -118,7 +119,7 @@ export function EventFormModal({
 }) {
   const qc = useQueryClient()
   const toast = useToast()
-  const { me, canViewField, canEditField } = useAuth()
+  const { me, has } = useAuth()
   const isCustomer = me?.profile.user_kind === 'customer_user'
   const [form, setForm] = useState<EventForm>(empty)
   const [step, setStep] = useState(0)
@@ -206,11 +207,11 @@ export function EventFormModal({
   /** customers see their configured form; staff see everything but keep required markers */
   const show = useCallback(
     (key: string) => {
-      if (key === 'contact_phone' && !canViewField('event', 'contact_phone')) return false
+      if (key === 'contact_phone' && !has(PERM.EVENTS_VIEW_CONTACTS)) return false
       if (!isCustomer) return true
       return fieldState(key) !== 'hidden'
     },
-    [canViewField, isCustomer, fieldState],
+    [has, isCustomer, fieldState],
   )
   const req = (key: string) => fieldState(key) === 'required'
 
@@ -279,7 +280,7 @@ export function EventFormModal({
         supplier_pickup: form.supplier_pickup,
         supplier_ids: form.supplier_pickup ? form.supplier_ids : [],
       }
-      if (canEditField('event', 'contact_phone')) {
+      if (has(PERM.EVENTS_MANAGE_CONTACTS)) {
         payload.contact_name = form.contact_name
         payload.contact_phone = form.contact_phone
       }
@@ -526,7 +527,7 @@ export function EventFormModal({
                     leading={<User size={ICON.sm} strokeWidth={STROKE} />}
                     value={form.contact_name}
                     onChange={(e) => set({ contact_name: e.target.value })}
-                    disabled={!canEditField('event', 'contact_phone')}
+                    disabled={!has(PERM.EVENTS_MANAGE_CONTACTS)}
                   />
                 </Field>
               )}
@@ -537,7 +538,7 @@ export function EventFormModal({
                     leading={<Phone size={ICON.sm} strokeWidth={STROKE} />}
                     value={form.contact_phone}
                     onChange={(e) => set({ contact_phone: e.target.value })}
-                    disabled={!canEditField('event', 'contact_phone')}
+                    disabled={!has(PERM.EVENTS_MANAGE_CONTACTS)}
                   />
                 </Field>
               )}

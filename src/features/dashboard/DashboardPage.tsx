@@ -36,6 +36,7 @@ import { supabase } from '../../lib/supabase'
 import { fmtDate, fmtTime, toISODate } from '../../lib/dates'
 import { useIsPhone } from '../../lib/useMediaQuery'
 import { useAuth } from '../../state/auth'
+import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
 import { TaskDrawer } from '../tasks/TaskDrawer'
 import { EventFormModal } from '../events/EventFormModal'
@@ -73,7 +74,7 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const { can } = useAuth()
+  const { has } = useAuth()
   const [from, setFrom] = useState(toISODate(startOfMonth(new Date())))
   const [to, setTo] = useState(toISODate(endOfMonth(new Date())))
   const [taskDrawer, setTaskDrawer] = useState<{ open: boolean; id: string | null }>({ open: false, id: null })
@@ -162,7 +163,7 @@ export default function DashboardPage() {
   ]
 
   return (
-    <RequirePermission resource="dashboard">
+    <RequirePermission perm={PERM.DASHBOARD_VIEW}>
       <div className="space-y-4">
         <PageHeader
           title="דשבורד"
@@ -264,13 +265,13 @@ export default function DashboardPage() {
         {/* ── quick actions ───────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="type-overline">פעולות מהירות</span>
-          {can('events', 'create') && (
+          {has(PERM.EVENTS_CREATE) && (
             <Button size="sm" variant="primary" onClick={() => setEventModal(true)}>
               <Plus size={ICON.sm} strokeWidth={STROKE} />
               אירוע חדש
             </Button>
           )}
-          {can('tasks', 'create') && (
+          {has(PERM.TASKS_CREATE) && (
             <Button size="sm" onClick={() => setTaskDrawer({ open: true, id: null })}>
               <Plus size={ICON.sm} strokeWidth={STROKE} />
               משימה חדשה

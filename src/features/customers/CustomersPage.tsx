@@ -20,11 +20,12 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
+import { PERM } from '../../lib/permissions'
 import { useCustomers } from '../../lib/queries'
 import { RequirePermission } from '../auth/guards'
 
 export default function CustomersPage() {
-  const { can } = useAuth()
+  const { has } = useAuth()
   const { data: customers = [], isLoading } = useCustomers()
   const [createOpen, setCreateOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -39,13 +40,13 @@ export default function CustomersPage() {
   )
 
   return (
-    <RequirePermission resource="customers">
+    <RequirePermission perm={PERM.CUSTOMERS_VIEW}>
       <div className="space-y-4">
         <PageHeader
           title="לקוחות"
           subtitle={isLoading ? 'טוען...' : `${customers.length} לקוחות · ${customers.filter((c) => c.is_active).length} פעילים`}
           actions={
-            can('customers', 'create') && (
+            has(PERM.CUSTOMERS_CREATE) && (
               <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
                 <Plus size={ICON.sm} strokeWidth={STROKE} />
                 לקוח חדש
@@ -86,7 +87,7 @@ export default function CustomersPage() {
                     ניקוי חיפוש
                   </Button>
                 ) : (
-                  can('customers', 'create') && (
+                  has(PERM.CUSTOMERS_CREATE) && (
                     <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
                       <Plus size={ICON.sm} />
                       לקוח חדש

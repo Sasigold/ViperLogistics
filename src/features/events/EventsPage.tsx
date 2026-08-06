@@ -21,6 +21,7 @@ import { useCustomers } from '../../lib/queries'
 import { fmtDate } from '../../lib/dates'
 import { EventFormModal } from './EventFormModal'
 import { RequirePermission } from '../auth/guards'
+import { PERM } from '../../lib/permissions'
 import type { EventRow } from '../../types/domain'
 
 /* ExcelJS is ~1MB — keep it out of the initial bundle and load it only when
@@ -28,7 +29,7 @@ import type { EventRow } from '../../types/domain'
 const ExcelDialog = lazy(() => import('../importExport/ExcelDialog').then((m) => ({ default: m.ExcelDialog })))
 
 export default function EventsPage() {
-  const { can } = useAuth()
+  const { has } = useAuth()
   const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [customer, setCustomer] = useState('')
@@ -145,18 +146,20 @@ export default function EventsPage() {
   const filtered = !!q || !!customer
 
   return (
-    <RequirePermission resource="events">
+    <RequirePermission perm={PERM.EVENTS_VIEW}>
       <div className="space-y-4">
         <PageHeader
           title="אירועים"
           subtitle={isLoading ? 'טוען...' : `${events.length} אירועים${filtered ? ' (מסונן)' : ''}`}
           actions={
             <>
-              <Button size="sm" onClick={() => setExcelOpen(true)}>
-                <FileSpreadsheet size={ICON.sm} strokeWidth={STROKE} />
-                ייבוא / ייצוא
-              </Button>
-              {can('events', 'create') && (
+              {(has(PERM.EVENTS_IMPORT) || has(PERM.EVENTS_EXPORT)) && (
+                <Button size="sm" onClick={() => setExcelOpen(true)}>
+                  <FileSpreadsheet size={ICON.sm} strokeWidth={STROKE} />
+                  ייבוא / ייצוא
+                </Button>
+              )}
+              {has(PERM.EVENTS_CREATE) && (
                 <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
                   <Plus size={ICON.sm} strokeWidth={STROKE} />
                   אירוע חדש
@@ -252,7 +255,7 @@ export default function EventsPage() {
                     ניקוי סינון
                   </Button>
                 ) : (
-                  can('events', 'create') && (
+                  has(PERM.EVENTS_CREATE) && (
                     <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
                       <Plus size={ICON.sm} />
                       אירוע חדש

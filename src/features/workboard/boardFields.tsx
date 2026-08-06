@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { AvatarGroup, StatusPill, Tooltip, cx } from '../../components/ui'
 import { fmtHours, fmtTime } from '../../lib/dates'
 import type { ExecutionMethod, Status, Truck, WorkBoardRow } from '../../types/domain'
+import { PERM } from '../../lib/permissions'
 
 export interface BoardLookups {
   statuses: Status[]
@@ -20,6 +21,13 @@ export interface BoardField {
   key: string
   label: string
   render: (ctx: CellContext) => ReactNode
+  /**
+   * Registry key that governs editing this cell. The board resolves it per
+   * field, so someone who may change a status but not a date gets one live
+   * control and one disabled one — matching exactly what the column trigger
+   * would allow on the way to the database.
+   */
+  editPerm?: string
   /** taller row — for the team list */
   tall?: boolean
 }
@@ -90,6 +98,7 @@ export const BOARD_FIELDS: BoardField[] = [
   },
   {
     key: 'warehouse_start_time',
+    editPerm: PERM.TASKS_RESCHEDULE,
     label: 'התחלה במחסן',
     render: ({ row, canEdit, patch }) => (
       <input
@@ -107,6 +116,7 @@ export const BOARD_FIELDS: BoardField[] = [
   },
   {
     key: 'onsite_start_time',
+    editPerm: PERM.TASKS_RESCHEDULE,
     label: 'התחלה בשטח',
     render: ({ row, canEdit, patch }) => (
       <input
@@ -136,6 +146,7 @@ export const BOARD_FIELDS: BoardField[] = [
   },
   {
     key: 'hours_count',
+    editPerm: PERM.TASKS_RESCHEDULE,
     label: 'משך',
     render: ({ row, canEdit, patch }) => (
       <input
@@ -156,6 +167,7 @@ export const BOARD_FIELDS: BoardField[] = [
   },
   {
     key: 'worker_count',
+    editPerm: PERM.TASKS_CHANGE_WORKER_COUNT,
     label: 'כמות עובדים',
     render: ({ row, canEdit, patch }) => {
       const assigned = (row.workers?.length ?? 0) + (row.contractor_worker_list?.length ?? 0)
@@ -197,6 +209,7 @@ export const BOARD_FIELDS: BoardField[] = [
   },
   {
     key: 'truck',
+    editPerm: PERM.TASKS_CHANGE_TRUCK,
     label: 'משאית',
     render: ({ row, canEdit, patch, lookups }) => (
       <select
@@ -219,6 +232,7 @@ export const BOARD_FIELDS: BoardField[] = [
   },
   {
     key: 'execution_method',
+    editPerm: PERM.TASKS_CHANGE_EXECUTION_METHOD,
     label: 'אופן ביצוע',
     render: ({ row, canEdit, patch, lookups }) => (
       <select
@@ -282,6 +296,7 @@ export const BOARD_FIELDS: BoardField[] = [
   },
   {
     key: 'status',
+    editPerm: PERM.TASKS_CHANGE_STATUS,
     label: 'סטטוס',
     render: ({ row, canEdit, patch, lookups }) =>
       canEdit ? (
@@ -311,6 +326,7 @@ export const BOARD_FIELDS: BoardField[] = [
   },
   {
     key: 'notes',
+    editPerm: PERM.TASKS_EDIT_NOTES,
     label: 'הערות',
     render: ({ row, canEdit, patch }) => (
       <input

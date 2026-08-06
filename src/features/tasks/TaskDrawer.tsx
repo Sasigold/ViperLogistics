@@ -20,6 +20,7 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
+import { PERM } from '../../lib/permissions'
 import {
   useAllowedExecutionMethods,
   useContractors,
@@ -49,8 +50,33 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   const qc = useQueryClient()
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
-  const can = useAuth((s) => s.can)
-  const canEdit = can('tasks', 'edit') || (!taskId && can('tasks', 'create'))
+  const has = useAuth((s) => s.has)
+  /**
+   * One gate per thing that can change, matching the keys the column trigger
+   * enforces. On a new task the create permission stands in for all of them —
+   * the field trigger only judges updates.
+   */
+  const isNew = !taskId
+  const canCreate = has(PERM.TASKS_CREATE)
+  const gate = (perm: string) => (isNew ? canCreate : has(perm))
+  const canEdit = isNew ? canCreate : has(PERM.TASKS_EDIT)
+  const canReschedule = gate(PERM.TASKS_RESCHEDULE)
+  const canChangeStatus = gate(PERM.TASKS_CHANGE_STATUS)
+  const canChangeType = gate(PERM.TASKS_CHANGE_TYPE)
+  const canChangeWorkerCount = gate(PERM.TASKS_CHANGE_WORKER_COUNT)
+  const canChangeMethod = gate(PERM.TASKS_CHANGE_EXECUTION_METHOD)
+  const canChangeTruck = gate(PERM.TASKS_CHANGE_TRUCK)
+  const canChangeLocation = gate(PERM.TASKS_CHANGE_LOCATION)
+  const canEditNotes = gate(PERM.TASKS_EDIT_NOTES)
+  const canDelegate = gate(PERM.TASKS_DELEGATE)
+  const canViewPricing = has(PERM.CONTRACTORS_VIEW_PRICING)
+  const canEditPricing = has(PERM.CONTRACTORS_EDIT_PRICING)
+  const canAssign: Record<StaffRole, boolean> = {
+    worker: has(PERM.TASKS_ASSIGN_WORKER),
+    driver: has(PERM.TASKS_ASSIGN_DRIVER),
+    team_lead: has(PERM.TASKS_ASSIGN_TEAM_LEAD),
+  }
+  const canAssignAny = canAssign.worker || canAssign.driver || canAssign.team_lead
 
   const { data: taskTypes = [] } = useTaskTypes()
   const { data: statuses = [] } = useStatuses('task')
@@ -219,7 +245,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       description={taskId ? undefined : 'משימה שאינה משויכת לאירוע — למשל סידור מחסן או טיפול ברכב'}
       footer={
         <>
-          {taskId && can('tasks', 'delete') ? (
+          {taskId && has(PERM.TASKS_DELETE) ? (
             <Button variant="danger" onClick={() => void remove()}>
               <Trash2 size={ICON.sm} strokeWidth={STROKE} />
               מחיקה
@@ -229,7 +255,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
           )}
           <div className="ms-auto flex gap-2">
             <Button onClick={onClose}>ביטול</Button>
-            {canEdit && (
+            {(canEdit || canAssignAny) && (
               <Button
                 variant="primary"
                 loading={save.isPending}
@@ -264,7 +290,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                     data-autofocus
                     value={form.task_type_id ?? ''}
                     onChange={(e) => set({ task_type_id: e.target.value })}
-                    disabled={!canEdit}
+                    disabled={!canChangeType}
                   >
                     <option value="">בחירה...</option>
                     {taskTypes
@@ -277,7 +303,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                   </Select>
                 </Field>
                 <Field label="סטטוס">
-                  <Select value={form.status_id ?? ''} onChange={(e) => set({ status_id: e.target.value })} disabled={!canEdit}>
+                  <Select value={form.status_id ?? ''} onChange={(e) => set({ status_id: e.target.value })} disabled={!canChangeStatus}>
                     <option value="">ברירת מחדל</option>
                     {statuses.map((s) => (
                       <option key={s.id} value={s.id}>
@@ -303,7 +329,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                       leading={<MapPin size={ICON.sm} strokeWidth={STROKE} />}
                       value={form.location_text ?? ''}
                       onChange={(e) => set({ location_text: e.target.value })}
-                      disabled={!canEdit}
+                      disabled={!canChangeLocation}
                     />
                   </Field>
                 </>
@@ -317,14 +343,14 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
             <CardBody>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Field label="תאריך" required error={dateError}>
-                  <Input type="date" value={form.task_date ?? ''} onChange={(e) => set({ task_date: e.target.value })} disabled={!canEdit} />
+                  <Input type="date" value={form.task_date ?? ''} onChange={(e) => set({ task_date: e.target.value })} disabled={!canReschedule} />
                 </Field>
                 <Field label="תחילה במחסן">
                   <Input
                     type="time"
                     value={form.warehouse_start_time?.slice(0, 5) ?? ''}
                     onChange={(e) => set({ warehouse_start_time: e.target.value || null })}
-                    disabled={!canEdit}
+                    disabled={!canReschedule}
                   />
                 </Field>
                 <Field label="תחילה בשטח">
@@ -332,7 +358,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                     type="time"
                     value={form.onsite_start_time?.slice(0, 5) ?? ''}
                     onChange={(e) => set({ onsite_start_time: e.target.value || null })}
-                    disabled={!canEdit}
+                    disabled={!canReschedule}
                   />
                 </Field>
                 <Field label="כמות שעות">
@@ -342,7 +368,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                     min="0"
                     value={form.hours_count ?? ''}
                     onChange={(e) => set({ hours_count: e.target.value === '' ? null : Number(e.target.value) })}
-                    disabled={!canEdit}
+                    disabled={!canReschedule}
                   />
                 </Field>
               </div>
@@ -364,14 +390,14 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                     min="0"
                     value={form.worker_count ?? 0}
                     onChange={(e) => set({ worker_count: Number(e.target.value) || 0 })}
-                    disabled={!canEdit}
+                    disabled={!canChangeWorkerCount}
                   />
                 </Field>
                 <Field label="אופן ביצוע" hint="הרשימה מסוננת לפי סוג המשימה והלקוח">
                   <Select
                     value={form.execution_method_id ?? ''}
                     onChange={(e) => set({ execution_method_id: e.target.value || null })}
-                    disabled={!canEdit}
+                    disabled={!canChangeMethod}
                   >
                     <option value="">בחירה...</option>
                     {allowedMethods.map((m) => (
@@ -382,7 +408,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                   </Select>
                 </Field>
                 <Field label="משאית (מרשימה)">
-                  <Select value={form.truck_id ?? ''} onChange={(e) => set({ truck_id: e.target.value || null })} disabled={!canEdit}>
+                  <Select value={form.truck_id ?? ''} onChange={(e) => set({ truck_id: e.target.value || null })} disabled={!canChangeTruck}>
                     <option value="">—</option>
                     {trucks
                       .filter((t) => t.is_active)
@@ -397,7 +423,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                   <Input
                     value={form.truck_free_text ?? ''}
                     onChange={(e) => set({ truck_free_text: e.target.value })}
-                    disabled={!canEdit}
+                    disabled={!canChangeTruck}
                   />
                 </Field>
               </div>
@@ -430,27 +456,27 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                 <MultiSelect
                   options={staffOptions('team_lead')}
                   values={byRole('team_lead').map((a) => a.profile_id)}
-                  onToggle={(id) => canEdit && toggleAssignment('team_lead', id)}
+                  onToggle={(id) => canAssign.team_lead && toggleAssignment('team_lead', id)}
                   placeholder="בחירת ראש צוות..."
-                  disabled={!canEdit}
+                  disabled={!canAssign.team_lead}
                 />
               </Field>
               <Field label="עובדים">
                 <MultiSelect
                   options={staffOptions('worker')}
                   values={byRole('worker').map((a) => a.profile_id)}
-                  onToggle={(id) => canEdit && toggleAssignment('worker', id)}
+                  onToggle={(id) => canAssign.worker && toggleAssignment('worker', id)}
                   placeholder="בחירת עובדים..."
-                  disabled={!canEdit}
+                  disabled={!canAssign.worker}
                 />
               </Field>
               <Field label="נהגים">
                 <MultiSelect
                   options={staffOptions('driver')}
                   values={byRole('driver').map((a) => a.profile_id)}
-                  onToggle={(id) => canEdit && toggleAssignment('driver', id)}
+                  onToggle={(id) => canAssign.driver && toggleAssignment('driver', id)}
                   placeholder="בחירת נהגים..."
-                  disabled={!canEdit}
+                  disabled={!canAssign.driver}
                 />
               </Field>
 
@@ -467,7 +493,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                         onChange={(e) =>
                           setAssignments((prev) => prev.map((x) => (x === a ? { ...x, truck_id: e.target.value || null } : x)))
                         }
-                        disabled={!canEdit}
+                        disabled={!has(PERM.TASKS_ASSIGN_TRUCK)}
                       >
                         <option value="">ללא משאית</option>
                         {trucks
@@ -486,7 +512,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
           </Card>
 
           {/* ── delegation ───────────────────────────────────────────────── */}
-          {can('contractors', 'view') && (
+          {has(PERM.CONTRACTORS_VIEW) && (
             <Card className={cx(form.contractor_id && 'border-warning-border')}>
               <CardHeader
                 title="האצלה לקבלן"
@@ -499,7 +525,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                     <Select
                       value={form.contractor_id ?? ''}
                       onChange={(e) => set({ contractor_id: e.target.value || null })}
-                      disabled={!canEdit || !can('contractors', 'edit')}
+                      disabled={!canDelegate}
                     >
                       <option value="">ללא קבלן</option>
                       {contractors
@@ -511,14 +537,14 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                         ))}
                     </Select>
                   </Field>
-                  {form.contractor_id && (
+                  {form.contractor_id && canViewPricing && (
                     <Field label="מחיר לקבלן (₪)">
                       <Input
                         type="number"
                         min="0"
                         value={price}
                         onChange={(e) => setPrice(e.target.value)}
-                        disabled={!can('contractors', 'edit')}
+                        disabled={!canEditPricing}
                       />
                     </Field>
                   )}
@@ -528,7 +554,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
           )}
 
           <Field label="הערות">
-            <Textarea autoGrow value={form.notes ?? ''} onChange={(e) => set({ notes: e.target.value })} disabled={!canEdit} />
+            <Textarea autoGrow value={form.notes ?? ''} onChange={(e) => set({ notes: e.target.value })} disabled={!canEditNotes} />
           </Field>
         </div>
       )}

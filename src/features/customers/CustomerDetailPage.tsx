@@ -39,6 +39,7 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
+import { PERM } from '../../lib/permissions'
 import {
   useCustomerExecutionMethods,
   useCustomerFormConfig,
@@ -85,7 +86,7 @@ export default function CustomerDetailPage() {
     )
 
   return (
-    <RequirePermission resource="customers">
+    <RequirePermission perm={PERM.CUSTOMERS_VIEW}>
       <div className="space-y-4">
         <PageHeader
           title={
@@ -124,11 +125,11 @@ function DetailsTab({ customer }: { customer: Customer }) {
   const qc = useQueryClient()
   const toast = useToast()
   const navigate = useNavigate()
-  const { can } = useAuth()
+  const { has } = useAuth()
   const { confirm, dialog } = useConfirm()
   const [form, setForm] = useState(customer)
   useEffect(() => setForm(customer), [customer])
-  const canEdit = can('customers', 'edit')
+  const canEdit = has(PERM.CUSTOMERS_EDIT)
 
   const dirty = useMemo(
     () =>
@@ -276,7 +277,7 @@ function DetailsTab({ customer }: { customer: Customer }) {
         )}
       </Card>
 
-      {can('customers', 'delete') && (
+      {has(PERM.CUSTOMERS_DELETE) && (
         <Card className="border-error-border">
           <CardHeader
             title="אזור מסוכן"
@@ -306,8 +307,8 @@ const FIELD_STATES = [
 function FieldsTab({ customerId }: { customerId: string }) {
   const qc = useQueryClient()
   const toast = useToast()
-  const { can } = useAuth()
-  const canEdit = can('customers', 'edit') || can('settings', 'edit')
+  const { has } = useAuth()
+  const canEdit = has(PERM.CUSTOMERS_MANAGE_FORM_FIELDS)
   const { data: fields = [], isLoading } = useFormFields()
   const { data: config = [] } = useCustomerFormConfig(customerId)
   const stateOf = (key: string): FieldState => config.find((c) => c.field_key === key)?.state ?? 'visible'
@@ -375,8 +376,8 @@ function FieldsTab({ customerId }: { customerId: string }) {
 function MethodsTab({ customerId }: { customerId: string }) {
   const qc = useQueryClient()
   const toast = useToast()
-  const { can } = useAuth()
-  const canEdit = can('customers', 'edit') || can('settings', 'edit')
+  const { has } = useAuth()
+  const canEdit = has(PERM.CUSTOMERS_MANAGE_FORM_FIELDS)
   const { data: methods = [] } = useExecutionMethods()
   const { data: enabled = [] } = useCustomerExecutionMethods(customerId)
   const { data: taskTypes = [] } = useTaskTypes()
@@ -468,8 +469,8 @@ function MethodsTab({ customerId }: { customerId: string }) {
 function SuppliersTab({ customerId }: { customerId: string }) {
   const qc = useQueryClient()
   const toast = useToast()
-  const { can } = useAuth()
-  const canEdit = can('customers', 'edit') || can('settings', 'edit')
+  const { has } = useAuth()
+  const canEdit = has(PERM.CUSTOMERS_MANAGE_FORM_FIELDS)
   const { data: suppliers = [], isLoading } = useSuppliers(customerId)
   const [form, setForm] = useState({ name: '', phone: '', address: '' })
   const { confirm, dialog } = useConfirm()

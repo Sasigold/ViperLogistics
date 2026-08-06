@@ -232,6 +232,92 @@ export interface FieldPermission {
   can_edit: boolean
 }
 
+export type PermissionCategory = 'access' | 'crud' | 'field' | 'action' | 'admin'
+
+export type ScopeType =
+  | 'all'
+  | 'own'
+  | 'customers'
+  | 'contractors'
+  | 'task_types'
+  | 'statuses'
+  | 'execution_methods'
+  | 'trucks'
+  | 'date_window'
+
+/** A row of `permission_registry` — the catalog the admin screens render from. */
+export interface PermissionDef {
+  key: string
+  module: string
+  resource: string
+  action: string
+  label_he: string
+  description_he: string | null
+  category: PermissionCategory
+  is_dangerous: boolean
+  applies_to: UserKind[]
+  implied_by: string | null
+  default_allowed: boolean
+  sort_order: number
+  is_active: boolean
+}
+
+export interface PermissionModule {
+  key: string
+  label_he: string
+  description_he: string | null
+  icon: string | null
+  sort_order: number
+}
+
+/** A row of `field_registry` — drives the per-field view/edit editor. */
+export interface FieldDef {
+  entity: string
+  field_key: string
+  label_he: string
+  module: string
+  table_name: string | null
+  column_name: string | null
+  is_sensitive: boolean
+  default_can_view: boolean
+  default_can_edit: boolean
+  edit_permission_key: string | null
+  sort_order: number
+}
+
+export interface PermissionRole {
+  id: string
+  key: string
+  name_he: string
+  description_he: string | null
+  user_kind: UserKind | null
+  is_system: boolean
+  sort_order: number
+  is_active: boolean
+  deleted_at: string | null
+}
+
+/** Which rows a user may see, for one resource and one dimension. */
+export interface PermissionScope {
+  id: string
+  profile_id: string | null
+  role_id: string | null
+  resource: string
+  scope_type: ScopeType
+  scope_values: string[]
+  days_back: number | null
+  days_forward: number | null
+}
+
+/** The scope rows as `get_my_permissions` returns them (no ids, already resolved). */
+export interface MyScope {
+  resource: string
+  scope_type: ScopeType
+  values: string[]
+  days_back: number | null
+  days_forward: number | null
+}
+
 export interface MyPermissions {
   profile: {
     id: string
@@ -243,10 +329,17 @@ export interface MyPermissions {
     phone: string | null
     email: string | null
   }
+  /** worker / driver / team_lead — what the person does, not what they may do */
   roles: StaffRole[]
+  /** the permission roles they belong to */
+  app_roles: { id: string; key: string; name_he: string }[]
   customer: { id: string; name: string; color: string; can_create_events: boolean } | null
+  /** legacy nested shape, kept so `can(resource, action)` call sites still work */
   permissions: Record<string, Partial<Record<PermissionAction, boolean>>>
+  /** every registry key, already resolved by the server */
+  capabilities: Record<string, boolean>
   field_permissions: FieldPermission[]
+  scopes: MyScope[]
 }
 
 export interface Notification {

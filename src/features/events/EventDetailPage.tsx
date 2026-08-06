@@ -21,6 +21,7 @@ import {
 import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
+import { PERM } from '../../lib/permissions'
 import { fmtDate, fmtDateLong, fmtHours, fmtTime } from '../../lib/dates'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { EventFormModal } from './EventFormModal'
@@ -33,7 +34,7 @@ export default function EventDetailPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const toast = useToast()
-  const { me, can, canViewField } = useAuth()
+  const { has, canViewField } = useAuth()
   const { confirm, dialog } = useConfirm()
   const [editOpen, setEditOpen] = useState(false)
   const [taskDrawer, setTaskDrawer] = useState<{ open: boolean; taskId: string | null }>({ open: false, taskId: null })
@@ -274,25 +275,25 @@ export default function EventDetailPage() {
         }
         actions={
           <>
-            {me?.profile.is_admin && (
+            {has(PERM.SETTINGS_AUDIT_LOG) && (
               <Button size="sm" variant="ghost" onClick={() => setAuditOpen(true)}>
                 <History size={ICON.sm} strokeWidth={STROKE} />
                 היסטוריה
               </Button>
             )}
-            {can('events', 'create') && (
+            {has(PERM.EVENTS_DUPLICATE) && (
               <Button size="sm" onClick={() => void duplicate()}>
                 <Copy size={ICON.sm} strokeWidth={STROKE} />
                 שכפול
               </Button>
             )}
-            {can('events', 'edit') && (
+            {has(PERM.EVENTS_EDIT) && (
               <Button size="sm" variant="primary" onClick={() => setEditOpen(true)}>
                 <Pencil size={ICON.sm} strokeWidth={STROKE} />
                 עריכה
               </Button>
             )}
-            {can('events', 'delete') && (
+            {has(PERM.EVENTS_DELETE) && (
               <Button size="sm" variant="danger" onClick={() => void remove()}>
                 <Trash2 size={ICON.sm} strokeWidth={STROKE} />
                 מחיקה
@@ -385,7 +386,7 @@ export default function EventDetailPage() {
               <div className="flex w-full items-center gap-2">
                 <h2 className="type-title">משימות האירוע</h2>
                 <span className="type-caption tabular text-ink-tertiary">{tasks.length}</span>
-                {can('tasks', 'create') && (
+                {has(PERM.TASKS_CREATE) && (
                   <Button size="sm" className="ms-auto" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
                     <Plus size={ICON.sm} strokeWidth={STROKE} />
                     משימה
@@ -399,7 +400,7 @@ export default function EventDetailPage() {
                 title="אין משימות לאירוע"
                 description="משימות הקמה ופירוק נוצרות אוטומטית עם האירוע; ניתן להוסיף משימות נוספות ידנית"
                 action={
-                  can('tasks', 'create') && (
+                  has(PERM.TASKS_CREATE) && (
                     <Button size="sm" variant="primary" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
                       <Plus size={ICON.sm} />
                       משימה חדשה

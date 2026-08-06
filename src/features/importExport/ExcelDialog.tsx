@@ -5,6 +5,8 @@ import { AlertTriangle, CircleCheck, Download, FileSpreadsheet, ICON, STROKE, Up
 import { supabase } from '../../lib/supabase'
 import { Button, Modal, Spinner, useToast } from '../../components/ui'
 import { useCustomers } from '../../lib/queries'
+import { useAuth } from '../../state/auth'
+import { PERM } from '../../lib/permissions'
 
 const headers = [
   ['customer_name', 'שם לקוח במערכת'],
@@ -24,6 +26,15 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
   const toast = useToast()
   const qc = useQueryClient()
   const { data: customers = [] } = useCustomers()
+  const has = useAuth((s) => s.has)
+  /**
+   * Export and import were both reachable by anyone who could open the events
+   * screen, and the export carries contact phone numbers out of the system into
+   * a file. Each side now needs its own key; the server checks the same ones.
+   */
+  const canExport = has(PERM.EVENTS_EXPORT)
+  const canImport = has(PERM.EVENTS_IMPORT)
+  const canSeeContacts = has(PERM.EVENTS_VIEW_CONTACTS)
   const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ imported: number; errors: { row: number; error: string }[] } | null>(null)
@@ -33,6 +44,9 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
     try {
       const { data, error } = await supabase
         .from('events')
+        // event_contacts has its own RLS keyed on can_view_field('event',
+        // 'contact_phone'), so the embed comes back empty for a user without
+        // the right — the filtering is the server's, not this select's.
         .select('*, customers(name), event_contacts(contact_name, contact_phone)')
         .is('deleted_at', null)
         .order('event_date', { ascending: false })
@@ -153,25 +167,31 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
       ) : (
         <div className="space-y-4">
           <div className="grid gap-2 sm:grid-cols-3">
-            <ActionTile
-              icon={<Download size={ICON.xl} strokeWidth={STROKE} />}
-              title="ייצוא אירועים"
-              description="כל האירועים הפעילים לקובץ"
-              onClick={() => void exportEvents()}
-            />
-            <ActionTile
-              icon={<FileSpreadsheet size={ICON.xl} strokeWidth={STROKE} />}
-              title="הורדת תבנית"
-              description="קובץ ריק עם הכותרות הנכונות"
-              onClick={() => void downloadTemplate()}
-            />
-            <ActionTile
-              icon={<Upload size={ICON.xl} strokeWidth={STROKE} />}
-              title="ייבוא מקובץ"
-              description="בחירת xlsx להעלאה"
-              primary
-              onClick={() => fileRef.current?.click()}
-            />
+            {canExport && (
+              <ActionTile
+                icon={<Download size={ICON.xl} strokeWidth={STROKE} />}
+                title="ייצוא אירועים"
+                description={canSeeContacts ? 'כל האירועים הפעילים לקובץ' : 'ללא פרטי אנשי קשר'}
+                onClick={() => void exportEvents()}
+              />
+            )}
+            {canImport && (
+              <>
+                <ActionTile
+                  icon={<FileSpreadsheet size={ICON.xl} strokeWidth={STROKE} />}
+                  title="הורדת תבנית"
+                  description="קובץ ריק עם הכותרות הנכונות"
+                  onClick={() => void downloadTemplate()}
+                />
+                <ActionTile
+                  icon={<Upload size={ICON.xl} strokeWidth={STROKE} />}
+                  title="ייבוא מקובץ"
+                  description="בחירת xlsx להעלאה"
+                  primary
+                  onClick={() => fileRef.current?.click()}
+                />
+              </>
+            )}
             <input
               ref={fileRef}
               type="file"

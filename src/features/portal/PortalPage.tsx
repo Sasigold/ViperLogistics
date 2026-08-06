@@ -40,6 +40,7 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
+import { PERM } from '../../lib/permissions'
 import { useContractorWorkers } from '../../lib/queries'
 import { fmtDate, fmtMoney, fmtTime } from '../../lib/dates'
 import { WorkersTab } from '../contractors/ContractorDetailPage'
@@ -47,20 +48,29 @@ import type { WorkBoardRow } from '../../types/domain'
 
 interface PortalStats {
   tasks_count: number
-  expected_total: number
-  paid_total: number
-  unpaid_total: number
+  /** null when the contractor lacks portal.view_financials — the RPC omits it */
+  expected_total: number | null
+  paid_total: number | null
+  unpaid_total: number | null
   completed_count: number
   upcoming_count: number
 }
 
 const TABS = [
-  { key: 'tasks' as const, label: 'המשימות שלי', icon: <Briefcase size={ICON.sm} /> },
-  { key: 'workers' as const, label: 'העובדים שלי', icon: <Users size={ICON.sm} /> },
+  { key: 'tasks' as const, label: 'המשימות שלי', icon: <Briefcase size={ICON.sm} />, perm: PERM.PORTAL_VIEW },
+  { key: 'workers' as const, label: 'העובדים שלי', icon: <Users size={ICON.sm} />, perm: PERM.PORTAL_MANAGE_WORKERS },
 ]
 
 export default function PortalPage() {
-  const { me, theme, toggleTheme, signOut } = useAuth()
+  const { me, theme, toggleTheme, signOut, has } = useAuth()
+  /**
+   * The portal used to rely on RLS alone. RLS still decides, but the screen now
+   * asks the same questions so a contractor without the financial key sees a
+   * task list rather than four empty money tiles.
+   */
+  const canSeeMoney = has(PERM.PORTAL_VIEW_FINANCIALS)
+  const canAssign = has(PERM.PORTAL_ASSIGN_WORKERS)
+  const visibleTabs = TABS.filter((t) => has(t.perm))
   const contractorId = me?.profile.contractor_id ?? null
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -84,7 +94,10 @@ export default function PortalPage() {
       </div>
     )
 
-  const paidRatio = stats && stats.expected_total > 0 ? (stats.paid_total / stats.expected_total) * 100 : 0
+  const paidRatio =
+    stats && stats.expected_total && stats.paid_total !== null
+      ? (stats.paid_total / stats.expected_total) * 100
+      : 0
 
   return (
     <div className="min-h-full bg-canvas">
@@ -132,29 +145,37 @@ export default function PortalPage() {
                   value={stats.tasks_count}
                   hint={`${stats.completed_count} בוצעו · ${stats.upcoming_count} עתידיות`}
                 />
-                <StatCard icon={<Wallet size={ICON.xl} strokeWidth={STROKE} />} label="סכום צפוי" value={fmtMoney(stats.expected_total)} />
-                <StatCard
-                  icon={<CircleCheck size={ICON.xl} strokeWidth={STROKE} />}
-                  label="שולם"
-                  value={fmtMoney(stats.paid_total)}
-                  tone="#16a34a"
-                />
-                <StatCard
-                  icon={<Banknote size={ICON.xl} strokeWidth={STROKE} />}
-                  label="יתרה"
-                  value={fmtMoney(stats.unpaid_total)}
-                  tone="#f59e0b"
-                />
+                {canSeeMoney && (
+                  <>
+                    <StatCard
+                      icon={<Wallet size={ICON.xl} strokeWidth={STROKE} />}
+                      label="סכום צפוי"
+                      value={fmtMoney(stats.expected_total ?? 0)}
+                    />
+                    <StatCard
+                      icon={<CircleCheck size={ICON.xl} strokeWidth={STROKE} />}
+                      label="שולם"
+                      value={fmtMoney(stats.paid_total ?? 0)}
+                      tone="#16a34a"
+                    />
+                    <StatCard
+                      icon={<Banknote size={ICON.xl} strokeWidth={STROKE} />}
+                      label="יתרה"
+                      value={fmtMoney(stats.unpaid_total ?? 0)}
+                      tone="#f59e0b"
+                    />
+                  </>
+                )}
               </div>
 
-              {stats.expected_total > 0 && (
+              {canSeeMoney && (stats.expected_total ?? 0) > 0 && (
                 <Card padded>
                   <ProgressBar
-                    value={stats.paid_total}
-                    max={stats.expected_total}
+                    value={stats.paid_total ?? 0}
+                    max={stats.expected_total ?? 0}
                     tone="success"
                     label="התקדמות תשלומים"
-                    hint={`${Math.round(paidRatio)}% · ${fmtMoney(stats.paid_total)} מתוך ${fmtMoney(stats.expected_total)}`}
+                    hint={`${Math.round(paidRatio)}% · ${fmtMoney(stats.paid_total ?? 0)} מתוך ${fmtMoney(stats.expected_total ?? 0)}`}
                   />
                 </Card>
               )}
@@ -182,19 +203,29 @@ export default function PortalPage() {
           )}
         </Card>
 
-        <Tabs items={TABS} value={tab} onChange={setTab} />
+        {visibleTabs.length > 1 && <Tabs items={visibleTabs} value={tab} onChange={setTab} />}
 
         {tab === 'tasks' ? (
-          <PortalTasks contractorId={contractorId!} from={from} to={to} />
+          <PortalTasks contractorId={contractorId!} from={from} to={to} canAssign={canAssign} />
         ) : (
-          contractorId && <WorkersTab contractorId={contractorId} />
+          contractorId && <WorkersTab contractorId={contractorId} canManage={has(PERM.PORTAL_MANAGE_WORKERS)} />
         )}
       </div>
     </div>
   )
 }
 
-function PortalTasks({ contractorId, from, to }: { contractorId: string; from: string; to: string }) {
+function PortalTasks({
+  contractorId,
+  from,
+  to,
+  canAssign,
+}: {
+  contractorId: string
+  from: string
+  to: string
+  canAssign: boolean
+}) {
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ['portal', 'tasks', from, to],
     queryFn: async () => {
@@ -231,7 +262,13 @@ function PortalTasks({ contractorId, from, to }: { contractorId: string; from: s
   return (
     <div className="space-y-3">
       {tasks.map((t) => (
-        <PortalTaskCard key={t.id} task={t} term={terms.find((x) => x.task_id === t.id)} contractorId={contractorId} />
+        <PortalTaskCard
+          key={t.id}
+          task={t}
+          term={terms.find((x) => x.task_id === t.id)}
+          contractorId={contractorId}
+          canAssign={canAssign}
+        />
       ))}
     </div>
   )
@@ -241,10 +278,12 @@ function PortalTaskCard({
   task,
   term,
   contractorId,
+  canAssign,
 }: {
   task: WorkBoardRow
   term?: { price: number; paid_at: string | null; paid_amount: number | null }
   contractorId: string
+  canAssign: boolean
 }) {
   const qc = useQueryClient()
   const toast = useToast()
@@ -330,6 +369,7 @@ function PortalTaskCard({
             values={chosen}
             onToggle={(id) => void toggleWorker(id)}
             placeholder="בחירת עובדים מהסגל שלך..."
+            disabled={!canAssign}
           />
         </div>
       </CardBody>

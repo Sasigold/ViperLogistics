@@ -31,17 +31,24 @@ export function RequireAuth() {
   return <Outlet />
 }
 
+/**
+ * Gates a whole screen. Takes either a registry key (`perm="tasks.view"`) or
+ * the older resource/action pair, which resolves to the same key.
+ */
 export function RequirePermission({
   resource,
   action = 'view',
+  perm,
   children,
 }: {
-  resource: string
+  resource?: string
   action?: PermissionAction
+  perm?: string
   children: ReactNode
 }) {
-  const can = useAuth((s) => s.can)
-  if (!can(resource, action)) {
+  const has = useAuth((s) => s.has)
+  const key = perm ?? `${resource}.${action}`
+  if (!has(key)) {
     return (
       <Card className="mx-auto max-w-md">
         <EmptyState
@@ -53,4 +60,30 @@ export function RequirePermission({
     )
   }
   return <>{children}</>
+}
+
+/**
+ * Inline gate for a control rather than a screen. `fallback` is for the cases
+ * where hiding a button entirely would leave a confusing hole — pass a disabled
+ * version instead.
+ */
+export function Can({
+  perm,
+  any,
+  children,
+  fallback = null,
+}: {
+  perm?: string
+  any?: string[]
+  children: ReactNode
+  fallback?: ReactNode
+}) {
+  const has = useAuth((s) => s.has)
+  const ok = any ? any.some((k) => has(k)) : perm ? has(perm) : false
+  return <>{ok ? children : fallback}</>
+}
+
+/** Hook form, for conditions that feed into other logic rather than JSX. */
+export function useCan(key: string): boolean {
+  return useAuth((s) => s.has(key))
 }

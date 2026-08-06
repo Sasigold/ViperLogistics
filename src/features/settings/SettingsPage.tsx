@@ -8,6 +8,7 @@ import {
   Plus,
   RotateCcw,
   STROKE,
+  Shield,
   Trash2,
   Truck,
   Zap,
@@ -41,31 +42,44 @@ import { useAuth } from '../../state/auth'
 import { useExecutionMethods, useStatuses, useTaskTypes, useTrucks } from '../../lib/queries'
 import { fmtDateTime } from '../../lib/dates'
 import { RequirePermission } from '../auth/guards'
+import { PERM } from '../../lib/permissions'
+import { RolesTab } from '../permissions/RolesTab'
 
+/**
+ * Each tab names the permission that governs it, so a coordinator who may edit
+ * statuses but not see the audit log lands on a screen with one tab rather than
+ * on a wall of "אין הרשאה".
+ */
 const TABS = [
-  { key: 'task_types', label: 'סוגי משימות', icon: <ClipboardList size={ICON.sm} /> },
-  { key: 'execution_methods', label: 'אופני ביצוע', icon: <Boxes size={ICON.sm} /> },
-  { key: 'statuses', label: 'סטטוסים', icon: <Zap size={ICON.sm} /> },
-  { key: 'trucks', label: 'משאיות', icon: <Truck size={ICON.sm} /> },
-  { key: 'recycle', label: 'סל מיחזור', icon: <RotateCcw size={ICON.sm} /> },
-  { key: 'audit', label: 'יומן פעילות', icon: <History size={ICON.sm} /> },
+  { key: 'task_types', label: 'סוגי משימות', icon: <ClipboardList size={ICON.sm} />, perm: PERM.SETTINGS_TASK_TYPES },
+  { key: 'execution_methods', label: 'אופני ביצוע', icon: <Boxes size={ICON.sm} />, perm: PERM.SETTINGS_EXECUTION_METHODS },
+  { key: 'statuses', label: 'סטטוסים', icon: <Zap size={ICON.sm} />, perm: PERM.SETTINGS_STATUSES },
+  { key: 'trucks', label: 'משאיות', icon: <Truck size={ICON.sm} />, perm: PERM.SETTINGS_TRUCKS },
+  { key: 'roles', label: 'הרשאות ותפקידים', icon: <Shield size={ICON.sm} />, perm: PERM.SETTINGS_PERMISSIONS },
+  { key: 'recycle', label: 'סל מיחזור', icon: <RotateCcw size={ICON.sm} />, perm: PERM.SETTINGS_RECYCLE_BIN },
+  { key: 'audit', label: 'יומן פעילות', icon: <History size={ICON.sm} />, perm: PERM.SETTINGS_AUDIT_LOG },
 ] as const
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<(typeof TABS)[number]['key']>('task_types')
+  const has = useAuth((s) => s.has)
+  const visible = TABS.filter((t) => has(t.perm))
+  const [tab, setTab] = useState<(typeof TABS)[number]['key']>(visible[0]?.key ?? 'task_types')
+  const active = visible.some((t) => t.key === tab) ? tab : visible[0]?.key
+
   return (
-    <RequirePermission resource="settings">
+    <RequirePermission perm={PERM.SETTINGS_VIEW}>
       <div className="space-y-4">
         <PageHeader title="הגדרות" subtitle="נתוני הבסיס שמזינים את כל שאר המסכים">
-          <Tabs items={TABS} value={tab} onChange={setTab} />
+          {visible.length > 1 && <Tabs items={visible} value={tab} onChange={setTab} />}
         </PageHeader>
 
-        {tab === 'task_types' && <TaskTypesTab />}
-        {tab === 'execution_methods' && <MethodsTab />}
-        {tab === 'statuses' && <StatusesTab />}
-        {tab === 'trucks' && <TrucksTab />}
-        {tab === 'recycle' && <RecycleBinTab />}
-        {tab === 'audit' && <AuditLogTab />}
+        {active === 'task_types' && <TaskTypesTab />}
+        {active === 'execution_methods' && <MethodsTab />}
+        {active === 'statuses' && <StatusesTab />}
+        {active === 'trucks' && <TrucksTab />}
+        {active === 'roles' && <RolesTab />}
+        {active === 'recycle' && <RecycleBinTab />}
+        {active === 'audit' && <AuditLogTab />}
       </div>
     </RequirePermission>
   )

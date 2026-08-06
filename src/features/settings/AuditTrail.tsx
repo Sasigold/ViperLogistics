@@ -29,7 +29,10 @@ export function AuditTrail({ entity, rowId, onClose }: { entity: string; rowId: 
     queryKey: ['audit', entity, rowId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('audit_log')
+        // the redacting view drops columns the reader may not see; reading
+        // audit_log directly would hand back whole-row snapshots and defeat
+        // every field permission
+        .from('audit_log_secure')
         .select('*')
         .eq('row_id', rowId)
         .order('created_at', { ascending: false })

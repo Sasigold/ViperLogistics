@@ -17,6 +17,7 @@ import {
 } from '../components/ui/icons'
 import { Avatar, Divider, IconButton, Kbd, MenuItem, MenuSeparator, Popover, Tooltip, cx } from '../components/ui'
 import { useAuth } from '../state/auth'
+import { PERM } from '../lib/permissions'
 import { NotificationsBell } from '../features/notifications/NotificationsBell'
 import { CommandPalette } from '../features/search/CommandPalette'
 import { useOverdueCount } from '../features/tasks/useOverdueCount'
@@ -33,13 +34,13 @@ const KIND_LABELS: Record<string, string> = {
 }
 
 export default function AppLayout() {
-  const { me, theme, toggleTheme, signOut, can } = useAuth()
+  const { me, theme, toggleTheme, signOut, has } = useAuth()
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1')
   const location = useLocation()
 
-  const canSeeTasks = can('tasks', 'view')
+  const canSeeTasks = has(PERM.TASKS_VIEW)
   const { data: overdue = 0 } = useOverdueCount(canSeeTasks)
 
   useEffect(() => localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0'), [collapsed])
@@ -57,7 +58,7 @@ export default function AppLayout() {
     return () => window.removeEventListener('keydown', h)
   }, [])
 
-  const sections = NAV_SECTIONS.map((s) => ({ ...s, items: s.items.filter((n) => can(n.resource, 'view')) })).filter(
+  const sections = NAV_SECTIONS.map((s) => ({ ...s, items: s.items.filter((n) => has(n.perm)) })).filter(
     (s) => s.items.length > 0,
   )
 

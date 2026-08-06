@@ -19,7 +19,6 @@ import {
   SearchInput,
   SegmentedControl,
   Select,
-  Skeleton,
   StatusPill,
   Switch,
   Tabs,
@@ -29,28 +28,15 @@ import {
 import type { Column } from '../../components/ui'
 import { supabase, invokeFunction } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
+import { PERM } from '../../lib/permissions'
 import { useContractors, useCustomers } from '../../lib/queries'
 import { RequirePermission } from '../auth/guards'
-import type { PermissionAction, Profile, StaffRole, UserKind } from '../../types/domain'
+import { UserPermissionsTab } from '../permissions/UserPermissionsTab'
+import type { Profile, StaffRole, UserKind } from '../../types/domain'
 
 const kindLabels: Record<UserKind, string> = { staff: 'צוות', customer_user: 'לקוח', contractor_user: 'קבלן' }
 const roleLabels: Record<StaffRole, string> = { worker: 'עובד', driver: 'נהג', team_lead: 'ראש צוות' }
 
-const resources = [
-  { key: 'events', label: 'אירועים' },
-  { key: 'tasks', label: 'משימות' },
-  { key: 'customers', label: 'לקוחות' },
-  { key: 'users', label: 'משתמשים' },
-  { key: 'contractors', label: 'קבלנים' },
-  { key: 'settings', label: 'הגדרות' },
-  { key: 'dashboard', label: 'דשבורד' },
-]
-const actions: { key: PermissionAction; label: string }[] = [
-  { key: 'view', label: 'צפייה' },
-  { key: 'create', label: 'יצירה' },
-  { key: 'edit', label: 'עריכה' },
-  { key: 'delete', label: 'מחיקה' },
-]
 
 export default function UsersPage() {
   const [kind, setKind] = useState<UserKind | ''>('')
@@ -180,7 +166,7 @@ export default function UsersPage() {
   }
 
   return (
-    <RequirePermission resource="users">
+    <RequirePermission perm={PERM.USERS_VIEW}>
       <div className="space-y-4">
         <PageHeader
           title="עובדים ומשתמשים"
@@ -622,161 +608,8 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
           </Card>
         </div>
       ) : (
-        profile && <PermissionsTab profile={profile} />
+        profile && <UserPermissionsTab profile={profile} />
       )}
     </Drawer>
-  )
-}
-
-/* ===== permission matrix ==================================================
-   A 7x4 grid of three-state selects reads as noise. Rendering it as a matrix
-   of compact segmented controls, with the inherited default spelled out,
-   makes "what does this user actually get" answerable at a glance.        */
-
-function PermissionsTab({ profile }: { profile: Profile }) {
-  const toast = useToast()
-  const qc = useQueryClient()
-
-  const { data: overrides = [], isLoading } = useQuery({
-    queryKey: ['user_permissions', profile.id],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('user_permissions').select('*').eq('profile_id', profile.id)
-      if (error) throw error
-      return data as { resource: string; action: PermissionAction; allowed: boolean }[]
-    },
-  })
-
-  const { data: defaults = [] } = useQuery({
-    queryKey: ['permission_defaults'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('permission_defaults').select('*')
-      if (error) throw error
-      return data as { user_kind: UserKind; resource: string; action: PermissionAction; allowed: boolean }[]
-    },
-  })
-
-  const { data: fieldPerms = [] } = useQuery({
-    queryKey: ['field_permissions', profile.id],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('field_permissions').select('*').eq('profile_id', profile.id)
-      if (error) throw error
-      return data as { id: string; entity: string; field_key: string; can_view: boolean }[]
-    },
-  })
-
-  const stateOf = (resource: string, action: PermissionAction): 'default' | 'allow' | 'deny' => {
-    const o = overrides.find((x) => x.resource === resource && x.action === action)
-    if (!o) return 'default'
-    return o.allowed ? 'allow' : 'deny'
-  }
-  const defaultOf = (resource: string, action: PermissionAction) =>
-    defaults.find((d) => d.user_kind === profile.user_kind && d.resource === resource && d.action === action)?.allowed ?? false
-
-  const update = useMutation({
-    mutationFn: async ({ resource, action, state }: { resource: string; action: PermissionAction; state: string }) => {
-      if (state === 'default') {
-        const { error } = await supabase
-          .from('user_permissions')
-          .delete()
-          .eq('profile_id', profile.id)
-          .eq('resource', resource)
-          .eq('action', action)
-        if (error) throw error
-      } else {
-        const { error } = await supabase
-          .from('user_permissions')
-          .upsert({ profile_id: profile.id, resource, action, allowed: state === 'allow' })
-        if (error) throw error
-      }
-    },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['user_permissions', profile.id] }),
-    onError: (e) => toast.error((e as Error).message),
-  })
-
-  const phoneFp = fieldPerms.find((f) => f.entity === 'event' && f.field_key === 'contact_phone')
-  const togglePhone = useMutation({
-    mutationFn: async (canView: boolean) => {
-      const { error } = await supabase.from('field_permissions').upsert({
-        id: phoneFp?.id,
-        profile_id: profile.id,
-        entity: 'event',
-        field_key: 'contact_phone',
-        can_view: canView,
-        can_edit: canView,
-      })
-      if (error) throw error
-    },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['field_permissions', profile.id] }),
-    onError: (e) => toast.error((e as Error).message),
-  })
-
-  if (isLoading) return <Skeleton className="h-72 w-full" />
-
-  if (profile.is_admin)
-    return (
-      <EmptyState
-        art="check"
-        title="מנהל מערכת"
-        description="לכל המשאבים והפעולות — טבלת ההרשאות אינה חלה על מנהלי מערכת"
-      />
-    )
-
-  const overrideCount = overrides.length
-
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader
-          title="הרשאות פר-משאב"
-          subtitle={
-            overrideCount > 0
-              ? `${overrideCount} חריגות מברירת המחדל של "${kindLabels[profile.user_kind]}"`
-              : `הכול לפי ברירת המחדל של "${kindLabels[profile.user_kind]}"`
-          }
-          icon={<Shield size={ICON.md} strokeWidth={STROKE} />}
-        />
-        <CardBody padded={false}>
-          <ul>
-            {resources.map((r) => (
-              <li key={r.key} className="border-b border-line-subtle px-4 py-3 last:border-0">
-                <p className="mb-2 type-body font-semibold">{r.label}</p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {actions.map((a) => {
-                    const state = stateOf(r.key, a.key)
-                    const inherited = defaultOf(r.key, a.key)
-                    return (
-                      <div key={a.key} className="flex items-center gap-2">
-                        <span className="w-12 shrink-0 type-caption text-ink-tertiary">{a.label}</span>
-                        <SegmentedControl
-                          items={[
-                            { key: 'default', label: inherited ? 'ברירת מחדל · מותר' : 'ברירת מחדל · חסום' },
-                            { key: 'allow', label: 'מותר' },
-                            { key: 'deny', label: 'חסום' },
-                          ]}
-                          value={state}
-                          onChange={(next) => update.mutate({ resource: r.key, action: a.key, state: next })}
-                        />
-                      </div>
-                    )
-                  })}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader title="הרשאות ברמת שדה" icon={<KeyRound size={ICON.md} strokeWidth={STROKE} />} />
-        <CardBody>
-          <Switch
-            checked={phoneFp ? phoneFp.can_view : true}
-            onChange={(v) => togglePhone.mutate(v)}
-            label="רואה טלפון ואיש קשר של אירועים"
-            description="נאכף גם בצד השרת (RLS) — לא רק בתצוגה"
-          />
-        </CardBody>
-      </Card>
-    </div>
   )
 }

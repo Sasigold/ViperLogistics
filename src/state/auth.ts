@@ -12,6 +12,10 @@ interface AuthState {
   refreshMe: () => Promise<void>
   signOut: () => Promise<void>
   toggleTheme: () => void
+  /** the granular check — one registry key, resolved server-side at login */
+  has: (key: string) => boolean
+  hasAny: (...keys: string[]) => boolean
+  /** legacy shape, equivalent to has(`${resource}.${action}`) */
   can: (resource: string, action: PermissionAction) => boolean
   canViewField: (entity: string, field: string) => boolean
   canEditField: (entity: string, field: string) => boolean
@@ -55,6 +59,24 @@ export const useAuth = create<AuthState>((set, get) => ({
     const next = get().theme === 'light' ? 'dark' : 'light'
     applyTheme(next)
     set({ theme: next })
+  },
+
+  /**
+   * `capabilities` was resolved by the server through the same functions RLS
+   * uses, so this can only ever agree with what a request would be allowed to
+   * do. It hides controls; it does not protect anything — the write would be
+   * refused by the column trigger or a policy regardless.
+   */
+  has: (key) => {
+    const me = get().me
+    if (!me) return false
+    if (me.profile.is_admin) return true
+    return me.capabilities?.[key] ?? false
+  },
+
+  hasAny: (...keys) => {
+    const has = get().has
+    return keys.some((k) => has(k))
   },
 
   can: (resource, action) => {

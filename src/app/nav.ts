@@ -9,6 +9,7 @@ import {
   Users,
 } from '../components/ui/icons'
 import type { ComponentType } from 'react'
+import { PERM } from '../lib/permissions'
 
 export interface NavItem {
   to: string
@@ -16,8 +17,8 @@ export interface NavItem {
   /** shorter label for the mobile bottom bar, where a slot is ~4rem wide */
   shortLabel?: string
   icon: ComponentType<{ size?: number | string; strokeWidth?: number | string; className?: string }>
-  /** permission resource checked with `can(resource, 'view')` */
-  resource: string
+  /** registry key checked with `has(perm)` */
+  perm: string
   /** key of a live counter rendered as a badge */
   badge?: 'overdue'
   end?: boolean
@@ -39,23 +40,23 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'תפעול',
     items: [
-      { to: '/', label: 'דשבורד', icon: LayoutDashboard, resource: 'dashboard', end: true, primary: true },
-      { to: '/calendar', label: 'לוח שנה', icon: Calendar, resource: 'events', primary: true },
-      { to: '/board', label: 'לוח עבודה', shortLabel: 'לוח', icon: ClipboardList, resource: 'tasks', badge: 'overdue', primary: true },
+      { to: '/', label: 'דשבורד', icon: LayoutDashboard, perm: PERM.DASHBOARD_VIEW, end: true, primary: true },
+      { to: '/calendar', label: 'לוח שנה', icon: Calendar, perm: PERM.CALENDAR_VIEW, primary: true },
+      { to: '/board', label: 'לוח עבודה', shortLabel: 'לוח', icon: ClipboardList, perm: PERM.BOARD_VIEW, badge: 'overdue', primary: true },
     ],
   },
   {
     title: 'נתונים',
     items: [
-      { to: '/events', label: 'אירועים', icon: PartyPopper, resource: 'events', primary: true },
-      { to: '/customers', label: 'לקוחות', icon: Building2, resource: 'customers' },
-      { to: '/users', label: 'עובדים', icon: Users, resource: 'users' },
-      { to: '/contractors', label: 'קבלנים', icon: HardHat, resource: 'contractors' },
+      { to: '/events', label: 'אירועים', icon: PartyPopper, perm: PERM.EVENTS_VIEW, primary: true },
+      { to: '/customers', label: 'לקוחות', icon: Building2, perm: PERM.CUSTOMERS_VIEW },
+      { to: '/users', label: 'עובדים', icon: Users, perm: PERM.USERS_VIEW },
+      { to: '/contractors', label: 'קבלנים', icon: HardHat, perm: PERM.CONTRACTORS_VIEW },
     ],
   },
   {
     title: 'מערכת',
-    items: [{ to: '/settings', label: 'הגדרות', icon: Settings, resource: 'settings' }],
+    items: [{ to: '/settings', label: 'הגדרות', icon: Settings, perm: PERM.SETTINGS_VIEW }],
   },
 ]
 

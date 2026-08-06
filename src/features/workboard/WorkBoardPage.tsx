@@ -43,7 +43,8 @@ import { useContractors, useCustomers, useExecutionMethods, useStatuses, useTask
 import { fmtDate, fmtTime, toISODate } from '../../lib/dates'
 import { useIsMobile } from '../../lib/useMediaQuery'
 import { TaskDrawer } from '../tasks/TaskDrawer'
-import { RequirePermission } from '../auth/guards'
+import { Can, RequirePermission } from '../auth/guards'
+import { PERM } from '../../lib/permissions'
 import { BOARD_FIELDS, DEFAULT_HIDDEN_FIELDS } from './boardFields'
 import type { BoardLookups } from './boardFields'
 import { COLOR_BY_OPTIONS, buildTones, clusterDay } from './grouping'
@@ -165,8 +166,18 @@ function useInlineUpdate() {
 }
 
 export default function WorkBoardPage() {
-  const { can } = useAuth()
-  const canEdit = can('tasks', 'edit')
+  const { has } = useAuth()
+  const canInline = has(PERM.BOARD_INLINE_EDIT)
+  const canBulk = has(PERM.BOARD_BULK_EDIT)
+  /**
+   * Resolved per cell rather than once for the board: a field carries the key
+   * that governs it, so the row can be half-editable. Stable across renders so
+   * TaskColumn's memo comparison still holds.
+   */
+  const canEditCell = useCallback(
+    (perm?: string) => canInline && (!perm || has(perm)),
+    [canInline, has],
+  )
   const [params] = useSearchParams()
   const prefs = useRef(loadPrefs())
   const isMobile = useIsMobile()
@@ -524,7 +535,7 @@ export default function WorkBoardPage() {
   )
 
   return (
-    <RequirePermission resource="tasks">
+    <RequirePermission perm={PERM.BOARD_VIEW}>
       <div className="flex h-full min-h-0 flex-col gap-3">
         <PageHeader
           title="לוח עבודה"
@@ -543,13 +554,13 @@ export default function WorkBoardPage() {
           }
           actions={
             <>
-              {selected.size > 0 && canEdit && (
+              {selected.size > 0 && canBulk && (
                 <Button size="sm" onClick={() => setBulkOpen(true)}>
                   <Pencil size={ICON.sm} strokeWidth={STROKE} />
                   עריכה מרובה ({selected.size})
                 </Button>
               )}
-              {can('tasks', 'create') && (
+              {has(PERM.TASKS_CREATE) && (
                 <Button size="sm" variant="primary" onClick={() => setDrawer({ open: true, taskId: null })}>
                   <Plus size={ICON.sm} strokeWidth={STROKE} />
                   משימה חדשה
@@ -718,7 +729,7 @@ export default function WorkBoardPage() {
               title="אין משימות בטווח שנבחר"
               description="שנה את טווח התאריכים או נקה את הסינון כדי לראות משימות"
               action={
-                can('tasks', 'create') && (
+                has(PERM.TASKS_CREATE) && (
                   <Button variant="primary" size="sm" onClick={() => setDrawer({ open: true, taskId: null })}>
                     <Plus size={ICON.sm} />
                     משימה חדשה
@@ -734,7 +745,7 @@ export default function WorkBoardPage() {
               days={daysForList}
               today={today}
               selected={selected}
-              canCreate={can('tasks', 'create')}
+              canCreate={has(PERM.TASKS_CREATE)}
               onToggle={toggleOne}
               onOpen={openTask}
               onToggleDay={toggleDay}
@@ -902,7 +913,7 @@ export default function WorkBoardPage() {
                           <EmptyDayColumn
                             key={col.id}
                             dayKey={col.dayKey}
-                            canCreate={can('tasks', 'create')}
+                            canCreate={has(PERM.TASKS_CREATE)}
                             onNewTask={newTaskOn}
                             style={{ insetInlineStart: vi.start, width: vi.size, height: bodyHeight }}
                           />
@@ -911,7 +922,7 @@ export default function WorkBoardPage() {
                         <TaskColumn
                           key={col.id}
                           row={col.row}
-                          canEdit={canEdit}
+                          canEditCell={canEditCell}
                           patch={patchCell}
                           lookups={lookups}
                           fields={fields}
@@ -936,7 +947,7 @@ export default function WorkBoardPage() {
 
         {selected.size > 0 && (
           <BulkBar count={selected.size} onClear={() => setSelected(new Set())}>
-            {canEdit && (
+            {canBulk && (
               <Button size="sm" variant="primary" onClick={() => setBulkOpen(true)}>
                 <Pencil size={ICON.sm} />
                 עריכה מרובה
@@ -1421,7 +1432,7 @@ function EmptyDayColumn({
 const TaskColumn = memo(
   function TaskColumn({
     row,
-    canEdit,
+    canEditCell,
     patch,
     lookups,
     fields,
@@ -1436,7 +1447,7 @@ const TaskColumn = memo(
     style,
   }: {
     row: WorkBoardRow
-    canEdit: boolean
+    canEditCell: (perm?: string) => boolean
     patch: (row: WorkBoardRow, patch: Record<string, unknown>) => void
     lookups: BoardLookups
     fields: typeof BOARD_FIELDS
@@ -1479,7 +1490,7 @@ const TaskColumn = memo(
             className="flex items-center overflow-hidden border-b border-line-subtle transition-colors hover:bg-hover"
             style={{ height: heights[i] }}
           >
-            <div className="min-w-0 flex-1">{f.render({ row, canEdit, patch, lookups })}</div>
+            <div className="min-w-0 flex-1">{f.render({ row, canEdit: canEditCell(f.editPerm), patch, lookups })}</div>
           </div>
         ))}
       </div>
@@ -1487,7 +1498,7 @@ const TaskColumn = memo(
   },
   (a, b) =>
     a.row === b.row &&
-    a.canEdit === b.canEdit &&
+    a.canEditCell === b.canEditCell &&
     a.selected === b.selected &&
     a.fields === b.fields &&
     a.heights === b.heights &&
@@ -1548,37 +1559,49 @@ function BulkEditModal({ open, onClose, taskIds, onDone }: { open: boolean; onCl
       }
     >
       <div className="space-y-4">
-        <Field label="סטטוס">
-          <Select value={patch.status_id ?? '__skip__'} onChange={(e) => setIf('status_id', e.target.value)}>
-            <option value="__skip__">ללא שינוי</option>
-            {statuses.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="תאריך">
-          <Input type="date" value={patch.task_date ?? ''} onChange={(e) => setIf('task_date', e.target.value || '__skip__')} />
-        </Field>
-        <Field label="אופן ביצוע">
-          <Select value={patch.execution_method_id ?? '__skip__'} onChange={(e) => setIf('execution_method_id', e.target.value)}>
-            <option value="__skip__">ללא שינוי</option>
-            {methods.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="קבלן">
-          <Select value={patch.contractor_id ?? '__skip__'} onChange={(e) => setIf('contractor_id', e.target.value)}>
-            <option value="__skip__">ללא שינוי</option>
-            <option value="">הסרת קבלן</option>
-            {contractors.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="שעת התחלה במחסן">
-          <Input type="time" value={patch.warehouse_start_time ?? ''} onChange={(e) => setIf('warehouse_start_time', e.target.value || '__skip__')} />
-        </Field>
+        {/* Each control is gated by the same key the column trigger checks, so
+            the modal can't offer a change the database will reject. */}
+        <Can perm={PERM.TASKS_CHANGE_STATUS}>
+          <Field label="סטטוס">
+            <Select value={patch.status_id ?? '__skip__'} onChange={(e) => setIf('status_id', e.target.value)}>
+              <option value="__skip__">ללא שינוי</option>
+              {statuses.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </Select>
+          </Field>
+        </Can>
+        <Can perm={PERM.TASKS_RESCHEDULE}>
+          <Field label="תאריך">
+            <Input type="date" value={patch.task_date ?? ''} onChange={(e) => setIf('task_date', e.target.value || '__skip__')} />
+          </Field>
+        </Can>
+        <Can perm={PERM.TASKS_CHANGE_EXECUTION_METHOD}>
+          <Field label="אופן ביצוע">
+            <Select value={patch.execution_method_id ?? '__skip__'} onChange={(e) => setIf('execution_method_id', e.target.value)}>
+              <option value="__skip__">ללא שינוי</option>
+              {methods.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </Select>
+          </Field>
+        </Can>
+        <Can perm={PERM.TASKS_DELEGATE}>
+          <Field label="קבלן">
+            <Select value={patch.contractor_id ?? '__skip__'} onChange={(e) => setIf('contractor_id', e.target.value)}>
+              <option value="__skip__">ללא שינוי</option>
+              <option value="">הסרת קבלן</option>
+              {contractors.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </Select>
+          </Field>
+        </Can>
+        <Can perm={PERM.TASKS_RESCHEDULE}>
+          <Field label="שעת התחלה במחסן">
+            <Input type="time" value={patch.warehouse_start_time ?? ''} onChange={(e) => setIf('warehouse_start_time', e.target.value || '__skip__')} />
+          </Field>
+        </Can>
       </div>
     </Modal>
   )
