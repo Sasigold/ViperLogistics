@@ -255,7 +255,24 @@ export function Drawer({
 }
 
 /* ===== Popover ============================================================
-   Anchored, dismiss-on-outside-click panel. Used for menus in the header.  */
+   Anchored, dismiss-on-outside-click panel. Used for menus in the header.
+
+   The panel is measured and placed in a portal rather than laid out by CSS
+   against its trigger. Two reasons, both of which bit us: `end-0` under RTL
+   pins the panel's *left* edge to a trigger that sits at the visual left of
+   the screen, so the panel grew straight off the right edge of a phone; and
+   the board renders inside an `overflow-hidden` main, which clipped whatever
+   did fit. Measuring lets the panel keep its anchor and still stay on
+   screen — the same trick Tooltip and useContextMenu already use.          */
+
+const GAP = 6
+const EDGE = 8
+
+interface PanelPos {
+  top: number
+  left: number
+  maxHeight: number
+}
 
 export function Popover({
   trigger,
@@ -273,36 +290,96 @@ export function Popover({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const close = useCallback(() => setOpen(false), [])
+  const panel = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<PanelPos | null>(null)
+  const close = useCallback(() => {
+    setOpen(false)
+    setPos(null)
+  }, [])
+
+  const place = useCallback(() => {
+    if (!ref.current || !panel.current) return
+    const a = ref.current.getBoundingClientRect()
+    const p = panel.current.getBoundingClientRect()
+    const rtl = getComputedStyle(document.documentElement).direction === 'rtl'
+
+    /* `align` is logical, so resolve it against the document's direction
+       rather than assuming a side — `end` means the panel's end edge meets
+       the trigger's end edge, which is the left pair under RTL. */
+    const toStart = align === 'end' ? rtl : !rtl
+    let left = toStart ? a.left : a.right - p.width
+    left = Math.max(EDGE, Math.min(left, window.innerWidth - p.width - EDGE))
+
+    /* Below the trigger by default; above it when that's where the room is.
+       Whichever side wins, the panel is capped to the space it actually has
+       and scrolls inside itself instead of running past the edge. */
+    const below = window.innerHeight - a.bottom - GAP - EDGE
+    const above = a.top - GAP - EDGE
+    const flip = p.height > below && above > below
+    setPos({
+      top: flip ? Math.max(EDGE, a.top - GAP - Math.min(p.height, above)) : a.bottom + GAP,
+      left,
+      maxHeight: Math.max(120, flip ? above : below),
+    })
+  }, [align])
+
+  useLayoutEffect(() => {
+    if (open) place()
+  }, [open, place])
 
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close()
+      const t = e.target as Node
+      /* the panel no longer lives inside the trigger's subtree, so a click in
+         it would otherwise read as a click outside */
+      if (!ref.current?.contains(t) && !panel.current?.contains(t)) close()
     }
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close()
+    const onMove = (e: Event) => {
+      /* scrolling the panel's own list must not drag the panel around */
+      if (e.target instanceof Node && panel.current?.contains(e.target)) return
+      place()
+    }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', onMove, true)
+    window.addEventListener('resize', place)
     return () => {
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onMove, true)
+      window.removeEventListener('resize', place)
     }
-  }, [open, close])
+  }, [open, close, place])
 
   return (
     <div ref={ref} className={cx('relative', className)}>
       {trigger({ toggle: () => setOpen((v) => !v), 'aria-expanded': open, 'aria-haspopup': 'menu' })}
-      {open && (
-        <div
-          className={cx(
-            'absolute top-full z-40 mt-1.5 min-w-52 origin-top animate-scale-in rounded-xl border border-line bg-raised p-1 shadow-lg',
-            align === 'end' ? 'end-0' : 'start-0',
-            panelClassName,
-          )}
-        >
-          {children(close)}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={panel}
+            className={cx(
+              'fixed z-[60] min-w-52 max-w-[calc(100vw-1rem)] origin-top animate-scale-in',
+              'rounded-xl border border-line bg-raised p-1 shadow-lg',
+              panelClassName,
+            )}
+            /* inline, not a class: a caller's own `overflow-hidden` would win
+               the cascade otherwise, and a capped panel that cannot scroll is
+               just a shorter way to hide content */
+            style={{
+              top: pos?.top ?? -9999,
+              left: pos?.left ?? -9999,
+              maxHeight: pos?.maxHeight,
+              overflowY: 'auto',
+              visibility: pos ? 'visible' : 'hidden',
+            }}
+          >
+            {children(close)}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
