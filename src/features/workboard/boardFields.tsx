@@ -39,18 +39,25 @@ export interface BoardField {
   tall?: boolean
 }
 
+/**
+ * Cell text sizes off one variable the board sets on its own container, so the
+ * minimal density and the phone can shrink every cell at once instead of each
+ * field carrying its own literal.
+ */
+const FS = 'text-[length:var(--vl-board-fs,0.8125rem)]'
+
 /* Inline editors share one look: invisible until hovered, so a screen full of
    editable cells doesn't read as a screen full of form controls. */
 const INLINE =
-  'w-full rounded border border-transparent bg-transparent px-1.5 py-0.5 text-[0.8125rem] tabular ' +
+  `w-full rounded border border-transparent bg-transparent px-1.5 py-0.5 text-center ${FS} tabular ` +
   'transition-colors duration-150 hover:border-line hover:bg-surface ' +
   'focus:border-primary focus:bg-surface focus:outline-none focus:ring-2 focus:ring-[var(--vl-focus-ring)] ' +
   'disabled:pointer-events-none disabled:opacity-70'
 
-const READONLY = 'block truncate px-1.5 py-0.5 text-[0.8125rem]'
+const READONLY = `block w-full truncate px-1.5 py-0.5 text-center ${FS}`
 
 function Muted({ children }: { children?: ReactNode }) {
-  return <span className="px-1.5 text-[0.8125rem] text-ink-tertiary">{children ?? '—'}</span>
+  return <span className={cx('block w-full px-1.5 text-center text-ink-tertiary', FS)}>{children ?? '—'}</span>
 }
 
 /**
@@ -65,12 +72,12 @@ export const BOARD_FIELDS: BoardField[] = [
     label: 'לקוח',
     render: ({ row }) =>
       row.customer_name ? (
-        <span className="flex items-center gap-1.5 px-1.5">
+        <span className="flex items-center justify-center gap-1.5 px-1.5">
           <span
             className="size-2 shrink-0 rounded-full"
             style={{ background: row.customer_color ?? 'var(--vl-text-tertiary)' }}
           />
-          <span className="truncate text-[0.8125rem] font-medium">{row.customer_name}</span>
+          <span className={cx('truncate font-medium', FS)}>{row.customer_name}</span>
         </span>
       ) : (
         <Muted />
@@ -181,7 +188,7 @@ export const BOARD_FIELDS: BoardField[] = [
       const assigned = (row.workers?.length ?? 0) + (row.contractor_worker_list?.length ?? 0)
       const short = row.worker_count > 0 && assigned < row.worker_count
       return (
-        <span className="flex items-center gap-1">
+        <span className="flex items-center justify-center gap-1">
           <input
             type="number"
             min="0"
@@ -286,7 +293,7 @@ export const BOARD_FIELDS: BoardField[] = [
         ...(row.contractor_worker_list ?? []),
       ].filter((p) => p.work_site === 'warehouse')
       return (
-        <span className="flex flex-wrap items-center gap-1 px-1.5">
+        <span className="flex flex-wrap items-center justify-center gap-1 px-1.5">
           {workers.length > 0 && <AvatarGroup names={workers} max={4} size="xs" />}
           {fromWarehouse.length > 0 && (
             <Tooltip content={`מתחילים מהמחסן: ${fromWarehouse.map((p) => p.name).join(', ')}`}>
@@ -330,10 +337,10 @@ export const BOARD_FIELDS: BoardField[] = [
             aria-label="סטטוס"
             value={row.status_id}
             onChange={(e) => patch(row, { status_id: e.target.value })}
-            className="w-full cursor-pointer truncate rounded-md border border-transparent px-1.5 py-0.5 text-[0.75rem] font-semibold focus:outline-none focus:ring-2 focus:ring-[var(--vl-focus-ring)]"
+            className="w-full cursor-pointer truncate rounded-md border border-transparent px-1.5 py-0.5 text-center text-[0.75rem] font-semibold focus:outline-none focus:ring-2 focus:ring-[var(--vl-focus-ring)]"
             style={{
-              background: `color-mix(in srgb, ${row.status_color} 14%, transparent)`,
-              color: `color-mix(in srgb, ${row.status_color}, black 18%)`,
+              background: `color-mix(in srgb, ${row.status_color} 20%, transparent)`,
+              color: `color-mix(in srgb, ${row.status_color}, black 28%)`,
             }}
           >
             {lookups.statuses.map((s) => (
@@ -344,7 +351,7 @@ export const BOARD_FIELDS: BoardField[] = [
           </select>
         </span>
       ) : (
-        <span className="block px-1.5">
+        <span className="flex justify-center px-1.5">
           <StatusPill color={row.status_color}>{row.status_name}</StatusPill>
         </span>
       ),
@@ -363,7 +370,7 @@ export const BOARD_FIELDS: BoardField[] = [
           const v = e.target.value || null
           if (v !== row.notes) patch(row, { notes: v })
         }}
-        className={cx(INLINE, 'text-start placeholder:text-ink-tertiary')}
+        className={cx(INLINE, 'placeholder:text-ink-tertiary')}
       />
     ),
   },

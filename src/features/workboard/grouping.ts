@@ -39,9 +39,12 @@ function makeTone(index: number, color?: string | null): GroupTone {
   return {
     index,
     solid,
-    tint: `color-mix(in srgb, ${solid} 7%, transparent)`,
-    tintStrong: `color-mix(in srgb, ${solid} 16%, transparent)`,
-    border: `color-mix(in srgb, ${solid} 45%, transparent)`,
+    /* the strength of each wash lives in CSS (`--vl-tone-*` in index.css), so
+       the board darkens or lightens from one place and dark mode can hold its
+       own numbers without a second code path here */
+    tint: `color-mix(in srgb, ${solid} var(--vl-tone-tint), transparent)`,
+    tintStrong: `color-mix(in srgb, ${solid} var(--vl-tone-tint-strong), transparent)`,
+    border: `color-mix(in srgb, ${solid} var(--vl-tone-border), transparent)`,
   }
 }
 

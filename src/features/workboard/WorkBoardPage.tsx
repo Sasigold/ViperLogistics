@@ -56,7 +56,6 @@ import { errorMessage } from '../../lib/errors'
    The board is transposed: days run across, task fields run down. The field
    legend on the inline-start edge is sticky and never scrolls away.       */
 
-const LEGEND_W = 150
 const SPINE_W = 46
 /** a day with nothing on it still gets a column — an empty Tuesday is
  *  information, and a board that hides it reads as a board with no gaps */
@@ -64,17 +63,36 @@ const EMPTY_W = 132
 const DAY_HEAD_H = 30
 /** the band that ties one event's task columns together */
 const GROUP_HEAD_H = 20
-const TASK_HEAD_H = 46
 
 /** a range wider than this is a report, not a board — empty days stop earning
  *  their width somewhere around a quarter */
 const MAX_EMPTY_DAY_SPAN = 120
 
+/**
+ * Every dimension the board is drawn from, in one table. `minimal` squeezes the
+ * whole frame — legend, header and type as well as the columns — because a
+ * narrow column under a comfortable header just moves the crowding rather than
+ * removing it.
+ */
 const DENSITY = {
-  compact: { col: 168, row: 30, tall: 36 },
-  comfortable: { col: 208, row: 38, tall: 46 },
+  comfortable: { col: 208, row: 38, tall: 46, legend: 150, head: 46, fs: '0.8125rem' },
+  compact: { col: 168, row: 30, tall: 36, legend: 132, head: 40, fs: '0.78125rem' },
+  minimal: { col: 112, row: 26, tall: 32, legend: 104, head: 34, fs: '0.75rem' },
 } as const
 type Density = keyof typeof DENSITY
+
+/**
+ * Which of the two boards to draw. `auto` is the old behaviour — cards below
+ * `lg`, grid above — and the other two are the reader overriding it, which is
+ * the whole point: a phone in landscape can hold the grid, and someone who
+ * wants the grid on a phone is entitled to scroll for it.
+ */
+const VIEW_MODES = [
+  { key: 'auto', label: 'אוטומטי' },
+  { key: 'grid', label: 'טבלה' },
+  { key: 'cards', label: 'כרטיסים' },
+] as const
+type ViewMode = (typeof VIEW_MODES)[number]['key']
 
 const SORTS = [
   { key: 'time', label: 'שעה' },
@@ -92,6 +110,7 @@ interface Prefs {
   sort?: SortKey
   colorBy?: ColorBy
   emptyDays?: boolean
+  view?: ViewMode
 }
 
 function loadPrefs(): Prefs {
@@ -200,6 +219,7 @@ export default function WorkBoardPage() {
   const [sortBy, setSortBy] = useState<SortKey>(prefs.current.sort ?? 'time')
   const [colorBy, setColorBy] = useState<ColorBy>(prefs.current.colorBy ?? 'event')
   const [showEmptyDays, setShowEmptyDays] = useState(prefs.current.emptyDays ?? true)
+  const [viewMode, setViewMode] = useState<ViewMode>(prefs.current.view ?? 'auto')
   const [showFilters, setShowFilters] = useState(false)
   /** the group under the pointer — its whole run lights up, across days */
   const [activeGroup, setActiveGroup] = useState<string | null>(null)
@@ -208,12 +228,12 @@ export default function WorkBoardPage() {
     try {
       localStorage.setItem(
         PREFS_KEY,
-        JSON.stringify({ hidden: [...hidden], density, sort: sortBy, colorBy, emptyDays: showEmptyDays }),
+        JSON.stringify({ hidden: [...hidden], density, sort: sortBy, colorBy, emptyDays: showEmptyDays, view: viewMode }),
       )
     } catch {
       /* view preferences are not worth failing over */
     }
-  }, [hidden, density, sortBy, colorBy, showEmptyDays])
+  }, [hidden, density, sortBy, colorBy, showEmptyDays, viewMode])
 
   const { data: customers = [] } = useCustomers()
   const { data: statuses = [] } = useStatuses('task')
@@ -265,7 +285,12 @@ export default function WorkBoardPage() {
   const fields = useMemo(() => available.filter((f) => !hidden.has(f.key)), [available, hidden])
   const metrics = DENSITY[density]
   const groupHeadH = colorBy === 'none' ? 0 : GROUP_HEAD_H
-  const headerH = DAY_HEAD_H + groupHeadH + TASK_HEAD_H
+  const headerH = DAY_HEAD_H + groupHeadH + metrics.head
+  /** cards below `lg` unless the reader has said otherwise */
+  const asCards = viewMode === 'auto' ? isMobile : viewMode === 'cards'
+  /* A phone holding the grid is already asking a lot of a small screen; the
+     type comes down a step there on top of whatever density is set. */
+  const boardFontSize = isMobile ? DENSITY.minimal.fs : metrics.fs
 
   /** one height array drives both the legend and every task column, so the
    *  grid can never drift out of alignment */
@@ -618,6 +643,20 @@ export default function WorkBoardPage() {
               >
                 {() => (
                   <div className="w-60 p-1.5">
+                    <MenuLabel>סוג תצוגה</MenuLabel>
+                    <SegmentedControl
+                      block
+                      items={VIEW_MODES.map((v) => ({ key: v.key, label: v.label }))}
+                      value={viewMode}
+                      onChange={setViewMode}
+                    />
+                    <p className="px-0.5 pt-1 type-caption text-ink-tertiary">
+                      {viewMode === 'auto'
+                        ? 'טבלה במסך רחב, כרטיסים במסך צר'
+                        : viewMode === 'grid'
+                          ? 'הטבלה המלאה בכל גודל מסך — במובייל נגללת לצדדים'
+                          : 'כרטיסים לפי ימים בכל גודל מסך'}
+                    </p>
                     <MenuLabel>צביעה לפי</MenuLabel>
                     <SegmentedControl
                       block
@@ -645,6 +684,7 @@ export default function WorkBoardPage() {
                       items={[
                         { key: 'comfortable', label: 'מרווח' },
                         { key: 'compact', label: 'צפוף' },
+                        { key: 'minimal', label: 'מינימלי' },
                       ]}
                       value={density}
                       onChange={setDensity}
@@ -758,10 +798,11 @@ export default function WorkBoardPage() {
                 )
               }
             />
-          ) : isMobile ? (
-            /* A transposed 19-row grid needs a mouse and a wide viewport. On a
-               phone the same data reads better as a day-by-day card list; the
-               drawer still owns every edit. */
+          ) : asCards ? (
+            /* A transposed 19-row grid wants a mouse and a wide viewport, so on
+               a phone the same data reads better as a day-by-day card list by
+               default — but "טבלה" in the view menu overrides that, and the
+               drawer still owns every edit either way. */
             <MobileBoard
               days={daysForList}
               today={today}
@@ -773,15 +814,19 @@ export default function WorkBoardPage() {
               onNewTask={newTaskOn}
             />
           ) : (
-            <div ref={scrollRef} className="h-full overflow-auto">
-              <div className="relative flex" style={{ width: LEGEND_W + totalWidth, minHeight: '100%' }}>
+            <div
+              ref={scrollRef}
+              className="h-full overflow-auto"
+              style={{ '--vl-board-fs': boardFontSize } as React.CSSProperties}
+            >
+              <div className="relative flex" style={{ width: metrics.legend + totalWidth, minHeight: '100%' }}>
                 {/* sticky field legend */}
                 <div
                   className="sticky z-30 shrink-0 border-e border-line bg-surface"
-                  style={{ insetInlineStart: 0, width: LEGEND_W }}
+                  style={{ insetInlineStart: 0, width: metrics.legend }}
                 >
                   <div
-                    className="sticky top-0 z-10 flex items-end border-b border-line bg-subtle px-2.5 pb-2"
+                    className="sticky top-0 z-10 flex items-end justify-center border-b border-line bg-subtle px-2.5 pb-2"
                     style={{ height: headerH }}
                   >
                     <Checkbox
@@ -794,7 +839,7 @@ export default function WorkBoardPage() {
                   {fields.map((f, i) => (
                     <div
                       key={f.key}
-                      className="flex items-center border-b border-line-subtle px-2.5 type-caption font-semibold text-ink-secondary"
+                      className="flex items-center justify-center border-b border-line-subtle px-2.5 text-center type-caption font-semibold text-ink-secondary"
                       style={{ height: rowHeights[i] }}
                     >
                       <span className="truncate">{f.label}</span>
@@ -814,7 +859,11 @@ export default function WorkBoardPage() {
                           key={b.dayKey}
                           className={cx(
                             'absolute top-0 flex items-center gap-1.5 overflow-hidden border-b border-s border-line px-2',
-                            isToday ? 'bg-primary-subtle' : b.overdue > 0 ? 'bg-error-subtle' : 'bg-subtle',
+                            isToday
+                              ? 'bg-[var(--vl-board-today)]'
+                              : b.overdue > 0
+                                ? 'bg-[var(--vl-board-overdue)]'
+                                : 'bg-[var(--vl-board-band)]',
                           )}
                           style={{ insetInlineStart: b.start, width: b.width, height: DAY_HEAD_H }}
                         >
@@ -891,7 +940,7 @@ export default function WorkBoardPage() {
                             insetInlineStart: vi.start,
                             width: vi.size,
                             top: bare ? DAY_HEAD_H : DAY_HEAD_H + groupHeadH,
-                            height: bare ? groupHeadH + TASK_HEAD_H : TASK_HEAD_H,
+                            height: bare ? groupHeadH + metrics.head : metrics.head,
                           }}
                         >
                           {col.kind === 'spine' ? (
@@ -1069,8 +1118,12 @@ function MobileBoard({
           <section key={day.dayKey}>
             <h3
               className={cx(
-                'sticky top-0 z-10 flex items-center gap-2 border-b border-line px-3 py-2 backdrop-blur-sm',
-                isToday ? 'bg-primary-subtle' : day.overdue > 0 ? 'bg-error-subtle' : 'bg-subtle',
+                'sticky top-0 z-10 flex items-center gap-1.5 border-b border-line px-2.5 py-1.5 backdrop-blur-sm',
+                isToday
+                  ? 'bg-[var(--vl-board-today)]'
+                  : day.overdue > 0
+                    ? 'bg-[var(--vl-board-overdue)]'
+                    : 'bg-[var(--vl-board-band)]',
               )}
             >
               <button
@@ -1133,7 +1186,7 @@ function MobileBoard({
                 <div key={cluster.key}>
                   {cluster.tone && (
                     <div
-                      className="flex items-center gap-1.5 border-b border-line-subtle px-3 py-1"
+                      className="flex items-center gap-1.5 border-b border-line-subtle px-2.5 py-0.5"
                       style={{ background: cluster.tone.tintStrong }}
                     >
                       <span
@@ -1201,7 +1254,10 @@ const MobileTaskCard = memo(function MobileTaskCard({
 
   return (
     <div
-      className={cx('flex items-stretch gap-2 px-3 py-2.5', selected ? 'bg-selected' : overdue && 'bg-error-subtle/50')}
+      className={cx(
+        'flex items-stretch gap-1.5 px-2.5 py-1.5',
+        selected ? 'bg-selected' : overdue && 'bg-[var(--vl-board-overdue)]',
+      )}
       style={!selected && tone ? { background: tone.tint } : undefined}
     >
       <span
@@ -1212,8 +1268,8 @@ const MobileTaskCard = memo(function MobileTaskCard({
       <span className="flex items-start pt-0.5">
         <Checkbox checked={selected} onChange={() => onToggle(row.id)} />
       </span>
-      <button onClick={() => onOpen(row.id)} className="min-w-0 flex-1 space-y-1 text-start">
-        <span className="flex items-center gap-2">
+      <button onClick={() => onOpen(row.id)} className="min-w-0 flex-1 space-y-0.5 text-start">
+        <span className="flex items-center gap-1.5">
           {time ? (
             <span className={cx('shrink-0 type-button tabular', overdue ? 'text-error-text' : 'text-ink')} dir="ltr">
               {time}
@@ -1227,9 +1283,9 @@ const MobileTaskCard = memo(function MobileTaskCard({
           </StatusPill>
         </span>
 
-        <span className="block truncate type-body font-semibold">{label}</span>
+        <span className="block truncate type-button font-semibold">{label}</span>
 
-        <span className="flex flex-wrap items-center gap-x-2 type-caption text-ink-tertiary">
+        <span className="flex flex-wrap items-center gap-x-1.5 type-caption text-ink-tertiary">
           <span className="truncate">{row.task_type_name}</span>
           {row.customer_name && <span className="truncate">· {row.customer_name}</span>}
           {row.contractor_name && <span className="truncate">· {row.contractor_name}</span>}
@@ -1242,7 +1298,7 @@ const MobileTaskCard = memo(function MobileTaskCard({
           </span>
         )}
 
-        <span className="flex items-center gap-2 pt-0.5">
+        <span className="flex items-center gap-1.5">
           {team.length > 0 ? (
             <AvatarGroup names={team} max={4} size="xs" />
           ) : (
@@ -1301,7 +1357,7 @@ const TaskHeader = memo(function TaskHeader({
       onMouseLeave={() => onHover(null)}
       className={cx(
         'group relative flex h-full flex-col justify-center gap-0.5 border-b border-s border-line px-2',
-        selected ? 'bg-selected' : overdue ? 'bg-error-subtle' : 'bg-surface',
+        selected ? 'bg-selected' : overdue ? 'bg-[var(--vl-board-overdue)]' : 'bg-surface',
       )}
       style={painted ? { background: active ? tone.tintStrong : tone.tint } : undefined}
     >
@@ -1345,7 +1401,7 @@ const TaskHeader = memo(function TaskHeader({
         </IconButton>
       </div>
       <Tooltip content={label}>
-        <span className="truncate type-caption font-medium text-ink-secondary">{label}</span>
+        <span className="block truncate text-center type-caption font-medium text-ink-secondary">{label}</span>
       </Tooltip>
     </div>
   )
@@ -1499,19 +1555,21 @@ const TaskColumn = memo(
         style={{
           ...style,
           position: 'absolute',
-          ...(tone && !selected
-            ? { background: active ? tone.tintStrong : `color-mix(in srgb, ${tone.solid} 5%, transparent)` }
-            : null),
+          /* the same wash the header carries — a column whose body was paler
+             than its own heading read as two different things stacked */
+          ...(tone && !selected ? { background: active ? tone.tintStrong : tone.tint } : null),
           ...edges,
         }}
       >
         {fields.map((f, i) => (
           <div
             key={f.key}
-            className="flex items-center overflow-hidden border-b border-line-subtle transition-colors hover:bg-hover"
+            className="flex items-center justify-center overflow-hidden border-b border-line-subtle transition-colors hover:bg-hover"
             style={{ height: heights[i] }}
           >
-            <div className="min-w-0 flex-1">{f.render({ row, canEdit: canEditCell(f.editPerm), patch, lookups })}</div>
+            <div className="min-w-0 flex-1 text-center">
+              {f.render({ row, canEdit: canEditCell(f.editPerm), patch, lookups })}
+            </div>
           </div>
         ))}
       </div>
