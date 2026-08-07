@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ICON, MapPin, Plus, STROKE, Trash2 } from '../../components/ui/icons'
+import { ICON, MapPin, Pencil, Plus, STROKE, Trash2 } from '../../components/ui/icons'
 import {
   Button,
   Card,
@@ -10,6 +10,7 @@ import {
   Field,
   IconButton,
   Input,
+  Modal,
   Skeleton,
   Switch,
   useConfirm,
@@ -17,9 +18,10 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useWarehouses } from './attendanceQueries'
+import { LocationPicker } from './LocationPicker'
 import type { Warehouse } from '../../types/domain'
 
-const BLANK = { name: '', address: '', lat: '', lng: '', radius_m: '' }
+const BLANK = { name: '', address: '', lat: null as number | null, lng: null as number | null, radius_m: '' }
 
 /**
  * המחסנים שמהם יוצאים למשימות.
@@ -34,6 +36,7 @@ export function WarehousesCard() {
   const { confirm, dialog } = useConfirm()
   const { data: warehouses = [], isLoading } = useWarehouses()
   const [form, setForm] = useState(BLANK)
+  const [editing, setEditing] = useState<Warehouse | null>(null)
 
   const invalidate = () => void qc.invalidateQueries({ queryKey: ['warehouses'] })
   const num = (v: string) => (v === '' ? null : Number(v))
@@ -44,8 +47,8 @@ export function WarehousesCard() {
       const { error } = await supabase.from('warehouses').insert({
         name: form.name.trim(),
         address: form.address || null,
-        lat: num(form.lat),
-        lng: num(form.lng),
+        lat: form.lat,
+        lng: form.lng,
         radius_m: num(form.radius_m),
         sort_order: warehouses.length,
       })
@@ -89,49 +92,16 @@ export function WarehousesCard() {
         subtitle="נקודות היציאה שמולן נמדדת החתמה של מי שמתחיל במחסן"
         icon={<MapPin size={ICON.md} strokeWidth={STROKE} />}
       />
-      <div className="border-b border-line-subtle bg-subtle/40 p-4">
-        <form
-          className="flex flex-wrap items-end gap-2"
-          onSubmit={(e) => {
-            e.preventDefault()
-            add.mutate()
-          }}
-        >
-          <Field label="שם" className="min-w-36 flex-1">
+      <div className="space-y-3 border-b border-line-subtle bg-subtle/40 p-4">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Field label="שם">
             <Input
               inputSize="sm"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             />
           </Field>
-          <Field label="כתובת" className="min-w-40 flex-1">
-            <Input
-              inputSize="sm"
-              value={form.address}
-              onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-            />
-          </Field>
-          <Field label="קו רוחב" className="w-32">
-            <Input
-              inputSize="sm"
-              dir="ltr"
-              type="number"
-              step="any"
-              value={form.lat}
-              onChange={(e) => setForm((f) => ({ ...f, lat: e.target.value }))}
-            />
-          </Field>
-          <Field label="קו אורך" className="w-32">
-            <Input
-              inputSize="sm"
-              dir="ltr"
-              type="number"
-              step="any"
-              value={form.lng}
-              onChange={(e) => setForm((f) => ({ ...f, lng: e.target.value }))}
-            />
-          </Field>
-          <Field label="רדיוס (מ׳)" className="w-28">
+          <Field label="רדיוס מותר (מ׳)" hint="ריק = לפי ההגדרה הכללית">
             <Input
               inputSize="sm"
               dir="ltr"
@@ -143,11 +113,30 @@ export function WarehousesCard() {
               onChange={(e) => setForm((f) => ({ ...f, radius_m: e.target.value }))}
             />
           </Field>
-          <Button type="submit" size="sm" variant="primary" loading={add.isPending} disabled={!form.name.trim()}>
+        </div>
+
+        {/* חיפוש כתובת ממלא את הקואורדינטות אוטומטית; אפשר גם ללחוץ על
+            המפה או לגרור את הסמן — כל דרך מעדכנת את אותם lat/lng. */}
+        <LocationPicker
+          lat={form.lat}
+          lng={form.lng}
+          onChange={(lat, lng) => setForm((f) => ({ ...f, lat, lng }))}
+          addressText={form.address}
+          onAddressTextChange={(address) => setForm((f) => ({ ...f, address }))}
+        />
+
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            variant="primary"
+            loading={add.isPending}
+            disabled={!form.name.trim()}
+            onClick={() => add.mutate()}
+          >
             <Plus size={ICON.sm} strokeWidth={STROKE} />
-            הוספה
+            הוספת מחסן
           </Button>
-        </form>
+        </div>
       </div>
       <CardBody padded={false}>
         {isLoading ? (
@@ -187,6 +176,9 @@ export function WarehousesCard() {
                   onChange={(v) => patch.mutate({ id: w.id, is_active: v })}
                   label="פעיל"
                 />
+                <IconButton label={`עריכת ${w.name}`} size="sm" onClick={() => setEditing(w)}>
+                  <Pencil size={ICON.sm} strokeWidth={STROKE} />
+                </IconButton>
                 <IconButton label={`מחיקת ${w.name}`} size="sm" onClick={() => void remove(w)} className="hover:text-error">
                   <Trash2 size={ICON.sm} strokeWidth={STROKE} />
                 </IconButton>
@@ -195,6 +187,105 @@ export function WarehousesCard() {
           </ul>
         )}
       </CardBody>
+
+      {editing && (
+        <EditWarehouseModal
+          warehouse={editing}
+          onClose={() => setEditing(null)}
+          onSave={(patchValue) =>
+            patch.mutate(
+              { id: editing.id, ...patchValue },
+              { onSuccess: () => setEditing(null) },
+            )
+          }
+          saving={patch.isPending}
+        />
+      )}
     </Card>
+  )
+}
+
+function EditWarehouseModal({
+  warehouse,
+  onClose,
+  onSave,
+  saving,
+}: {
+  warehouse: Warehouse
+  onClose: () => void
+  onSave: (patch: Partial<Warehouse>) => void
+  saving: boolean
+}) {
+  const [form, setForm] = useState({
+    name: warehouse.name,
+    address: warehouse.address ?? '',
+    lat: warehouse.lat,
+    lng: warehouse.lng,
+    radius_m: warehouse.radius_m != null ? String(warehouse.radius_m) : '',
+  })
+  useEffect(() => {
+    setForm({
+      name: warehouse.name,
+      address: warehouse.address ?? '',
+      lat: warehouse.lat,
+      lng: warehouse.lng,
+      radius_m: warehouse.radius_m != null ? String(warehouse.radius_m) : '',
+    })
+  }, [warehouse])
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="md"
+      title={`עריכת ${warehouse.name}`}
+      footer={
+        <>
+          <Button onClick={onClose}>ביטול</Button>
+          <Button
+            variant="primary"
+            loading={saving}
+            disabled={!form.name.trim()}
+            onClick={() =>
+              onSave({
+                name: form.name.trim(),
+                address: form.address || null,
+                lat: form.lat,
+                lng: form.lng,
+                radius_m: form.radius_m === '' ? null : Number(form.radius_m),
+              })
+            }
+          >
+            שמירה
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Field label="שם">
+            <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          </Field>
+          <Field label="רדיוס מותר (מ׳)" hint="ריק = לפי ההגדרה הכללית">
+            <Input
+              dir="ltr"
+              type="number"
+              min={1}
+              step={50}
+              placeholder="כללי"
+              value={form.radius_m}
+              onChange={(e) => setForm((f) => ({ ...f, radius_m: e.target.value }))}
+            />
+          </Field>
+        </div>
+        <LocationPicker
+          lat={form.lat}
+          lng={form.lng}
+          onChange={(lat, lng) => setForm((f) => ({ ...f, lat, lng }))}
+          addressText={form.address}
+          onAddressTextChange={(address) => setForm((f) => ({ ...f, address }))}
+        />
+      </div>
+    </Modal>
   )
 }

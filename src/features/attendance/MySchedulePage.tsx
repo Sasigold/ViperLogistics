@@ -97,10 +97,14 @@ function MySchedule() {
             height="auto"
             allDaySlot={false}
             nowIndicator
-            slotMinTime="04:00:00"
-            // משמרת שמתחילה ב-22:00 ונמשכת 4 שעות נגמרת ב-02:00 למחרת.
-            // בלי החלון המורחב היא הייתה נחתכת בתחתית היום.
-            slotMaxTime="30:00:00"
+            // כל היממה מוצגת, 00:00–24:00: משמרת שמתחילה ב-22:00 ונמשכת 4
+            // שעות ממשיכה בעמודת היום שאחריה כרגיל, ולא נחתכת.
+            slotMinTime="00:00:00"
+            slotMaxTime="24:00:00"
+            // תצוגת 24 שעות מפורשת ("01:00", "23:00"), בלי AM/PM — גם אם
+            // הלוקאל של הדפדפן משתמש בברירת מחדל אחרת.
+            slotLabelFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
+            eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
             expandRows
             events={events}
             eventContent={renderShift}
