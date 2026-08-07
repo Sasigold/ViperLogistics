@@ -390,9 +390,9 @@ export default function CalendarPage() {
         onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
         aria-label="חיפוש אירועים"
       />
-      {/* one customer means one option: `customers_select` already scoped the
-          list, so the control would only offer the filter you are already in */}
-      {has(PERM.CUSTOMERS_VIEW) && (
+      {/* `customers_select` already scoped the list, so a filter over one
+          option can only offer the filter you are already in */}
+      {customers.length > 1 && (
         <Select
           selectSize="sm"
           value={filters.customer}

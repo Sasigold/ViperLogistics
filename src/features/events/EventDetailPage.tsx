@@ -53,7 +53,7 @@ export default function EventDetailPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const toast = useToast()
-  const { has, canViewField } = useAuth()
+  const { has, canViewField, showsEventField } = useAuth()
   const { confirm, dialog } = useConfirm()
   const [editOpen, setEditOpen] = useState(false)
   const [taskDrawer, setTaskDrawer] = useState<{ open: boolean; taskId: string | null }>({ open: false, taskId: null })
@@ -124,6 +124,11 @@ export default function EventDetailPage() {
     return { setupCount, teardownCount, otherCount, totalWorkers }
   }, [tasks])
 
+  /* team / lead / contractor all read joins RLS empties for a reader who is
+     not staff. An always-blank column reads as a broken table rather than as
+     one that isn't theirs, so the key decides whether it exists. */
+  const showStaffing = has(PERM.BOARD_VIEW_STAFFING)
+
   const columns = useMemo<Column<WorkBoardRow>[]>(
     () => [
       {
@@ -161,7 +166,7 @@ export default function EventDetailPage() {
         sortValue: (t) => t.hours_count,
         render: (t) => <span className="tabular">{fmtHours(t.hours_count) || '—'}</span>,
       },
-      {
+      ...(showStaffing ? ([{
         key: 'team',
         header: 'צוות',
         width: 150,
@@ -182,7 +187,7 @@ export default function EventDetailPage() {
             <span className="type-caption text-ink-tertiary">לא שובץ</span>
           )
         },
-      },
+      }] as Column<WorkBoardRow>[]) : []),
       {
         key: 'method',
         header: 'אופן ביצוע',
@@ -190,20 +195,22 @@ export default function EventDetailPage() {
         sortValue: (t) => t.execution_method_name,
         render: (t) => t.execution_method_name || <span className="text-ink-tertiary">—</span>,
       },
-      {
-        key: 'lead',
-        header: 'ראש צוות',
-        width: 130,
-        sortValue: (t) => t.team_lead_name,
-        render: (t) => t.team_lead_name || <span className="text-ink-tertiary">—</span>,
-      },
-      {
-        key: 'contractor',
-        header: 'קבלן',
-        width: 130,
-        sortValue: (t) => t.contractor_name,
-        render: (t) => t.contractor_name || <span className="text-ink-tertiary">—</span>,
-      },
+      ...(showStaffing ? ([
+        {
+          key: 'lead',
+          header: 'ראש צוות',
+          width: 130,
+          sortValue: (t) => t.team_lead_name,
+          render: (t) => t.team_lead_name || <span className="text-ink-tertiary">—</span>,
+        },
+        {
+          key: 'contractor',
+          header: 'קבלן',
+          width: 130,
+          sortValue: (t) => t.contractor_name,
+          render: (t) => t.contractor_name || <span className="text-ink-tertiary">—</span>,
+        },
+      ] as Column<WorkBoardRow>[]) : []),
       {
         key: 'status',
         header: 'סטטוס',
@@ -231,7 +238,7 @@ export default function EventDetailPage() {
           ] as Column<WorkBoardRow>[])
         : []),
     ],
-    [pricing],
+    [pricing, showStaffing],
   )
 
   if (isLoading || !data) {
@@ -292,22 +299,31 @@ export default function EventDetailPage() {
     )
   }
 
+  /* The same rule that shapes the form shapes the read view: a field the
+     reader's company configured off, or their field permissions hide, should
+     not reappear here. `showsEventField` answers both at once. */
+  const show = showsEventField
+
   const info: [string, React.ReactNode][] = [
-    [
-      'לקוח במערכת',
-      event.customers ? (
-        <span key="customer" className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full" style={{ background: event.customers.color }} />
-          {event.customers.name}
-        </span>
-      ) : null,
-    ],
+    ...(has(PERM.CUSTOMERS_VIEW)
+      ? ([[
+          'לקוח במערכת',
+          event.customers ? (
+            <span key="customer" className="inline-flex items-center gap-1.5">
+              <span className="size-2.5 rounded-full" style={{ background: event.customers.color }} />
+              {event.customers.name}
+            </span>
+          ) : null,
+        ]] as [string, React.ReactNode][])
+      : []),
     ['שם לקוח האירוע', event.end_client_name],
-    ['מספר אירוע', event.event_number],
-    ['מיקום', event.location_text],
-    ['הערות למיקום', event.location_notes],
-    ['נפח במטר', event.volume_m],
-    ['כמות משאיות', event.truck_count],
+    ...(show('event_number') ? ([['מספר אירוע', event.event_number]] as [string, React.ReactNode][]) : []),
+    ...(show('location') ? ([['מיקום', event.location_text]] as [string, React.ReactNode][]) : []),
+    ...(show('location_notes')
+      ? ([['הערות למיקום', event.location_notes]] as [string, React.ReactNode][])
+      : []),
+    ...(show('volume_m') ? ([['נפח במטר', event.volume_m]] as [string, React.ReactNode][]) : []),
+    ...(show('truck_count') ? ([['כמות משאיות', event.truck_count]] as [string, React.ReactNode][]) : []),
     ...(canViewField('event', 'contact_phone')
       ? ([
           ['איש קשר', contact?.contact_name],
@@ -323,14 +339,16 @@ export default function EventDetailPage() {
       : []),
     ['הקמה', sectionLine('setup')],
     ['פירוק', sectionLine('teardown')],
-    ['הערות', event.notes],
+    ...(show('notes') ? ([['הערות', event.notes]] as [string, React.ReactNode][]) : []),
   ]
 
-  const addons = [
-    event.no_parking && 'אין חניה',
-    event.porterage && 'סבלות',
-    event.supplier_pickup && 'איסוף מספקים',
-  ].filter(Boolean)
+  const addons = show('addons')
+    ? [
+        event.no_parking && 'אין חניה',
+        event.porterage && 'סבלות',
+        event.supplier_pickup && 'איסוף מספקים',
+      ].filter(Boolean)
+    : []
 
   return (
     <div className="space-y-5">
@@ -702,8 +720,10 @@ export default function EventDetailPage() {
                                   {names.length}/{t.worker_count || '—'} עובדים
                                 </span>
                               </div>
-                            ) : (
+                            ) : showStaffing ? (
                               <span className="type-caption text-ink-tertiary">לא שובצו עובדים</span>
+                            ) : (
+                              <span />
                             )}
                             <span className="type-caption text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">
                               פרטים ←

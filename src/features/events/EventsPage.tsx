@@ -29,7 +29,7 @@ import type { EventRow } from '../../types/domain'
 const ExcelDialog = lazy(() => import('../importExport/ExcelDialog').then((m) => ({ default: m.ExcelDialog })))
 
 export default function EventsPage() {
-  const { has } = useAuth()
+  const { has, canCreateEvent, showsEventField } = useAuth()
   const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [customer, setCustomer] = useState('')
@@ -54,8 +54,25 @@ export default function EventsPage() {
     },
   })
 
-  const columns = useMemo<Column<EventRow>[]>(
-    () => [
+  /* Two rules shape the table, and they are the same two that shape the form:
+     a field the reader's company configured off should not reappear as a
+     column, and neither should one their field permissions hide. Resolved out
+     here so the memo depends on the answers rather than on the store function,
+     which is stable and would never invalidate. */
+  const showCustomer = customers.length > 1
+  const showNumber = showsEventField('event_number')
+  const showLocation = showsEventField('location')
+  const showVolume = showsEventField('volume_m')
+  const showTrucks = showsEventField('truck_count')
+
+  const columns = useMemo<Column<EventRow>[]>(() => {
+    const hidden = new Set<string>()
+    if (!showCustomer) hidden.add('customer')
+    if (!showNumber) hidden.add('event_number')
+    if (!showLocation) hidden.add('location_text')
+    if (!showVolume) hidden.add('volume_m')
+    if (!showTrucks) hidden.add('truck_count')
+    const all: Column<EventRow>[] = [
       {
         key: 'event_date',
         header: 'תאריך',
@@ -139,9 +156,9 @@ export default function EventsPage() {
         sortValue: (e) => e.statuses?.name,
         render: (e) => (e.statuses ? <StatusPill color={e.statuses.color}>{e.statuses.name}</StatusPill> : null),
       },
-    ],
-    [],
-  )
+    ]
+    return all.filter((c) => !hidden.has(c.key))
+  }, [showCustomer, showNumber, showLocation, showVolume, showTrucks])
 
   const filtered = !!q || !!customer
 
@@ -159,7 +176,7 @@ export default function EventsPage() {
                   ייבוא / ייצוא
                 </Button>
               )}
-              {has(PERM.EVENTS_CREATE) && (
+              {canCreateEvent() && (
                 <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
                   <Plus size={ICON.sm} strokeWidth={STROKE} />
                   אירוע חדש
@@ -187,14 +204,16 @@ export default function EventsPage() {
               onClear={() => setQ('')}
               aria-label="חיפוש אירועים"
             />
-            <Select className="w-48 max-sm:w-full" selectSize="sm" value={customer} onChange={(e) => setCustomer(e.target.value)} aria-label="סינון לפי לקוח">
-              <option value="">כל הלקוחות</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
+            {showCustomer && (
+              <Select className="w-48 max-sm:w-full" selectSize="sm" value={customer} onChange={(e) => setCustomer(e.target.value)} aria-label="סינון לפי לקוח">
+                <option value="">כל הלקוחות</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            )}
           </FilterBar>
         </PageHeader>
 
@@ -213,7 +232,9 @@ export default function EventsPage() {
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="type-caption font-semibold tabular text-primary-text">{fmtDate(e.event_date)}</span>
-                {e.event_number && <span className="type-caption tabular text-ink-tertiary">#{e.event_number}</span>}
+                {showNumber && e.event_number && (
+                  <span className="type-caption tabular text-ink-tertiary">#{e.event_number}</span>
+                )}
                 {e.statuses && (
                   <StatusPill color={e.statuses.color} className="ms-auto shrink-0">
                     {e.statuses.name}
@@ -222,16 +243,18 @@ export default function EventsPage() {
               </div>
               <p className="truncate type-body font-semibold">{e.end_client_name || '—'}</p>
               <div className="flex flex-wrap items-center gap-x-2 type-caption text-ink-tertiary">
-                {e.customers && (
+                {showCustomer && e.customers && (
                   <span className="inline-flex min-w-0 items-center gap-1">
                     <span className="size-2 shrink-0 rounded-full" style={{ background: e.customers.color }} />
                     <span className="truncate">{e.customers.name}</span>
                   </span>
                 )}
-                {e.truck_count != null && <span className="tabular">· {e.truck_count} משאיות</span>}
-                {e.volume_m != null && <span className="tabular">· נפח {e.volume_m}</span>}
+                {showTrucks && e.truck_count != null && <span className="tabular">· {e.truck_count} משאיות</span>}
+                {showVolume && e.volume_m != null && <span className="tabular">· נפח {e.volume_m}</span>}
               </div>
-              {e.location_text && <p className="truncate type-caption text-ink-tertiary">{e.location_text}</p>}
+              {showLocation && e.location_text && (
+                <p className="truncate type-caption text-ink-tertiary">{e.location_text}</p>
+              )}
             </div>
           )}
           empty={
@@ -255,7 +278,7 @@ export default function EventsPage() {
                     ניקוי סינון
                   </Button>
                 ) : (
-                  has(PERM.EVENTS_CREATE) && (
+                  canCreateEvent() && (
                     <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
                       <Plus size={ICON.sm} />
                       אירוע חדש

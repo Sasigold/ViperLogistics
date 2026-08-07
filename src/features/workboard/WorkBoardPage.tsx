@@ -253,7 +253,15 @@ export default function WorkBoardPage() {
     [inline],
   )
 
-  const fields = useMemo(() => BOARD_FIELDS.filter((f) => !hidden.has(f.key)), [hidden])
+  /**
+   * Two different questions, resolved in order. `viewPerm` decides whether a
+   * row exists for this reader at all; `hidden` is their own choice among the
+   * rows that do. Keeping them apart is what lets the field picker below offer
+   * exactly the rows that could come back — a picker listing "צוות" for someone
+   * who can never see it would be offering a switch wired to nothing.
+   */
+  const available = useMemo(() => BOARD_FIELDS.filter((f) => !f.viewPerm || has(f.viewPerm)), [has])
+  const fields = useMemo(() => available.filter((f) => !hidden.has(f.key)), [available, hidden])
   const metrics = DENSITY[density]
   const groupHeadH = colorBy === 'none' ? 0 : GROUP_HEAD_H
   const headerH = DAY_HEAD_H + groupHeadH + TASK_HEAD_H
@@ -484,18 +492,24 @@ export default function WorkBoardPage() {
 
   const lookupFilters = (
     <>
-      <Select
-        className="w-full lg:w-36"
-        selectSize="sm"
-        value={filters.customer}
-        onChange={(e) => setFilters((f) => ({ ...f, customer: e.target.value }))}
-        aria-label="לקוח"
-      >
-        <option value="">כל הלקוחות</option>
-        {customers.map((c) => (
-          <option key={c.id} value={c.id}>{c.name}</option>
-        ))}
-      </Select>
+      {/* Both lists arrive already scoped by RLS. A filter over one option, or
+          over none, is a control that cannot change what you see — so the test
+          is what came back, which covers a client with a single company and a
+          staff member without the key alike. */}
+      {customers.length > 1 && (
+        <Select
+          className="w-full lg:w-36"
+          selectSize="sm"
+          value={filters.customer}
+          onChange={(e) => setFilters((f) => ({ ...f, customer: e.target.value }))}
+          aria-label="לקוח"
+        >
+          <option value="">כל הלקוחות</option>
+          {customers.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </Select>
+      )}
       <Select
         className="w-full lg:w-32"
         selectSize="sm"
@@ -520,18 +534,20 @@ export default function WorkBoardPage() {
           <option key={s.id} value={s.id}>{s.name}</option>
         ))}
       </Select>
-      <Select
-        className="w-full lg:w-32"
-        selectSize="sm"
-        value={filters.contractor}
-        onChange={(e) => setFilters((f) => ({ ...f, contractor: e.target.value }))}
-        aria-label="קבלן"
-      >
-        <option value="">כל הקבלנים</option>
-        {contractors.map((c) => (
-          <option key={c.id} value={c.id}>{c.name}</option>
-        ))}
-      </Select>
+      {contractors.length > 0 && (
+        <Select
+          className="w-full lg:w-32"
+          selectSize="sm"
+          value={filters.contractor}
+          onChange={(e) => setFilters((f) => ({ ...f, contractor: e.target.value }))}
+          aria-label="קבלן"
+        >
+          <option value="">כל הקבלנים</option>
+          {contractors.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </Select>
+      )}
     </>
   )
 
@@ -662,7 +678,7 @@ export default function WorkBoardPage() {
                     <Columns3 size={ICON.sm} strokeWidth={STROKE} />
                     <span className="hidden sm:inline">שדות</span>
                     <span className="tabular text-ink-tertiary text-xs">
-                      {fields.length}/{BOARD_FIELDS.length}
+                      {fields.length}/{available.length}
                     </span>
                   </Button>
                 )}
@@ -670,7 +686,7 @@ export default function WorkBoardPage() {
                 {() => (
                   <div className="max-h-80 w-56 overflow-y-auto">
                     <MenuLabel>שורות מוצגות</MenuLabel>
-                    {BOARD_FIELDS.map((f) => (
+                    {available.map((f) => (
                       <div key={f.key} className="px-2.5 py-1.5">
                         <Checkbox
                           label={f.label}

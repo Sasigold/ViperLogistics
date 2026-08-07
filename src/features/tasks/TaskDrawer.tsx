@@ -315,7 +315,13 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
     <Drawer
       open={open}
       onClose={onClose}
-      title={taskId ? `עריכת משימה${selectedType ? ` — ${selectedType.name}` : ''}` : 'משימה חדשה'}
+      /* the drawer is already read-only without the keys — the title should say
+         so rather than promise an edit the footer will not offer */
+      title={
+        taskId
+          ? `${canEdit || canAssignAny ? 'עריכת משימה' : 'פרטי משימה'}${selectedType ? ` — ${selectedType.name}` : ''}`
+          : 'משימה חדשה'
+      }
       description={taskId ? undefined : 'משימה שאינה משויכת לאירוע — למשל סידור מחסן או טיפול ברכב'}
       footer={
         <>

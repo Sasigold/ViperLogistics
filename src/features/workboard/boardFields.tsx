@@ -28,6 +28,13 @@ export interface BoardField {
    * would allow on the way to the database.
    */
   editPerm?: string
+  /**
+   * Registry key that governs seeing this row at all. Its counterpart to
+   * `editPerm`: some rows read through a join RLS empties for the reader, and
+   * an always-blank row reads as a broken board rather than as one that isn't
+   * theirs. Absent means the row is for everyone who can open the board.
+   */
+  viewPerm?: string
   /** taller row — for the team list */
   tall?: boolean
 }
@@ -54,6 +61,7 @@ function Muted({ children }: { children?: ReactNode }) {
 export const BOARD_FIELDS: BoardField[] = [
   {
     key: 'customer',
+    viewPerm: PERM.CUSTOMERS_VIEW,
     label: 'לקוח',
     render: ({ row }) =>
       row.customer_name ? (
@@ -255,11 +263,13 @@ export const BOARD_FIELDS: BoardField[] = [
   },
   {
     key: 'team_lead',
+    viewPerm: PERM.BOARD_VIEW_STAFFING,
     label: 'ראש צוות',
     render: ({ row }) => (row.team_lead_name ? <span className={READONLY}>{row.team_lead_name}</span> : <Muted />),
   },
   {
     key: 'team',
+    viewPerm: PERM.BOARD_VIEW_STAFFING,
     label: 'צוות',
     tall: true,
     render: ({ row }) => {
@@ -305,6 +315,7 @@ export const BOARD_FIELDS: BoardField[] = [
   },
   {
     key: 'contractor',
+    viewPerm: PERM.BOARD_VIEW_STAFFING,
     label: 'קבלן',
     render: ({ row }) => (row.contractor_name ? <span className={READONLY}>{row.contractor_name}</span> : <Muted />),
   },
