@@ -25,6 +25,18 @@ export const FLAG_LABELS: Record<string, string> = {
 export const flagLabel = (f: string) => FLAG_LABELS[f] ?? f
 
 /**
+ * מתוך כל הדגלים שהשעון עשוי לתלות על רשומה, רק שניים שווים תג משלהם: תוקן
+ * (מנהל נגע בשעות) ו-ללא משמרת משובצת (חסר שיבוץ לצייד את הדוח מולו). השאר
+ * — אימות מיקום, דיוק, סגירה אוטומטית, דיווח עצמי — הם פרטי אבחון של השעון
+ * שלא עוזרים למי שקורא את הדוח, ו-'manual' עצמו מיותר כי מקור הרשומה כבר
+ * מסומן בתג נפרד ("ידני").
+ */
+const NOTABLE_FLAGS = new Set(['edited', 'no_shift'])
+
+export const visibleFlags = (flags: string[] | null | undefined) =>
+  (flags ?? []).filter((f) => NOTABLE_FLAGS.has(f))
+
+/**
  * מצב האישור. 'approved' אינו מקבל תווית: רשומה מאושרת היא המצב הרגיל,
  * ותג על כל שורה בדוח היה רעש שמסתיר את שתי השורות שבאמת דורשות מבט.
  */

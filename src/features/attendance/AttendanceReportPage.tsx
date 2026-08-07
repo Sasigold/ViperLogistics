@@ -49,6 +49,7 @@ import {
   flagLabel,
   fmtDuration,
   needsAttention,
+  visibleFlags,
 } from './shiftFormat'
 import type { AttendanceReportRow, AttendanceStatus } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
@@ -404,10 +405,13 @@ export function AttendanceReport({
         key: 'flags',
         header: 'הערות',
         render: (r) => (
-          <div className="flex flex-wrap gap-1">
-            {r.status !== 'approved' && <Badge tone={STATUS_TONES[r.status]}>{STATUS_LABELS[r.status]}</Badge>}
+          // flex-nowrap ולא flex-wrap: התא הוא table-fixed עם 'truncate' משלו,
+          // ולכן שורת תגים שעולה על רוחב העמודה נחתכת ולא יורדת שורה — עמודת
+          // ההערות לא הייתה אמורה לקבוע את גובה כל השורה בטבלה.
+          <div className="flex flex-nowrap items-center gap-1">
+            <Badge tone={STATUS_TONES[r.status]}>{STATUS_LABELS[r.status]}</Badge>
             {r.source === 'manual' && <Badge tone="warning">ידני</Badge>}
-            {r.flags.map((f) => (
+            {visibleFlags(r.flags).map((f) => (
               <Badge key={f} tone={needsAttention([f]) ? 'error' : 'neutral'}>
                 {flagLabel(f)}
               </Badge>

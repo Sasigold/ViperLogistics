@@ -23,6 +23,7 @@ import {
   fmtDistance,
   fmtDuration,
   flagLabel,
+  visibleFlags,
 } from './shiftFormat'
 import type { AttendanceReportRow } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
@@ -175,13 +176,11 @@ export function AttendanceEntryDrawer({
       >
         {row && (
           <div className="space-y-4">
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-nowrap items-center gap-1.5 overflow-hidden">
               <Badge tone={STATUS_TONES[row.status]}>{STATUS_LABELS[row.status]}</Badge>
-              <Badge tone={row.source === 'manual' ? 'warning' : 'neutral'}>
-                {row.source === 'manual' ? 'הוזן ידנית' : 'שעון'}
-              </Badge>
+              {row.source === 'manual' && <Badge tone="warning">ידני</Badge>}
               {row.work_site && <Badge tone="info">{WORK_SITE_LABELS[row.work_site]}</Badge>}
-              {row.flags.map((f) => (
+              {visibleFlags(row.flags).map((f) => (
                 <Badge key={f} tone="warning">
                   {flagLabel(f)}
                 </Badge>
