@@ -45,6 +45,7 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { useCustomerPricingRules, useTaskTypes } from '../../lib/queries'
 import { StickySaveBar } from '../contractors/ContractorDetailPage'
+import { PricingZonesEditor } from '../pricing/PricingZonesEditor'
 import {
   AFTER_KINDS,
   BOOLEAN_VARS,
@@ -189,15 +190,20 @@ export default function PricingTab({ customer }: { customer: Customer }) {
       ) : isLoading ? (
         <Skeleton className="h-96 w-full" />
       ) : (
-        ordered.map((type) => (
-          <RuleCard
-            key={type.id}
-            customerId={customer.id}
-            taskType={type}
-            rule={rules.find((r) => r.task_type_id === type.id) ?? null}
-            canEdit={canEdit}
-          />
-        ))
+        <>
+          {ordered.map((type) => (
+            <RuleCard
+              key={type.id}
+              customerId={customer.id}
+              taskType={type}
+              rule={rules.find((r) => r.task_type_id === type.id) ?? null}
+              canEdit={canEdit}
+            />
+          ))}
+          {/* זמן הנסיעה בנוסחה מגיע מכאן, ולכן המפה יושבת לצד המחשבון ולא
+              במסך נפרד שצריך לזכור שהוא קיים. */}
+          <PricingZonesEditor customerId={customer.id} />
+        </>
       )}
     </div>
   )

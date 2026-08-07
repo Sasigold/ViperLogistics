@@ -4,6 +4,7 @@ import {
   Boxes,
   ClipboardList,
   ICON,
+  Map,
   Plus,
   RotateCcw,
   STROKE,
@@ -41,6 +42,7 @@ import { fmtDateTime } from '../../lib/dates'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { RolesTab } from '../permissions/RolesTab'
+import { PricingZonesEditor } from '../pricing/PricingZonesEditor'
 
 /**
  * Each tab names the permission that governs it, so a coordinator who may edit
@@ -52,6 +54,7 @@ const TABS = [
   { key: 'execution_methods', label: 'אופני ביצוע', icon: <Boxes size={ICON.sm} />, perm: PERM.SETTINGS_EXECUTION_METHODS },
   { key: 'statuses', label: 'סטטוסים', icon: <Zap size={ICON.sm} />, perm: PERM.SETTINGS_STATUSES },
   { key: 'trucks', label: 'משאיות', icon: <Truck size={ICON.sm} />, perm: PERM.SETTINGS_TRUCKS },
+  { key: 'zones', label: 'אזורי נסיעה', icon: <Map size={ICON.sm} />, perm: PERM.PRICING_MANAGE_RULES },
   { key: 'roles', label: 'הרשאות ותפקידים', icon: <Shield size={ICON.sm} />, perm: PERM.SETTINGS_PERMISSIONS },
   { key: 'recycle', label: 'סל מיחזור', icon: <RotateCcw size={ICON.sm} />, perm: PERM.SETTINGS_RECYCLE_BIN },
 ] as const
@@ -73,6 +76,8 @@ export default function SettingsPage() {
         {active === 'execution_methods' && <MethodsTab />}
         {active === 'statuses' && <StatusesTab />}
         {active === 'trucks' && <TrucksTab />}
+        {/* customerId=null — האזורים שחלים על כל הלקוחות שאין להם אזור משלהם */}
+        {active === 'zones' && <PricingZonesEditor customerId={null} />}
         {active === 'roles' && <RolesTab />}
         {active === 'recycle' && <RecycleBinTab />}
       </div>

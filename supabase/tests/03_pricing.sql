@@ -369,3 +369,27 @@ select set_config('request.jwt.claim.sub', '', false);
 select t_eq('שני הסקשנים אכן נכתבו',
   (select count(*) from tasks t join events e on e.id = t.event_id
     where e.event_number = 'X-1' and t.worker_count > 0), 2::bigint);
+
+\echo '--- אזורי נסיעה ---'
+select t_eq('האזור נבחר לפי הנקודה',
+  (select name from app.zone_for_point(null, 32.08, 34.78)), 'גוש דן');
+select t_eq('נקודה מחוץ לכל אזור לא מחזירה כלום',
+  (select count(*) from (select (app.zone_for_point(null, 29.55, 34.95)).id) q where q.id is not null), 0::bigint);
+
+-- אזור פרטי ללקוח חייב לגבור על גלובלי, גם כשהגלובלי עדיף ב-priority
+insert into pricing_zones (customer_id, name, shape, points, travel_hours, priority) values
+  ('10000000-0000-0000-0000-0000000000b1', 'גוש דן — הסכם מיוחד', 'polygon',
+   '[[31.9,34.6],[32.3,34.6],[32.3,35.0],[31.9,35.0]]'::jsonb, 0.25, 900);
+
+select t_eq('אזור של הלקוח גובר על גלובלי גם עם priority גרוע יותר',
+  (select travel_hours from app.zone_for_point('10000000-0000-0000-0000-0000000000b1', 32.08, 34.78)),
+  0.25::numeric);
+select t_eq('ולקוח אחר ממשיך לקבל את הגלובלי',
+  (select travel_hours from app.zone_for_point('10000000-0000-0000-0000-0000000000b2', 32.08, 34.78)),
+  0.5::numeric);
+
+select t_expect_ok('מחיקת אזור מסמנת deleted_at',
+  $$update pricing_zones set deleted_at = now() where name = 'גוש דן — הסכם מיוחד'$$);
+select t_eq('ואחרי המחיקה חוזרים לאזור הגלובלי',
+  (select travel_hours from app.zone_for_point('10000000-0000-0000-0000-0000000000b1', 32.08, 34.78)),
+  0.5::numeric);
