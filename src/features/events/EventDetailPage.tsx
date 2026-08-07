@@ -469,9 +469,9 @@ export default function EventDetailPage() {
               <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
                 <span className="type-caption text-ink-tertiary">חלוקת משימות</span>
                 <div className="flex items-center gap-1.5 mt-1">
-                  <Badge tone="info" size="xs">הקמה {taskStats.setupCount}</Badge>
-                  <Badge tone="warning" size="xs">פירוק {taskStats.teardownCount}</Badge>
-                  {taskStats.otherCount > 0 && <Badge size="xs">אחר {taskStats.otherCount}</Badge>}
+                  <Badge tone="info">הקמה {taskStats.setupCount}</Badge>
+                  <Badge tone="warning">פירוק {taskStats.teardownCount}</Badge>
+                  {taskStats.otherCount > 0 && <Badge>אחר {taskStats.otherCount}</Badge>}
                 </div>
               </div>
 
@@ -631,11 +631,11 @@ export default function EventDetailPage() {
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-1.5">
                                 {t.task_type_code === 'setup' ? (
-                                  <Badge tone="info" size="xs">הקמה</Badge>
+                                  <Badge tone="info">הקמה</Badge>
                                 ) : t.task_type_code === 'teardown' ? (
-                                  <Badge tone="warning" size="xs">פירוק</Badge>
+                                  <Badge tone="warning">פירוק</Badge>
                                 ) : (
-                                  <Badge tone="neutral" size="xs">משימה</Badge>
+                                  <Badge tone="neutral">משימה</Badge>
                                 )}
                                 <StatusPill color={t.status_color}>{t.status_name}</StatusPill>
                               </div>
