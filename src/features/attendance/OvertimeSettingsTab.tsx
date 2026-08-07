@@ -19,6 +19,7 @@ import { supabase } from '../../lib/supabase'
 import { fmtMoney } from '../../lib/dates'
 import { useClockConfig, useOvertimeConfig, useSaveAppSetting } from './attendanceQueries'
 import { fmtDuration } from './shiftFormat'
+import { WarehousesCard } from './WarehousesCard'
 import type { ClockConfig, OvertimeConfig, OvertimeTier, PayBreakdown } from '../../types/domain'
 
 const DOW = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
@@ -293,34 +294,12 @@ export function OvertimeSettingsTab() {
             </Field>
           </div>
 
-          {/* משמרת שמתחילה במחסן נמדדת מול הנקודה הזו ולא מול כתובת האירוע.
-              בלי קואורדינטות ההחתמה תתקבל ותסומן "לא אומת מיקום". */}
-          <div className="grid gap-4 rounded-lg border border-line-subtle bg-subtle/40 p-3 sm:grid-cols-2">
-            <Field label="קו רוחב של המחסן" hint="נקודת הייחוס למשמרת שמתחילה במחסן">
-              <Input
-                type="number"
-                dir="ltr"
-                step="any"
-                value={ck.warehouse?.lat ?? ''}
-                onChange={(e) =>
-                  patchCk({ warehouse: { ...ck.warehouse, lat: e.target.value ? Number(e.target.value) : null } })
-                }
-              />
-            </Field>
-            <Field label="קו אורך של המחסן">
-              <Input
-                type="number"
-                dir="ltr"
-                step="any"
-                value={ck.warehouse?.lng ?? ''}
-                onChange={(e) =>
-                  patchCk({ warehouse: { ...ck.warehouse, lng: e.target.value ? Number(e.target.value) : null } })
-                }
-              />
-            </Field>
-          </div>
         </CardBody>
       </Card>
+
+      {/* המחסנים הם ישות משלהם: משמרת שמתחילה במחסן נמדדת מול המחסן שהמשימה
+          נוקבת בו, ואם לא נקבה — מול הקרוב ביותר לעובד. */}
+      <WarehousesCard />
 
       <div className="flex justify-end">
         <Button

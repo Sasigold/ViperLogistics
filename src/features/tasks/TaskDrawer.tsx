@@ -44,6 +44,7 @@ import {
   useTrucks,
 } from '../../lib/queries'
 import { Breakdown } from '../customers/PricingTab'
+import { useWarehouses } from '../attendance/attendanceQueries'
 import type { PriceBreakdown, StaffRole, TaskPricing, TaskRow, WorkSite } from '../../types/domain'
 
 interface Assignment {
@@ -104,6 +105,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   const { data: trucks = [] } = useTrucks()
   const { data: contractors = [] } = useContractors()
   const { data: staff = [] } = useStaff()
+  const { data: warehouses = [] } = useWarehouses()
 
   const { data: existing, isLoading } = useQuery({
     queryKey: ['tasks', 'one', taskId],
@@ -173,6 +175,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
         status_id: form.status_id || statuses.find((s) => s.is_default)?.id,
         contractor_id: form.contractor_id || null,
         location_text: form.location_text || null,
+        warehouse_id: form.warehouse_id || null,
         ...(canEditCustomerPrice
           ? { travel_hours: form.travel_hours ?? null, requires_team_lead: form.requires_team_lead ?? null }
           : {}),
@@ -557,6 +560,28 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                 ב"תחילה בשטח". בלי שעת מחסן על המשימה אין להבחנה משמעות,
                 ולכן הפאנל מוסתר.
               */}
+              {form.warehouse_start_time && (
+                <Field
+                  label="מחסן יציאה"
+                  hint="מולו נמדדת ההחתמה של מי שמתחיל במחסן. ריק = לפי המחסן הקרוב ביותר"
+                >
+                  <Select
+                    value={form.warehouse_id ?? ''}
+                    onChange={(e) => set({ warehouse_id: e.target.value || null })}
+                    disabled={!canChangeLocation}
+                  >
+                    <option value="">לפי המחסן הקרוב ביותר</option>
+                    {warehouses
+                      .filter((w) => w.is_active || w.id === form.warehouse_id)
+                      .map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name}
+                        </option>
+                      ))}
+                  </Select>
+                </Field>
+              )}
+
               {form.warehouse_start_time && assignments.length > 0 && (
                 <div className="space-y-2 rounded-lg border border-line-subtle bg-subtle/50 p-3">
                   <p className="type-overline">נקודת התחלה</p>

@@ -271,15 +271,20 @@ select set_config('request.jwt.claim.sub', '', false);
 -- מעכשיו: מיקום נדרש ברדיוס 300 מ׳, ואסור להתחיל לפני המשימה.
 --
 -- המשמרת הראשונה של העובד מתחילה במחסן, ולכן נקודת הייחוס שלה היא המחסן
--- ולא האירוע. בלי להגדיר לו קואורדינטות כל בדיקת מרחק כאן הייתה מדלגת על
--- עצמה ומחזירה "מתקבל" — וזה בדיוק מה שהבדיקות האלה אמורות לתפוס.
+-- ולא האירוע. בלי מחסן מוגדר כל בדיקת מרחק כאן הייתה מדלגת על עצמה
+-- ומחזירה "מתקבל" — וזה בדיוק מה שהבדיקות האלה אמורות לתפוס.
+--
+-- שני מחסנים, כדי שהבחירה ביניהם תהיה שאלה אמיתית ולא ברירת מחדל.
+insert into warehouses (id, name, lat, lng) values
+  ('70000000-0000-0000-0000-000000000001', 'מחסן תל אביב', 32.0853, 34.7818),
+  ('70000000-0000-0000-0000-000000000002', 'מחסן ירושלים', 31.7683, 35.2137);
+
 update worker_pay_settings
    set requires_location = true, location_radius_m = 300, allow_early_clock_in = false
  where profile_id = '20000000-0000-0000-0000-0000000000f3';
-update app_settings
-   set value = jsonb_set(value, '{warehouse}',
-                         '{"lat":32.0853,"lng":34.7818,"label":"המחסן"}'::jsonb)
- where key = 'attendance.clock';
+-- המשימה נוקבת במחסן תל אביב במפורש
+update tasks set warehouse_id = '70000000-0000-0000-0000-000000000001'
+ where id = '60000000-0000-0000-0000-00000000a001';
 delete from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3';
 
 set role authenticated;
@@ -307,26 +312,67 @@ reset role;
 select set_config('request.jwt.claim.sub', '', false);
 delete from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3';
 
--- משמרת שמתחילה במחסן נמדדת מול המחסן ולא מול האירוע: העובד עומד ליד
--- כתובת האירוע, וזה עדיין רחוק מדי כי הוא אמור להיות במחסן.
-update app_settings
-   set value = jsonb_set(value, '{warehouse}',
-                         '{"lat":31.7683,"lng":35.2137,"label":"המחסן"}'::jsonb)
- where key = 'attendance.clock';
+-- המשימה עוברת למחסן ירושלים. העובד עומד בדיוק בכתובת האירוע בתל אביב,
+-- וזה עדיין נדחה — כי הוא אמור לצאת מהמחסן שהמשימה נוקבת בו.
+update tasks set warehouse_id = '70000000-0000-0000-0000-000000000002'
+ where id = '60000000-0000-0000-0000-00000000a001';
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
-select t_expect_fail('מי שמתחיל במחסן נמדד מול המחסן, לא מול האירוע',
+select t_expect_fail('מי שמתחיל במחסן נמדד מול המחסן שהמשימה נוקבת בו',
   $$select t_clock_in(32.0853, 34.7818, 10)$$);
+select t_expect_ok('ומתקבל כשהוא באמת ליד אותו מחסן',
+  $$select t_clock_in(31.7683, 35.2137, 10)$$);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
--- לא לאירוע ולא למחסן יש קואורדינטות: אי אפשר לאמת, ולכן מתקבל ומסומן
+select t_eq('המשמרת נושאת את שם המחסן שנקבע לה',
+  (select warehouse_name from app.planned_shifts('20000000-0000-0000-0000-0000000000f3',
+     current_date, current_date) order by shift_start limit 1),
+  'מחסן ירושלים');
+
+delete from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3';
+
+-- משימה שלא נקבה במחסן: נמדדים מול הקרוב ביותר, ועדיין חייבים להיות בתוך
+-- הרדיוס של מחסן אמיתי.
+update tasks set warehouse_id = null where id = '60000000-0000-0000-0000-00000000a001';
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+select t_expect_ok('בלי מחסן על המשימה, המחסן הקרוב ביותר הוא נקודת הייחוס',
+  $$select t_clock_in(32.0862, 34.7818, 15)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+delete from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3';
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+select t_expect_fail('אבל עמידה רחוק מכל המחסנים עדיין נדחית',
+  $$select t_clock_in(29.5581, 34.9482, 10)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- רדיוס פר-מחסן גובר על הגלובלי
+update warehouses set radius_m = 20000 where id = '70000000-0000-0000-0000-000000000001';
+update worker_pay_settings set location_radius_m = null
+ where profile_id = '20000000-0000-0000-0000-0000000000f3';
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+select t_expect_ok('רדיוס רחב שהוגדר על המחסן מתיר החתמה רחוקה יותר',
+  $$select t_clock_in(32.1800, 34.8700, 20)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+update warehouses set radius_m = null where id = '70000000-0000-0000-0000-000000000001';
+update worker_pay_settings set location_radius_m = 300
+ where profile_id = '20000000-0000-0000-0000-0000000000f3';
+delete from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3';
+
+-- לא לאירוע ולא לשום מחסן יש קואורדינטות: אי אפשר לאמת, ולכן מתקבל ומסומן
 update events set location_lat = null, location_lng = null
  where id = '30000000-0000-0000-0000-00000000a001';
-update app_settings
-   set value = jsonb_set(value, '{warehouse}', '{"lat":null,"lng":null}'::jsonb)
- where key = 'attendance.clock';
+update warehouses set lat = null, lng = null;
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
@@ -341,6 +387,10 @@ select t_eq('וההחתמה מסומנת כלא ניתנת לאימות',
 
 update events set location_lat = 32.0853, location_lng = 34.7818
  where id = '30000000-0000-0000-0000-00000000a001';
+update warehouses set lat = 32.0853, lng = 34.7818
+ where id = '70000000-0000-0000-0000-000000000001';
+update warehouses set lat = 31.7683, lng = 35.2137
+ where id = '70000000-0000-0000-0000-000000000002';
 delete from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3';
 
 \echo '--- השעון: התחלה מוקדמת ---'

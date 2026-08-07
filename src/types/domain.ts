@@ -199,6 +199,8 @@ export interface TaskRow {
   travel_hours: number | null
   /** דריסה של "נדרש ראש צוות". null = לפי הקבוע במחשבון. */
   requires_team_lead: boolean | null
+  /** מאיזה מחסן יוצאים. null = לפי המחסן הקרוב ביותר בעת ההחתמה. */
+  warehouse_id: string | null
   updated_at: string
   deleted_at: string | null
 }
@@ -631,6 +633,20 @@ export interface SearchResult {
 /** מהיכן העובד מתחיל את המשמרת. */
 export type WorkSite = 'field' | 'warehouse'
 
+export interface Warehouse {
+  id: string
+  name: string
+  address: string | null
+  lat: number | null
+  lng: number | null
+  /** null = לפי הרדיוס הגלובלי */
+  radius_m: number | null
+  color: string
+  notes: string | null
+  is_active: boolean
+  sort_order: number
+}
+
 /** משמרת נגזרת — מיוצרת ב-app.planned_shifts ולא נשמרת בשום טבלה. */
 export interface PlannedShift {
   profile_id: string
@@ -651,6 +667,9 @@ export interface PlannedShift {
   label: string | null
   customer_id: string | null
   customer_color: string | null
+  /** המחסן שממנו יוצאים, כשהמשמרת מתחילה במחסן ומישהו נקב בו */
+  warehouse_id: string | null
+  warehouse_name: string | null
 }
 
 /** שורת חישוב אחת בפירוט השכר. */
@@ -786,7 +805,6 @@ export interface ClockConfig {
   allow_clock_without_shift: boolean
   max_accuracy_m: number
   auto_close_after_hours: number
-  warehouse: { lat: number | null; lng: number | null; label?: string }
 }
 
 /** מה שדף השעון צריך כדי לצייר את עצמו, מ-attendance_my_status. */

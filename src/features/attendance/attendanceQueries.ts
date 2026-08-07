@@ -16,6 +16,7 @@ import type {
   ClockStatus,
   OvertimeConfig,
   PlannedShift,
+  Warehouse,
   WorkerPaySettings,
 } from '../../types/domain'
 
@@ -33,6 +34,20 @@ export function useAppSetting<T>(key: string) {
 
 export function useOvertimeConfig() {
   return useAppSetting<OvertimeConfig>('attendance.overtime')
+}
+
+/** קריאה פתוחה לכל מאומת: הדפדפן צריך את זה כדי לדעת מול מה הוא נמדד. */
+export function useWarehouses(activeOnly = false) {
+  return useQuery({
+    queryKey: ['warehouses', activeOnly],
+    queryFn: async () => {
+      let q = supabase.from('warehouses').select('*').is('deleted_at', null)
+      if (activeOnly) q = q.eq('is_active', true)
+      const { data, error } = await q.order('sort_order').order('name')
+      if (error) throw error
+      return data as Warehouse[]
+    },
+  })
 }
 
 export function useClockConfig() {

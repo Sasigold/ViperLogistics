@@ -128,7 +128,9 @@ function TimeClock() {
                 <CalendarClock size={ICON.md} strokeWidth={STROKE} className="text-ink-tertiary" />
                 <span className="type-title">{fmtShiftRange(shift.shift_start, shift.shift_end)}</span>
                 <Badge tone={shift.work_site === 'warehouse' ? 'info' : 'neutral'}>
-                  {WORK_SITE_LABELS[shift.work_site]}
+                  {shift.work_site === 'warehouse' && shift.warehouse_name
+                    ? shift.warehouse_name
+                    : WORK_SITE_LABELS[shift.work_site]}
                 </Badge>
                 {shift.planned_hours != null && (
                   <span className="type-caption text-ink-tertiary">
@@ -162,7 +164,11 @@ function TimeClock() {
             <p className="flex items-center gap-1.5 type-caption text-ink-tertiary">
               <MapPin size={ICON.sm} strokeWidth={STROKE} />
               נדרש שיתוף מיקום כדי להחתים. ההחתמה תידחה מחוץ לטווח של{' '}
-              {fmtDistance(rules?.location_radius_m)}.
+              {fmtDistance(rules?.location_radius_m)}
+              {shift?.work_site === 'warehouse'
+                ? ` מ${shift.warehouse_name ?? 'המחסן הקרוב'}`
+                : ' מהאתר'}
+              .
             </p>
           )}
 
