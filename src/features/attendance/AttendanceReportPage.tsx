@@ -88,6 +88,26 @@ function fmtDurationHHMM(hours: number | null | undefined, padHour = true): stri
   return `${hh}:${mm}`
 }
 
+/**
+ * שורה ברשימת הכרטיסים: או משמרת אחת, או יום שאין בו משמרת בכלל. `row` הוא
+ * מה שמבדיל ביניהם — יש רשומה לפתוח, או שאין.
+ */
+interface ShiftRowView {
+  key: string
+  formattedDate: string
+  hebrewDayLetter: string
+  /** "משמרת 2" — רק ביום שיש בו יותר מאחת */
+  shiftLabel: string | null
+  employeeName: string | null
+  shiftTime: string
+  location: string | null
+  hoursText: string
+  overtimeText: string | null
+  status: 'completed' | 'pending' | 'rejected' | 'absence' | 'rest'
+  row: AttendanceReportRow | null
+  hours: number
+}
+
 export default function AttendanceReportPage() {
   return (
     <RequirePermission perm={PERM.ATTENDANCE_VIEW_OWN}>
@@ -209,11 +229,11 @@ export function AttendanceReport({
    * `seq` הוא המספור של השרת בתוך היום, ולכן גם סדר התצוגה וגם התווית.
    * ימים בלי משמרת ממשיכים לתפוס שורה, כדי שהחודש יישאר רציף.
    */
-  const shiftRows = useMemo(() => {
+  const shiftRows = useMemo<ShiftRowView[]>(() => {
     const start = startOfMonth(monthDate)
     const end = endOfMonth(monthDate)
 
-    return eachDayOfInterval({ start, end }).flatMap((day) => {
+    return eachDayOfInterval({ start, end }).flatMap<ShiftRowView>((day) => {
       const dateStr = toISODate(day)
       const dayOfWeek = day.getDay()
       const formattedDate = format(day, 'dd.MM.yy')
@@ -636,7 +656,7 @@ export function AttendanceReport({
           {/* שורה למשמרת ולא ליום: יום עם כמה משמרות מופיע כמה פעמים, כל אחת
               עם השעות והסטטוס שלה, וקליק שפותח אותה ולא את הראשונה */}
           {shiftRows.map((d) => {
-            const isCompleted = d.status === 'completed' || d.status === 'approved'
+            const isCompleted = d.status === 'completed'
             const isAbsence = d.status === 'absence'
             const isPending = d.status === 'pending'
             const isRest = d.status === 'rest'
