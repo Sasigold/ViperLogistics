@@ -17,6 +17,8 @@ import type {
   ClockStatus,
   OvertimeConfig,
   PlannedShift,
+  ShiftBreakdown,
+  ShiftRosterEntry,
   Warehouse,
   WorkerPaySettings,
 } from '../../types/domain'
@@ -106,6 +108,74 @@ export function useEmployeeShifts(profileId: string | null, from: string, to: st
       })
       if (error) throw error
       return (data ?? []) as PlannedShift[]
+    },
+  })
+}
+
+/**
+ * הרוסטר של לוח המשמרות: מי בכלל אמור להופיע בו, בטווח מסוים.
+ *
+ * RPC ולא שאילתה על profiles, כי profiles_select נותן לעובד צוות לקרוא רק
+ * שורות user_kind='staff' — ועובד קבלן שקיבל התחברות אינו שם. לוח שנבנה
+ * מקריאה ישירה היה מציג "את כולם" בלי חצי מהם.
+ *
+ * הטווח משפיע: עובד שהושבת נכלל רק אם יש לו שיבוץ בתוכו.
+ */
+export function useShiftRoster(from: string, to: string, enabled = true) {
+  return useQuery({
+    queryKey: ['attendance', 'roster', from, to],
+    enabled: enabled && !!from && !!to,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('shift_roster', { p_from: from, p_to: to })
+      if (error) throw error
+      return (data ?? []) as ShiftRosterEntry[]
+    },
+  })
+}
+
+/**
+ * המשמרות של כל הצוות בטווח. p_profile_ids הוא חיתוך עם מה שמותר לקורא
+ * לראות ולעולם לא הרחבה שלו — השרת מצמצם בשקט, ולכן אין כאן טיפול בשגיאה
+ * של "ביקשת עובד שאסור לך".
+ */
+export function useTeamShifts(from: string, to: string, profileIds?: string[] | null) {
+  const has = useAuth((s) => s.has)
+  return useQuery({
+    queryKey: ['attendance', 'team_shifts', from, to, profileIds ?? null],
+    enabled: has(PERM.ATTENDANCE_VIEW_ALL) && !!from && !!to,
+    // דפדוף בין שבועות משאיר את הלוח הקודם על המסך במקום לרוקן אותו
+    placeholderData: (prev) => prev,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('team_shifts', {
+        p_from: from,
+        p_to: to,
+        p_profile_ids: profileIds?.length ? profileIds : null,
+      })
+      if (error) throw error
+      return (data ?? []) as PlannedShift[]
+    },
+  })
+}
+
+/**
+ * מאיזה משימות מורכבת המשמרת. המזהים מגיעים מהשורה שנלחצה ולא מחושבים
+ * מחדש: seq של משמרת תלוי בטווח שגזר אותו, ולכן גזירה חוזרת עלולה לתאר
+ * בשקט משמרת אחרת. השרת מוודא שכל מזהה באמת משובץ לאדם הזה.
+ */
+export function useShiftTasks(profileId: string | null, taskIds: string[] | null) {
+  const key = taskIds?.length ? [...taskIds].sort().join(',') : null
+  return useQuery({
+    queryKey: ['attendance', 'shift_tasks', profileId, key],
+    enabled: !!profileId && !!key,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('shift_task_breakdown', {
+        p_profile_id: profileId,
+        p_task_ids: taskIds,
+      })
+      if (error) throw error
+      return data as ShiftBreakdown
     },
   })
 }

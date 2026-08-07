@@ -3,6 +3,7 @@ import {
   Building2,
   Calendar,
   CalendarClock,
+  CalendarDays,
   ClipboardList,
   Clock,
   FileText,
@@ -83,6 +84,10 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/customers', label: 'לקוחות', icon: Building2, perm: PERM.CUSTOMERS_VIEW },
       { to: '/users', label: 'עובדים', icon: Users, perm: PERM.USERS_VIEW },
       { to: '/contractors', label: 'קבלנים', icon: HardHat, perm: PERM.CONTRACTORS_VIEW },
+      /* shortLabel 'שיבוץ' ולא 'משמרות': מי שרואה את הרשומה הזאת רואה במקביל
+         גם את "לוח המשמרות שלי" שלמעלה, ושתי רשומות באותו שם הן שתי רשומות
+         שאי אפשר לבחור ביניהן. */
+      { to: '/shifts', label: 'לוח משמרות צוות', shortLabel: 'שיבוץ', icon: CalendarDays, perm: PERM.ATTENDANCE_VIEW_ALL },
       { to: '/attendance', label: 'דוח נוכחות', shortLabel: 'נוכחות', icon: Clock, perm: PERM.ATTENDANCE_VIEW_ALL },
     ],
   },
@@ -135,6 +140,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/users': 'עובדים',
   '/contractors': 'קבלנים',
   '/attendance': 'דוח נוכחות',
+  '/shifts': 'לוח משמרות צוות',
   '/my/schedule': 'לוח המשמרות שלי',
   '/my/attendance': 'שעון נוכחות',
   '/my/notifications': 'התראות',

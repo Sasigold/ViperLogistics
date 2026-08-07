@@ -703,6 +703,83 @@ export interface PlannedShift {
 }
 
 /**
+ * שורה ברוסטר של לוח המשמרות, מ-shift_roster.
+ *
+ * מגיעה מ-RPC ולא מ-profiles כי profiles_select מראה לעובד צוות רק שורות
+ * user_kind='staff' — עובד קבלן שקיבל התחברות פשוט אינו שם.
+ */
+export interface ShiftRosterEntry {
+  id: string
+  full_name: string
+  contractor_id: string | null
+  contractor_name: string | null
+  is_contractor: boolean
+  /** עובד שהושבת מופיע רק אם יש לו שיבוץ בטווח המוצג */
+  is_active: boolean
+}
+
+/** משימה אחת בתוך משמרת, מ-shift_task_breakdown. */
+export interface ShiftTaskRow {
+  task_id: string
+  /** מיקומה בסדר הזמנים של המשמרת, החל מ-1 */
+  ord: number
+  title: string
+  task_type_name: string
+  task_type_code: string | null
+  customer_id: string | null
+  customer_name: string | null
+  customer_color: string | null
+  event_id: string | null
+  event_number: string | null
+  end_client_name: string | null
+  location_text: string | null
+  location_lat: number | null
+  location_lng: number | null
+  work_site: WorkSite
+  warehouse_id: string | null
+  warehouse_name: string | null
+  start_at: string
+  onsite_start_at: string
+  end_at: string
+  hours_count: number | null
+  travel_hours: number | null
+  /** דקות מסיום המשימה הקודמת. null בראשונה שבמשמרת. */
+  gap_minutes: number | null
+  status_name: string | null
+  status_color: string | null
+  truck_name: string | null
+  execution_method_name: string | null
+  /** null לעובד קבלן, שאין לו שורת task_assignments ולכן אין לו תפקיד */
+  my_role: StaffRole | null
+  worker_count: number | null
+  assigned_count: number
+  /** null למי שאין לו board.view_staffing */
+  team: string[] | null
+  notes: string | null
+}
+
+/** הפירוק המלא של משמרת אחת למשימות שמרכיבות אותה. */
+export interface ShiftBreakdown {
+  profile_id: string
+  full_name: string | null
+  tasks: ShiftTaskRow[]
+  totals: {
+    tasks: number
+    work_hours: number
+    /** הנסיעה של המשימה האחרונה בלבד — כמו בגזירה עצמה, ולא סכום */
+    travel_hours: number
+    idle_minutes: number
+  }
+  /** מחושב מחדש מהמשימות, ולא מהשורה שממנה נפתחה המגירה */
+  shift: {
+    start: string | null
+    end: string | null
+    work_site: WorkSite | null
+    warehouse_name: string | null
+  }
+}
+
+/**
  * שורת חישוב אחת בפירוט השכר.
  *
  * `hours` ו-`rate` הם null בשורה שאינה מכפלה — הבונוס למשמרת הוא סכום קבוע,

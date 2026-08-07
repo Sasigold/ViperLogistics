@@ -30,6 +30,7 @@ const SettingsPage = lazy(() => import('../features/settings/SettingsPage'))
 const TimeClockPage = lazy(() => import('../features/attendance/TimeClockPage'))
 const MySchedulePage = lazy(() => import('../features/attendance/MySchedulePage'))
 const AttendanceReportPage = lazy(() => import('../features/attendance/AttendanceReportPage'))
+const ShiftBoardPage = lazy(() => import('../features/attendance/ShiftBoardPage'))
 const NotificationPreferencesPage = lazy(() => import('../features/notifications/NotificationPreferencesPage'))
 
 /** Shaped like a real screen so the chunk swap doesn't flash an empty page. */
@@ -108,6 +109,13 @@ export const router = createBrowserRouter([
             path: '/contractors/:id',
             handle: { perm: PERM.CONTRACTORS_VIEW },
             element: page(<ContractorDetailPage />),
+          },
+          /* לוח השיבוץ של כל הצוות. view_all ולא view_own: בשונה מהדוח, כאן
+             אין גרסה מצומצמת שמראה לך את עצמך — לזה יש את /my/schedule. */
+          {
+            path: '/shifts',
+            handle: { perm: PERM.ATTENDANCE_VIEW_ALL },
+            element: page(<ShiftBoardPage />),
           },
           /* view_own, not view_all: the report widens from "my hours" to "the
              roster's" on the key, so it has always served both. The sidebar

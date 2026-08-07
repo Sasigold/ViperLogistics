@@ -33,11 +33,13 @@ import { useContractors, useCustomers } from '../../lib/queries'
 import { RequirePermission } from '../auth/guards'
 import { UserPermissionsTab } from '../permissions/UserPermissionsTab'
 import { EmployeeWorkSettingsCard } from '../attendance/EmployeeWorkSettingsCard'
+import { ASSIGNMENT_ROLE_LABELS } from '../attendance/shiftFormat'
 import type { Profile, StaffRole, UserKind } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
 const kindLabels: Record<UserKind, string> = { staff: 'צוות', customer_user: 'לקוח', contractor_user: 'קבלן' }
-const roleLabels: Record<StaffRole, string> = { worker: 'עובד', driver: 'נהג', team_lead: 'ראש צוות' }
+/** מוגדר ב-shiftFormat, כדי שמסך העובדים ופירוק המשמרת יקראו לתפקיד אותו דבר. */
+const roleLabels = ASSIGNMENT_ROLE_LABELS
 
 
 export default function UsersPage() {
