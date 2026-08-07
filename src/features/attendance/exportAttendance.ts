@@ -41,7 +41,7 @@ export interface SheetPlan {
   footer: { values: Record<string, string | number>; style: 'bold' | 'italic' }[]
 }
 
-const MONEY_KEYS = ['hourly_rate', 'total'] as const
+const MONEY_KEYS = ['hourly_rate', 'bonus', 'total'] as const
 
 export function buildAttendanceSheet(report: AttendanceReport): SheetPlan {
   const withPay = report.can_see_pay
@@ -59,6 +59,9 @@ export function buildAttendanceSheet(report: AttendanceReport): SheetPlan {
     ...(withPay
       ? [
           { header: 'תעריף', key: 'hourly_rate', width: 10 },
+          // עמודה משלו ולא רק בלוע ב"לתשלום": הנהלת חשבונות צריכה לדעת כמה
+          // מהסכום אינו שעות.
+          { header: 'בונוס', key: 'bonus', width: 10 },
           { header: 'לתשלום', key: 'total', width: 12 },
         ]
       : []),
@@ -90,6 +93,9 @@ export function buildAttendanceSheet(report: AttendanceReport): SheetPlan {
     }
     if (withPay) {
       row.hourly_rate = r.pay?.hourly_rate ?? ''
+      // אפס נכתב ריק ולא כ-0: עמודה מלאה באפסים קוראת כמו נתון, ובונוס הוא
+      // החריג ולא הכלל.
+      row.bonus = r.pay?.bonus || ''
       row.total = r.pay?.total ?? ''
     }
     return row
@@ -104,7 +110,10 @@ export function buildAttendanceSheet(report: AttendanceReport): SheetPlan {
     paid_hours: t.paid_hours,
     overtime_hours: t.overtime_hours,
   }
-  if (withPay) totals.total = t.total ?? ''
+  if (withPay) {
+    totals.bonus = t.bonus ?? ''
+    totals.total = t.total ?? ''
+  }
 
   const footer: SheetPlan['footer'] = [{ values: totals, style: 'bold' }]
   if (t.pending > 0) {

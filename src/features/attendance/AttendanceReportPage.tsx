@@ -1,21 +1,22 @@
 import { useMemo, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import {
+  Banknote,
   Briefcase,
   CalendarCheck,
-  ChevronDown,
-  Download,
   ChevronLeft,
   ChevronRight,
   Clock,
+  Download,
   ICON,
+  LayoutGrid,
+  List,
   MapPin,
   Plus,
   PlusCircle,
-  SlidersHorizontal,
   STROKE,
-  LayoutGrid,
-  List,
+  SlidersHorizontal,
+  Wallet,
 } from '../../components/ui/icons'
 import {
   Badge,
@@ -23,12 +24,18 @@ import {
   Card,
   Checkbox,
   DataTable,
+  EmptyState,
+  ErrorState,
   Field,
+  IconButton,
   Input,
   Modal,
   MultiSelect,
   PageHeader,
   Select,
+  SegmentedControl,
+  SkeletonList,
+  StatCard,
   cx,
   useToast,
 } from '../../components/ui'
@@ -89,6 +96,36 @@ function fmtDurationHHMM(hours: number | null | undefined, padHour = true): stri
   return `${hh}:${mm}`
 }
 
+type ShiftStatus = 'completed' | 'pending' | 'rejected' | 'absence' | 'rest'
+
+/**
+ * טונים לנקודת הסטטוס ולתג שלידה. אחד לכל מצב, במקום אחד, כדי שהכרטיס
+ * והתג לא יוכלו לצבוע את אותה שורה בשני צבעים.
+ */
+const SHIFT_STATUS: Record<ShiftStatus, { label: string | null; dot: string; pill: string }> = {
+  completed: {
+    label: 'הושלם',
+    dot: 'bg-success',
+    pill: 'border-success-border bg-success-subtle text-success-text',
+  },
+  pending: {
+    label: 'ממתין',
+    dot: 'bg-warning',
+    pill: 'border-warning-border bg-warning-subtle text-warning-text',
+  },
+  rejected: {
+    label: 'נדחה',
+    dot: 'bg-error',
+    pill: 'border-error-border bg-error-subtle text-error-text',
+  },
+  absence: {
+    label: 'היעדרות',
+    dot: 'bg-error',
+    pill: 'border-error-border bg-error-subtle text-error-text',
+  },
+  rest: { label: null, dot: 'bg-line-strong', pill: '' },
+}
+
 /**
  * שורה ברשימת הכרטיסים: או משמרת אחת, או יום שאין בו משמרת בכלל. `row` הוא
  * מה שמבדיל ביניהם — יש רשומה לפתוח, או שאין.
@@ -104,9 +141,22 @@ interface ShiftRowView {
   location: string | null
   hoursText: string
   overtimeText: string | null
-  status: 'completed' | 'pending' | 'rejected' | 'absence' | 'rest'
+  /** הבונוס על המשמרת, או null כשאין או כשאין הרשאה לראות סכומים */
+  bonus: number | null
+  status: ShiftStatus
   row: AttendanceReportRow | null
   hours: number
+}
+
+/** סיכום של עובד אחד בתוך דוח שיש בו כמה. */
+interface EmployeeGroup {
+  profileId: string
+  name: string
+  hours: number
+  overtime: number
+  bonus: number
+  total: number | null
+  shifts: ShiftRowView[]
 }
 
 export default function AttendanceReportPage() {
@@ -118,7 +168,7 @@ export default function AttendanceReportPage() {
 }
 
 /**
- * דוח נוכחות עובדים - מעוצב מחדש לפי העיצוב המבוקש
+ * דוח נוכחות עובדים.
  */
 export function AttendanceReport({
   embedded,
@@ -136,15 +186,15 @@ export function AttendanceReport({
   const canEdit = has(PERM.ATTENDANCE_EDIT_ENTRY)
   const canAdd = has(PERM.ATTENDANCE_MANUAL_ENTRY)
   const canApprove = has(PERM.ATTENDANCE_APPROVE_ENTRY)
+  const canBonus = has(PERM.ATTENDANCE_MANAGE_BONUS)
+  const canOpenRow = canEdit || canApprove || canBonus
 
   const toast = useToast()
 
-  // Month navigation state
   const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()))
   const [showFilters, setShowFilters] = useState(false)
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards')
 
-  // Date range derived from month
   const from = useMemo(() => toISODate(startOfMonth(monthDate)), [monthDate])
   const to = useMemo(() => toISODate(endOfMonth(monthDate)), [monthDate])
 
@@ -162,7 +212,10 @@ export function AttendanceReport({
   const { data: contractors = [] } = useContractors(canSeeAll)
   const { data: contractorStaff = [] } = useContractorStaff()
   const employeeOptions = useMemo(
-    () => (canSeeAll ? staff.map((p) => ({ id: p.id, label: p.full_name })) : contractorStaff.map((p) => ({ id: p.id, label: p.full_name }))),
+    () =>
+      canSeeAll
+        ? staff.map((p) => ({ id: p.id, label: p.full_name }))
+        : contractorStaff.map((p) => ({ id: p.id, label: p.full_name })),
     [canSeeAll, staff, contractorStaff],
   )
 
@@ -209,6 +262,12 @@ export function AttendanceReport({
    */
   const showOvertime = useMemo(() => rows.some((r) => r.overtime_enabled !== false), [rows])
 
+  /**
+   * אותו כלל בדיוק על הבונוסים: מי שלא נתן בונוס החודש אינו מקבל אריח
+   * ועמודה שכתוב בהם ₪0. `pay.bonus` מגיע רק למי שרשאי לראות סכומים.
+   */
+  const showBonus = useMemo(() => rows.some((r) => (r.pay?.bonus ?? 0) > 0), [rows])
+
   const handlePrevMonth = () => setMonthDate((d) => subMonths(d, 1))
   const handleNextMonth = () => setMonthDate((d) => addMonths(d, 1))
 
@@ -219,16 +278,50 @@ export function AttendanceReport({
   const todayISO = useMemo(() => toISODate(new Date()), [])
 
   /**
+   * דוח של אדם אחד: או שהמשתמש רואה רק את עצמו, או שהוא סינן לעובד יחיד,
+   * או שבפועל חזר עובד אחד בלבד. זו ההבחנה שקובעת גם את ימי ההיעדרות
+   * וגם את הקיבוץ למטה.
+   */
+  const singleEmployee = useMemo(
+    () => new Set(rows.map((r) => r.profile_id)).size <= 1 && (!showEmployeeFilter || profileIds.length <= 1),
+    [rows, showEmployeeFilter, profileIds],
+  )
+
+  const toShiftView = (r: AttendanceReportRow, sameDayCount: number, day: Date): ShiftRowView => {
+    const clockIn = new Date(r.clock_in_at)
+    const clockOut = r.clock_out_at ? new Date(r.clock_out_at) : null
+    const overtime = r.pay?.overtime_hours ?? 0
+    return {
+      key: r.id,
+      formattedDate: format(day, 'dd.MM.yy'),
+      hebrewDayLetter: HEBREW_DAY_LETTERS[day.getDay()],
+      shiftLabel: sameDayCount > 1 ? `משמרת ${r.seq}` : null,
+      employeeName: r.full_name,
+      shiftTime: `${fmtTime(clockIn.toTimeString())} - ${clockOut ? fmtTime(clockOut.toTimeString()) : '…'}`,
+      location: r.work_site
+        ? WORK_SITE_LABELS[r.work_site]
+        : r.contractor_id
+        ? 'מחסן ראשי'
+        : 'מרכז לוגיסטי',
+      hoursText: fmtDurationHHMM(r.actual_hours, true),
+      overtimeText: overtime > 0 ? `${fmtDurationHHMM(overtime, true)} נוספות` : null,
+      bonus: r.pay?.bonus ? r.pay.bonus : null,
+      status: r.status === 'approved' ? 'completed' : r.status,
+      row: r,
+      hours: r.actual_hours ?? 0,
+    }
+  }
+
+  /**
    * שורה אחת לכל משמרת, לא לכל יום.
    *
    * יום עם שתי משמרות — יציאה לשטח בבוקר וחזרה למחסן בערב, או שתי משימות
    * שהפער ביניהן גדול מ-merge_gap_minutes — הוא מקרה רגיל ולא חריג, וכל
-   * משמרת היא רשומה משלה: שעות משלה, סטטוס משלו ואישור נפרד. כשהיום קופל
-   * לשורה אחת נלקחו השעות של כולן והשעון והסטטוס של הראשונה בלבד, וגם
-   * הקליק פתח תמיד את הראשונה.
+   * משמרת היא רשומה משלה: שעות משלה, סטטוס משלו ואישור נפרד.
    *
-   * `seq` הוא המספור של השרת בתוך היום, ולכן גם סדר התצוגה וגם התווית.
-   * ימים בלי משמרת ממשיכים לתפוס שורה, כדי שהחודש יישאר רציף.
+   * ימים בלי משמרת ממשיכים לתפוס שורה **רק בדוח של אדם אחד**. בדוח של כל
+   * הצוות "היעדרות" בלי שם היא שורה שאי אפשר לענות עליה — של מי ההיעדרות?
+   * — ובחודש מלא היא הייתה מציפה את המשמרות עצמן.
    */
   const shiftRows = useMemo<ShiftRowView[]>(() => {
     const start = startOfMonth(monthDate)
@@ -237,61 +330,66 @@ export function AttendanceReport({
     return eachDayOfInterval({ start, end }).flatMap<ShiftRowView>((day) => {
       const dateStr = toISODate(day)
       const dayOfWeek = day.getDay()
-      const formattedDate = format(day, 'dd.MM.yy')
-      const hebrewDayLetter = HEBREW_DAY_LETTERS[dayOfWeek]
-      const base = { formattedDate, hebrewDayLetter }
 
       const dayRows = rows
         .filter((r) => r.work_date === dateStr)
         .sort((a, b) => a.seq - b.seq || a.clock_in_at.localeCompare(b.clock_in_at))
 
-      if (dayRows.length > 0) {
-        return dayRows.map((r) => {
-          const clockIn = new Date(r.clock_in_at)
-          const clockOut = r.clock_out_at ? new Date(r.clock_out_at) : null
-          const overtime = r.pay?.overtime_hours ?? 0
-          return {
-            ...base,
-            key: r.id,
-            shiftLabel: dayRows.length > 1 ? `משמרת ${r.seq}` : null,
-            employeeName: r.full_name,
-            shiftTime: `${fmtTime(clockIn.toTimeString())} - ${clockOut ? fmtTime(clockOut.toTimeString()) : '…'}`,
-            location: r.work_site
-              ? WORK_SITE_LABELS[r.work_site]
-              : r.contractor_id
-              ? 'מחסן ראשי'
-              : 'מרכז לוגיסטי',
-            hoursText: fmtDurationHHMM(r.actual_hours, true),
-            overtimeText: overtime > 0 ? `${fmtDurationHHMM(overtime, true)} נוספות` : null,
-            status: r.status === 'approved' ? 'completed' : r.status,
-            row: r,
-            hours: r.actual_hours ?? 0,
-          }
-        })
-      }
+      if (dayRows.length > 0) return dayRows.map((r) => toShiftView(r, dayRows.length, day))
+      if (!singleEmployee) return []
 
       // יום חול שעבר ואין בו החתמה. שבת אינה יום עבודה, ולכן היא "מנוחה".
       const isPastOrToday = dateStr <= todayISO
       const isWorkDay = dayOfWeek !== 6
       return [
         {
-          ...base,
           key: dateStr,
+          formattedDate: format(day, 'dd.MM.yy'),
+          hebrewDayLetter: HEBREW_DAY_LETTERS[dayOfWeek],
           shiftLabel: null,
           employeeName: null,
           shiftTime: '-',
           location: null,
           hoursText: '-',
           overtimeText: null,
+          bonus: null,
           status: isPastOrToday && isWorkDay ? 'absence' : 'rest',
           row: null,
           hours: 0,
         },
       ]
     })
-  }, [monthDate, rows, todayISO])
+  }, [monthDate, rows, todayISO, singleEmployee])
 
-  // Calculated metrics
+  /**
+   * קיבוץ לפי עובד, לדוח שיש בו יותר מאחד. זה מה שהופך את "הבונוס נספר
+   * בסך הכולל לעובד" למשהו שרואים במסך ולא רק במספר החודשי הכללי: לכל
+   * עובד יש כאן שורת סיכום משלו, ובה השעות, הבונוסים והסך שלו.
+   *
+   * הסיכומים סופרים מאושרות בלבד, בדיוק כמו הסיכומים שהשרת מחזיר — אחרת
+   * סכום הקבוצות לא היה שווה לאריחים שמעליהן.
+   */
+  const employeeGroups = useMemo<EmployeeGroup[]>(() => {
+    if (singleEmployee) return []
+    const byId = new Map<string, EmployeeGroup>()
+    for (const s of shiftRows) {
+      const r = s.row
+      if (!r) continue
+      let g = byId.get(r.profile_id)
+      if (!g) {
+        g = { profileId: r.profile_id, name: r.full_name, hours: 0, overtime: 0, bonus: 0, total: null, shifts: [] }
+        byId.set(r.profile_id, g)
+      }
+      g.shifts.push(s)
+      if (r.status !== 'approved') continue
+      g.hours += r.actual_hours ?? 0
+      g.overtime += r.pay?.overtime_hours ?? 0
+      g.bonus += r.pay?.bonus ?? 0
+      if (r.pay?.total != null) g.total = (g.total ?? 0) + r.pay.total
+    }
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'he'))
+  }, [shiftRows, singleEmployee])
+
   const totalWorkHours = useMemo(() => {
     if (totals?.actual_hours != null) return totals.actual_hours
     return shiftRows.reduce((acc, d) => acc + d.hours, 0)
@@ -310,7 +408,6 @@ export function AttendanceReport({
     [rows],
   )
 
-  // Data table columns for classic mode
   const columns = useMemo<Column<AttendanceReportRow>[]>(() => {
     const base: Column<AttendanceReportRow>[] = [
       {
@@ -421,6 +518,28 @@ export function AttendanceReport({
       },
     ]
 
+    // עמודת הבונוס מופיעה רק כשיש בונוסים בכלל, ותמיד לפני "שכר" — שכבר
+    // כולל אותה, כי הסך מגיע מחושב מהשרת.
+    if (showMoney && showBonus) {
+      base.push({
+        key: 'bonus',
+        header: 'בונוס',
+        align: 'end',
+        sortValue: (r) => r.pay?.bonus ?? 0,
+        render: (r) =>
+          r.pay?.bonus ? (
+            <span
+              className="tabular-nums font-semibold text-accent-700 dark:text-accent-300"
+              title={r.bonus_note ?? undefined}
+            >
+              {fmtMoney(r.pay.bonus)}
+            </span>
+          ) : (
+            <span className="text-ink-tertiary">—</span>
+          ),
+      })
+    }
+
     if (showMoney) {
       base.push({
         key: 'total',
@@ -435,11 +554,25 @@ export function AttendanceReport({
       })
     }
     return base
-  }, [showMoney, showEmployeeFilter, showOvertime])
+  }, [showMoney, showBonus, showEmployeeFilter, showOvertime])
+
+  const cardList = (list: ShiftRowView[]) => (
+    <div className="space-y-2">
+      {list.map((d) => (
+        <ShiftCard
+          key={d.key}
+          view={d}
+          showName={showEmployeeFilter && singleEmployee}
+          showOvertime={showOvertime}
+          clickable={!!d.row && canOpenRow}
+          onOpen={() => d.row && canOpenRow && setSelected(d.row)}
+        />
+      ))}
+    </div>
+  )
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-12">
-      {/* Page Header */}
+    <div className="mx-auto max-w-5xl space-y-5 pb-12">
       {!embedded && (
         <PageHeader
           title="דוח נוכחות"
@@ -467,83 +600,100 @@ export function AttendanceReport({
         />
       )}
 
-      {/* Month Navigation Control */}
-      <div className="flex flex-col items-center justify-center my-2">
-        <div className="flex items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-full px-5 py-2 shadow-xs hover:shadow-md transition-shadow">
-          <button
-            onClick={handlePrevMonth}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors"
-            title="חודש קודם"
-          >
-            <ChevronRight size={20} />
-          </button>
-
-          <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white text-lg">
-            <span>
+      {/* סרגל אחד: החודש, התצוגה והסינון. קודם הם ישבו בשני מקומות רחוקים
+          זה מזה — כדור מרחף במרכז הדף ומחליף תצוגה ליד כותרת הרשימה. */}
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-3">
+        <div className="flex items-center gap-1">
+          <IconButton label="חודש קודם" variant="ghost" onClick={handlePrevMonth}>
+            <ChevronRight size={ICON.lg} strokeWidth={STROKE} />
+          </IconButton>
+          <div className="min-w-36 text-center">
+            <p className="type-title">
               {monthName} {yearStr}
-            </span>
-            <ChevronDown size={18} className="text-slate-400" />
+            </p>
+            <p className="type-caption text-ink-tertiary tabular" dir="ltr">
+              {dateRangeStr}
+            </p>
           </div>
+          <IconButton label="חודש הבא" variant="ghost" onClick={handleNextMonth}>
+            <ChevronLeft size={ICON.lg} strokeWidth={STROKE} />
+          </IconButton>
+        </div>
 
-          <button
-            onClick={handleNextMonth}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors"
-            title="חודש הבא"
+        <div className="flex flex-wrap items-center gap-2">
+          <SegmentedControl
+            value={viewMode}
+            onChange={setViewMode}
+            items={[
+              { key: 'cards', label: 'כרטיסים', icon: <LayoutGrid size={ICON.sm} strokeWidth={STROKE} /> },
+              { key: 'table', label: 'טבלה', icon: <List size={ICON.sm} strokeWidth={STROKE} /> },
+            ]}
+          />
+          <Button
+            variant={showFilters ? 'primary' : 'outlined'}
+            size="sm"
+            onClick={() => setShowFilters(!showFilters)}
           >
-            <ChevronLeft size={20} />
-          </button>
+            <SlidersHorizontal size={ICON.sm} strokeWidth={STROKE} />
+            סינון
+          </Button>
         </div>
-        <span className="text-xs text-slate-400 font-medium mt-1.5 dir-ltr tracking-wide">{dateRangeStr}</span>
+      </Card>
+
+      {/* סיכום החודש. אריח מופיע רק כשיש לו מה לומר: שעות נוספות למי שהן
+          חלות עליו, בונוסים למי שניתנו, וסכומים למי שרשאי לראות אותם. */}
+      <div
+        className={cx(
+          'grid gap-3',
+          'grid-cols-2',
+          'sm:grid-cols-3',
+          (showOvertime ? 1 : 0) + (showMoney && showBonus ? 1 : 0) + (showMoney ? 1 : 0) >= 2
+            ? 'lg:grid-cols-6'
+            : 'lg:grid-cols-4',
+        )}
+      >
+        <StatCard
+          icon={<Clock size={ICON.xl} strokeWidth={STROKE} />}
+          label='סה"כ שעות'
+          value={fmtDurationHHMM(totalWorkHours)}
+        />
+        <StatCard
+          icon={<CalendarCheck size={ICON.xl} strokeWidth={STROKE} />}
+          label="שעות רגילות"
+          value={fmtDurationHHMM(regularHours)}
+        />
+        {showOvertime && (
+          <StatCard
+            icon={<PlusCircle size={ICON.xl} strokeWidth={STROKE} />}
+            label="שעות נוספות"
+            value={fmtDurationHHMM(overtimeHours)}
+            tone="#f59e0b"
+          />
+        )}
+        <StatCard
+          icon={<Briefcase size={ICON.xl} strokeWidth={STROKE} />}
+          label="ימי עבודה"
+          value={workDaysCount}
+        />
+        {showMoney && showBonus && (
+          <StatCard
+            icon={<Banknote size={ICON.xl} strokeWidth={STROKE} />}
+            label="בונוסים"
+            value={fmtMoney(totals?.bonus ?? 0)}
+            hint="כלול בסך לתשלום"
+            tone="#1fa189"
+          />
+        )}
+        {showMoney && (
+          <StatCard
+            icon={<Wallet size={ICON.xl} strokeWidth={STROKE} />}
+            label='סה"כ לתשלום'
+            value={fmtMoney(totals?.total ?? 0)}
+            hint="מאושר בלבד"
+          />
+        )}
       </div>
 
-      {/* סיכום החודש: מה שנמדד, בלי מה שנגזר ממנו */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-6 md:p-8 shadow-xs">
-        <div className={cx('grid gap-y-6 gap-x-4', showOvertime ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-3')}>
-          <div className="flex flex-col items-center text-center">
-            <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
-              <Clock size={15} className="text-blue-500" />
-              <span>סה"כ שעות עבודה</span>
-            </div>
-            <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
-              {fmtDurationHHMM(totalWorkHours)}
-            </span>
-          </div>
-
-          <div className="flex flex-col items-center text-center">
-            <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
-              <CalendarCheck size={15} className="text-blue-500" />
-              <span>שעות רגילות</span>
-            </div>
-            <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
-              {fmtDurationHHMM(regularHours)}
-            </span>
-          </div>
-
-          {showOvertime && (
-            <div className="flex flex-col items-center text-center">
-              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
-                <PlusCircle size={15} className="text-blue-500" />
-                <span>שעות נוספות</span>
-              </div>
-              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
-                {fmtDurationHHMM(overtimeHours)}
-              </span>
-            </div>
-          )}
-
-          <div className="flex flex-col items-center text-center">
-            <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
-              <Briefcase size={15} className="text-blue-500" />
-              <span>ימי עבודה</span>
-            </div>
-            <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
-              {workDaysCount}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter drawer / filter section */}
       {showFilters && (
         <Card className="flex flex-wrap items-end gap-3 p-4 animate-in fade-in duration-200">
           {showEmployeeFilter && (
@@ -582,206 +732,176 @@ export function AttendanceReport({
         </Card>
       )}
 
-      {/* Daily Breakdown Section Header */}
-      <div className="flex items-center justify-between pt-2">
-        <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">פירוט לפי יום</h3>
-
-        <div className="flex items-center gap-2">
-          {showEmployeeFilter && (
-            <div className="w-48 hidden sm:block">
-              <Select
-                value={profileIds[0] || ''}
-                onChange={(e) => setProfileIds(e.target.value ? [e.target.value] : [])}
-              >
-                <option value="">כל העובדים</option>
-                {employeeOptions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
-
-          <div className="flex border border-slate-200 dark:border-slate-800 rounded-full p-0.5 bg-slate-100 dark:bg-slate-800">
-            <button
-              onClick={() => setViewMode('cards')}
-              className={cx(
-                'px-3 py-1 text-xs font-semibold rounded-full transition-colors flex items-center gap-1',
-                viewMode === 'cards'
-                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              )}
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <h3 className="type-heading">{singleEmployee ? 'פירוט לפי יום' : 'פירוט לפי עובד'}</h3>
+        {showEmployeeFilter && (
+          <div className="w-52">
+            <Select
+              value={profileIds[0] || ''}
+              onChange={(e) => setProfileIds(e.target.value ? [e.target.value] : [])}
             >
-              <LayoutGrid size={13} />
-              <span>כרטיסים</span>
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              className={cx(
-                'px-3 py-1 text-xs font-semibold rounded-full transition-colors flex items-center gap-1',
-                viewMode === 'table'
-                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              )}
-            >
-              <List size={13} />
-              <span>טבלה</span>
-            </button>
+              <option value="">כל העובדים</option>
+              {employeeOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </Select>
           </div>
-
-          <Button
-            variant={showFilters ? 'primary' : 'outlined'}
-            size="sm"
-            onClick={() => setShowFilters(!showFilters)}
-            className="rounded-full px-4 gap-1.5"
-          >
-            <SlidersHorizontal size={14} />
-            <span>סינון</span>
-          </Button>
-        </div>
+        )}
       </div>
 
-      {/* Main List / Table View */}
-      {viewMode === 'cards' ? (
-        <div className="space-y-2.5">
-          {/* Table Header Labels */}
-          <div className="grid grid-cols-12 gap-2 px-5 py-2 text-xs font-bold text-slate-500 dark:text-slate-400">
-            <div className="col-span-3 sm:col-span-2 flex items-center gap-1">
-              <span>תאריך</span>
-              <ChevronDown size={14} className="text-slate-400" />
-            </div>
-            <div className="col-span-1 text-center">יום</div>
-            <div className="col-span-4 sm:col-span-4 text-center">סוג משמרת</div>
-            <div className="col-span-2 sm:col-span-3 text-center">שעות</div>
-            <div className="col-span-2 sm:col-span-2 text-left">סטטוס</div>
-          </div>
-
-          {/* שורה למשמרת ולא ליום: יום עם כמה משמרות מופיע כמה פעמים, כל אחת
-              עם השעות והסטטוס שלה, וקליק שפותח אותה ולא את הראשונה */}
-          {shiftRows.map((d) => {
-            const isCompleted = d.status === 'completed'
-            const isAbsence = d.status === 'absence'
-            const isPending = d.status === 'pending'
-            const isRest = d.status === 'rest'
-
-            return (
-              <div
-                key={d.key}
-                onClick={() => d.row && (canEdit || canApprove) && setSelected(d.row)}
-                className={cx(
-                  'grid grid-cols-12 gap-2 items-center px-5 py-3.5 bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 rounded-2xl transition-all shadow-2xs hover:shadow-md',
-                  d.row && (canEdit || canApprove) && 'cursor-pointer hover:border-blue-300 dark:hover:border-blue-700'
-                )}
-              >
-                {/* Date Column */}
-                <div className="col-span-3 sm:col-span-2 flex items-center gap-2">
-                  <span
-                    className={cx(
-                      'w-2.5 h-2.5 rounded-full flex-shrink-0',
-                      isCompleted && 'bg-emerald-500 shadow-xs shadow-emerald-500/50',
-                      isAbsence && 'bg-rose-500 shadow-xs shadow-rose-500/50',
-                      isPending && 'bg-amber-500 shadow-xs shadow-amber-500/50',
-                      isRest && 'bg-slate-300 dark:bg-slate-700'
-                    )}
-                  />
-                  <span className="min-w-0">
-                    <span className="block font-bold text-slate-800 dark:text-slate-100 text-sm dir-ltr">
-                      {d.formattedDate}
-                    </span>
-                    {d.shiftLabel && (
-                      <span className="block text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-                        {d.shiftLabel}
-                      </span>
-                    )}
-                  </span>
-                  <ChevronLeft size={14} className="text-slate-400 hidden sm:block mr-auto" />
-                </div>
-
-                {/* Day Column */}
-                <div className="col-span-1 text-center font-bold text-slate-700 dark:text-slate-300 text-sm">
-                  {d.hebrewDayLetter}
-                </div>
-
-                {/* Shift Type Column */}
-                <div className="col-span-4 sm:col-span-4 flex flex-col items-center justify-center text-center">
-                  {/* בדוח של כמה עובדים אותו יום מופיע פעם לכל אחד, ובלי השם
-                      אי אפשר לדעת של מי המשמרת */}
-                  {showEmployeeFilter && d.employeeName && (
-                    <span className="max-w-full truncate text-[11px] font-bold text-slate-500 dark:text-slate-400">
-                      {d.employeeName}
-                    </span>
-                  )}
-                  <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm dir-ltr">
-                    {d.shiftTime}
-                  </span>
-                  {d.location ? (
-                    <div className="flex items-center justify-center gap-1 text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
-                      <MapPin size={11} className="text-slate-400" />
-                      <span>{d.location}</span>
-                    </div>
-                  ) : (
-                    <span className="text-slate-400 dark:text-slate-600 text-xs">-</span>
-                  )}
-                </div>
-
-                {/* Hours Column */}
-                <div className="col-span-2 sm:col-span-3 flex flex-col items-center justify-center text-center">
-                  <span className="font-bold text-slate-900 dark:text-white text-sm tabular-nums">
-                    {d.hoursText}
-                  </span>
-                  {showOvertime && d.overtimeText && (
-                    <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-400 mt-0.5">
-                      {d.overtimeText}
-                    </span>
-                  )}
-                </div>
-
-                {/* Status Column */}
-                <div className="col-span-2 sm:col-span-2 flex justify-end">
-                  {isCompleted && (
-                    <span className="inline-flex items-center px-3 py-1 rounded-xl text-xs font-extrabold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/50">
-                      הושלם
-                    </span>
-                  )}
-                  {isAbsence && (
-                    <span className="inline-flex items-center px-3 py-1 rounded-xl text-xs font-extrabold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200/70 dark:border-rose-800/50">
-                      היעדרות
-                    </span>
-                  )}
-                  {isPending && (
-                    <span className="inline-flex items-center px-3 py-1 rounded-xl text-xs font-extrabold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/70 dark:border-amber-800/50">
-                      ממתין
-                    </span>
-                  )}
-                  {isRest && (
-                    <span className="text-xs text-slate-400 dark:text-slate-600 font-medium px-2 py-1">
-                      -
-                    </span>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      ) : (
+      {/* תצוגת הכרטיסים לא הציגה עד כה טעינה, שגיאה או ריק — רק הטבלה ידעה
+          לעשות את זה, ולכן חודש בלי נתונים נראה כמו דף שנשבר. */}
+      {isLoading ? (
+        <SkeletonList rows={6} />
+      ) : error ? (
+        <ErrorState error={error} onRetry={() => void refetch()} />
+      ) : viewMode === 'table' ? (
         <DataTable
           rows={rows}
           columns={columns}
           getRowId={(r) => r.id}
-          loading={isLoading}
-          error={error ? errorMessage(error) : undefined}
-          onRetry={() => void refetch()}
           empty="לא נמצאו רשומות נוכחות בטווח הזה"
-          onRowClick={canEdit || canApprove ? (r) => setSelected(r) : undefined}
+          onRowClick={canOpenRow ? (r) => setSelected(r) : undefined}
           storageKey="attendance-report"
           pageSize={50}
         />
+      ) : shiftRows.length === 0 ? (
+        <EmptyState
+          art="calendar"
+          title="אין רשומות נוכחות בחודש הזה"
+          description="אפשר לדפדף לחודש אחר, או לשחרר את הסינון."
+        />
+      ) : singleEmployee ? (
+        cardList(shiftRows)
+      ) : (
+        <div className="space-y-5">
+          {employeeGroups.map((g) => (
+            <section key={g.profileId} className="space-y-2">
+              {/* שורת הסיכום של העובד: כאן הבונוס הופך למספר שרואים ליד השם,
+                  ולא רק לחלק מהסך החודשי של כל הצוות. */}
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-xl bg-subtle px-4 py-2.5">
+                <p className="type-title">{g.name}</p>
+                <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 type-caption text-ink-secondary">
+                  <span className="tabular">{fmtDurationHHMM(g.hours)} שעות</span>
+                  {showOvertime && g.overtime > 0 && (
+                    <span className="tabular text-warning-text">{fmtDurationHHMM(g.overtime)} נוספות</span>
+                  )}
+                  {showMoney && g.bonus > 0 && (
+                    <span className="tabular font-semibold text-accent-700 dark:text-accent-300">
+                      בונוס {fmtMoney(g.bonus)}
+                    </span>
+                  )}
+                  {showMoney && g.total != null && (
+                    <span className="tabular type-body font-semibold text-ink">{fmtMoney(g.total)}</span>
+                  )}
+                </p>
+              </div>
+              {cardList(g.shifts)}
+            </section>
+          ))}
+        </div>
       )}
 
-      {/* Entry Drawer & Manual Modal */}
       <AttendanceEntryDrawer row={selected} onClose={() => setSelected(null)} />
       {adding && <ManualEntryModal onClose={() => setAdding(false)} />}
+    </div>
+  )
+}
+
+/**
+ * שורת משמרת אחת.
+ *
+ * הפריסה משתנה ברוחב במקום להתכווץ: במסך צר התאריך והסטטוס יושבים בשורה
+ * אחת והשעות מתחתיה, ובמסך רחב הכול בשורה. קודם זו הייתה רשת של 12 עמודות
+ * בכל הרוחבים, ובטלפון היא נמעכה.
+ */
+function ShiftCard({
+  view: d,
+  showName,
+  showOvertime,
+  clickable,
+  onOpen,
+}: {
+  view: ShiftRowView
+  showName: boolean
+  showOvertime: boolean
+  clickable: boolean
+  onOpen: () => void
+}) {
+  const tone = SHIFT_STATUS[d.status]
+  const isRest = d.status === 'rest'
+
+  return (
+    <div
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={clickable ? onOpen : undefined}
+      onKeyDown={clickable ? (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onOpen()) : undefined}
+      className={cx(
+        'surface flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 transition-colors',
+        isRest && 'bg-subtle/40',
+        clickable && 'cursor-pointer hover:border-line-strong hover:bg-subtle/60 focus-visible:outline-none focus-visible:focus-ring',
+      )}
+    >
+      {/* תאריך + יום */}
+      <div className="flex min-w-32 items-center gap-2.5">
+        <span className={cx('size-2.5 shrink-0 rounded-full', tone.dot)} aria-hidden />
+        <span className="min-w-0">
+          <span className="block type-body font-semibold tabular" dir="ltr">
+            {d.formattedDate}
+          </span>
+          <span className="block type-caption text-ink-tertiary">
+            יום {d.hebrewDayLetter}
+            {d.shiftLabel && ` · ${d.shiftLabel}`}
+          </span>
+        </span>
+      </div>
+
+      {/* שעון ומיקום */}
+      <div className="min-w-40 flex-1">
+        {showName && d.employeeName && (
+          <p className="truncate type-caption font-semibold text-ink-tertiary">{d.employeeName}</p>
+        )}
+        <p className="type-body font-medium tabular" dir="ltr">
+          {d.shiftTime}
+        </p>
+        {d.location && (
+          <p className="flex items-center gap-1 type-caption text-ink-tertiary">
+            <MapPin size={ICON.xs} strokeWidth={STROKE} />
+            {d.location}
+          </p>
+        )}
+      </div>
+
+      {/* שעות */}
+      <div className="min-w-20 text-end">
+        <p className="type-title tabular">{d.hoursText}</p>
+        {showOvertime && d.overtimeText && (
+          <p className="type-caption text-warning-text">{d.overtimeText}</p>
+        )}
+      </div>
+
+      {/* בונוס וסטטוס */}
+      <div className="flex min-w-24 items-center justify-end gap-2">
+        {d.bonus != null && (
+          <span
+            className="inline-flex items-center gap-1 rounded-lg border border-accent-200 bg-accent-50 px-2 py-0.5 type-caption font-bold text-accent-700 dark:border-accent-800 dark:bg-accent-950/50 dark:text-accent-300"
+            title={d.row?.bonus_note ?? 'בונוס למשמרת'}
+          >
+            <Banknote size={ICON.xs} strokeWidth={STROKE} />
+            {fmtMoney(d.bonus)}
+          </span>
+        )}
+        {tone.label ? (
+          <span className={cx('inline-flex items-center rounded-lg border px-2.5 py-1 type-caption font-bold', tone.pill)}>
+            {tone.label}
+          </span>
+        ) : (
+          <span className="type-caption text-ink-tertiary">—</span>
+        )}
+      </div>
     </div>
   )
 }

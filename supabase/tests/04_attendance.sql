@@ -1034,3 +1034,156 @@ update app_settings set value = jsonb_set(value, '{enabled}', 'false'::jsonb)
  where key = 'notifications.email';
 select t_eq('כיבוי הערוץ עוצר משלוחים חדשים',
   app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_assigned'), false);
+
+-- ================= בונוס למשמרת (0033) =================
+
+\echo '--- בונוס למשמרת ---'
+
+-- המנוע: הבונוס מצטרף לסך ואינו נוגע בשעות.
+select t_eq('בונוס נכנס לסך לתשלום',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+     '{"hours":8,"hourly_rate":50,"dow":1,"bonus":200}'::jsonb) ->> 'total')::numeric, 600::numeric);
+
+select t_eq('ואינו מנפח את השעות לתשלום',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+     '{"hours":8,"hourly_rate":50,"dow":1,"bonus":200}'::jsonb) ->> 'paid_hours')::numeric, 8::numeric);
+
+-- זה מה שמבדיל סכום משעות פיקטיביות: 10 שעות עושות שעתיים נוספות בין אם
+-- ניתן בונוס ובין אם לא, והבונוס אינו מזיז את המדרגה.
+select t_eq('ואינו נכנס למדרגות השעות הנוספות',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+     '{"hours":10,"hourly_rate":50,"dow":1,"bonus":500}'::jsonb) ->> 'overtime_hours')::numeric,
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+     '{"hours":10,"hourly_rate":50,"dow":1}'::jsonb) ->> 'overtime_hours')::numeric);
+
+-- בלי תעריף שעתי הסך היה NULL. בונוס הוא סכום ידוע גם בלי תעריף, ולכן הוא
+-- מרים אותו — אחרת הכסף היה נעלם בשקט.
+select t_eq('עובד בלי תעריף מקבל את הבונוס',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+     '{"hours":8,"dow":1,"bonus":150}'::jsonb) ->> 'total')::numeric, 150::numeric);
+
+select t_eq('ובלי תעריף ובלי בונוס הסך נשאר לא ידוע',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+     '{"hours":8,"dow":1}'::jsonb) ->> 'total') is null, true);
+
+-- ההבטחה שהמנוע נשען עליה מאז 0020, עכשיו עם שורה שאינה מכפלה
+select t_eq('סכום שורות הפירוט עדיין שווה לסך',
+  (select sum((l ->> 'amount')::numeric) from jsonb_array_elements(
+     app.attendance_calc(app.attendance_config('attendance.overtime'),
+       '{"hours":10,"hourly_rate":50,"dow":1,"bonus":200}'::jsonb) -> 'lines') l),
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+     '{"hours":10,"hourly_rate":50,"dow":1,"bonus":200}'::jsonb) ->> 'total')::numeric);
+
+select t_eq('ושורת הבונוס אינה מתחזה למכפלה',
+  (select (l ->> 'hours') is null and (l ->> 'rate') is null
+     from jsonb_array_elements(
+       app.attendance_calc(app.attendance_config('attendance.overtime'),
+         '{"hours":8,"hourly_rate":50,"dow":1,"bonus":200}'::jsonb) -> 'lines') l
+    where l ->> 'key' = 'bonus'), true);
+
+-- ===== ההרשאה =====
+-- חשב שכר: רואה כסף ורשאי לקבוע בונוס, ובמפורש *אינו* מחזיק edit_entry.
+-- זה בדיוק המקרה שבגללו הבונוס אינו פרמטר על attendance_save_entry.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000000f5', 'payroll@vl.test');
+insert into profiles (id, user_id, user_kind, full_name) values
+  ('20000000-0000-0000-0000-0000000000f5', '00000000-0000-0000-0000-0000000000f5',
+   'staff', 'חשב שכר');
+insert into user_permission_grants (profile_id, permission_key, allowed) values
+  ('20000000-0000-0000-0000-0000000000f5', 'attendance.view_all',     true),
+  ('20000000-0000-0000-0000-0000000000f5', 'attendance.view_pay',     true),
+  ('20000000-0000-0000-0000-0000000000f5', 'attendance.manage_bonus', true),
+  ('20000000-0000-0000-0000-0000000000f5', 'attendance.edit_entry',   false);
+
+-- משמרת ייעודית, כדי שהבדיקות שלמעלה לא יושפעו מסכום שנוסף להן
+insert into attendance_entries (id, profile_id, work_date, seq, clock_in_at, clock_out_at, source)
+values ('70000000-0000-0000-0000-0000000000e1', '20000000-0000-0000-0000-0000000000f3',
+        current_date - 2, 9, now() - interval '2 days' - interval '8 hours',
+        now() - interval '2 days', 'manual');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f4', false);
+select t_expect_fail('מנהל בלי manage_bonus אינו יכול לקבוע בונוס', $$
+  select attendance_set_bonus('70000000-0000-0000-0000-0000000000e1', 300, 'ניסיון')$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f5', false);
+select t_expect_ok('חשב שכר עם manage_bonus ובלי edit_entry כן יכול', $$
+  select attendance_set_bonus('70000000-0000-0000-0000-0000000000e1', 300, 'משמרת לילה')$$);
+
+select t_expect_fail('וסכום שלילי נדחה', $$
+  select attendance_set_bonus('70000000-0000-0000-0000-0000000000e1', -50, 'ניכוי')$$);
+select t_expect_fail('וסכום מופרך נדחה', $$
+  select attendance_set_bonus('70000000-0000-0000-0000-0000000000e1', 999999, 'טעות הקלדה')$$);
+
+select t_eq('הבונוס מגיע בדוח בתוך pay',
+  (select (r #>> '{pay,bonus}')::numeric from jsonb_array_elements(
+     attendance_report(current_date - 7, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e1'), 300::numeric);
+
+-- 8 שעות × 50 ועוד 300 בונוס
+select t_eq('ונכלל בסך של המשמרת',
+  (select (r #>> '{pay,total}')::numeric from jsonb_array_elements(
+     attendance_report(current_date - 7, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e1'), 700::numeric);
+
+select t_eq('והנימוק מגיע איתו',
+  (select r ->> 'bonus_note' from jsonb_array_elements(
+     attendance_report(current_date - 7, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e1'), 'משמרת לילה');
+
+select t_eq('והסיכום החודשי סופר אותו בנפרד',
+  (attendance_report(current_date - 7, current_date + 1) #>> '{totals,bonus}')::numeric >= 300, true);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- ===== ההסתרה =====
+-- זו הסיבה שהבונוס יושב בטבלה נפרדת ולא כעמודה על attendance_entries:
+-- ae_select מתירה למנהל הזה לקרוא את השורה, והוא אינו רשאי לראות כסף.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f4', false);
+select t_eq('מנהל בלי view_pay אינו מקבל את הבונוס בדוח',
+  (select (r -> 'pay') ? 'bonus' from jsonb_array_elements(
+     attendance_report(current_date - 7, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e1'), false);
+
+select t_eq('ולא את הנימוק',
+  (select r ->> 'bonus_note' from jsonb_array_elements(
+     attendance_report(current_date - 7, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e1') is null, true);
+
+-- totals.bonus כן מגיע אליו, כי כל עובד צוות מחזיק attendance.view_own_pay
+-- והסיכום מגודר באותו תנאי שבו מגודר total מאז 0027. מה שהוא *לא* מקבל הוא
+-- הסכום של מישהו אחר: הוא הושמט מהשורה, ולכן הוא אינו נספר.
+select t_eq('והבונוס של עובד אחר אינו נספר בסיכום שלו',
+  (attendance_report(current_date - 7, current_date + 1) #>> '{totals,bonus}')::numeric, 0::numeric);
+
+-- והנתיב הישיר, שהוא מה שעמודה על attendance_entries הייתה משאירה פתוח
+select t_eq('ואינו יכול לקרוא את הטבלה ישירות',
+  (select count(*) from attendance_entry_bonus)::int, 0);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- ===== איפוס =====
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f5', false);
+select t_expect_ok('אפס מוחק את הבונוס', $$
+  select attendance_set_bonus('70000000-0000-0000-0000-0000000000e1', 0, null)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('והשורה נעלמת ולא מתאפסת',
+  (select count(*) from attendance_entry_bonus
+    where entry_id = '70000000-0000-0000-0000-0000000000e1')::int, 0);
+
+-- רשומה שנדחתה אינה משולמת, ולכן בונוס עליה הוא סכום שלא ייספר לעולם
+update attendance_entries set status = 'rejected'
+ where id = '70000000-0000-0000-0000-0000000000e1';
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f5', false);
+select t_expect_fail('אין בונוס על רשומה שנדחתה', $$
+  select attendance_set_bonus('70000000-0000-0000-0000-0000000000e1', 100, 'מאוחר מדי')$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);

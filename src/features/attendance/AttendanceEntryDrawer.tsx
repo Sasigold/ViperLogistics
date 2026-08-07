@@ -15,13 +15,14 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { fmtDateTime, fmtMoney } from '../../lib/dates'
-import { useAttendanceInvalidate, useReviewAttendanceEntry } from './attendanceQueries'
+import { useAttendanceInvalidate, useReviewAttendanceEntry, useSetShiftBonus } from './attendanceQueries'
 import {
   STATUS_LABELS,
   STATUS_TONES,
   WORK_SITE_LABELS,
   fmtDistance,
   fmtDuration,
+  fmtPayLineRate,
   flagLabel,
   visibleFlags,
 } from './shiftFormat'
@@ -50,10 +51,19 @@ export function AttendanceEntryDrawer({
   const canEdit = has(PERM.ATTENDANCE_EDIT_ENTRY)
   const canDelete = has(PERM.ATTENDANCE_DELETE)
   const canApprove = has(PERM.ATTENDANCE_APPROVE_ENTRY)
+  const canBonus = has(PERM.ATTENDANCE_MANAGE_BONUS)
   const isPending = row?.status === 'pending'
   const review = useReviewAttendanceEntry()
+  const setBonus = useSetShiftBonus()
 
-  const [form, setForm] = useState({ clockIn: '', clockOut: '', note: '' })
+  /**
+   * `pay.bonus` מגיע מהשרת רק למי שרשאי לראות סכומים — הוא מושמט מהאובייקט
+   * יחד עם `total` ו-`lines`. לכן קיומו הוא התשובה לשאלה "מותר לו לראות
+   * כסף", ואין כאן הכרעת הרשאה שנייה שיכולה לחלוק על זו של השרת.
+   */
+  const seesMoney = row?.pay?.bonus !== undefined
+
+  const [form, setForm] = useState({ clockIn: '', clockOut: '', note: '', bonus: '', bonusNote: '' })
 
   useEffect(() => {
     if (!row) return
@@ -61,20 +71,35 @@ export function AttendanceEntryDrawer({
       clockIn: toLocalInput(row.clock_in_at),
       clockOut: toLocalInput(row.clock_out_at),
       note: row.manager_note ?? '',
+      bonus: row.pay?.bonus ? String(row.pay.bonus) : '',
+      bonusNote: row.bonus_note ?? '',
     })
   }, [row])
+
+  const bonusAmount = Number(form.bonus || 0)
+  const bonusChanged =
+    !!row && (bonusAmount !== (row.pay?.bonus ?? 0) || form.bonusNote !== (row.bonus_note ?? ''))
 
   const save = useMutation({
     mutationFn: async () => {
       if (!row) return
-      if (!form.clockIn) throw new Error('חובה להזין שעת כניסה')
-      const { error } = await supabase.rpc('attendance_save_entry', {
-        p_id: row.id,
-        p_clock_in: new Date(form.clockIn).toISOString(),
-        p_clock_out: form.clockOut ? new Date(form.clockOut).toISOString() : null,
-        p_manager_note: form.note || null,
-      })
-      if (error) throw error
+      if (canEdit) {
+        if (!form.clockIn) throw new Error('חובה להזין שעת כניסה')
+        const { error } = await supabase.rpc('attendance_save_entry', {
+          p_id: row.id,
+          p_clock_in: new Date(form.clockIn).toISOString(),
+          p_clock_out: form.clockOut ? new Date(form.clockOut).toISOString() : null,
+          p_manager_note: form.note || null,
+        })
+        if (error) throw error
+      }
+      // הבונוס נשמר בקריאה נפרדת, כי הוא נאכף במפתח אחר. היא נשלחת רק כשהוא
+      // באמת השתנה — אחרת כל שמירת תיקון של רכז משמרות הייתה נדחית על
+      // הרשאה שהוא לא צריך.
+      if (canBonus && bonusChanged) {
+        if (Number.isNaN(bonusAmount)) throw new Error('סכום הבונוס אינו מספר')
+        await setBonus.mutateAsync({ id: row.id, bonus: bonusAmount, note: form.bonusNote })
+      }
     },
     onSuccess: () => {
       toast.success('הרשומה עודכנה')
@@ -131,7 +156,9 @@ export function AttendanceEntryDrawer({
         title={row?.full_name ?? ''}
         description={row ? `${row.work_date} · משמרת ${row.seq}` : undefined}
         footer={
-          (canEdit || (isPending && canApprove)) && (
+          // canBonus לבדו מספיק כדי להצדיק כפתור שמירה: חשב שכר שרשאי רק
+          // לקבוע בונוס אינו מחזיק attendance.edit_entry.
+          (canEdit || canBonus || (isPending && canApprove)) && (
             <>
               {canDelete && (
                 <Button
@@ -148,7 +175,7 @@ export function AttendanceEntryDrawer({
                   זמינה כדי לתקן שעה לפני האישור, אבל אינה מתחרה עליה. */}
               {isPending && canApprove ? (
                 <>
-                  {canEdit && (
+                  {(canEdit || canBonus) && (
                     <Button loading={save.isPending} onClick={() => save.mutate()}>
                       שמירת תיקון
                     </Button>
@@ -246,6 +273,34 @@ export function AttendanceEntryDrawer({
               </p>
             )}
 
+            {/* הבונוס יושב לפני פירוט השכר, כי הוא מה שמשנה אותו. הוא מוצג
+                רק למי שרשאי לראות סכומים, ונעול לקריאה בלי מפתח הבונוס. */}
+            {seesMoney && (canBonus || bonusAmount > 0) && (
+              <div className="grid gap-4 sm:grid-cols-[10rem_1fr]">
+                <Field label="בונוס למשמרת" hint="₪, מעבר לשעות">
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="10"
+                    dir="ltr"
+                    placeholder="0"
+                    value={form.bonus}
+                    disabled={!canBonus}
+                    onChange={(e) => setForm((f) => ({ ...f, bonus: e.target.value }))}
+                  />
+                </Field>
+                <Field label="סיבת הבונוס">
+                  <Input
+                    value={form.bonusNote}
+                    disabled={!canBonus}
+                    placeholder="למשל: משמרת לילה בהתראה קצרה"
+                    onChange={(e) => setForm((f) => ({ ...f, bonusNote: e.target.value }))}
+                  />
+                </Field>
+              </div>
+            )}
+
             {/* lines מושמט לחלוטין למי שאינו רשאי לראות כסף — הוא לא מגיע
                 מהשרת מלכתחילה, ולכן אין כאן מה להסתיר בצד הלקוח. */}
             {pay?.lines && pay.lines.length > 0 && (
@@ -255,8 +310,9 @@ export function AttendanceEntryDrawer({
                   {pay.lines.map((l) => (
                     <li key={l.key} className="flex items-center gap-2 px-3 py-2 type-body">
                       <span className="flex-1 truncate">{l.label}</span>
+                      {/* null לשורת הבונוס, שאינה מכפלה של שעות בתעריף */}
                       <span className="tabular-nums text-ink-tertiary">
-                        {fmtDuration(l.hours)} × {l.rate}
+                        {fmtPayLineRate(l.hours, l.rate)}
                       </span>
                       <span className="w-20 text-end tabular-nums font-semibold">{fmtMoney(l.amount)}</span>
                     </li>

@@ -26,6 +26,7 @@ export const PERM = {
   ATTENDANCE_MANAGE_CLOCK: 'attendance.manage_clock',
   ATTENDANCE_VIEW_PAY: 'attendance.view_pay',
   ATTENDANCE_MANAGE_PAY: 'attendance.manage_pay',
+  ATTENDANCE_MANAGE_BONUS: 'attendance.manage_bonus',
   ATTENDANCE_SETTINGS: 'attendance.settings',
   ATTENDANCE_MANAGE_WAREHOUSES: 'attendance.manage_warehouses',
   ATTENDANCE_EXPORT: 'attendance.export',

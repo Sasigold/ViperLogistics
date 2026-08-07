@@ -80,6 +80,18 @@ export function fmtDuration(hours: number | null | undefined): string {
   return `${Math.floor(mins / 60)}:${String(mins % 60).padStart(2, '0')}`
 }
 
+/**
+ * עמודת ה-"שעות × תעריף" בפירוט השכר, או null לשורה שאינה מכפלה.
+ *
+ * הבונוס למשמרת הוא סכום קבוע ומגיע מהשרת עם hours ו-rate שהם null. אילו
+ * הוצג לו "0:00 × 0" הוא היה נראה כמו שורה שהחישוב שלה נכשל. שני המסכים
+ * שמציירים את ה-lines קוראים לכאן, כדי שלא תהיה ביניהם החלטה כפולה.
+ */
+export function fmtPayLineRate(hours: number | null, rate: number | null): string | null {
+  if (hours == null || rate == null) return null
+  return `${fmtDuration(hours)} × ${rate}`
+}
+
 /** מטרים לתצוגה קצרה: 240 מ׳ / 3.2 ק״מ */
 export function fmtDistance(m: number | null | undefined): string {
   if (m == null) return ''

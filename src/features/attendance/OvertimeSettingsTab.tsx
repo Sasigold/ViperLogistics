@@ -18,7 +18,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { fmtMoney } from '../../lib/dates'
 import { useClockConfig, useOvertimeConfig, useSaveAppSetting } from './attendanceQueries'
-import { fmtDuration } from './shiftFormat'
+import { fmtPayLineRate } from './shiftFormat'
 import { WarehousesCard } from './WarehousesCard'
 import type { ClockConfig, OvertimeConfig, OvertimeTier, PayBreakdown } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
@@ -204,7 +204,7 @@ export function OvertimeSettingsTab() {
                   <li key={l.key} className="flex items-center gap-2 type-caption">
                     <span className="flex-1">{l.label}</span>
                     <span className="tabular-nums text-ink-tertiary">
-                      {fmtDuration(l.hours)} × {l.rate}
+                      {fmtPayLineRate(l.hours, l.rate)}
                     </span>
                     <span className="w-20 text-end tabular-nums">{fmtMoney(l.amount)}</span>
                   </li>

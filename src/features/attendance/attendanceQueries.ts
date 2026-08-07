@@ -195,6 +195,26 @@ export function useReviewAttendanceEntry() {
 }
 
 /**
+ * בונוס למשמרת. RPC משלו ולא פרמטר על attendance_save_entry, כי הוא נשמר
+ * במפתח אחר: מי שמתקן שעות (attendance.edit_entry) אינו בהכרח מי שרשאי
+ * לקבוע סכום כסף (attendance.manage_bonus). אפס מוחק את הבונוס.
+ */
+export function useSetShiftBonus() {
+  const invalidate = useAttendanceInvalidate()
+  return useMutation({
+    mutationFn: async (v: { id: string; bonus: number; note?: string | null }) => {
+      const { error } = await supabase.rpc('attendance_set_bonus', {
+        p_id: v.id,
+        p_bonus: v.bonus,
+        p_note: v.note || null,
+      })
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+}
+
+/**
  * הגדרות השכר והשעון של עובד. חוזרת null גם כשהשורה קיימת אבל ה-RLS חוסם
  * אותה — הכרטיס במסך הוא שמגודר, לא השאילתה.
  */

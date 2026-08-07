@@ -702,12 +702,17 @@ export interface PlannedShift {
   warehouse_name: string | null
 }
 
-/** שורת חישוב אחת בפירוט השכר. */
+/**
+ * שורת חישוב אחת בפירוט השכר.
+ *
+ * `hours` ו-`rate` הם null בשורה שאינה מכפלה — הבונוס למשמרת הוא סכום קבוע,
+ * ו-"0:00 × 0" בעמודה שלידו היה שקר. מי שמציג שורות חייב לדלג עליהם.
+ */
 export interface PayLine {
   key: string
   label: string
-  hours: number
-  rate: number
+  hours: number | null
+  rate: number | null
   /** null כשאין תעריף שעתי, או כשלמשתמש אין הרשאה לראות סכומים */
   amount: number | null
 }
@@ -723,6 +728,8 @@ export interface PayBreakdown {
   /** השדות האלה מושמטים מהאובייקט למי שאינו רשאי לראות כסף */
   hourly_rate?: number | null
   rate_hours?: number
+  /** בונוס למשמרת. כלול ב-total ואינו נוסף עליו. */
+  bonus?: number
   total?: number | null
   lines?: PayLine[]
 }
@@ -791,6 +798,8 @@ export interface AttendanceReportRow {
   edited_at: string | null
   /** האם שעות נוספות חלות על העובד הזה — ההגדרה האפקטיבית שלו, לא כמה עשה */
   overtime_enabled: boolean
+  /** נימוק הבונוס. null גם כשאין בונוס וגם כשאין הרשאה לראות סכומים */
+  bonus_note: string | null
   pay: PayBreakdown
 }
 
@@ -805,6 +814,8 @@ export interface AttendanceReport {
     actual_hours: number
     paid_hours: number
     overtime_hours: number
+    /** סך הבונוסים. כלול ב-total ואינו נוסף עליו; null בלי הרשאת כסף */
+    bonus: number | null
     total: number | null
   }
 }

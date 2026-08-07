@@ -34,6 +34,7 @@ function row(over: Partial<AttendanceReportRow> = {}): AttendanceReportRow {
     employee_note: null,
     manager_note: null,
     edited_at: null,
+    bonus_note: null,
     pay: { version: 1, paid_hours: 8, worked_hours: 8, base_hours: 8, overtime_hours: 0, topup_hours: 0, is_rest_day: false },
     ...over,
   } as AttendanceReportRow
@@ -50,6 +51,7 @@ function report(over: Partial<AttendanceReport> = {}): AttendanceReport {
       actual_hours: 8,
       paid_hours: 8,
       overtime_hours: 0,
+      bonus: null,
       total: null,
     },
     ...over,
@@ -92,12 +94,39 @@ describe('buildAttendanceSheet', () => {
     expect(JSON.stringify(plan)).not.toContain('400')
   })
 
+  // הבונוס הוא כסף, ולכן הוא נופל תחת אותה הבטחה: השרת משמיט אותו מהשורה
+  // למי שאינו רשאי לראות סכומים, והתוכנית לא מחזירה אותו דרך הדלת האחורית.
+  it('omits the bonus for a reader without attendance.view_pay', () => {
+    const plan = buildAttendanceSheet(
+      report({ can_see_pay: false, rows: [row({ pay: { ...row().pay, bonus: 250, total: 650 } })] }),
+    )
+    expect(planHasMoney(plan)).toBe(false)
+    expect(plan.columns.map((c) => c.key)).not.toContain('bonus')
+    expect(JSON.stringify(plan)).not.toContain('250')
+  })
+
+  it('writes the bonus in its own column, and inside the total, once money is allowed', () => {
+    const plan = buildAttendanceSheet(
+      report({
+        can_see_pay: true,
+        rows: [row({ pay: { ...row().pay, hourly_rate: 50, bonus: 250, total: 650 } })],
+        totals: { ...report().totals, bonus: 250, total: 650 },
+      }),
+    )
+    expect(plan.columns.map((c) => c.key)).toContain('bonus')
+    expect(plan.rows[0]!.bonus).toBe(250)
+    // הבונוס כלול בסך ואינו נוסף עליו — 8 שעות × 50 ועוד 250
+    expect(plan.rows[0]!.total).toBe(650)
+    expect(plan.footer[0]!.values.bonus).toBe(250)
+    expect(plan.footer[0]!.values.total).toBe(650)
+  })
+
   it('takes the totals from the server rather than summing the rows', () => {
     // שתי שורות של 8 שעות, אבל השרת אומר 8 — כי אחת ממתינה לאישור
     const plan = buildAttendanceSheet(
       report({
         rows: [row(), row({ id: 'r2', status: 'pending' })],
-        totals: { entries: 2, pending: 1, pending_hours: 8, actual_hours: 8, paid_hours: 8, overtime_hours: 0, total: null },
+        totals: { entries: 2, pending: 1, pending_hours: 8, actual_hours: 8, paid_hours: 8, overtime_hours: 0, bonus: null, total: null },
       }),
     )
     expect(plan.footer[0]!.values.actual_hours).toBe(8)
