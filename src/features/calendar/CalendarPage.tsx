@@ -79,7 +79,7 @@ export default function CalendarPage() {
   const qc = useQueryClient()
   const toast = useToast()
   const navigate = useNavigate()
-  const { me, has } = useAuth()
+  const { me, has, canCreateEvent } = useAuth()
   const { openMenu, menu } = useContextMenu()
   const { prompt, dialog: promptDialog } = usePrompt()
   const isMobile = useIsMobile()
@@ -161,8 +161,20 @@ export default function CalendarPage() {
   /* ── the calendar's only write path: dragging an event to another day ──── */
 
   const moveEvent = useMutation({
+    /**
+     * Through the RPC rather than straight at the table. `events_update` is
+     * staff-only since 0014 — the RPC is the only path that runs the customer's
+     * form config — so a direct write here would mean the drag handle works for
+     * some people and silently fails for others. The patch carries one key, and
+     * both `validate_event_payload` and `apply_event_task_block` only act on
+     * the keys they are given, so nothing else on the event moves with it. The
+     * column trigger still runs, so `events.change_date` is still required.
+     */
     mutationFn: async ({ id, date }: { id: string; date: string; undo?: string; message?: string }) => {
-      const { error } = await supabase.from('events').update({ event_date: date }).eq('id', id)
+      const { error } = await supabase.rpc('update_event', {
+        p_event_id: id,
+        payload: { event_date: date },
+      })
       if (error) throw error
     },
     onSuccess: (_d, vars) => {
@@ -378,19 +390,23 @@ export default function CalendarPage() {
         onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
         aria-label="חיפוש אירועים"
       />
-      <Select
-        selectSize="sm"
-        value={filters.customer}
-        onChange={(e) => setFilters((f) => ({ ...f, customer: e.target.value }))}
-        aria-label="לקוח"
-      >
-        <option value="">כל הלקוחות</option>
-        {customers.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-      </Select>
+      {/* one customer means one option: `customers_select` already scoped the
+          list, so the control would only offer the filter you are already in */}
+      {has(PERM.CUSTOMERS_VIEW) && (
+        <Select
+          selectSize="sm"
+          value={filters.customer}
+          onChange={(e) => setFilters((f) => ({ ...f, customer: e.target.value }))}
+          aria-label="לקוח"
+        >
+          <option value="">כל הלקוחות</option>
+          {customers.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </Select>
+      )}
       <Select
         selectSize="sm"
         value={filters.status}
@@ -449,15 +465,17 @@ export default function CalendarPage() {
                 </span>
               )}
             </Button>
-            <IconButton
-              label="שמירת הסינון הנוכחי"
-              size="sm"
-              onClick={() => void saveFilter()}
-              disabled={activeFilters.length === 0}
-            >
-              <Save size={ICON.md} strokeWidth={STROKE} />
-            </IconButton>
-            {has(PERM.EVENTS_CREATE) && (
+            {has(PERM.CALENDAR_SAVE_FILTERS) && (
+              <IconButton
+                label="שמירת הסינון הנוכחי"
+                size="sm"
+                onClick={() => void saveFilter()}
+                disabled={activeFilters.length === 0}
+              >
+                <Save size={ICON.md} strokeWidth={STROKE} />
+              </IconButton>
+            )}
+            {canCreateEvent() && (
               <Button size="sm" variant="primary" onClick={() => setEventModal(true)}>
                 <Plus size={ICON.sm} strokeWidth={STROKE} />
                 אירוע חדש
@@ -555,7 +573,9 @@ export default function CalendarPage() {
         />
       </div>
 
-      {legend.length > 0 && (
+      {/* a legend of one is not a legend — it just names the company you are
+          already inside, which is what a client sees once RLS has scoped the rows */}
+      {legend.length > 1 && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1">
           <span className="type-overline">לקוחות בתצוגה</span>
           {legend.map(([id, c]) => (
