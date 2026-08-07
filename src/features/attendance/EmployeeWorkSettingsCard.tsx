@@ -5,6 +5,7 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { useSaveWorkerPaySettings, useWorkerPaySettings } from './attendanceQueries'
 import type { WorkerPaySettings } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 /** '' במסך = NULL במסד = "לך לפי ההגדרה הגלובלית". */
 const TRI = [
@@ -190,7 +191,7 @@ export function EmployeeWorkSettingsCard({ profileId }: { profileId: string }) {
             onClick={() =>
               save.mutate(form, {
                 onSuccess: () => toast.success('ההגדרות נשמרו'),
-                onError: (e) => toast.error((e as Error).message),
+                onError: (e) => toast.error(errorMessage(e)),
               })
             }
           >

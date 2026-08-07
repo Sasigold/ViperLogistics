@@ -54,6 +54,7 @@ import {
   flagLabel,
 } from './shiftFormat'
 import type { AttendanceEntry, ClockStatus } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 /** מונה חי מרגע הכניסה */
 function useElapsed(since: string | null | undefined) {
@@ -197,7 +198,7 @@ function TimeClock() {
         data?.distance_m != null ? { description: `${fmtDistance(data.distance_m)} מנקודת הייחוס` } : undefined,
       )
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   if (isLoading) {
@@ -481,7 +482,7 @@ function MyReportsCard({ reports }: { reports: AttendanceEntry[] }) {
       toast.success('הדיווח בוטל')
       invalidate()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   return (
@@ -560,7 +561,7 @@ function SelfReportModal({ status, onClose }: { status?: ClockStatus; onClose: (
           })
           onClose()
         },
-        onError: (e) => toast.error((e as Error).message),
+        onError: (e) => toast.error(errorMessage(e)),
       },
     )
   }

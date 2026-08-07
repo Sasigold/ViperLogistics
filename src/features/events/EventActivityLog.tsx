@@ -31,6 +31,7 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { fmtDateTime } from '../../lib/dates'
 import type { EventActivity, EventActivityKind } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 const KIND_COLORS: Record<EventActivityKind, string> = {
   created: '#16a34a',
@@ -174,7 +175,7 @@ export function EventActivityLog({ eventId, className }: { eventId: string; clas
             </Button>
           </form>
           {addNote.isError && (
-            <p className="mt-2 type-caption text-error-text">{(addNote.error as Error).message}</p>
+            <p className="mt-2 type-caption text-error-text">{errorMessage(addNote.error)}</p>
           )}
         </div>
       )}

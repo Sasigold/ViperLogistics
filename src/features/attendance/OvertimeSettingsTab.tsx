@@ -21,6 +21,7 @@ import { useClockConfig, useOvertimeConfig, useSaveAppSetting } from './attendan
 import { fmtDuration } from './shiftFormat'
 import { WarehousesCard } from './WarehousesCard'
 import type { ClockConfig, OvertimeConfig, OvertimeTier, PayBreakdown } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 const DOW = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 
@@ -72,7 +73,7 @@ export function OvertimeSettingsTab() {
       await saveClock.mutateAsync(ck)
       toast.success('ההגדרות נשמרו')
     } catch (e) {
-      toast.error((e as Error).message)
+      toast.error(errorMessage(e))
     }
   }
 

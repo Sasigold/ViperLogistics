@@ -28,9 +28,10 @@ import {
   useToast,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
-import { SCOPE_LABELS, SCOPE_RESOURCES, usePermissionScopes } from '../../lib/permissions'
+import { SCOPE_LABELS, SCOPE_RESOURCES, usePermissionScopes, refreshOwnCapabilities } from '../../lib/permissions'
 import { useContractors, useCustomers, useStatuses, useTaskTypes, useTrucks, useExecutionMethods } from '../../lib/queries'
 import type { PermissionScope, ScopeType } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 export type ScopeSubject = { kind: 'user'; profileId: string } | { kind: 'role'; roleId: string }
 
@@ -70,8 +71,10 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
     }
   }
 
-  const invalidate = () =>
+  const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['permission_scopes', profileId ?? null, roleId ?? null] })
+    refreshOwnCapabilities()
+  }
 
   const add = useMutation({
     mutationFn: async () => {
@@ -88,7 +91,7 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
       toast.success('הוגדרה הגבלת נתונים')
       invalidate()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const patch = useMutation({
@@ -97,7 +100,7 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
       if (error) throw error
     },
     onSuccess: invalidate,
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const remove = useMutation({
@@ -106,7 +109,7 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
       if (error) throw error
     },
     onSuccess: invalidate,
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const toggleValue = (row: PermissionScope, id: string) => {

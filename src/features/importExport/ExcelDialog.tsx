@@ -7,6 +7,7 @@ import { Button, Modal, Spinner, useToast } from '../../components/ui'
 import { useCustomers } from '../../lib/queries'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
+import { errorMessage } from '../../lib/errors'
 
 const headers = [
   ['customer_name', 'שם לקוח במערכת'],
@@ -82,7 +83,7 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
       a.click()
       URL.revokeObjectURL(url)
     } catch (e) {
-      toast.error((e as Error).message)
+      toast.error(errorMessage(e))
     } finally {
       setBusy(false)
     }
@@ -129,7 +130,7 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
       void qc.invalidateQueries({ queryKey: ['calendar'] })
       void qc.invalidateQueries({ queryKey: ['workboard'] })
     } catch (e) {
-      toast.error((e as Error).message)
+      toast.error(errorMessage(e))
     } finally {
       setBusy(false)
       if (fileRef.current) fileRef.current.value = ''

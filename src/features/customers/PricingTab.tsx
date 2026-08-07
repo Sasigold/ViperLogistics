@@ -46,6 +46,7 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { useCustomerPricingRules, useTaskTypes } from '../../lib/queries'
 import { PricingZonesEditor } from '../pricing/PricingZonesEditor'
+import { errorMessage } from '../../lib/errors'
 import {
   AFTER_KINDS,
   BOOLEAN_VARS,
@@ -106,7 +107,7 @@ export default function PricingTab({ customer }: { customer: Customer }) {
       void qc.invalidateQueries({ queryKey: ['customers'] })
       void qc.invalidateQueries({ queryKey: ['workboard'] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   // חישוב גורף כולל אירועי עבר. שינוי מחשבון לבדו נוגע רק בעתיד, כי אירוע
@@ -125,7 +126,7 @@ export default function PricingTab({ customer }: { customer: Customer }) {
       void qc.invalidateQueries({ queryKey: ['workboard'] })
       void qc.invalidateQueries({ queryKey: ['task_pricing'] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   // הקמה ופירוק תחילה — הם המשימות שבפועל מתומחרות — ואז כל השאר.
@@ -249,7 +250,7 @@ function RuleCard({
       void qc.invalidateQueries({ queryKey: ['customer_pricing_rules', customerId] })
       void qc.invalidateQueries({ queryKey: ['workboard'] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   // התבנית מגיעה מהשרת ולא מהקליינט, כדי שנוסחת ההתחלה תישאר במקום אחד.
@@ -263,7 +264,7 @@ function RuleCard({
       setOpen(true)
       save.mutate(cfg)
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   if (!config) {
@@ -1186,7 +1187,7 @@ function PreviewPanel({ config }: { config: PricingConfig }) {
 
       <div className="mt-4">
         {error ? (
-          <p className="type-caption text-error">{(error as Error).message}</p>
+          <p className="type-caption text-error">{errorMessage(error)}</p>
         ) : !data ? (
           <Skeleton className="h-24 w-full" />
         ) : (

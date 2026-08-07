@@ -17,6 +17,7 @@ import {
   Modal,
   PageHeader,
   Skeleton,
+  ErrorState,
   StatCard,
   StatusPill,
   Switch,
@@ -35,6 +36,7 @@ import { usePageTitle } from '../../app/breadcrumbs'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import type { Contractor, ContractorWorker } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 interface ContractorTaskRow {
   task_id: string
@@ -61,7 +63,7 @@ export default function ContractorDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('details')
 
-  const { data: contractor, isLoading } = useQuery({
+  const { data: contractor, isLoading, error, refetch } = useQuery({
     queryKey: ['contractors', 'one', id],
     queryFn: async () => {
       const { data, error } = await supabase.from('contractors').select('*').eq('id', id).single()
@@ -72,7 +74,9 @@ export default function ContractorDetailPage() {
 
   usePageTitle(contractor?.name ?? null)
 
-  if (isLoading || !contractor)
+  if (isLoading || !contractor) {
+    // ראה CustomerDetailPage: בלי זה כישלון טעינה נראה כטעינה שלא נגמרת.
+    if (error) return <ErrorState error={error} onRetry={() => void refetch()} />
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-56" />
@@ -80,6 +84,7 @@ export default function ContractorDetailPage() {
         <Skeleton className="h-64 w-full max-w-2xl" />
       </div>
     )
+  }
 
   return (
     <RequirePermission perm={PERM.CONTRACTORS_VIEW}>
@@ -144,7 +149,7 @@ function DetailsTab({ contractor }: { contractor: Contractor }) {
       toast.success('הקבלן עודכן')
       void qc.invalidateQueries({ queryKey: ['contractors'] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   return (
@@ -254,7 +259,7 @@ export function WorkersTab({
       setForm({ full_name: '', phone: '', id_number: '' })
       void qc.invalidateQueries({ queryKey: ['contractor_workers'] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const remove = async (w: ContractorWorker) => {
@@ -421,7 +426,7 @@ function ClockAccountModal({
       onDone()
       onClose()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   return (
@@ -504,7 +509,7 @@ function TasksTab({ contractorId }: { contractorId: string }) {
       if (error) throw error
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['contractor_terms'] }),
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const updatePrice = useMutation({
@@ -513,7 +518,7 @@ function TasksTab({ contractorId }: { contractorId: string }) {
       if (error) throw error
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['contractor_terms'] }),
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const expected = rows.reduce((s, r) => s + Number(r.price), 0)

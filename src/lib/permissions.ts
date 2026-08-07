@@ -9,6 +9,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from './supabase'
+import { useAuth } from '../state/auth'
 import type {
   FieldDef,
   PermissionDef,
@@ -20,6 +21,21 @@ import type {
 
 export { PERM } from './permissionKeys'
 export type { PermissionKey } from './permissionKeys'
+
+/**
+ * נקרא אחרי כל שינוי במרשם ההרשאות.
+ *
+ * `me.capabilities` נפתר פעם אחת בשרת בעליית האפליקציה ולא נגע בו איש
+ * אחרי כן, ולכן אדמין שערך הרשאות המשיך לראות את התשובה הישנה עד להתנתקות
+ * — כפתורים שנעלמו ולא הופיעו, ומסכים שנפתחו ואמורים היו להיחסם.
+ *
+ * הרענון אינו מותנה בשאלה "האם ערכתי את עצמי": עריכה של *תפקיד* משנה את מי
+ * שמחזיק בו, והעורך עשוי להיות אחד מהם. הקריאה זולה ונדירה, ולכן עדיף
+ * לרענן תמיד מלנסות לנחש מתי זה נחוץ.
+ */
+export function refreshOwnCapabilities() {
+  void useAuth.getState().refreshMe()
+}
 
 /** How a single permission is set for one subject. */
 export type GrantState = 'inherit' | 'allow' | 'deny'

@@ -6,7 +6,7 @@ import HomeRoute from './HomeRoute'
 import LoginPage from '../features/auth/LoginPage'
 import { RequireAuth } from '../features/auth/guards'
 import { PERM } from '../lib/permissions'
-import { Skeleton } from '../components/ui'
+import { ErrorBoundary, Skeleton } from '../components/ui'
 
 /**
  * Every screen is code-split. Before this, FullCalendar, Recharts and ExcelJS
@@ -50,7 +50,16 @@ function PageFallback() {
   )
 }
 
-const page = (node: ReactNode) => <Suspense fallback={<PageFallback />}>{node}</Suspense>
+/**
+ * גבול שגיאה פר-מסך, בתוך ה-shell. הגבול החיצוני ב-main.tsx תופס גם את מה
+ * שקורס מחוץ למסך, אבל הוא מחליף את כל העמוד; כאן הניווט והתפריט נשארים,
+ * ולכן אפשר פשוט לעבור למסך אחר במקום לטעון מחדש.
+ */
+const page = (node: ReactNode) => (
+  <ErrorBoundary>
+    <Suspense fallback={<PageFallback />}>{node}</Suspense>
+  </ErrorBoundary>
+)
 
 /** Keeps a bookmarked client event link pointing at the same event. */
 function ClientEventRedirect() {

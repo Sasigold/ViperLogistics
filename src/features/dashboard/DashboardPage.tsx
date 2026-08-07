@@ -23,6 +23,7 @@ import {
   CardBody,
   CardHeader,
   EmptyState,
+  ErrorState,
   PageHeader,
   ProgressBar,
   Skeleton,
@@ -79,7 +80,7 @@ export default function DashboardPage() {
     return { from: toISODate(subDays(prevTo, span)), to: toISODate(prevTo) }
   }, [from, to])
 
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading, error, refetch } = useQuery({
     queryKey: ['dashboard', from, to],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('dashboard_stats', { p_from: from, p_to: to })
@@ -193,15 +194,25 @@ export default function DashboardPage() {
           }
         />
 
+        {/* דשבורד שנכשל היה מצייר שלדים לנצח: isLoading יורד ל-false ו-stats
+            נשאר undefined, ולכן התנאי שמתחתיו נשאר אמת. הודעה עם "נסה שוב"
+            היא ההבדל בין "עוד רגע" ל"לא נטען". */}
         {/* ── KPIs ─────────────────────────────────────────────────────────
             Only the two range-scoped metrics carry a delta: the rest are
             "as of today" and have no previous-period equivalent.          */}
         {isLoading || !stats ? (
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} lines={0} />
-            ))}
-          </div>
+          /* דשבורד שנכשל היה מצייר שלדים לנצח: isLoading יורד ל-false ו-stats
+             נשאר undefined, ולכן התנאי הזה נשאר אמת. ההודעה היא ההבדל בין
+             "עוד רגע" ל"לא נטען". */
+          error ? (
+            <ErrorState error={error} onRetry={() => void refetch()} />
+          ) : (
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <SkeletonCard key={i} lines={0} />
+              ))}
+            </div>
+          )
         ) : (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
             <StatCard

@@ -50,6 +50,7 @@ import type { BoardLookups } from './boardFields'
 import { COLOR_BY_OPTIONS, buildTones, clusterDay } from './grouping'
 import type { Cluster, ColorBy, GroupTone } from './grouping'
 import type { TaskRow, WorkBoardRow } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 /* ── geometry ─────────────────────────────────────────────────────────────
    The board is transposed: days run across, task fields run down. The field
@@ -161,7 +162,7 @@ function useInlineUpdate() {
       if (!data || data.length === 0) throw new Error('המשימה עודכנה על ידי משתמש אחר — הנתונים רועננו')
     },
     onSettled: () => void qc.invalidateQueries({ queryKey: ['workboard'] }),
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 }
 
@@ -1557,7 +1558,7 @@ function BulkEditModal({ open, onClose, taskIds, onDone }: { open: boolean; onCl
       setPatch({})
       onDone()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const setIf = (key: string, value: string) => setPatch((p) => ({ ...p, [key]: value }))

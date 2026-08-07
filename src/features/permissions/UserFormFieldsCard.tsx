@@ -4,6 +4,7 @@ import { Card, CardBody, CardHeader, SegmentedControl, Skeleton, useToast } from
 import { supabase } from '../../lib/supabase'
 import { useCustomerFormConfig, useFormFields, useUserFormFields } from '../../lib/queries'
 import type { FieldState, Profile } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 const OVERRIDE_STATES = [
   { key: 'default' as const, label: 'כמו הלקוח' },
@@ -59,7 +60,7 @@ export function UserFormFieldsCard({ profile }: { profile: Profile }) {
       }
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['user_form_fields', profile.id] }),
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   return (

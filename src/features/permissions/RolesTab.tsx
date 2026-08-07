@@ -28,11 +28,12 @@ import {
   useToast,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
-import { usePermissionRoles } from '../../lib/permissions'
+import { usePermissionRoles, refreshOwnCapabilities } from '../../lib/permissions'
 import { PermissionMatrix } from './PermissionMatrix'
 import { ScopeEditor } from './ScopeEditor'
 import { FieldPermissions } from './FieldPermissions'
 import type { PermissionRole } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 const KIND_LABELS: Record<string, string> = {
   staff: 'צוות',
@@ -85,8 +86,9 @@ export function RolesTab() {
       setCreating(false)
       setForm({ key: '', name_he: '', description_he: '', user_kind: '' })
       void qc.invalidateQueries({ queryKey: ['permission_roles'] })
+      refreshOwnCapabilities()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const remove = useMutation({
@@ -100,8 +102,9 @@ export function RolesTab() {
     onSuccess: () => {
       toast.success('התפקיד הוסר')
       void qc.invalidateQueries({ queryKey: ['permission_roles'] })
+      refreshOwnCapabilities()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   if (isLoading) return <Skeleton className="h-72 w-full" />

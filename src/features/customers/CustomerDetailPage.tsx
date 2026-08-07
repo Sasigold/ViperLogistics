@@ -32,6 +32,7 @@ import {
   SegmentedControl,
   Select,
   Skeleton,
+  ErrorState,
   StatusPill,
   Switch,
   Tabs,
@@ -57,6 +58,7 @@ import PricingTab from './PricingTab'
 import { useWarehouses } from '../attendance/attendanceQueries'
 import { RequirePermission } from '../auth/guards'
 import type { Customer, FieldState, Supplier } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 const TABS = [
   { key: 'details', label: 'פרטים', icon: <Building2 size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
@@ -72,7 +74,7 @@ export default function CustomerDetailPage() {
   const { has } = useAuth()
   const visibleTabs = TABS.filter((t) => has(t.perm))
 
-  const { data: customer, isLoading } = useQuery({
+  const { data: customer, isLoading, error, refetch } = useQuery({
     queryKey: ['customers', 'one', id],
     queryFn: async () => {
       const { data, error } = await supabase.from('customers').select('*').eq('id', id).single()
@@ -83,7 +85,10 @@ export default function CustomerDetailPage() {
 
   usePageTitle(customer?.name ?? null)
 
-  if (isLoading || !customer)
+  if (isLoading || !customer) {
+    // שאילתה שנכשלה משאירה isLoading=false ו-customer=undefined, ולכן בלי
+    // הענף הזה המסך היה נשאר שלד לנצח — נראה כמו טעינה ולא ככישלון.
+    if (error) return <ErrorState error={error} onRetry={() => void refetch()} />
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-56" />
@@ -91,6 +96,7 @@ export default function CustomerDetailPage() {
         <Skeleton className="h-72 w-full max-w-2xl" />
       </div>
     )
+  }
 
   return (
     <RequirePermission perm={PERM.CUSTOMERS_VIEW}>
@@ -171,7 +177,7 @@ function DetailsTab({ customer }: { customer: Customer }) {
       toast.success('הלקוח עודכן')
       void qc.invalidateQueries({ queryKey: ['customers'] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const remove = async () => {
@@ -351,7 +357,7 @@ function FieldsTab({ customerId }: { customerId: string }) {
       if (error) throw error
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['customer_form_fields', customerId] }),
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const counts = fields.reduce(
@@ -449,7 +455,7 @@ function MethodsTab({ customerId }: { customerId: string }) {
       }
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['customer_execution_methods', customerId] }),
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   return (
@@ -518,7 +524,7 @@ function SuppliersTab({ customerId }: { customerId: string }) {
       setForm({ name: '', phone: '', address: '' })
       void qc.invalidateQueries({ queryKey: ['suppliers', 'byCustomer', customerId] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const remove = async (s: Supplier) => {

@@ -37,6 +37,7 @@ import { usePricingZones } from '../../lib/queries'
 import { ZoneMap } from './ZoneMap'
 import type { DraftShape } from './ZoneMap'
 import type { PricingZone } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 const SHAPES = [
   { key: 'polygon' as const, label: 'פוליגון', icon: <Pentagon size={ICON.xs} /> },
@@ -105,7 +106,7 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
       setMeta(EMPTY_META)
       invalidate()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const patch = useMutation({
@@ -114,7 +115,7 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
       if (error) throw error
     },
     onSuccess: invalidate,
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   // עדכון ישיר ולא soft_delete: הפוליסה pz_write כבר דורשת
@@ -130,7 +131,7 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
       setSelectedId(null)
       invalidate()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   // אזור של הלקוח ניתן לעריכה כאן; אזור גלובלי מוצג לצורך הקשר בלבד, כדי

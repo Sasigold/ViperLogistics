@@ -23,6 +23,7 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { useCustomers } from '../../lib/queries'
 import { RequirePermission } from '../auth/guards'
+import { errorMessage } from '../../lib/errors'
 
 export default function CustomersPage() {
   const { has } = useAuth()
@@ -188,7 +189,7 @@ function CreateCustomerModal({ open, onClose }: { open: boolean; onClose: () => 
       setTouched(false)
       onClose()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   return (

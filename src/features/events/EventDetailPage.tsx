@@ -28,6 +28,7 @@ import {
   EmptyState,
   PageHeader,
   SkeletonCard,
+  ErrorState,
   SkeletonTable,
   StatusPill,
   fmtMoney,
@@ -60,7 +61,7 @@ export default function EventDetailPage() {
   const [activeTab, setActiveTab] = useState<TaskTab>('all')
   const [viewMode, setViewMode] = useState<TaskViewMode>('cards')
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['events', 'one', id],
     queryFn: async () => {
       const [e, contact, sup] = await Promise.all([
@@ -242,6 +243,8 @@ export default function EventDetailPage() {
   )
 
   if (isLoading || !data) {
+    // ראה CustomerDetailPage: בלי זה כישלון טעינה נראה כטעינה שלא נגמרת.
+    if (error) return <ErrorState error={error} onRetry={() => void refetch()} />
     return (
       <div className="space-y-4">
         <SkeletonCard lines={1} />

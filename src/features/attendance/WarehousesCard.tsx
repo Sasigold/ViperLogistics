@@ -20,6 +20,7 @@ import { supabase } from '../../lib/supabase'
 import { useWarehouses } from './attendanceQueries'
 import { LocationPicker } from './LocationPicker'
 import type { Warehouse } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 const BLANK = { name: '', address: '', lat: null as number | null, lng: null as number | null, radius_m: '' }
 
@@ -59,7 +60,7 @@ export function WarehousesCard() {
       setForm(BLANK)
       invalidate()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const patch = useMutation({
@@ -68,7 +69,7 @@ export function WarehousesCard() {
       if (error) throw error
     },
     onSuccess: invalidate,
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const remove = async (w: Warehouse) => {

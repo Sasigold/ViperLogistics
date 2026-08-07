@@ -32,6 +32,7 @@ import { useIsMobile } from '../../lib/useMediaQuery'
 import { EventFormModal } from '../events/EventFormModal'
 import { chipPaint } from './eventColors'
 import type { SavedFilter } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 /** The calendar shows *events* — the thing that is scheduled on a date. Their
  *  tasks (הקמה, פירוק, …) live on the work board, where a day's worth of
@@ -187,7 +188,7 @@ export default function CalendarPage() {
       void qc.invalidateQueries({ queryKey: ['events'] })
     },
     onError: (e) => {
-      toast.error((e as Error).message)
+      toast.error(errorMessage(e))
       void qc.invalidateQueries({ queryKey: ['calendar'] })
     },
   })

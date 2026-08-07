@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react'
 import { Navigate, Outlet, useLocation, useMatches } from 'react-router'
 import { Truck } from '../../components/ui/icons'
-import { Card, EmptyState, Spinner } from '../../components/ui'
+import { Button, Card, EmptyState, Spinner } from '../../components/ui'
 import { useAuth } from '../../state/auth'
+import { errorMessage } from '../../lib/errors'
 import type { PermissionAction } from '../../types/domain'
 
 /** Branded boot screen — better than a bare spinner on a cold load. */
@@ -17,13 +18,43 @@ function Booting() {
   )
 }
 
+/**
+ * מה שנראה כשטעינת ההרשאות נכשלה. בלי זה המסך היה ספינר בלי סוף: `me` נשאר
+ * null, וה-guard מצייר את מסך העלייה כל עוד אין לו.
+ */
+function BootFailed({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  return (
+    <div className="flex h-full items-center justify-center bg-canvas p-4">
+      <Card className="w-full max-w-md">
+        <EmptyState
+          art="alert"
+          title="לא הצלחנו לטעון את ההרשאות שלך"
+          description={errorMessage(error)}
+          action={
+            <>
+              <Button variant="primary" size="sm" onClick={onRetry}>
+                נסה שוב
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => void useAuth.getState().signOut()}>
+                התנתקות
+              </Button>
+            </>
+          }
+        />
+      </Card>
+    </div>
+  )
+}
+
 export function RequireAuth() {
-  const { session, booted, me } = useAuth()
+  const { session, booted, me, meError, refreshMe } = useAuth()
   const location = useLocation()
 
   if (!booted) return <Booting />
   if (!session) return <Navigate to="/login" replace />
-  if (!me) return <Booting />
+  if (!me) {
+    return meError ? <BootFailed error={meError} onRetry={() => void refreshMe()} /> : <Booting />
+  }
   // The contractor portal is a genuinely different shell — a financial
   // dashboard over delegated work — so a contractor still gets routed to it.
   // Clients no longer are: they use the same screens as everyone else, and

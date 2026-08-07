@@ -34,6 +34,7 @@ import { RequirePermission } from '../auth/guards'
 import { UserPermissionsTab } from '../permissions/UserPermissionsTab'
 import { EmployeeWorkSettingsCard } from '../attendance/EmployeeWorkSettingsCard'
 import type { Profile, StaffRole, UserKind } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 const kindLabels: Record<UserKind, string> = { staff: 'צוות', customer_user: 'לקוח', contractor_user: 'קבלן' }
 const roleLabels: Record<StaffRole, string> = { worker: 'עובד', driver: 'נהג', team_lead: 'ראש צוות' }
@@ -393,7 +394,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
       void qc.invalidateQueries({ queryKey: ['profiles'] })
       onClose()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const createLogin = useMutation({
@@ -411,7 +412,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
       setLogin((l) => ({ ...l, password: '' }))
       void qc.invalidateQueries({ queryKey: ['profiles'] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const resetPassword = useMutation({
@@ -423,7 +424,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
       toast.success('הסיסמה עודכנה')
       setLogin((l) => ({ ...l, password: '' }))
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const nameError = touched && !form.full_name.trim() ? 'חובה להזין שם' : undefined

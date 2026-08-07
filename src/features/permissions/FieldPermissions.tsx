@@ -23,8 +23,9 @@ import {
   useToast,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
-import { useFieldPermissionRows, useFieldRegistry, usePermissionModules } from '../../lib/permissions'
+import { useFieldPermissionRows, useFieldRegistry, usePermissionModules, refreshOwnCapabilities } from '../../lib/permissions'
 import type { FieldDef } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 export type FieldSubject = { kind: 'user'; profileId: string } | { kind: 'role'; roleId: string }
 
@@ -46,8 +47,10 @@ export function FieldPermissions({ subject }: { subject: FieldSubject }) {
     return m
   }, [rows])
 
-  const invalidate = () =>
+  const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['field_permissions', profileId ?? null, roleId ?? null] })
+    refreshOwnCapabilities()
+  }
 
   const save = useMutation({
     mutationFn: async ({ field, canView, canEdit }: { field: FieldDef; canView: boolean; canEdit: boolean }) => {
@@ -72,7 +75,7 @@ export function FieldPermissions({ subject }: { subject: FieldSubject }) {
       if (error) throw error
     },
     onSuccess: invalidate,
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const term = q.trim().toLowerCase()

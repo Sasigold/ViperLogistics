@@ -25,6 +25,7 @@ import {
   flagLabel,
 } from './shiftFormat'
 import type { AttendanceReportRow } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 /** timestamptz -> הערך ש-<input type="datetime-local"> מצפה לו, בשעון המקומי. */
 function toLocalInput(iso: string | null | undefined): string {
@@ -79,7 +80,7 @@ export function AttendanceEntryDrawer({
       invalidate()
       onClose()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const remove = useMutation({
@@ -93,7 +94,7 @@ export function AttendanceEntryDrawer({
       invalidate()
       onClose()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   /**
@@ -113,7 +114,7 @@ export function AttendanceEntryDrawer({
           toast.success(approve ? 'הדיווח אושר ונספר בשעות' : 'הדיווח נדחה')
           onClose()
         },
-        onError: (e) => toast.error((e as Error).message),
+        onError: (e) => toast.error(errorMessage(e)),
       },
     )
   }

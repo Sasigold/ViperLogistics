@@ -46,6 +46,7 @@ import {
 import { Breakdown } from '../customers/PricingTab'
 import { useWarehouses } from '../attendance/attendanceQueries'
 import type { PriceBreakdown, StaffRole, TaskPricing, TaskRow, WorkSite } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 interface Assignment {
   id?: string
@@ -242,7 +243,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       void qc.invalidateQueries({ queryKey: ['task_pricing'] })
       onClose()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   // מנקה את הנעילה הידנית ומחשב מהמחשבון של הלקוח.
@@ -259,7 +260,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       void qc.invalidateQueries({ queryKey: ['tasks', 'one', taskId] })
       void qc.invalidateQueries({ queryKey: ['workboard'] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const remove = async () => {

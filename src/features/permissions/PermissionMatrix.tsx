@@ -35,10 +35,10 @@ import {
   useProfileRoles,
   useRolePermissions,
   useRolesPermissions,
-  useUserGrants,
-} from '../../lib/permissions'
+  useUserGrants, refreshOwnCapabilities } from '../../lib/permissions'
 import type { GrantState } from '../../lib/permissions'
 import type { UserKind } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 export type MatrixSubject =
   | { kind: 'user'; profileId: string; userKind: UserKind }
@@ -128,6 +128,7 @@ export function PermissionMatrix({
     void qc.invalidateQueries({
       queryKey: subject.kind === 'user' ? ['user_permission_grants', profileId] : ['role_permissions', roleId],
     })
+    refreshOwnCapabilities()
   }
 
   const update = useMutation({
@@ -146,7 +147,7 @@ export function PermissionMatrix({
       }
     },
     onSuccess: invalidate,
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   /**
@@ -173,7 +174,7 @@ export function PermissionMatrix({
       toast.success('כל ההרשאות שלא אושרו במודול נחסמו')
       invalidate()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const resetModule = useMutation({
@@ -189,7 +190,7 @@ export function PermissionMatrix({
       toast.success('המודול הוחזר לירושה')
       invalidate()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const term = q.trim().toLowerCase()

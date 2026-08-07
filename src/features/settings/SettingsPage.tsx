@@ -45,6 +45,7 @@ import { PERM } from '../../lib/permissions'
 import { RolesTab } from '../permissions/RolesTab'
 import { PricingZonesEditor } from '../pricing/PricingZonesEditor'
 import { OvertimeSettingsTab } from '../attendance/OvertimeSettingsTab'
+import { errorMessage } from '../../lib/errors'
 
 /**
  * Each tab names the permission that governs it, so a coordinator who may edit
@@ -98,7 +99,7 @@ function useSoftDelete(invalidate: string) {
       if (error) throw error
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: [invalidate] }),
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 }
 
@@ -152,7 +153,7 @@ function TaskTypesTab() {
       setName('')
       void qc.invalidateQueries({ queryKey: ['task_types'] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   return (
@@ -250,7 +251,7 @@ function MethodsTab() {
       void qc.invalidateQueries({ queryKey: ['execution_methods'] })
       void qc.invalidateQueries({ queryKey: ['task_type_execution_methods'] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const toggleMap = useMutation({
@@ -270,7 +271,7 @@ function MethodsTab() {
       }
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['task_type_execution_methods'] }),
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   return (
@@ -378,7 +379,7 @@ function StatusesTab() {
       setForm((f) => ({ ...f, name: '' }))
       void qc.invalidateQueries({ queryKey: ['statuses'] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   return (
@@ -492,7 +493,7 @@ function TrucksTab() {
       setForm({ name: '', plate_number: '' })
       void qc.invalidateQueries({ queryKey: ['trucks'] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   return (
@@ -602,7 +603,7 @@ function RecycleBinTab() {
       toast.success('שוחזר בהצלחה')
       void qc.invalidateQueries({ queryKey: ['recycle'] })
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   if (!me?.profile.is_admin) return <AdminOnly what="סל המיחזור" />

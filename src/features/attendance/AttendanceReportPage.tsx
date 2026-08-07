@@ -52,6 +52,7 @@ import {
   needsAttention,
 } from './shiftFormat'
 import type { AttendanceReportRow, AttendanceStatus } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 const HEBREW_MONTH_NAMES = [
   'ינואר',
@@ -772,7 +773,7 @@ export function AttendanceReport({
           columns={columns}
           getRowId={(r) => r.id}
           loading={isLoading}
-          error={error ? (error as Error).message : undefined}
+          error={error ? errorMessage(error) : undefined}
           onRetry={() => void refetch()}
           empty="לא נמצאו רשומות נוכחות בטווח הזה"
           onRowClick={canEdit || canApprove ? (r) => setSelected(r) : undefined}
@@ -812,7 +813,7 @@ function ManualEntryModal({ onClose }: { onClose: () => void }) {
       invalidate()
       onClose()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   return (

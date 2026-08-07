@@ -22,6 +22,7 @@ import { PERM } from '../../lib/permissions'
 import { useContractors } from '../../lib/queries'
 import { fmtMoney } from '../../lib/dates'
 import { RequirePermission } from '../auth/guards'
+import { errorMessage } from '../../lib/errors'
 
 export default function ContractorsPage() {
   const { has } = useAuth()
@@ -160,7 +161,7 @@ function CreateContractorModal({ open, onClose }: { open: boolean; onClose: () =
       setTouched(false)
       onClose()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   return (

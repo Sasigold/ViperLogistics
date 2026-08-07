@@ -31,6 +31,7 @@ import {
 } from '../../lib/queries'
 import { AddressAutocomplete } from './AddressAutocomplete'
 import type { EventRow, ExecutionMethod } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 type EventForm = {
   customer_id: string
@@ -390,7 +391,7 @@ export function EventFormModal({
       void qc.invalidateQueries({ queryKey: ['dashboard'] })
       onClose()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   const submit = () => {

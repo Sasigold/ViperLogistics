@@ -8,6 +8,12 @@ interface AuthState {
   session: Session | null
   me: MyPermissions | null
   booted: boolean
+  /**
+   * כישלון בטעינת ההרשאות. `refreshMe` בלע אותו קודם (`if (!error)`), ולכן
+   * תקלת רשת רגעית הותירה את `me` על null — ו-RequireAuth, שמצייר ספינר כל
+   * עוד אין `me`, נתקע עליו לנצח בלי הודעה ובלי דרך לנסות שוב.
+   */
+  meError: unknown
   theme: 'light' | 'dark'
   boot: () => Promise<void>
   refreshMe: () => Promise<void>
@@ -52,6 +58,7 @@ export const useAuth = create<AuthState>((set, get) => ({
   session: null,
   me: null,
   booted: false,
+  meError: null,
   theme: (localStorage.getItem('vl-theme') as 'light' | 'dark') ?? 'light',
 
   boot: async () => {
@@ -63,18 +70,26 @@ export const useAuth = create<AuthState>((set, get) => ({
     supabase.auth.onAuthStateChange((_evt, session) => {
       set({ session })
       if (session) void get().refreshMe()
-      else set({ me: null })
+      else set({ me: null, meError: null })
     })
   },
 
   refreshMe: async () => {
-    const { data, error } = await supabase.rpc('get_my_permissions')
-    if (!error) set({ me: (data as MyPermissions | null) ?? null })
+    try {
+      const { data, error } = await supabase.rpc('get_my_permissions')
+      if (error) {
+        set({ meError: error })
+        return
+      }
+      set({ me: (data as MyPermissions | null) ?? null, meError: null })
+    } catch (e) {
+      set({ meError: e })
+    }
   },
 
   signOut: async () => {
     await supabase.auth.signOut()
-    set({ session: null, me: null })
+    set({ session: null, me: null, meError: null })
   },
 
   toggleTheme: () => {

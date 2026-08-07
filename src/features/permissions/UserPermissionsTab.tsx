@@ -22,12 +22,13 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { PERM, usePermissionRoles, useProfileRoles } from '../../lib/permissions'
+import { PERM, usePermissionRoles, useProfileRoles, refreshOwnCapabilities } from '../../lib/permissions'
 import { PermissionMatrix } from './PermissionMatrix'
 import { ScopeEditor } from './ScopeEditor'
 import { FieldPermissions } from './FieldPermissions'
 import { UserFormFieldsCard } from './UserFormFieldsCard'
 import type { Profile } from '../../types/domain'
+import { errorMessage } from '../../lib/errors'
 
 const TABS = [
   { key: 'roles' as const, label: 'תפקידים', icon: <Users size={ICON.sm} /> },
@@ -111,8 +112,9 @@ function RolesSection({ profile }: { profile: Profile }) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['profile_roles'] })
       void qc.invalidateQueries({ queryKey: ['role_permissions'] })
+      refreshOwnCapabilities()
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => toast.error(errorMessage(e)),
   })
 
   if (isLoading) return <Skeleton className="h-64 w-full" />
