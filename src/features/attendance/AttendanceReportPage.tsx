@@ -41,7 +41,7 @@ import { RequirePermission } from '../auth/guards'
 import { useContractors, useStaff } from '../../lib/queries'
 import { fmtDate, fmtMoney, fmtTime, toISODate } from '../../lib/dates'
 import { addMonths, eachDayOfInterval, endOfMonth, format, startOfMonth, subMonths } from 'date-fns'
-import { useAttendanceInvalidate, useAttendanceReport } from './attendanceQueries'
+import { useAttendanceInvalidate, useAttendanceReport, useContractorStaff } from './attendanceQueries'
 import { AttendanceEntryDrawer } from './AttendanceEntryDrawer'
 import {
   STATUS_LABELS,
@@ -108,6 +108,10 @@ export function AttendanceReport({
 } = {}) {
   const has = useAuth((s) => s.has)
   const canSeeAll = has(PERM.ATTENDANCE_VIEW_ALL)
+  const canPortal = has(PERM.PORTAL_ATTENDANCE)
+  // מנהל רואה את כל הצוות, קבלן רואה רק את הסגל שלו — שתי הרשימות מציגות
+  // מסנן "עובד" זהה בעיצובו, כל אחת מהמאגר שמותר לה.
+  const showEmployeeFilter = canSeeAll || canPortal
   const canEdit = has(PERM.ATTENDANCE_EDIT_ENTRY)
   const canAdd = has(PERM.ATTENDANCE_MANUAL_ENTRY)
   const canApprove = has(PERM.ATTENDANCE_APPROVE_ENTRY)
@@ -131,6 +135,11 @@ export function AttendanceReport({
 
   const { data: staff = [] } = useStaff()
   const { data: contractors = [] } = useContractors()
+  const { data: contractorStaff = [] } = useContractorStaff()
+  const employeeOptions = useMemo(
+    () => (canSeeAll ? staff.map((p) => ({ id: p.id, label: p.full_name })) : contractorStaff.map((p) => ({ id: p.id, label: p.full_name }))),
+    [canSeeAll, staff, contractorStaff],
+  )
 
   const { data, isLoading, error, refetch } = useAttendanceReport({
     from,
@@ -547,31 +556,29 @@ export function AttendanceReport({
       {/* Filter drawer / filter section */}
       {showFilters && (
         <Card className="flex flex-wrap items-end gap-3 p-4 animate-in fade-in duration-200">
-          {canSeeAll && (
-            <>
-              <Field label="עובדים" className="min-w-52 flex-1">
-                <MultiSelect
-                  options={staff.map((p) => ({ id: p.id, label: p.full_name }))}
-                  values={profileIds}
-                  onToggle={(id) =>
-                    setProfileIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-                  }
-                  placeholder="כל העובדים"
-                />
-              </Field>
-              {!contractorId && (
-                <Field label="קבלן" className="w-48">
-                  <Select value={contractor} onChange={(e) => setContractor(e.target.value)}>
-                    <option value="">כל הקבלנים</option>
-                    {contractors.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              )}
-            </>
+          {showEmployeeFilter && (
+            <Field label="עובדים" className="min-w-52 flex-1">
+              <MultiSelect
+                options={employeeOptions}
+                values={profileIds}
+                onToggle={(id) =>
+                  setProfileIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+                }
+                placeholder="כל העובדים"
+              />
+            </Field>
+          )}
+          {canSeeAll && !contractorId && (
+            <Field label="קבלן" className="w-48">
+              <Select value={contractor} onChange={(e) => setContractor(e.target.value)}>
+                <option value="">כל הקבלנים</option>
+                {contractors.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
           )}
           <Field label="סטטוס" className="w-40">
             <Select value={status} onChange={(e) => setStatus(e.target.value as AttendanceStatus | '')}>
@@ -597,16 +604,16 @@ export function AttendanceReport({
         <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">פירוט לפי יום</h3>
 
         <div className="flex items-center gap-2">
-          {canSeeAll && (
+          {showEmployeeFilter && (
             <div className="w-48 hidden sm:block">
               <Select
                 value={profileIds[0] || ''}
                 onChange={(e) => setProfileIds(e.target.value ? [e.target.value] : [])}
               >
                 <option value="">כל העובדים</option>
-                {staff.map((p) => (
+                {employeeOptions.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.full_name}
+                    {p.label}
                   </option>
                 ))}
               </Select>

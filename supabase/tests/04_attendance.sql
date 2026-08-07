@@ -550,6 +550,26 @@ select t_eq('גם בקריאה ישירה לטבלה הוא רואה רק את �
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
+-- מסנן "עובד" בדוח שבפורטל נשען על contractor_staff_list, כי profiles_select
+-- לא נותן לקבלן לקרוא ישירות שורות פרופיל של מישהו אחר — אפילו לא של הסגל שלו.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
+select t_eq('הקבלן מקבל את כל הסגל שלו, כולל את עצמו',
+  (select count(*) from jsonb_array_elements(contractor_staff_list()) r)::int, 2);
+
+select t_eq('ולא עובד צוות של החברה',
+  (select count(*) from jsonb_array_elements(contractor_staff_list()) r
+    where r ->> 'id' = '20000000-0000-0000-0000-0000000000f3')::int, 0);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+select t_expect_fail('עובד צוות בלי portal.attendance אינו יכול לקרוא לרשימת סגל קבלן', $$
+  select contractor_staff_list()$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
 -- הקבלן אינו רשאי לצפות במשמרות של עובד צוות של החברה
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);

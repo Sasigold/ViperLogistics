@@ -120,6 +120,24 @@ export interface ReportFilters {
   status?: AttendanceStatus[] | null
 }
 
+/**
+ * הסגל של הקבלן שלי, כדי לבנות ממנו מסנן "עובד" בדוח שבפורטל. profiles_select
+ * חוסם קריאה ישירה לטבלה עבור contractor_user (מותר לו רק השורה של עצמו),
+ * ולכן זה RPC ולא שאילתה ישירה — עם אותו מפתח שהדוח עצמו בודק.
+ */
+export function useContractorStaff() {
+  const has = useAuth((s) => s.has)
+  return useQuery({
+    queryKey: ['attendance', 'contractor_staff'],
+    enabled: has(PERM.PORTAL_ATTENDANCE),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('contractor_staff_list')
+      if (error) throw error
+      return (data ?? []) as { id: string; full_name: string }[]
+    },
+  })
+}
+
 export function useAttendanceReport(f: ReportFilters, enabled = true) {
   return useQuery({
     queryKey: ['attendance', 'report', f],
