@@ -30,6 +30,7 @@ import {
   Input,
   PageHeader,
   SegmentedControl,
+  Select,
   Skeleton,
   StatusPill,
   Switch,
@@ -53,6 +54,7 @@ import {
 import { usePageTitle } from '../../app/breadcrumbs'
 import { StickySaveBar } from '../contractors/ContractorDetailPage'
 import PricingTab from './PricingTab'
+import { useWarehouses } from '../attendance/attendanceQueries'
 import { RequirePermission } from '../auth/guards'
 import type { Customer, FieldState, Supplier } from '../../types/domain'
 
@@ -136,10 +138,11 @@ function DetailsTab({ customer }: { customer: Customer }) {
   const [form, setForm] = useState(customer)
   useEffect(() => setForm(customer), [customer])
   const canEdit = has(PERM.CUSTOMERS_EDIT)
+  const { data: warehouses = [] } = useWarehouses()
 
   const dirty = useMemo(
     () =>
-      (['name', 'color', 'can_create_events', 'contact_name', 'contact_phone', 'contact_email', 'notes', 'is_active'] as const).some(
+      (['name', 'color', 'can_create_events', 'contact_name', 'contact_phone', 'contact_email', 'notes', 'is_active', 'warehouse_id'] as const).some(
         (k) => form[k] !== customer[k],
       ),
     [form, customer],
@@ -159,6 +162,7 @@ function DetailsTab({ customer }: { customer: Customer }) {
           contact_email: form.contact_email,
           notes: form.notes,
           is_active: form.is_active,
+          warehouse_id: form.warehouse_id,
         })
         .eq('id', customer.id)
       if (error) throw error
@@ -250,6 +254,28 @@ function DetailsTab({ customer }: { customer: Customer }) {
                 className="size-7 cursor-pointer rounded-lg border border-line bg-transparent p-0.5"
               />
             </div>
+          </Field>
+
+          {/* המחסן של הלקוח הוא נקודת הייחוס שמולה נמדדת החתמת עובד
+              שמתחיל את המשמרת במחסן, בכל המשימות של הלקוח הזה. */}
+          <Field
+            label="מחסן"
+            hint="ממנו יוצאים למשימות של הלקוח, ומולו נמדדת החתמת מי שמתחיל במחסן"
+          >
+            <Select
+              value={form.warehouse_id ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, warehouse_id: e.target.value || null }))}
+              disabled={!canEdit}
+            >
+              <option value="">ללא מחסן</option>
+              {warehouses
+                .filter((w) => w.is_active || w.id === form.warehouse_id)
+                .map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+            </Select>
           </Field>
 
           <Field label="הערות">

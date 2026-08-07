@@ -16,6 +16,8 @@ export interface Customer {
   notes: string | null
   /** manual = המחיר מוזן ביד; auto = מחושב ממחשבון התמחור של הלקוח */
   pricing_mode: PricingMode
+  /** המחסן שממנו יוצאים למשימות של הלקוח הזה */
+  warehouse_id: string | null
   is_active: boolean
   deleted_at: string | null
 }

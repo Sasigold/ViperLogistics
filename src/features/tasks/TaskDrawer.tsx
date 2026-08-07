@@ -563,14 +563,14 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
               {form.warehouse_start_time && (
                 <Field
                   label="מחסן יציאה"
-                  hint="מולו נמדדת ההחתמה של מי שמתחיל במחסן. ריק = לפי המחסן הקרוב ביותר"
+                  hint="דריסה למשימה הזו בלבד. ריק = המחסן של הלקוח"
                 >
                   <Select
                     value={form.warehouse_id ?? ''}
                     onChange={(e) => set({ warehouse_id: e.target.value || null })}
                     disabled={!canChangeLocation}
                   >
-                    <option value="">לפי המחסן הקרוב ביותר</option>
+                    <option value="">המחסן של הלקוח</option>
                     {warehouses
                       .filter((w) => w.is_active || w.id === form.warehouse_id)
                       .map((w) => (

@@ -282,9 +282,9 @@ insert into warehouses (id, name, lat, lng) values
 update worker_pay_settings
    set requires_location = true, location_radius_m = 300, allow_early_clock_in = false
  where profile_id = '20000000-0000-0000-0000-0000000000f3';
--- המשימה נוקבת במחסן תל אביב במפורש
-update tasks set warehouse_id = '70000000-0000-0000-0000-000000000001'
- where id = '60000000-0000-0000-0000-00000000a001';
+-- המחסן יושב על הלקוח, ומשם נגזר לכל המשימות שלו
+update customers set warehouse_id = '70000000-0000-0000-0000-000000000001'
+ where id = '10000000-0000-0000-0000-000000000001';
 delete from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3';
 
 set role authenticated;
@@ -312,45 +312,67 @@ reset role;
 select set_config('request.jwt.claim.sub', '', false);
 delete from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3';
 
--- המשימה עוברת למחסן ירושלים. העובד עומד בדיוק בכתובת האירוע בתל אביב,
--- וזה עדיין נדחה — כי הוא אמור לצאת מהמחסן שהמשימה נוקבת בו.
-update tasks set warehouse_id = '70000000-0000-0000-0000-000000000002'
+select t_eq('המשמרת נושאת את שם המחסן של הלקוח',
+  (select warehouse_name from app.planned_shifts('20000000-0000-0000-0000-0000000000f3',
+     current_date, current_date) order by shift_start limit 1),
+  'מחסן תל אביב');
+
+-- הלקוח עובר למחסן ירושלים. העובד עומד בדיוק בכתובת האירוע בתל אביב, וזה
+-- נדחה — כי הוא אמור לצאת מהמחסן של הלקוח שהמשימה שלו.
+update customers set warehouse_id = '70000000-0000-0000-0000-000000000002'
+ where id = '10000000-0000-0000-0000-000000000001';
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+select t_expect_fail('מי שמתחיל במחסן נמדד מול המחסן של הלקוח, לא מול האירוע',
+  $$select t_clock_in(32.0853, 34.7818, 10)$$);
+select t_expect_ok('ומתקבל כשהוא באמת ליד המחסן של הלקוח',
+  $$select t_clock_in(31.7683, 35.2137, 10)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+delete from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3';
+
+-- דריסה על משימה בודדת גוברת על המחסן של הלקוח. זו הדרך היחידה שמשימה
+-- עצמאית, שאין לה לקוח, תוכל לנקוב במחסן.
+update tasks set warehouse_id = '70000000-0000-0000-0000-000000000001'
  where id = '60000000-0000-0000-0000-00000000a001';
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
-select t_expect_fail('מי שמתחיל במחסן נמדד מול המחסן שהמשימה נוקבת בו',
-  $$select t_clock_in(32.0853, 34.7818, 10)$$);
-select t_expect_ok('ומתקבל כשהוא באמת ליד אותו מחסן',
-  $$select t_clock_in(31.7683, 35.2137, 10)$$);
-reset role;
-select set_config('request.jwt.claim.sub', '', false);
-
-select t_eq('המשמרת נושאת את שם המחסן שנקבע לה',
-  (select warehouse_name from app.planned_shifts('20000000-0000-0000-0000-0000000000f3',
-     current_date, current_date) order by shift_start limit 1),
-  'מחסן ירושלים');
-
-delete from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3';
-
--- משימה שלא נקבה במחסן: נמדדים מול הקרוב ביותר, ועדיין חייבים להיות בתוך
--- הרדיוס של מחסן אמיתי.
-update tasks set warehouse_id = null where id = '60000000-0000-0000-0000-00000000a001';
-
-set role authenticated;
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
-select t_expect_ok('בלי מחסן על המשימה, המחסן הקרוב ביותר הוא נקודת הייחוס',
+select t_expect_ok('דריסת מחסן על המשימה גוברת על המחסן של הלקוח',
   $$select t_clock_in(32.0862, 34.7818, 15)$$);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('והמשמרת מציגה את המחסן שנדרס',
+  (select warehouse_name from app.planned_shifts('20000000-0000-0000-0000-0000000000f3',
+     current_date, current_date) order by shift_start limit 1),
+  'מחסן תל אביב');
+
+update tasks set warehouse_id = null where id = '60000000-0000-0000-0000-00000000a001';
+update customers set warehouse_id = '70000000-0000-0000-0000-000000000001'
+ where id = '10000000-0000-0000-0000-000000000001';
 delete from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3';
+
+-- ללקוח אין מחסן: אין מול מה למדוד, ולכן מתקבל ומסומן — ולא נופלים
+-- למחסן הקרוב ביותר, שהיה מתיר החתמה מהמחסן של לקוח אחר.
+update customers set warehouse_id = null
+ where id = '10000000-0000-0000-0000-000000000001';
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
-select t_expect_fail('אבל עמידה רחוק מכל המחסנים עדיין נדחית',
+select t_expect_ok('לקוח בלי מחסן אינו חוסם את העובד',
   $$select t_clock_in(29.5581, 34.9482, 10)$$);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('אבל ההחתמה מסומנת כלא מאומתת',
+  (select 'no_site_coords' = any(flags) from attendance_entries
+    where profile_id = '20000000-0000-0000-0000-0000000000f3'), true);
+
+update customers set warehouse_id = '70000000-0000-0000-0000-000000000001'
+ where id = '10000000-0000-0000-0000-000000000001';
+delete from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3';
 
 -- רדיוס פר-מחסן גובר על הגלובלי
 update warehouses set radius_m = 20000 where id = '70000000-0000-0000-0000-000000000001';
