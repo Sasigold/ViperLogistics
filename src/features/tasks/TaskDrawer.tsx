@@ -1,8 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Briefcase, Clock, HardHat, ICON, MapPin, STROKE, Trash2, Truck, Users } from '../../components/ui/icons'
+import {
+  Banknote,
+  Briefcase,
+  Clock,
+  HardHat,
+  ICON,
+  MapPin,
+  RefreshCw,
+  STROKE,
+  Trash2,
+  Truck,
+  Users,
+} from '../../components/ui/icons'
 import {
   AvatarGroup,
+  Badge,
   Button,
   Card,
   CardBody,
@@ -29,7 +42,8 @@ import {
   useTaskTypes,
   useTrucks,
 } from '../../lib/queries'
-import type { StaffRole, TaskRow } from '../../types/domain'
+import { Breakdown } from '../customers/PricingTab'
+import type { PriceBreakdown, StaffRole, TaskPricing, TaskRow } from '../../types/domain'
 
 interface Assignment {
   id?: string
@@ -71,6 +85,10 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   const canDelegate = gate(PERM.TASKS_DELEGATE)
   const canViewPricing = has(PERM.CONTRACTORS_VIEW_PRICING)
   const canEditPricing = has(PERM.CONTRACTORS_EDIT_PRICING)
+  // מחיר הלקוח ומחיר הקבלן הם שני דברים שונים עם שני מפתחות שונים: מי
+  // שמנהל תשלומים לקבלנים לא בהכרח אמור לראות כמה גובים.
+  const canViewCustomerPrice = has(PERM.PRICING_VIEW)
+  const canEditCustomerPrice = has(PERM.PRICING_EDIT)
   const canAssign: Record<StaffRole, boolean> = {
     worker: has(PERM.TASKS_ASSIGN_WORKER),
     driver: has(PERM.TASKS_ASSIGN_DRIVER),
@@ -88,16 +106,20 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
     queryKey: ['tasks', 'one', taskId],
     enabled: open && !!taskId,
     queryFn: async () => {
-      const [t, a, terms] = await Promise.all([
+      // task_pricing חסומה ב-RLS למי שאין לו pricing.view, ומחזירה אז פשוט
+      // כלום — ולכן היא נשלפת כאן בלי תנאי והכרטיס הוא שמגודר.
+      const [t, a, terms, pricing] = await Promise.all([
         supabase.from('tasks').select('*').eq('id', taskId).single(),
         supabase.from('task_assignments').select('*').eq('task_id', taskId),
         supabase.from('task_contractor_terms').select('*').eq('task_id', taskId).maybeSingle(),
+        supabase.from('task_pricing').select('*').eq('task_id', taskId).maybeSingle(),
       ])
       if (t.error) throw t.error
       return {
         task: t.data as TaskRow,
         assignments: (a.data ?? []) as Assignment[],
         terms: terms.data as { price: number; paid_at: string | null } | null,
+        pricing: (pricing.data as TaskPricing) ?? null,
       }
     },
   })
@@ -105,6 +127,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   const [form, setForm] = useState<Partial<TaskRow>>({})
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [price, setPrice] = useState<string>('')
+  const [customerPrice, setCustomerPrice] = useState<string>('')
   const [touched, setTouched] = useState(false)
 
   useEffect(() => {
@@ -114,10 +137,12 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       setForm(existing.task)
       setAssignments(existing.assignments)
       setPrice(existing.terms?.price != null ? String(existing.terms.price) : '')
+      setCustomerPrice(existing.pricing?.price != null ? String(existing.pricing.price) : '')
     } else if (!taskId) {
       setForm({ task_date: new Date().toISOString().slice(0, 10), worker_count: 0, ...initial })
       setAssignments([])
       setPrice('')
+      setCustomerPrice('')
     }
   }, [open, taskId, existing, initial])
 
@@ -145,6 +170,9 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
         status_id: form.status_id || statuses.find((s) => s.is_default)?.id,
         contractor_id: form.contractor_id || null,
         location_text: form.location_text || null,
+        ...(canEditCustomerPrice
+          ? { travel_hours: form.travel_hours ?? null, requires_team_lead: form.requires_team_lead ?? null }
+          : {}),
       }
       let id = taskId
       if (taskId) {
@@ -179,6 +207,15 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
         const { error } = await supabase.from('task_contractor_terms').update({ price: Number(price) }).eq('task_id', id)
         if (error) throw error
       }
+      // מחיר ללקוח. נכתב רק כשהוא באמת השתנה, כי כל כתיבה נועלת את המחיר
+      // מפני חישוב מחדש — שמירה של המגירה בלי שנגעו בשדה לא אמורה לנעול.
+      const before = existing?.pricing?.price
+      if (canEditCustomerPrice && customerPrice !== '' && Number(customerPrice) !== before) {
+        const { error } = await supabase
+          .from('task_pricing')
+          .upsert({ task_id: id, price: Number(customerPrice) }, { onConflict: 'task_id' })
+        if (error) throw error
+      }
     },
     onSuccess: () => {
       toast.success('המשימה נשמרה')
@@ -186,7 +223,25 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       void qc.invalidateQueries({ queryKey: ['workboard'] })
       void qc.invalidateQueries({ queryKey: ['calendar'] })
       void qc.invalidateQueries({ queryKey: ['dashboard'] })
+      void qc.invalidateQueries({ queryKey: ['task_pricing'] })
       onClose()
+    },
+    onError: (e) => toast.error((e as Error).message),
+  })
+
+  // מנקה את הנעילה הידנית ומחשב מהמחשבון של הלקוח.
+  const recalcPrice = useMutation({
+    mutationFn: async () => {
+      if (!taskId) return null
+      const { data, error } = await supabase.rpc('recalculate_task_price', { p_task_id: taskId })
+      if (error) throw error
+      return data as PriceBreakdown
+    },
+    onSuccess: (r) => {
+      if (r) setCustomerPrice(String(r.total))
+      toast.success('המחיר חושב מחדש')
+      void qc.invalidateQueries({ queryKey: ['tasks', 'one', taskId] })
+      void qc.invalidateQueries({ queryKey: ['workboard'] })
     },
     onError: (e) => toast.error((e as Error).message),
   })
@@ -510,6 +565,94 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
               )}
             </CardBody>
           </Card>
+
+          {/* ── customer price ───────────────────────────────────────────── */}
+          {canViewCustomerPrice && !isNew && (
+            <Card>
+              <CardHeader
+                title="מחיר ללקוח"
+                subtitle="מה שהלקוח משלם — נפרד לגמרי ממה שמשולם לקבלן"
+                icon={<Banknote size={ICON.md} strokeWidth={STROKE} />}
+                actions={
+                  existing?.pricing ? (
+                    existing.pricing.is_manual ? (
+                      <Badge tone="warning">ידני</Badge>
+                    ) : (
+                      <Badge tone="neutral">חושב אוטומטית</Badge>
+                    )
+                  ) : null
+                }
+              />
+              <CardBody className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field
+                    label="מחיר (₪)"
+                    hint={
+                      canEditCustomerPrice
+                        ? 'שינוי ידני נועל את המחיר — חישוב אוטומטי לא ידרוס אותו'
+                        : undefined
+                    }
+                  >
+                    <Input
+                      type="number"
+                      min="0"
+                      step="any"
+                      dir="ltr"
+                      value={customerPrice}
+                      onChange={(e) => setCustomerPrice(e.target.value)}
+                      disabled={!canEditCustomerPrice}
+                    />
+                  </Field>
+                  {canEditCustomerPrice && (
+                    <div className="flex items-end">
+                      <Button variant="ghost" loading={recalcPrice.isPending} onClick={() => recalcPrice.mutate()}>
+                        <RefreshCw size={ICON.sm} />
+                        חשב מחדש מהמחשבון
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* דריסות נקודתיות: קיימות כדי שאירוע חריג לא יאלץ לשנות את
+                    המחשבון של כל הלקוח. ריק = לפי ההגדרה. */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="זמן נסיעה (ש׳)" hint="ריק = לפי אזור הנסיעה של מיקום האירוע">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.25"
+                      dir="ltr"
+                      value={form.travel_hours ?? ''}
+                      onChange={(e) => set({ travel_hours: e.target.value === '' ? null : Number(e.target.value) })}
+                      disabled={!canEditCustomerPrice}
+                    />
+                  </Field>
+                  <Field label="נדרש ראש צוות" hint="ריק = לפי הקבוע במחשבון">
+                    <Select
+                      value={form.requires_team_lead === null || form.requires_team_lead === undefined ? '' : String(form.requires_team_lead)}
+                      onChange={(e) =>
+                        set({ requires_team_lead: e.target.value === '' ? null : e.target.value === 'true' })
+                      }
+                      disabled={!canEditCustomerPrice}
+                    >
+                      <option value="">לפי המחשבון</option>
+                      <option value="true">כן</option>
+                      <option value="false">לא</option>
+                    </Select>
+                  </Field>
+                </div>
+
+                {existing?.pricing?.breakdown && (
+                  <details className="rounded-xl border border-line-subtle bg-subtle/30 p-3">
+                    <summary className="cursor-pointer type-body font-medium">פירוט החישוב</summary>
+                    <div className="mt-3">
+                      <Breakdown breakdown={existing.pricing.breakdown} />
+                    </div>
+                  </details>
+                )}
+              </CardBody>
+            </Card>
+          )}
 
           {/* ── delegation ───────────────────────────────────────────────── */}
           {has(PERM.CONTRACTORS_VIEW) && (

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, ICON, Pencil, Plus, STROKE, Trash2 } from '../../components/ui/icons'
+import { Banknote, Copy, ICON, Pencil, Plus, STROKE, Trash2 } from '../../components/ui/icons'
 import {
   AvatarGroup,
   Badge,
@@ -15,6 +15,7 @@ import {
   SkeletonCard,
   SkeletonTable,
   StatusPill,
+  fmtMoney,
   useConfirm,
   useToast,
 } from '../../components/ui'
@@ -66,6 +67,26 @@ export default function EventDetailPage() {
   })
 
   usePageTitle(data?.event.end_client_name ?? null)
+
+  /**
+   * מחיר האירוע הוא סכום מחירי המשימות שלו — אין עמודת מחיר על האירוע עצמו.
+   * work_board_view כבר מחזירה null ב-customer_price למי שאין לו pricing.view,
+   * ולכן די בבדיקה הזו כדי שהכרטיס לא יופיע בכלל, בלי גידור נוסף כאן.
+   */
+  const pricing = useMemo(() => {
+    const priced = tasks.filter((t) => t.customer_price != null)
+    if (!priced.length) return null
+    return {
+      rows: priced.map((t) => ({
+        id: t.id,
+        label: t.title || t.task_type_name,
+        price: Number(t.customer_price),
+        isManual: !!t.price_is_manual,
+      })),
+      total: priced.reduce((sum, t) => sum + Number(t.customer_price), 0),
+      unpriced: tasks.length - priced.length,
+    }
+  }, [tasks])
 
   const columns = useMemo<Column<WorkBoardRow>[]>(
     () => [
@@ -154,8 +175,29 @@ export default function EventDetailPage() {
         sortValue: (t) => t.status_name,
         render: (t) => <StatusPill color={t.status_color}>{t.status_name}</StatusPill>,
       },
+      // העמודה נוספת רק כשיש בכלל מחירים לראות — למי שאין לו pricing.view
+      // work_board_view מחזירה null, וכותרת עמודה ריקה היא רעש.
+      ...(pricing
+        ? ([
+            {
+              key: 'price',
+              header: 'מחיר ללקוח',
+              width: 120,
+              align: 'end',
+              sortValue: (t) => t.customer_price,
+              render: (t) =>
+                t.customer_price == null ? (
+                  <span className="text-ink-tertiary">—</span>
+                ) : (
+                  <span dir="ltr" className="tabular">
+                    {fmtMoney(t.customer_price)}
+                  </span>
+                ),
+            },
+          ] as Column<WorkBoardRow>[])
+        : []),
     ],
-    [],
+    [pricing],
   )
 
   if (isLoading || !data) {
@@ -335,7 +377,43 @@ export default function EventDetailPage() {
           </CardBody>
         </Card>
 
-        <div className="lg:col-span-2">
+        {pricing && (
+          <Card className="lg:col-span-1">
+            <CardHeader
+              title="תמחור"
+              subtitle="המחיר שהלקוח משלם"
+              icon={<Banknote size={ICON.md} strokeWidth={STROKE} />}
+            />
+            <CardBody>
+              <dl className="divide-y divide-line-subtle">
+                {pricing.rows.map((r) => (
+                  <div key={r.id} className="flex items-start justify-between gap-3 py-2 first:pt-0">
+                    <dt className="min-w-0 shrink type-caption text-ink-tertiary">
+                      {r.label}
+                      {r.isManual && <span className="ms-1.5 text-warning-text">ידני</span>}
+                    </dt>
+                    <dd dir="ltr" className="shrink-0 tabular-nums type-body font-medium">
+                      {fmtMoney(r.price)}
+                    </dd>
+                  </div>
+                ))}
+                <div className="flex items-baseline justify-between gap-3 pt-2">
+                  <dt className="type-body font-semibold">סך הכול</dt>
+                  <dd dir="ltr" className="tabular-nums type-title font-semibold">
+                    {fmtMoney(pricing.total)}
+                  </dd>
+                </div>
+              </dl>
+              {pricing.unpriced > 0 && (
+                <p className="mt-2 type-caption text-ink-tertiary">
+                  {pricing.unpriced} משימות ללא מחיר עדיין
+                </p>
+              )}
+            </CardBody>
+          </Card>
+        )}
+
+        <div className={pricing ? 'lg:col-span-3' : 'lg:col-span-2'}>
           <DataTable
             rows={tasks}
             columns={columns}
