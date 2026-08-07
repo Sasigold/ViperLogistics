@@ -5,6 +5,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { addDays, differenceInCalendarDays, eachDayOfInterval, endOfMonth, parseISO, startOfMonth, startOfWeek } from 'date-fns'
 import {
   AlertTriangle,
+  CalendarCheck,
   CalendarDays,
   ChevronDown,
   ChevronUp,
@@ -216,9 +217,12 @@ export default function WorkBoardPage() {
   const [colorBy, setColorBy] = useState<ColorBy>(prefs.current.colorBy ?? 'event')
   const [showEmptyDays, setShowEmptyDays] = useState(prefs.current.emptyDays ?? true)
   const [viewMode, setViewMode] = useState<ViewMode>(prefs.current.view ?? 'auto')
+  /** "go to today" asked for a range that isn't loaded yet — scroll once it is */
+  const [jumpPending, setJumpPending] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   /** the group under the pointer — its whole run lights up, across days */
   const [activeGroup, setActiveGroup] = useState<string | null>(null)
+  const toast = useToast()
 
   useEffect(() => {
     try {
@@ -388,6 +392,7 @@ export default function WorkBoardPage() {
   /* ── horizontal virtualization (RTL-aware) ───────────────────────────── */
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  const cardsRef = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
     horizontal: true,
     isRtl: true,
@@ -470,6 +475,50 @@ export default function WorkBoardPage() {
     },
     { label: 'החודש', run: () => setRange(startOfMonth(now), endOfMonth(now)) },
   ]
+
+  /* ── jump to today ────────────────────────────────────────────────────────
+     Not `virtualizer.scrollToIndex`: virtual-core reads a horizontal offset as
+     `scrollLeft * -1` under RTL but writes it back unnegated, so every scroll
+     it performs here would land on the mirror image of the target. The offset
+     we need is one we already compute — a day band's `start` — so the scroller
+     is driven directly, with the sign the library itself reads by.          */
+
+  const scrollToToday = useCallback(() => {
+    const band = bands.find((b) => b.dayKey === today)
+    if (!band) return false
+    if (asCards) {
+      const section = cardsRef.current?.querySelector(`[data-day="${today}"]`)
+      section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return !!section
+    }
+    const el = scrollRef.current
+    if (!el) return false
+    /* `start` is measured along the track, and the legend is sticky *over* it
+       rather than pushing it, so it needs no allowance here. */
+    const offset = Math.max(0, band.start - 8)
+    el.scrollTo({ left: getComputedStyle(el).direction === 'rtl' ? -offset : offset, behavior: 'smooth' })
+    return true
+  }, [bands, today, asCards])
+
+  const goToToday = () => {
+    // a folded day would otherwise "arrive" as a 46px spine
+    setCollapsedDays((s) => (s.has(today) ? new Set([...s].filter((d) => d !== today)) : s))
+    if (today >= from && today <= to) {
+      if (!scrollToToday()) toast.info('אין משימות היום בטווח המוצג')
+      return
+    }
+    const weekStart = startOfWeek(now, { weekStartsOn: 0 })
+    setRange(weekStart, addDays(weekStart, 6))
+    setJumpPending(true)
+  }
+
+  /* the range change has to round-trip to the server before today has a column
+     to scroll to; the flag clears after one attempt either way */
+  useEffect(() => {
+    if (!jumpPending || isLoading) return
+    if (!scrollToToday()) toast.info('אין משימות היום בטווח המוצג')
+    setJumpPending(false)
+  }, [jumpPending, isLoading, scrollToToday, toast])
 
   const overdueTotal = useMemo(
     () => rows.filter((r) => r.task_date < today && !r.status_is_terminal).length,
@@ -621,6 +670,12 @@ export default function WorkBoardPage() {
                 onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
                 aria-label="חיפוש חופשי"
               />
+
+              {/* icon only on purpose: the preset row above already says "היום",
+                  and it means something else — narrow the range to one day */}
+              <IconButton label="מעבר לעמודה של היום" size="sm" onClick={goToToday}>
+                <CalendarCheck size={ICON.sm} strokeWidth={STROKE} />
+              </IconButton>
 
               <Button
                 size="sm"
@@ -809,6 +864,7 @@ export default function WorkBoardPage() {
                default — but "טבלה" in the view menu overrides that, and the
                drawer still owns every edit either way. */
             <MobileBoard
+              containerRef={cardsRef}
               days={daysForList}
               today={today}
               selected={selected}
@@ -1081,6 +1137,7 @@ export default function WorkBoardPage() {
    target here, and nothing scrolls sideways.                               */
 
 function MobileBoard({
+  containerRef,
   days,
   today,
   selected,
@@ -1090,6 +1147,8 @@ function MobileBoard({
   onToggleDay,
   onNewTask,
 }: {
+  /** so "go to today" can find a day's section without a global id */
+  containerRef: React.Ref<HTMLDivElement>
   days: DayLayout[]
   today: string
   selected: Set<string>
@@ -1100,12 +1159,12 @@ function MobileBoard({
   onNewTask: (dayKey: string) => void
 }) {
   return (
-    <div className="h-full overflow-y-auto">
+    <div ref={containerRef} className="h-full overflow-y-auto">
       {days.map((day) => {
         const isToday = day.dayKey === today
         const quiet = day.count === 0
         return (
-          <section key={day.dayKey}>
+          <section key={day.dayKey} data-day={day.dayKey}>
             <h3
               className={cx(
                 'sticky top-0 z-10 flex items-center gap-1.5 border-b border-line px-2.5 py-1.5 backdrop-blur-sm',
