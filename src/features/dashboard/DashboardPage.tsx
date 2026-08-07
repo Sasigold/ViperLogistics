@@ -24,6 +24,7 @@ import {
   CardHeader,
   EmptyState,
   ErrorState,
+  Input,
   PageHeader,
   ProgressBar,
   Skeleton,
@@ -173,21 +174,23 @@ export default function DashboardPage() {
                   </button>
                 ))}
               </div>
-              <div className="flex items-center gap-1.5">
-                <input
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Input
                   type="date"
+                  inputSize="sm"
+                  className="min-h-9 grow basis-32 tabular sm:min-h-0 sm:w-36 sm:grow-0 sm:basis-auto"
                   value={from}
                   onChange={(e) => setFrom(e.target.value)}
                   aria-label="מתאריך"
-                  className="h-9 min-w-0 flex-1 rounded-md border border-line bg-surface px-2 text-[0.8125rem] tabular outline-none focus:border-primary focus:ring-2 focus:ring-[var(--vl-focus-ring)] sm:h-8 sm:flex-none"
                 />
                 <span className="shrink-0 type-caption text-ink-tertiary">–</span>
-                <input
+                <Input
                   type="date"
+                  inputSize="sm"
+                  className="min-h-9 grow basis-32 tabular sm:min-h-0 sm:w-36 sm:grow-0 sm:basis-auto"
                   value={to}
                   onChange={(e) => setTo(e.target.value)}
                   aria-label="עד תאריך"
-                  className="h-9 min-w-0 flex-1 rounded-md border border-line bg-surface px-2 text-[0.8125rem] tabular outline-none focus:border-primary focus:ring-2 focus:ring-[var(--vl-focus-ring)] sm:h-8 sm:flex-none"
                 />
               </div>
             </div>

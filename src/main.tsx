@@ -8,8 +8,10 @@ import { router } from './app/router'
 import { ErrorBoundary, ToastProvider } from './components/ui'
 import { reportError } from './lib/reportError'
 import { useAuth } from './state/auth'
+import { installZoomGuard } from './lib/zoomGuard'
 
 registerSW({ immediate: true })
+installZoomGuard()
 
 /**
  * כל שגיאה עוברת דרך נקודה אחת בדרך החוצה.

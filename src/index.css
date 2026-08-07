@@ -508,6 +508,18 @@
     height: 100%;
   }
 
+  /* The app is installed to a home screen, so browser zoom gestures are noise:
+     a pinch that resizes the whole shell — header, bottom nav and all — reads as
+     a web page, not as an app. `pan-x pan-y` keeps every scroll and swipe and
+     drops only pinch-zoom and double-tap-zoom.
+
+     Leaflet sets `touch-action: none` on its own container and drives zoom from
+     JS, so the maps keep their two-finger zoom. */
+  html {
+    touch-action: pan-x pan-y;
+    overscroll-behavior: none;
+  }
+
   body {
     font-family: var(--font-sans);
     background: var(--vl-canvas);
@@ -520,7 +532,7 @@
     /* a tap should never paint a grey box over our own pressed states, and the
        page itself should never rubber-band behind the fixed shell */
     -webkit-tap-highlight-color: transparent;
-    overscroll-behavior-y: none;
+    overscroll-behavior: none;
   }
 
   .scroll-row::-webkit-scrollbar {
@@ -539,9 +551,13 @@
     }
   }
 
-  /* iOS zooms the page when a control smaller than 16px takes focus. */
+  /* iOS zooms the page when a control smaller than 16px takes focus.
+     Date and time controls are excluded: their intrinsic minimum width is
+     derived from the font size, and at a forced 16px a `datetime-local` wants
+     ~230px — wider than the box it sits in, so the value was being clipped.
+     Page zoom is disabled outright now, so focus can no longer zoom either. */
   @media (max-width: 767.98px) {
-    input,
+    input:not([type='date']):not([type='time']):not([type='datetime-local']),
     select,
     textarea {
       font-size: max(16px, 1em);
@@ -570,12 +586,48 @@
 
   input[type='date'],
   input[type='time'],
+  input[type='datetime-local'],
   input[type='number'] {
     font-variant-numeric: tabular-nums;
   }
 
+  /* Native date/time controls size themselves from their content and refuse to
+     shrink, so inside a flex row or a grid cell they push past the card edge.
+     Pinning them to the box — and starting the value at the field's own edge
+     instead of centring it, which is what WebKit does — keeps them contained. */
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'] {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  input[type='date']::-webkit-date-and-time-value,
+  input[type='time']::-webkit-date-and-time-value,
+  input[type='datetime-local']::-webkit-date-and-time-value {
+    /* WebKit centres the value in a box it sized for itself; following the
+       field's own alignment is what keeps it inside a box we sized. */
+    text-align: inherit;
+    margin: 0;
+  }
+
+  input[type='date']::-webkit-datetime-edit,
+  input[type='time']::-webkit-datetime-edit,
+  input[type='datetime-local']::-webkit-datetime-edit {
+    padding: 0;
+  }
+
+  input[type='date']::-webkit-calendar-picker-indicator,
+  input[type='time']::-webkit-calendar-picker-indicator,
+  input[type='datetime-local']::-webkit-calendar-picker-indicator {
+    flex: none;
+    margin-inline-start: 0;
+    padding-inline: 0;
+  }
+
   [data-theme='dark'] input[type='date']::-webkit-calendar-picker-indicator,
-  [data-theme='dark'] input[type='time']::-webkit-calendar-picker-indicator {
+  [data-theme='dark'] input[type='time']::-webkit-calendar-picker-indicator,
+  [data-theme='dark'] input[type='datetime-local']::-webkit-calendar-picker-indicator {
     filter: invert(0.75);
   }
 

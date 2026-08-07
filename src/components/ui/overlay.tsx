@@ -176,7 +176,9 @@ export function Modal({
         )}
         {/* dvh, not vh: mobile browsers shrink the viewport when the URL bar
             and the on-screen keyboard appear, and vh does not follow */}
-        <div className="max-h-[70dvh] overflow-y-auto p-4 sm:max-h-[calc(100dvh-14rem)] sm:p-5">{children}</div>
+        <div className="max-h-[70dvh] overflow-y-auto overscroll-contain p-4 sm:max-h-[calc(100dvh-14rem)] sm:p-5">
+          {children}
+        </div>
         {footer && (
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line-subtle bg-subtle/60 px-4 py-3 sm:px-5">
             {footer}
@@ -242,7 +244,7 @@ export function Drawer({
             <X size={16} />
           </IconButton>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">{children}</div>
         {footer && (
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line-subtle bg-subtle/60 px-4 py-3 pb-[calc(0.75rem+var(--vl-safe-bottom))] sm:px-5">
             {footer}

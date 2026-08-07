@@ -49,7 +49,7 @@ const FS = 'text-[length:var(--vl-board-fs,0.8125rem)]'
 /* Inline editors share one look: invisible until hovered, so a screen full of
    editable cells doesn't read as a screen full of form controls. */
 const INLINE =
-  `w-full rounded border border-transparent bg-transparent px-1.5 py-0.5 text-center ${FS} tabular ` +
+  `w-full min-w-0 rounded border border-transparent bg-transparent px-1.5 py-0.5 text-center ${FS} tabular ` +
   'transition-colors duration-150 hover:border-line hover:bg-surface ' +
   'focus:border-primary focus:bg-surface focus:outline-none focus:ring-2 focus:ring-[var(--vl-focus-ring)] ' +
   'disabled:pointer-events-none disabled:opacity-70'

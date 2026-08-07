@@ -678,10 +678,12 @@ function TasksTab({ contractorId }: { contractorId: string }) {
         )}
         toolbar={
           <div className="flex flex-wrap items-end gap-2">
-            <Field label="מתאריך" className="w-36">
+            {/* a fixed 9rem is narrower than a date control's own minimum on a
+                phone, so the two fields share the row and grow into it instead */}
+            <Field label="מתאריך" className="grow basis-36 sm:w-36 sm:grow-0 sm:basis-auto">
               <Input type="date" inputSize="sm" value={from} onChange={(e) => setFrom(e.target.value)} />
             </Field>
-            <Field label="עד תאריך" className="w-36">
+            <Field label="עד תאריך" className="grow basis-36 sm:w-36 sm:grow-0 sm:basis-auto">
               <Input type="date" inputSize="sm" value={to} onChange={(e) => setTo(e.target.value)} />
             </Field>
           </div>

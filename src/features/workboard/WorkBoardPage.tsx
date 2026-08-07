@@ -535,11 +535,13 @@ export default function WorkBoardPage() {
      a phone screen — before the board even started.                        */
 
   const dateFields = (
-    <div className="flex items-center gap-1.5">
+    /* two date controls in one row leave each of them under their own minimum
+       width on a phone, so the row wraps before either one gets clipped */
+    <div className="flex flex-wrap items-center gap-1.5">
       <Input
         type="date"
         inputSize="sm"
-        className="w-full min-w-0 lg:w-36"
+        className="grow basis-32 min-w-0 lg:w-36 lg:grow-0 lg:basis-auto"
         value={from}
         onChange={(e) => setFrom(e.target.value)}
         aria-label="מתאריך"
@@ -548,7 +550,7 @@ export default function WorkBoardPage() {
       <Input
         type="date"
         inputSize="sm"
-        className="w-full min-w-0 lg:w-36"
+        className="grow basis-32 min-w-0 lg:w-36 lg:grow-0 lg:basis-auto"
         value={to}
         onChange={(e) => setTo(e.target.value)}
         aria-label="עד תאריך"

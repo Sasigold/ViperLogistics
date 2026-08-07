@@ -186,10 +186,10 @@ export default function PortalPage() {
         )}
 
         <Card padded className="flex flex-wrap items-end gap-3">
-          <Field label="מתאריך" className="w-40">
+          <Field label="מתאריך" className="grow basis-36 sm:w-40 sm:grow-0 sm:basis-auto">
             <Input type="date" inputSize="sm" value={from} onChange={(e) => setFrom(e.target.value)} />
           </Field>
-          <Field label="עד תאריך" className="w-40">
+          <Field label="עד תאריך" className="grow basis-36 sm:w-40 sm:grow-0 sm:basis-auto">
             <Input type="date" inputSize="sm" value={to} onChange={(e) => setTo(e.target.value)} />
           </Field>
           {(from || to) && (

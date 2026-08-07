@@ -299,7 +299,7 @@ export default function AppLayout() {
               'min-h-0 flex-1 flex flex-col',
               location.pathname.startsWith('/board')
                 ? 'p-2 sm:p-2.5 lg:p-3 overflow-hidden'
-                : 'overflow-y-auto p-3 pb-shell sm:p-4 sm:pb-shell lg:p-6 lg:pb-6',
+                : 'overflow-y-auto overscroll-contain p-3 pb-shell sm:p-4 sm:pb-shell lg:p-6 lg:pb-6',
             )}
           >
             <RouteGate>

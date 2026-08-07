@@ -20,7 +20,10 @@ const SIZES: Record<ControlSize, string> = {
 }
 
 const CONTROL =
-  'w-full rounded-md border bg-surface text-ink outline-none ' +
+  /* min-w-0: a control is almost always a flex or grid child, and `min-width:
+     auto` lets one with an intrinsic width — a date field, above all — push
+     past its container instead of shrinking into it */
+  'w-full min-w-0 rounded-md border bg-surface text-ink outline-none ' +
   'transition-[border-color,box-shadow,background-color] duration-150 ease-[cubic-bezier(.4,0,.2,1)] ' +
   'placeholder:text-ink-tertiary ' +
   'hover:border-line-strong ' +
