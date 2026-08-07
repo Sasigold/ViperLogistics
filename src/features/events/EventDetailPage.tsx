@@ -1,7 +1,22 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Banknote, Copy, ICON, Pencil, Plus, STROKE, Trash2 } from '../../components/ui/icons'
+import {
+  Banknote,
+  Briefcase,
+  Calendar,
+  Clock,
+  Copy,
+  HardHat,
+  ICON,
+  LayoutGrid,
+  List,
+  Pencil,
+  Plus,
+  STROKE,
+  Trash2,
+  Users,
+} from '../../components/ui/icons'
 import {
   AvatarGroup,
   Badge,
@@ -30,6 +45,9 @@ import { TaskDrawer } from '../tasks/TaskDrawer'
 import { EventActivityLog } from './EventActivityLog'
 import type { EventRow, WorkBoardRow } from '../../types/domain'
 
+type TaskTab = 'all' | 'setup' | 'teardown' | 'other'
+type TaskViewMode = 'cards' | 'table'
+
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -39,6 +57,8 @@ export default function EventDetailPage() {
   const { confirm, dialog } = useConfirm()
   const [editOpen, setEditOpen] = useState(false)
   const [taskDrawer, setTaskDrawer] = useState<{ open: boolean; taskId: string | null }>({ open: false, taskId: null })
+  const [activeTab, setActiveTab] = useState<TaskTab>('all')
+  const [viewMode, setViewMode] = useState<TaskViewMode>('cards')
 
   const { data, isLoading } = useQuery({
     queryKey: ['events', 'one', id],
@@ -68,11 +88,6 @@ export default function EventDetailPage() {
 
   usePageTitle(data?.event.end_client_name ?? null)
 
-  /**
-   * מחיר האירוע הוא סכום מחירי המשימות שלו — אין עמודת מחיר על האירוע עצמו.
-   * work_board_view כבר מחזירה null ב-customer_price למי שאין לו pricing.view,
-   * ולכן די בבדיקה הזו כדי שהכרטיס לא יופיע בכלל, בלי גידור נוסף כאן.
-   */
   const pricing = useMemo(() => {
     const priced = tasks.filter((t) => t.customer_price != null)
     if (!priced.length) return null
@@ -86,6 +101,27 @@ export default function EventDetailPage() {
       total: priced.reduce((sum, t) => sum + Number(t.customer_price), 0),
       unpriced: tasks.length - priced.length,
     }
+  }, [tasks])
+
+  const filteredTasks = useMemo(() => {
+    if (activeTab === 'setup') return tasks.filter((t) => t.task_type_code === 'setup')
+    if (activeTab === 'teardown') return tasks.filter((t) => t.task_type_code === 'teardown')
+    if (activeTab === 'other') return tasks.filter((t) => t.task_type_code !== 'setup' && t.task_type_code !== 'teardown')
+    return tasks
+  }, [tasks, activeTab])
+
+  const taskStats = useMemo(() => {
+    const setupCount = tasks.filter((t) => t.task_type_code === 'setup').length
+    const teardownCount = tasks.filter((t) => t.task_type_code === 'teardown').length
+    const otherCount = tasks.length - setupCount - teardownCount
+    const totalWorkers = tasks.reduce((sum, t) => {
+      const count =
+        (t.workers?.length || 0) +
+        (t.drivers?.length || 0) +
+        (t.contractor_worker_list?.length || 0)
+      return sum + count
+    }, 0)
+    return { setupCount, teardownCount, otherCount, totalWorkers }
   }, [tasks])
 
   const columns = useMemo<Column<WorkBoardRow>[]>(
@@ -175,8 +211,6 @@ export default function EventDetailPage() {
         sortValue: (t) => t.status_name,
         render: (t) => <StatusPill color={t.status_color}>{t.status_name}</StatusPill>,
       },
-      // העמודה נוספת רק כשיש בכלל מחירים לראות — למי שאין לו pricing.view
-      // work_board_view מחזירה null, וכותרת עמודה ריקה היא רעש.
       ...(pricing
         ? ([
             {
@@ -189,7 +223,7 @@ export default function EventDetailPage() {
                 t.customer_price == null ? (
                   <span className="text-ink-tertiary">—</span>
                 ) : (
-                  <span dir="ltr" className="tabular">
+                  <span dir="ltr" className="tabular font-medium">
                     {fmtMoney(t.customer_price)}
                   </span>
                 ),
@@ -204,10 +238,13 @@ export default function EventDetailPage() {
     return (
       <div className="space-y-4">
         <SkeletonCard lines={1} />
-        <div className="grid gap-4 lg:grid-cols-3">
-          <SkeletonCard className="lg:col-span-1" lines={6} />
-          <div className="surface lg:col-span-2">
+        <div className="grid gap-4 lg:grid-cols-12">
+          <div className="space-y-4 lg:col-span-8">
+            <SkeletonCard lines={6} />
             <SkeletonTable rows={5} cols={5} />
+          </div>
+          <div className="lg:col-span-4">
+            <SkeletonCard lines={10} />
           </div>
         </div>
       </div>
@@ -239,7 +276,6 @@ export default function EventDetailPage() {
     navigate(`/events/${newId}`)
   }
 
-  /** one-line recap of an auto-created task, so the two sections read at a glance */
   const sectionLine = (code: 'setup' | 'teardown') => {
     const t = tasks.find((x) => x.task_type_code === code)
     if (!t) return null
@@ -297,7 +333,7 @@ export default function EventDetailPage() {
   ].filter(Boolean)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {dialog}
 
       <PageHeader
@@ -338,162 +374,377 @@ export default function EventDetailPage() {
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
-          <CardHeader title="פרטי האירוע" />
-          <CardBody>
-            <dl className="divide-y divide-line-subtle">
-              {info
-                .filter(([, v]) => v != null && v !== '')
-                .map(([k, v]) => (
-                  <div key={k} className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0">
-                    <dt className="shrink-0 type-caption text-ink-tertiary">{k}</dt>
-                    <dd className="min-w-0 text-end type-body font-medium">{v}</dd>
-                  </div>
-                ))}
-              {addons.length > 0 && (
-                <div className="flex items-start justify-between gap-3 py-2">
-                  <dt className="shrink-0 type-caption text-ink-tertiary">תוספות</dt>
-                  <dd className="flex flex-wrap justify-end gap-1">
-                    {addons.map((a) => (
-                      <Badge key={String(a)} tone="info">
-                        {a}
-                      </Badge>
+      {/* Main 2-column grid layout: Right side = Content & Tasks; Left side = Activity Log full-height sidebar */}
+      <div className="grid gap-6 lg:grid-cols-12 items-start">
+        {/* Right Main Column (in RTL, lg:col-span-7 xl:col-span-8) */}
+        <div className="space-y-6 lg:col-span-7 xl:col-span-8">
+          {/* Top Cards Grid: Event Info + Pricing */}
+          <div className={`grid gap-4 ${pricing ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
+            <Card>
+              <CardHeader title="פרטי האירוע" />
+              <CardBody>
+                <dl className="divide-y divide-line-subtle">
+                  {info
+                    .filter(([, v]) => v != null && v !== '')
+                    .map(([k, v]) => (
+                      <div key={k} className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0">
+                        <dt className="shrink-0 type-caption text-ink-tertiary">{k}</dt>
+                        <dd className="min-w-0 text-end type-body font-medium">{v}</dd>
+                      </div>
                     ))}
-                  </dd>
-                </div>
-              )}
-              {suppliers.length > 0 && (
-                <div className="flex items-start justify-between gap-3 py-2 last:pb-0">
-                  <dt className="shrink-0 type-caption text-ink-tertiary">ספקים לאיסוף</dt>
-                  <dd className="flex flex-wrap justify-end gap-1">
-                    {suppliers.map((s) => (
-                      <Badge key={s.supplier_id}>{s.suppliers.name}</Badge>
+                  {addons.length > 0 && (
+                    <div className="flex items-start justify-between gap-3 py-2">
+                      <dt className="shrink-0 type-caption text-ink-tertiary">תוספות</dt>
+                      <dd className="flex flex-wrap justify-end gap-1">
+                        {addons.map((a) => (
+                          <Badge key={String(a)} tone="info">
+                            {a}
+                          </Badge>
+                        ))}
+                      </dd>
+                    </div>
+                  )}
+                  {suppliers.length > 0 && (
+                    <div className="flex items-start justify-between gap-3 py-2 last:pb-0">
+                      <dt className="shrink-0 type-caption text-ink-tertiary">ספקים לאיסוף</dt>
+                      <dd className="flex flex-wrap justify-end gap-1">
+                        {suppliers.map((s) => (
+                          <Badge key={s.supplier_id}>{s.suppliers.name}</Badge>
+                        ))}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </CardBody>
+            </Card>
+
+            {pricing && (
+              <Card>
+                <CardHeader
+                  title="תמחור"
+                  subtitle="המחיר שהלקוח משלם"
+                  icon={<Banknote size={ICON.md} strokeWidth={STROKE} />}
+                />
+                <CardBody>
+                  <dl className="divide-y divide-line-subtle">
+                    {pricing.rows.map((r) => (
+                      <div key={r.id} className="flex items-start justify-between gap-3 py-2 first:pt-0">
+                        <dt className="min-w-0 shrink type-caption text-ink-tertiary">
+                          {r.label}
+                          {r.isManual && <span className="ms-1.5 text-warning-text">ידני</span>}
+                        </dt>
+                        <dd dir="ltr" className="shrink-0 tabular-nums type-body font-medium">
+                          {fmtMoney(r.price)}
+                        </dd>
+                      </div>
                     ))}
-                  </dd>
-                </div>
-              )}
-            </dl>
-          </CardBody>
-        </Card>
+                    <div className="flex items-baseline justify-between gap-3 pt-2">
+                      <dt className="type-body font-semibold">סך הכול</dt>
+                      <dd dir="ltr" className="tabular-nums type-title font-semibold text-primary">
+                        {fmtMoney(pricing.total)}
+                      </dd>
+                    </div>
+                  </dl>
+                  {pricing.unpriced > 0 && (
+                    <p className="mt-2 type-caption text-ink-tertiary">
+                      {pricing.unpriced} משימות ללא מחיר עדיין
+                    </p>
+                  )}
+                </CardBody>
+              </Card>
+            )}
+          </div>
 
-        {pricing && (
-          <Card className="lg:col-span-1">
-            <CardHeader
-              title="תמחור"
-              subtitle="המחיר שהלקוח משלם"
-              icon={<Banknote size={ICON.md} strokeWidth={STROKE} />}
-            />
-            <CardBody>
-              <dl className="divide-y divide-line-subtle">
-                {pricing.rows.map((r) => (
-                  <div key={r.id} className="flex items-start justify-between gap-3 py-2 first:pt-0">
-                    <dt className="min-w-0 shrink type-caption text-ink-tertiary">
-                      {r.label}
-                      {r.isManual && <span className="ms-1.5 text-warning-text">ידני</span>}
-                    </dt>
-                    <dd dir="ltr" className="shrink-0 tabular-nums type-body font-medium">
-                      {fmtMoney(r.price)}
-                    </dd>
-                  </div>
-                ))}
-                <div className="flex items-baseline justify-between gap-3 pt-2">
-                  <dt className="type-body font-semibold">סך הכול</dt>
-                  <dd dir="ltr" className="tabular-nums type-title font-semibold">
-                    {fmtMoney(pricing.total)}
-                  </dd>
+          {/* Redesigned Tasks Section */}
+          <div className="space-y-4">
+            {/* Tasks Summary KPI Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
+                <span className="type-caption text-ink-tertiary">סך משימות</span>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="type-title text-xl font-bold">{tasks.length}</span>
                 </div>
-              </dl>
-              {pricing.unpriced > 0 && (
-                <p className="mt-2 type-caption text-ink-tertiary">
-                  {pricing.unpriced} משימות ללא מחיר עדיין
-                </p>
-              )}
-            </CardBody>
-          </Card>
-        )}
-
-        <div className={pricing ? 'lg:col-span-3' : 'lg:col-span-2'}>
-          <DataTable
-            rows={tasks}
-            columns={columns}
-            getRowId={(t) => t.id}
-            loading={loadingTasks}
-            dense
-            storageKey="event-tasks"
-            onRowClick={(t) => setTaskDrawer({ open: true, taskId: t.id })}
-            defaultSort={{ key: 'date', dir: 'asc' }}
-            mobileCard={(t) => {
-              const names = [
-                ...(t.workers ?? []).map((w) => w.name),
-                ...(t.drivers ?? []).map((d) => d.name),
-                ...(t.contractor_worker_list ?? []).map((w) => w.name),
-              ]
-              return (
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="type-caption font-semibold tabular">{fmtDate(t.task_date)}</span>
-                    <span className="type-caption tabular text-ink-tertiary" dir="ltr">
-                      {fmtTime(t.onsite_start_time) || '—'}
-                      {t.onsite_end_time ? `–${fmtTime(t.onsite_end_time)}` : ''}
-                    </span>
-                    <StatusPill color={t.status_color} className="ms-auto shrink-0">
-                      {t.status_name}
-                    </StatusPill>
-                  </div>
-                  <p className="truncate type-body font-semibold">{t.title || t.task_type_name}</p>
-                  <div className="flex items-center gap-2">
-                    {names.length > 0 ? (
-                      <AvatarGroup names={names} max={4} size="xs" />
-                    ) : (
-                      <span className="type-caption text-ink-tertiary">לא שובץ</span>
-                    )}
-                    {t.contractor_name && <span className="truncate type-caption text-ink-tertiary">{t.contractor_name}</span>}
-                  </div>
-                </div>
-              )
-            }}
-            toolbar={
-              <div className="flex w-full items-center gap-2">
-                <h2 className="type-title">משימות האירוע</h2>
-                <span className="type-caption tabular text-ink-tertiary">{tasks.length}</span>
-                {has(PERM.TASKS_CREATE) && (
-                  <Button size="sm" className="ms-auto" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
-                    <Plus size={ICON.sm} strokeWidth={STROKE} />
-                    משימה
-                  </Button>
-                )}
               </div>
-            }
-            empty={
-              <EmptyState
-                art="table"
-                title="אין משימות לאירוע"
-                description="משימות הקמה ופירוק נוצרות אוטומטית עם האירוע; ניתן להוסיף משימות נוספות ידנית"
-                action={
-                  has(PERM.TASKS_CREATE) && (
+
+              <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
+                <span className="type-caption text-ink-tertiary">חלוקת משימות</span>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <Badge tone="info" size="xs">הקמה {taskStats.setupCount}</Badge>
+                  <Badge tone="warning" size="xs">פירוק {taskStats.teardownCount}</Badge>
+                  {taskStats.otherCount > 0 && <Badge size="xs">אחר {taskStats.otherCount}</Badge>}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
+                <span className="type-caption text-ink-tertiary">צוות משובץ</span>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <Users size={ICON.sm} className="text-ink-tertiary" />
+                  <span className="type-title text-lg font-bold">{taskStats.totalWorkers}</span>
+                  <span className="type-caption text-ink-tertiary">עובדים</span>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
+                <span className="type-caption text-ink-tertiary">סך תמחור</span>
+                <div className="flex items-center gap-1.5 mt-1" dir="ltr">
+                  <span className="type-title text-lg font-bold text-success-text">
+                    {pricing ? fmtMoney(pricing.total) : '—'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Tasks Container Card */}
+            <Card>
+              {/* Header & Controls Toolbar */}
+              <div className="p-4 border-b border-line-subtle flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <h2 className="type-title font-semibold flex items-center gap-2">
+                    <span>משימות האירוע</span>
+                    <Badge tone="neutral" className="tabular">{filteredTasks.length}</Badge>
+                  </h2>
+
+                  {/* Filter Tabs */}
+                  <div className="flex items-center rounded-lg bg-subtle p-1 border border-line-subtle text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('all')}
+                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                        activeTab === 'all'
+                          ? 'bg-surface text-ink-primary shadow-xs'
+                          : 'text-ink-tertiary hover:text-ink-primary'
+                      }`}
+                    >
+                      הכול
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('setup')}
+                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                        activeTab === 'setup'
+                          ? 'bg-surface text-ink-primary shadow-xs'
+                          : 'text-ink-tertiary hover:text-ink-primary'
+                      }`}
+                    >
+                      הקמה ({taskStats.setupCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('teardown')}
+                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                        activeTab === 'teardown'
+                          ? 'bg-surface text-ink-primary shadow-xs'
+                          : 'text-ink-tertiary hover:text-ink-primary'
+                      }`}
+                    >
+                      פירוק ({taskStats.teardownCount})
+                    </button>
+                    {taskStats.otherCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('other')}
+                        className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                          activeTab === 'other'
+                            ? 'bg-surface text-ink-primary shadow-xs'
+                            : 'text-ink-tertiary hover:text-ink-primary'
+                        }`}
+                      >
+                        אחר ({taskStats.otherCount})
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 ms-auto">
+                  {/* View Switcher */}
+                  <div className="flex items-center rounded-lg bg-subtle p-1 border border-line-subtle">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('cards')}
+                      title="תצוגת כרטיסים"
+                      className={`p-1.5 rounded-md transition-all ${
+                        viewMode === 'cards'
+                          ? 'bg-surface text-primary shadow-xs'
+                          : 'text-ink-tertiary hover:text-ink-primary'
+                      }`}
+                    >
+                      <LayoutGrid size={ICON.sm} strokeWidth={STROKE} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('table')}
+                      title="תצוגת טבלה"
+                      className={`p-1.5 rounded-md transition-all ${
+                        viewMode === 'table'
+                          ? 'bg-surface text-primary shadow-xs'
+                          : 'text-ink-tertiary hover:text-ink-primary'
+                      }`}
+                    >
+                      <List size={ICON.sm} strokeWidth={STROKE} />
+                    </button>
+                  </div>
+
+                  {has(PERM.TASKS_CREATE) && (
                     <Button size="sm" variant="primary" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
-                      <Plus size={ICON.sm} />
+                      <Plus size={ICON.sm} strokeWidth={STROKE} />
                       משימה חדשה
                     </Button>
-                  )
-                }
-              />
-            }
-          />
-        </div>
-      </div>
+                  )}
+                </div>
+              </div>
 
-      {has(PERM.EVENTS_ACTIVITY_LOG) && <EventActivityLog eventId={event.id} />}
+              {/* Tasks Body Content */}
+              <CardBody className="p-4">
+                {loadingTasks ? (
+                  <SkeletonTable rows={4} cols={4} />
+                ) : filteredTasks.length === 0 ? (
+                  <EmptyState
+                    art="table"
+                    title="אין משימות להצגה"
+                    description="נסה לשנות את הסינון או להוסיף משימה חדשה"
+                    action={
+                      has(PERM.TASKS_CREATE) && (
+                        <Button size="sm" variant="primary" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
+                          <Plus size={ICON.sm} />
+                          משימה חדשה
+                        </Button>
+                      )
+                    }
+                  />
+                ) : viewMode === 'cards' ? (
+                  /* Cards / Visual Grid View */
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {filteredTasks.map((t) => {
+                      const names = [
+                        ...(t.workers ?? []).map((w) => w.name),
+                        ...(t.drivers ?? []).map((d) => d.name),
+                        ...(t.contractor_worker_list ?? []).map((w) => w.name),
+                      ]
+                      return (
+                        <div
+                          key={t.id}
+                          onClick={() => setTaskDrawer({ open: true, taskId: t.id })}
+                          className="group relative flex flex-col justify-between rounded-xl border border-line-subtle bg-surface p-4 transition-all duration-200 hover:border-primary/50 hover:shadow-md cursor-pointer"
+                        >
+                          <div className="space-y-3">
+                            {/* Card Top Row: Task Type / Code Badge + Status */}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5">
+                                {t.task_type_code === 'setup' ? (
+                                  <Badge tone="info" size="xs">הקמה</Badge>
+                                ) : t.task_type_code === 'teardown' ? (
+                                  <Badge tone="warning" size="xs">פירוק</Badge>
+                                ) : (
+                                  <Badge tone="neutral" size="xs">משימה</Badge>
+                                )}
+                                <StatusPill color={t.status_color}>{t.status_name}</StatusPill>
+                              </div>
+                              {t.customer_price != null && (
+                                <span dir="ltr" className="type-caption font-bold text-success-text tabular">
+                                  {fmtMoney(t.customer_price)}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Task Title */}
+                            <div>
+                              <h3 className="type-title font-semibold text-ink-primary group-hover:text-primary transition-colors">
+                                {t.title || t.task_type_name}
+                              </h3>
+                            </div>
+
+                            {/* Date & Time Badges */}
+                            <div className="flex flex-wrap items-center gap-2 type-caption text-ink-secondary">
+                              <span className="inline-flex items-center gap-1 bg-subtle px-2 py-1 rounded-md border border-line-subtle tabular">
+                                <Calendar size={ICON.xs} className="text-ink-tertiary" />
+                                {fmtDate(t.task_date)}
+                              </span>
+                              <span className="inline-flex items-center gap-1 bg-subtle px-2 py-1 rounded-md border border-line-subtle tabular" dir="ltr">
+                                <Clock size={ICON.xs} className="text-ink-tertiary" />
+                                {fmtTime(t.onsite_start_time) || '—'}
+                                {t.onsite_end_time ? `–${fmtTime(t.onsite_end_time)}` : ''}
+                              </span>
+                              {t.hours_count != null && (
+                                <span className="type-caption tabular text-ink-tertiary">
+                                  ({fmtHours(t.hours_count)} שעות)
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Team Lead & Contractor info if available */}
+                            {(t.team_lead_name || t.contractor_name || t.execution_method_name) && (
+                              <div className="flex flex-wrap items-center gap-1.5 type-caption pt-1 border-t border-line-subtle/60">
+                                {t.team_lead_name && (
+                                  <span className="inline-flex items-center gap-1 text-ink-secondary">
+                                    <HardHat size={ICON.xs} className="text-warning-text" />
+                                    <span>ר"צ: {t.team_lead_name}</span>
+                                  </span>
+                                )}
+                                {t.contractor_name && (
+                                  <span className="inline-flex items-center gap-1 text-ink-secondary">
+                                    <Briefcase size={ICON.xs} className="text-info-text" />
+                                    <span>{t.contractor_name}</span>
+                                  </span>
+                                )}
+                                {t.execution_method_name && !t.contractor_name && (
+                                  <span className="text-ink-tertiary">({t.execution_method_name})</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Card Footer: Team Assigned Avatars */}
+                          <div className="mt-4 pt-2.5 border-t border-line-subtle flex items-center justify-between">
+                            {names.length > 0 ? (
+                              <div className="flex items-center gap-2">
+                                <AvatarGroup names={names} max={4} size="xs" />
+                                <span className="type-caption tabular text-ink-tertiary">
+                                  {names.length}/{t.worker_count || '—'} עובדים
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="type-caption text-ink-tertiary">לא שובצו עובדים</span>
+                            )}
+                            <span className="type-caption text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">
+                              פרטים ←
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  /* Table View */
+                  <DataTable
+                    rows={filteredTasks}
+                    columns={columns}
+                    getRowId={(t) => t.id}
+                    loading={loadingTasks}
+                    dense
+                    storageKey="event-tasks"
+                    onRowClick={(t) => setTaskDrawer({ open: true, taskId: t.id })}
+                    defaultSort={{ key: 'date', dir: 'asc' }}
+                  />
+                )}
+              </CardBody>
+            </Card>
+          </div>
+        </div>
+
+        {/* Left Sidebar Column - Full Height Activity Log (in RTL, lg:col-span-5 xl:col-span-4) */}
+        {has(PERM.EVENTS_ACTIVITY_LOG) && (
+          <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-4 h-[calc(100vh-2rem)] flex flex-col">
+            <EventActivityLog eventId={event.id} className="h-full shadow-xs" />
+          </div>
+        )}
+      </div>
 
       <EventFormModal
         open={editOpen}
         onClose={() => {
           setEditOpen(false)
           void qc.invalidateQueries({ queryKey: ['events', 'one', id] })
-          // the setup/teardown sections write onto the tasks below
           void qc.invalidateQueries({ queryKey: ['workboard', 'byEvent', id] })
-          // and whatever the save moved has just been written to the log
           void qc.invalidateQueries({ queryKey: ['event_activity', id] })
         }}
         event={event}

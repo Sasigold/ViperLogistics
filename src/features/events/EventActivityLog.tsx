@@ -90,7 +90,7 @@ function toEntries(rows: EventActivity[]): Entry[] {
   return out
 }
 
-export function EventActivityLog({ eventId }: { eventId: string }) {
+export function EventActivityLog({ eventId, className }: { eventId: string; className?: string }) {
   const { has, me } = useAuth()
   const qc = useQueryClient()
   const [draft, setDraft] = useState('')
@@ -135,7 +135,7 @@ export function EventActivityLog({ eventId }: { eventId: string }) {
   const entries = useMemo(() => toEntries(rows), [rows])
 
   return (
-    <Card>
+    <Card className={`flex flex-col h-full ${className ?? ''}`}>
       <CardHeader
         title="יומן פעילות"
         subtitle="כל שינוי באירוע, ומה שרשמתם עליו"
@@ -144,9 +144,9 @@ export function EventActivityLog({ eventId }: { eventId: string }) {
       />
 
       {canWrite && (
-        <div className="border-b border-line-subtle bg-subtle/40 p-4">
+        <div className="border-b border-line-subtle bg-subtle/40 p-3.5">
           <form
-            className="flex flex-col gap-2 sm:flex-row sm:items-end"
+            className="flex flex-col gap-2"
             onSubmit={(e) => {
               e.preventDefault()
               const note = draft.trim()
@@ -164,7 +164,8 @@ export function EventActivityLog({ eventId }: { eventId: string }) {
             <Button
               type="submit"
               variant="primary"
-              className="shrink-0"
+              size="sm"
+              className="self-end shrink-0"
               disabled={!draft.trim()}
               loading={addNote.isPending}
             >
@@ -178,11 +179,11 @@ export function EventActivityLog({ eventId }: { eventId: string }) {
         </div>
       )}
 
-      <CardBody>
+      <CardBody className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden">
         {isLoading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 w-full" />
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full rounded-lg" />
             ))}
           </div>
         ) : entries.length === 0 ? (
@@ -198,7 +199,7 @@ export function EventActivityLog({ eventId }: { eventId: string }) {
           />
         ) : (
           /* a vertical rail turns a list of entries into a readable timeline */
-          <ol className="relative max-h-[32rem] space-y-3 overflow-y-auto ps-6">
+          <ol className="relative flex-1 min-h-0 space-y-3 overflow-y-auto ps-6 pe-1 scrollbar-thin">
             <span aria-hidden className="absolute inset-y-1 start-2 w-px bg-line" />
             {entries.map((e) => (
               <li key={e.id} className="relative">
@@ -207,7 +208,7 @@ export function EventActivityLog({ eventId }: { eventId: string }) {
                   className="absolute -start-[1.375rem] top-3 size-2.5 rounded-full ring-4 ring-surface"
                   style={{ background: KIND_COLORS[e.kind] }}
                 />
-                <div className="rounded-lg border border-line-subtle bg-surface p-3">
+                <div className="rounded-lg border border-line-subtle bg-surface p-3 transition-colors hover:border-line">
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusPill color={KIND_COLORS[e.kind]}>{KIND_LABELS[e.kind]}</StatusPill>
                     {e.actor ? (
@@ -224,7 +225,7 @@ export function EventActivityLog({ eventId }: { eventId: string }) {
                   </div>
 
                   {e.kind === 'note' && (
-                    <p className="mt-2 whitespace-pre-wrap type-body">{e.note}</p>
+                    <p className="mt-2 whitespace-pre-wrap type-body text-ink-primary bg-subtle/30 p-2.5 rounded border border-line-subtle/50">{e.note}</p>
                   )}
 
                   {e.changes.length > 0 && (

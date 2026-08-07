@@ -80,7 +80,7 @@ export default function AppLayout() {
             'lg:static lg:translate-x-0',
             // wider as a mobile drawer, where it is the only thing on screen
             collapsed ? 'w-72 lg:w-[4.25rem]' : 'w-72 lg:w-60',
-            mobileNav ? 'translate-x-0 shadow-overlay' : 'ltr:-translate-x-full rtl:translate-x-full',
+            mobileNav ? 'translate-x-0 shadow-overlay' : 'max-lg:ltr:-translate-x-full max-lg:rtl:translate-x-full',
           )}
         >
           <div className={cx('flex h-14 shrink-0 items-center gap-2.5 px-3', collapsed && 'lg:justify-center')}>

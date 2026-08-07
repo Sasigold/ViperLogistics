@@ -114,4 +114,6 @@ export {
   Shield,
   KeyRound,
   Zap,
+  LayoutGrid,
+  List,
 } from 'lucide-react'
