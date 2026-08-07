@@ -17,6 +17,11 @@
     "jsx": "react-jsx",
 
     /* Linting */
+    /* TypeScript 6 turns `strict` on by default, so this project has been
+       compiling under strictNullChecks and noImplicitAny all along without
+       ever saying so. Stating it means the guarantee survives a downgrade,
+       or a future release changing its mind about the default. */
+    "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
