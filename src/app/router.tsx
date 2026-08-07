@@ -30,6 +30,7 @@ const SettingsPage = lazy(() => import('../features/settings/SettingsPage'))
 const TimeClockPage = lazy(() => import('../features/attendance/TimeClockPage'))
 const MySchedulePage = lazy(() => import('../features/attendance/MySchedulePage'))
 const AttendanceReportPage = lazy(() => import('../features/attendance/AttendanceReportPage'))
+const NotificationPreferencesPage = lazy(() => import('../features/notifications/NotificationPreferencesPage'))
 
 /** Shaped like a real screen so the chunk swap doesn't flash an empty page. */
 function PageFallback() {
@@ -125,6 +126,11 @@ export const router = createBrowserRouter([
             element: page(<MySchedulePage />),
           },
           { path: '/my/attendance', handle: { perm: PERM.ATTENDANCE_VIEW_OWN }, element: page(<TimeClockPage />) },
+          {
+            path: '/my/notifications',
+            handle: { perm: PERM.NOTIFICATIONS_PREFERENCES },
+            element: page(<NotificationPreferencesPage />),
+          },
           { path: '/settings', handle: { perm: PERM.SETTINGS_VIEW }, element: page(<SettingsPage />) },
         ],
       },

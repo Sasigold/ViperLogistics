@@ -395,12 +395,21 @@ export function Switch({
   label,
   disabled,
   description,
+  'aria-label': ariaLabel,
 }: {
   checked: boolean
   onChange: (v: boolean) => void
   label?: ReactNode
   disabled?: boolean
   description?: ReactNode
+  /**
+   * לשימוש כשהטקסט מצויר מחוץ לרכיב ו-`label` היה מכפיל אותו.
+   *
+   * מוצהר במפורש ולא נשען על עודף props: TypeScript פוטר תכונות JSX מקופפות
+   * מבדיקת עודף, ולכן `aria-label` על רכיב שאינו מכריז עליו עובר קומפילציה
+   * ונזרק בשקט — כפתור בלי שם נגיש, בלי שדבר יתלונן.
+   */
+  'aria-label'?: string
 }) {
   return (
     <label
@@ -413,7 +422,7 @@ export function Switch({
         type="button"
         role="switch"
         aria-checked={checked}
-        aria-label={typeof label === 'string' ? label : undefined}
+        aria-label={ariaLabel ?? (typeof label === 'string' ? label : undefined)}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cx(

@@ -161,6 +161,7 @@
   לצפייה / עריכה / סימון תשלום.
 - `users.set_admin` אינו נגזר משום הרשאה אחרת — "עריכת משתמשים" אינה דרך להפוך לאדמין.
 - Audit Log על כל שינוי, Soft Delete עם סל מיחזור, התראות Realtime.
+  ליומן הביקורת אין מסך — הוא נקרא דרך ה-API בלבד, מאחורי `settings.audit_log`.
 
 **הוספת הרשאה למודול חדש** — במיגרציה:
 
@@ -193,11 +194,25 @@ npm install
 npm run dev
 ```
 
+## בדיקות
+
+```bash
+npm run test:unit   # לוגיקה טהורה: הכרעת הרשאות, תאריכים, מיפוי שגיאות, ייצוא
+npm run test:db     # מקים אשכול Postgres זמני, מריץ את כל המיגרציות ואז את החבילות
+npm test            # שניהם
+```
+
+`test:db` דורש Postgres מקומי (16 ומעלה) והוא אינו נוגע בשום פרויקט Supabase —
+הוא מקים אשכול ב-`/var/tmp` ומוחק אותו בכל הרצה. החבילות מכסות הסלמת הרשאות,
+מנוע התמחור, מנוע הנוכחות, כפל-שיבוץ ומשלוח התראות. שתיהן רצות ב-CI על כל PR
+(`.github/workflows/ci.yml`), יחד עם lint, typecheck ו-build.
+
 ## מבנה
 
 ```
-supabase/migrations/   # 0001..0027 — סכמה, זריעה, RLS, RPCs, הרשאות, תמחור, נוכחות
-supabase/functions/    # admin-users (ניהול חשבונות), geocode-proxy (Nominatim)
+supabase/migrations/   # 0001..0030 — סכמה, זריעה, RLS, RPCs, הרשאות, תמחור, נוכחות
+supabase/functions/    # admin-users (ניהול חשבונות), geocode-proxy (Nominatim),
+                       # notify-dispatch (משלוח התראות)
 src/features/          # מודול לכל פיצ'ר: calendar, workboard, events, customers,
                        # users, contractors, portal, attendance, settings,
                        # notifications, search...
@@ -205,9 +220,51 @@ src/components/ui.tsx  # ערכת UI (RTL + Dark Mode)
 src/lib/               # supabase, queries, dates, address adapter
 ```
 
+## התראות במייל
+
+הפעמון במערכת הוא Realtime על `notifications`, ומי שלא פתח את המסך לא ידע.
+`app.notify()` — הנקודה היחידה שכל ההתראות עוברות בה — רושם גם שורת משלוח
+ב-`notification_deliveries`, ו-`notify-dispatch` מנקז אותה.
+
+**הערוץ כבוי בברירת מחדל.** שדרוג לא אמור להתחיל לשלוח מיילים מעצמו. להפעלה:
+
+```sql
+update app_settings
+   set value = jsonb_set(value, '{enabled}', 'true'::jsonb)
+ where key = 'notifications.email';
+```
+
+באותו מפתח יושבים גם `from` (כתובת השולח) ו-`muted_types` — סוגים שלא יישלחו
+במייל גם כשהערוץ דלוק, ולא משנה מה המשתמש ביקש.
+
+**משתני סביבה ל-`notify-dispatch`:** `NOTIFY_DISPATCH_SECRET` (בלעדיו הפונקציה
+מסרבת ולא רצה פתוחה) ו-`RESEND_API_KEY`. בלי מפתח הספק המשלוח מסומן `skipped`
+ולא נצבר כניסיונות כושלים.
+
+**שתי הגדרות מסד** שנקבעות פעם אחת. הן אינן ב-`app_settings` במכוון: היא קריאה
+לכל משתמש מאומת דרך PostgREST, וסוד לא אמור לשבת שם.
+
+```sql
+alter database postgres set app.notify_dispatch_url =
+  'https://<ref>.supabase.co/functions/v1/notify-dispatch';
+alter database postgres set app.notify_dispatch_secret = '<אקראי>';
+```
+
+הניקוז נעשה בשתי דרכים, ובכוונה לא רק באחת: `pg_net` יורה מהטריגר ברגע שנרשם
+משלוח, וקריאה חיצונית מתוזמנת (POST בלי גוף, עם אותו `x-dispatch-secret`)
+מנקזת את כל מה שממתין — כולל מה שנכשל, עד חמישה ניסיונות. בלי השנייה תקלה
+רגעית אצל ספק הדואר הייתה אובדת. אין `pg_net`? הטריגר שותק וה-outbox ממתין
+לניקוז החיצוני.
+
+כל בעל חשבון שולט במה שהוא מקבל ב-`/my/notifications`. המסך יושב תחת `/my`
+ולא בהגדרות, כי `settings.view` אינו מפתח שעובד אמור להחזיק כדי להחליט אם
+למלא לו את תיבת הדואר.
+
 ## הערות תפעול
 
 - ליצירת משתמשים עם סיסמה משתמשים ב-Edge Function ‏`admin-users` (service role בצד השרת בלבד).
-- Nominatim מוגבל לבקשה בשנייה — הפרוקסי מוסיף cache; לשימוש כבד מומלץ לעבור ל-Google Places
-  דרך ה-Adapter (`src/lib/address.ts`).
+- Nominatim מוגבל לבקשה בשנייה — הפרוקסי דורש משתמש מחובר, מחזיק cache חסום
+  ומווסת את עצמו לקצב הזה. חריגה הייתה חוסמת את כתובת ה-IP של האפליקציה כולה
+  ולא רק את מי שגרם לה. לשימוש כבד מומלץ לעבור ל-Google Places דרך ה-Adapter
+  (`src/lib/address.ts`).
 - מומלץ להפעיל Leaked Password Protection בהגדרות ה-Auth בדשבורד של Supabase.

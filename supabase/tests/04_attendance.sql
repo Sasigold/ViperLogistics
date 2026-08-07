@@ -938,3 +938,99 @@ select t_eq('משימה בלי שעה אינה מתנגשת בכלום',
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+-- ================= 7. משלוח התראות =================
+
+\echo '--- משלוח התראות ---'
+
+-- הערוץ כבוי בברירת מחדל: שדרוג לא אמור להתחיל לשלוח מיילים מעצמו.
+select t_eq('ערוץ המייל כבוי עד שמדליקים אותו', app.email_enabled(), false);
+
+select t_eq('וכשהוא כבוי לא נוצרת שורת משלוח',
+  (select count(*) from notification_deliveries)::int, 0);
+
+update app_settings
+   set value = jsonb_set(value, '{enabled}', 'true'::jsonb)
+ where key = 'notifications.email';
+
+update profiles set email = 'clock@vl.test'
+ where id = '20000000-0000-0000-0000-0000000000f3';
+
+select t_eq('אחרי ההדלקה הערוץ פתוח', app.email_enabled(), true);
+
+select t_expect_ok('התראה חדשה מייצרת שורת משלוח', $$
+  select app.notify('20000000-0000-0000-0000-0000000000f3', 'task_assigned',
+    'שובצת למשימה', 'בדיקה', null, null)$$);
+
+select t_eq('נוצרה שורה אחת, ממתינה',
+  (select count(*) from notification_deliveries
+    where recipient_id = '20000000-0000-0000-0000-0000000000f3' and status = 'pending')::int, 1);
+
+select t_eq('והיא נושאת את כתובת הנמען',
+  (select address from notification_deliveries
+    where recipient_id = '20000000-0000-0000-0000-0000000000f3' limit 1), 'clock@vl.test');
+
+-- ההתראה עצמה נכתבת בכל מקרה: המסך אינו תלוי בדואר
+select t_eq('וההתראה עצמה נכתבה כרגיל',
+  (select count(*) from notifications
+    where recipient_id = '20000000-0000-0000-0000-0000000000f3'
+      and type = 'task_assigned' and body = 'בדיקה')::int, 1);
+
+-- העדפה פר-סוג גוברת על הכללית
+insert into notification_preferences (profile_id, channel, type, enabled) values
+  ('20000000-0000-0000-0000-0000000000f3', 'email', 'task_assigned', false);
+
+select t_eq('סוג שהמשתמש כיבה אינו נשלח',
+  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_assigned'), false);
+
+select t_eq('אבל סוג אחר ממשיך להישלח',
+  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_changed'), true);
+
+insert into notification_preferences (profile_id, channel, type, enabled) values
+  ('20000000-0000-0000-0000-0000000000f3', 'email', null, false);
+
+select t_eq('כיבוי כללי חוסם סוג שלא הוגדר לו כלום',
+  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_changed'), false);
+
+update notification_preferences set enabled = true
+ where profile_id = '20000000-0000-0000-0000-0000000000f3' and channel = 'email' and type = 'task_assigned';
+
+select t_eq('והעדפה לסוג גוברת על הכללי גם לכיוון ההפוך',
+  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_assigned'), true);
+
+-- השתקה גלובלית של סוג גוברת על העדפת המשתמש
+update app_settings
+   set value = jsonb_set(value, '{muted_types}', '["task_assigned"]'::jsonb)
+ where key = 'notifications.email';
+
+select t_eq('סוג מושתק גלובלית אינו נשלח גם למי שביקש אותו',
+  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_assigned'), false);
+
+update app_settings
+   set value = jsonb_set(value, '{muted_types}', '[]'::jsonb)
+ where key = 'notifications.email';
+
+-- מי שאין לו כתובת אינו מייצר שורת משלוח תלויה
+update profiles set email = null where id = '20000000-0000-0000-0000-0000000000f4';
+select t_expect_ok('התראה למי שאין לו כתובת', $$
+  select app.notify('20000000-0000-0000-0000-0000000000f4', 'task_changed', 'שינוי', 'בדיקה', null, null)$$);
+select t_eq('אינה מייצרת שורת משלוח',
+  (select count(*) from notification_deliveries
+    where recipient_id = '20000000-0000-0000-0000-0000000000f4')::int, 0);
+
+-- ה-outbox אינו קריא לעובד מן השורה
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+select t_eq('עובד אינו רואה את יומן המשלוח',
+  (select count(*) from notification_deliveries)::int, 0);
+select t_eq('אבל כן רואה את ההעדפות של עצמו',
+  (select count(*) > 0 from notification_preferences
+    where profile_id = '20000000-0000-0000-0000-0000000000f3'), true);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- וכיבוי הערוץ מחזיר את המערכת למצב שבו כלום לא יוצא
+update app_settings set value = jsonb_set(value, '{enabled}', 'false'::jsonb)
+ where key = 'notifications.email';
+select t_eq('כיבוי הערוץ עוצר משלוחים חדשים',
+  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_assigned'), false);

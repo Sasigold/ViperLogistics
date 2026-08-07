@@ -1,4 +1,5 @@
 import {
+  Bell,
   Building2,
   Calendar,
   CalendarClock,
@@ -54,6 +55,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/my/schedule', label: 'לוח המשמרות שלי', shortLabel: 'משמרות', icon: CalendarClock, perm: PERM.ATTENDANCE_VIEW_SCHEDULE },
       { to: '/my/attendance', label: 'שעון נוכחות', shortLabel: 'שעון', icon: Clock, perm: PERM.ATTENDANCE_VIEW_OWN },
+      { to: '/my/notifications', label: 'התראות', icon: Bell, perm: PERM.NOTIFICATIONS_PREFERENCES },
     ],
   },
   {
@@ -102,6 +104,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/attendance': 'דוח נוכחות',
   '/my/schedule': 'לוח המשמרות שלי',
   '/my/attendance': 'שעון נוכחות',
+  '/my/notifications': 'התראות',
   '/settings': 'הגדרות',
   '/portal': 'פורטל קבלן',
 }
