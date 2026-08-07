@@ -20,13 +20,16 @@ const INHERITED_LABEL: Record<FieldState, string> = {
 /**
  * Which fields of the event form this particular user gets.
  *
+ * Only meaningful for someone attached to a company — the overrides narrow that
+ * company's configuration and have nothing to narrow without it.
+ *
  * Distinct from `FieldPermissions` in features/permissions, which governs
  * access to the *data* and is enforced by RLS. This one governs the *shape of
  * the form* — whether a field is offered at all, and whether it is required.
  * The two look alike and answer different questions, so they stay apart:
  * hiding a field here does not hide the value from anyone who can query it.
  */
-export function ClientFormFieldsCard({ profile }: { profile: Profile }) {
+export function UserFormFieldsCard({ profile }: { profile: Profile }) {
   const qc = useQueryClient()
   const toast = useToast()
   const { data: fields = [], isLoading } = useFormFields()

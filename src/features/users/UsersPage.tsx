@@ -40,6 +40,7 @@ const roleLabels: Record<StaffRole, string> = { worker: 'עובד', driver: 'נ�
 
 
 export default function UsersPage() {
+  const creatableKinds = useAuth((s) => s.creatableKinds)
   const [kind, setKind] = useState<UserKind | ''>('')
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState<Profile | null>(null)
@@ -160,27 +161,31 @@ export default function UsersPage() {
     [],
   )
 
-  const counts = {
-    staff: profiles.filter((p) => p.user_kind === 'staff').length,
-    customer_user: profiles.filter((p) => p.user_kind === 'customer_user').length,
-    contractor_user: profiles.filter((p) => p.user_kind === 'contractor_user').length,
-  }
+  /* `profiles_select` already scoped this list — a client sees their own
+     company's people and nobody else's. So the subtitle and the kind filter
+     are built from the kinds that actually came back rather than from a fixed
+     three, and both disappear when there is only one kind to tell apart. */
+  const kindsPresent = useMemo(
+    () => (Object.keys(kindLabels) as UserKind[]).filter((k) => profiles.some((p) => p.user_kind === k)),
+    [profiles],
+  )
+  const subtitle = kindsPresent
+    .map((k) => `${profiles.filter((p) => p.user_kind === k).length} ${kindLabels[k]}`)
+    .join(' · ')
 
   return (
     <RequirePermission perm={PERM.USERS_VIEW}>
       <div className="space-y-4">
         <PageHeader
           title="עובדים ומשתמשים"
-          subtitle={
-            isLoading
-              ? 'טוען...'
-              : `${counts.staff} צוות · ${counts.customer_user} משתמשי לקוח · ${counts.contractor_user} משתמשי קבלן`
-          }
+          subtitle={isLoading ? 'טוען...' : subtitle}
           actions={
-            <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
-              <Plus size={ICON.sm} strokeWidth={STROKE} />
-              משתמש חדש
-            </Button>
+            creatableKinds().length > 0 && (
+              <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
+                <Plus size={ICON.sm} strokeWidth={STROKE} />
+                משתמש חדש
+              </Button>
+            )
           }
         >
           <FilterBar
@@ -202,17 +207,17 @@ export default function UsersPage() {
               onClear={() => setQ('')}
               aria-label="חיפוש משתמש"
             />
-            <SegmentedControl
-              className="max-sm:w-full"
-              items={[
-                { key: '', label: 'הכול' },
-                { key: 'staff', label: 'צוות' },
-                { key: 'customer_user', label: 'לקוחות' },
-                { key: 'contractor_user', label: 'קבלנים' },
-              ]}
-              value={kind}
-              onChange={(k) => setKind(k as UserKind | '')}
-            />
+            {kindsPresent.length > 1 && (
+              <SegmentedControl
+                className="max-sm:w-full"
+                items={[
+                  { key: '', label: 'הכול' },
+                  ...kindsPresent.map((k) => ({ key: k, label: kindLabels[k] })),
+                ]}
+                value={kind}
+                onChange={(k) => setKind(k as UserKind | '')}
+              />
+            )}
           </FilterBar>
         </PageHeader>
 
@@ -290,11 +295,17 @@ const DRAWER_TABS = [
 function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profile | null; onClose: () => void }) {
   const qc = useQueryClient()
   const toast = useToast()
-  const { me, can, has } = useAuth()
+  const { me, can, has, creatableKinds } = useAuth()
   const isAdmin = !!me?.profile.is_admin
   const { data: customers = [] } = useCustomers()
   const { data: contractors = [] } = useContractors()
   const [tab, setTab] = useState<'details' | 'work' | 'permissions'>('details')
+
+  /* Resolved by the server through `app.may_create_profile` — the same
+     predicate `profiles_insert` uses — so the form cannot offer a kind the
+     write would refuse. Someone who may open only one kind is not asked. */
+  const kinds = creatableKinds()
+  const pinnedKind = kinds.length === 1 ? kinds[0] : null
 
   const [form, setForm] = useState({
     full_name: '',
@@ -335,12 +346,13 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
         phone: '',
         email: '',
         notes: '',
-        user_kind: 'staff',
+        user_kind: pinnedKind ?? 'staff',
         is_admin: false,
         is_active: true,
-        customer_id: '',
-        contractor_id: '',
-        roles: ['worker'],
+        // pinned to the actor's own company, exactly as profiles_insert requires
+        customer_id: pinnedKind === 'customer_user' ? (me?.profile.customer_id ?? '') : '',
+        contractor_id: pinnedKind === 'contractor_user' ? (me?.profile.contractor_id ?? '') : '',
+        roles: pinnedKind && pinnedKind !== 'staff' ? [] : ['worker'],
       })
       setLogin({ email: '', password: '' })
     }
@@ -480,13 +492,15 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
             </Field>
           </div>
 
-          <Field label="סוג משתמש" hint="קובע את סט ההרשאות ואת המסכים שהמשתמש רואה">
-            <Select value={form.user_kind} onChange={(e) => setForm((f) => ({ ...f, user_kind: e.target.value as UserKind }))}>
-              <option value="staff">צוות (עובד / נהג / ראש צוות)</option>
-              <option value="customer_user">משתמש לקוח</option>
-              <option value="contractor_user">משתמש קבלן</option>
-            </Select>
-          </Field>
+          {!pinnedKind && (
+            <Field label="סוג משתמש" hint="קובע את סט ההרשאות ואת המסכים שהמשתמש רואה">
+              <Select value={form.user_kind} onChange={(e) => setForm((f) => ({ ...f, user_kind: e.target.value as UserKind }))}>
+                <option value="staff">צוות (עובד / נהג / ראש צוות)</option>
+                <option value="customer_user">משתמש לקוח</option>
+                <option value="contractor_user">משתמש קבלן</option>
+              </Select>
+            </Field>
+          )}
 
           {form.user_kind === 'staff' && (
             <Field label="תפקידים" hint="ניתן לשלב מספר תפקידים לאותו עובד">
@@ -507,7 +521,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
             </Field>
           )}
 
-          {form.user_kind === 'customer_user' && (
+          {form.user_kind === 'customer_user' && !pinnedKind && (
             <Field label="לקוח משויך" required error={linkError}>
               <Select value={form.customer_id} onChange={(e) => setForm((f) => ({ ...f, customer_id: e.target.value }))}>
                 <option value="">בחירה...</option>
@@ -520,7 +534,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
             </Field>
           )}
 
-          {form.user_kind === 'contractor_user' && (
+          {form.user_kind === 'contractor_user' && !pinnedKind && (
             <Field label="קבלן משויך" required error={linkError}>
               <Select value={form.contractor_id} onChange={(e) => setForm((f) => ({ ...f, contractor_id: e.target.value }))}>
                 <option value="">בחירה...</option>
@@ -538,7 +552,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
           </Field>
 
           <div className="space-y-3 rounded-lg border border-line-subtle bg-subtle/50 p-3">
-            {isAdmin && form.user_kind === 'staff' && (
+            {has(PERM.USERS_SET_ADMIN) && form.user_kind === 'staff' && (
               <Switch
                 checked={form.is_admin}
                 onChange={(v) => setForm((f) => ({ ...f, is_admin: v }))}
@@ -573,9 +587,11 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
                       onChange={(e) => setLogin((l) => ({ ...l, password: e.target.value }))}
                     />
                   </Field>
-                  <Button loading={resetPassword.isPending} disabled={!login.password} onClick={() => resetPassword.mutate()}>
-                    איפוס סיסמה
-                  </Button>
+                  {has(PERM.USERS_RESET_PASSWORD) && (
+                    <Button loading={resetPassword.isPending} disabled={!login.password} onClick={() => resetPassword.mutate()}>
+                      איפוס סיסמה
+                    </Button>
+                  )}
                 </div>
               ) : profile ? (
                 <div className="flex flex-wrap items-end gap-2">

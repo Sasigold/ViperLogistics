@@ -26,6 +26,7 @@ import { PERM, usePermissionRoles, useProfileRoles } from '../../lib/permissions
 import { PermissionMatrix } from './PermissionMatrix'
 import { ScopeEditor } from './ScopeEditor'
 import { FieldPermissions } from './FieldPermissions'
+import { UserFormFieldsCard } from './UserFormFieldsCard'
 import type { Profile } from '../../types/domain'
 
 const TABS = [
@@ -61,12 +62,25 @@ export function UserPermissionsTab({ profile }: { profile: Profile }) {
 
   return (
     <div className="space-y-4">
-      <Tabs items={TABS} value={tab} onChange={setTab} />
+      <Tabs items={TABS.filter((t) => t.key !== 'scopes' || has(PERM.USERS_MANAGE_SCOPES))} value={tab} onChange={setTab} />
       {tab === 'roles' && <RolesSection profile={profile} />}
       {tab === 'permissions' && (
-        <PermissionMatrix subject={{ kind: 'user', profileId: profile.id, userKind: profile.user_kind }} />
+        /* `app.guard_permission_grant` refuses a grant the actor does not hold
+           themselves, so offering it here would only produce an error. `has`
+           short-circuits for admins, who are unaffected. */
+        <PermissionMatrix
+          subject={{ kind: 'user', profileId: profile.id, userKind: profile.user_kind }}
+          canGrant={(key) => has(key)}
+        />
       )}
-      {tab === 'fields' && <FieldPermissions subject={{ kind: 'user', profileId: profile.id }} />}
+      {tab === 'fields' && (
+        <div className="space-y-4">
+          <FieldPermissions subject={{ kind: 'user', profileId: profile.id }} />
+          {/* the event form's shape, as opposed to access to its data — only
+              exists for someone whose company configured a form to narrow */}
+          {profile.customer_id && <UserFormFieldsCard profile={profile} />}
+        </div>
+      )}
       {tab === 'scopes' && <ScopeEditor subject={{ kind: 'user', profileId: profile.id }} />}
     </div>
   )

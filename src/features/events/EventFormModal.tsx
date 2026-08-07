@@ -155,14 +155,17 @@ export function EventFormModal({
   const qc = useQueryClient()
   const toast = useToast()
   const { me, has, canViewField, canEditField } = useAuth()
-  const isCustomer = me?.profile.user_kind === 'customer_user'
+  /* A profile carries a customer_id if and only if it belongs to a company —
+     `profiles_customer_kind` (0001) enforces the iff — so this is the same test
+     the kind check was making, stated as the fact it actually depends on. */
+  const boundCustomerId = me?.profile.customer_id ?? null
   const [form, setForm] = useState<EventForm>(empty)
   const [step, setStep] = useState(0)
   const [touched, setTouched] = useState(false)
 
   const { data: customers = [] } = useCustomers()
   const { data: statuses = [] } = useStatuses('event')
-  const effectiveCustomerId = isCustomer ? me?.profile.customer_id : form.customer_id || null
+  const effectiveCustomerId = boundCustomerId ?? form.customer_id ?? null
   /* לקוח שמתומחר אוטומטית — שדה המחיר אצלו לקריאה בלבד. משתמש לקוח אינו
      קורא את שורת הלקוח שלו מ-useCustomers, ולכן ההיעדר נחשב "לא אוטומטי":
      ממילא אצלו השדה מוסתר בברירת מחדל, והשרת הוא זה שמכריע. */
@@ -254,10 +257,11 @@ export function EventFormModal({
     (key: string) => {
       if (CONTACT_KEYS.includes(key) && !has(PERM.EVENTS_VIEW_CONTACTS)) return false
       if (!columnsOf(key).every((c) => canViewField('event', c))) return false
-      if (!isCustomer) return true
+      // `useEffectiveFormConfig` returns nothing for a user with no company, so
+      // fieldState falls back to 'visible' and staff keep every field.
       return fieldState(key) !== 'hidden'
     },
-    [has, canViewField, isCustomer, fieldState],
+    [has, canViewField, fieldState],
   )
   /** A field nobody can see is never a missing required field. */
   const req = useCallback((key: string) => show(key) && fieldState(key) === 'required', [show, fieldState])
@@ -281,7 +285,7 @@ export function EventFormModal({
     if (!s) return []
     const out: string[] = []
     if (stepKey === 'basics') {
-      if (!isCustomer && !form.customer_id) out.push('לקוח במערכת')
+      if (!boundCustomerId && !form.customer_id) out.push('לקוח במערכת')
       if (!form.event_date) out.push('תאריך אירוע')
       if (req('end_client_name') && !form.end_client_name.trim()) out.push('שם לקוח האירוע')
       if (req('event_number') && !form.event_number.trim()) out.push('מספר אירוע')
@@ -489,7 +493,7 @@ export function EventFormModal({
       {/* ── step 1: basics ─────────────────────────────────────────────── */}
       {current?.key === 'basics' && (
         <div className="grid animate-fade-in gap-4 sm:grid-cols-2">
-          {!isCustomer && (
+          {!boundCustomerId && (
             <Field label="לקוח במערכת" required error={touched && !form.customer_id ? 'שדה חובה' : undefined}>
               <Select
                 data-autofocus
@@ -541,7 +545,8 @@ export function EventFormModal({
               />
             </Field>
           )}
-          {!isCustomer && (
+          {/* the key that governs this column on the way to the database */}
+          {has(PERM.EVENTS_CHANGE_STATUS) && (
             <Field label="סטטוס">
               <Select value={form.status_id} onChange={(e) => set({ status_id: e.target.value })}>
                 <option value="">ברירת מחדל</option>

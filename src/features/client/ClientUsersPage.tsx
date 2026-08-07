@@ -26,7 +26,7 @@ import { useCustomerUsers } from '../../lib/queries'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { PermissionMatrix } from '../permissions/PermissionMatrix'
-import { ClientFormFieldsCard } from './ClientFormFieldsCard'
+import { UserFormFieldsCard } from '../permissions/UserFormFieldsCard'
 import type { Profile } from '../../types/domain'
 
 const TABS = [
@@ -328,7 +328,7 @@ function UserDrawer({ profile, onClose }: { profile: Profile | null; onClose: ()
               subject={{ kind: 'user', profileId: profile.id, userKind: 'customer_user' }}
               canGrant={(key) => has(key)}
             />
-            <ClientFormFieldsCard profile={profile} />
+            <UserFormFieldsCard profile={profile} />
           </div>
         ))
       )}
