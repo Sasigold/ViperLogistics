@@ -39,7 +39,7 @@ export default function LoginPage() {
 
       <div className="relative w-full max-w-sm">
         <div className="mb-7 flex flex-col items-center gap-3 text-center">
-          <img src="/favicon.svg" className="size-14 shrink-0 drop-shadow-md" alt="ViperLogistics" />
+          <img src="/icons/icon-192.png" className="size-14 shrink-0 rounded-2xl shadow-md" alt="ViperLogistics" />
           <div>
             <h1 className="type-heading">ViperLogistics</h1>
             <p className="mt-0.5 type-caption text-ink-tertiary">מערכת ניהול כוח אדם לאירועים</p>

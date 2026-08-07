@@ -251,17 +251,27 @@ function TimeClock() {
       {/* כפתור שעון עגול מרכזי */}
       <div className="flex flex-col items-center justify-center my-3 relative">
         {/* טבעת חיצונית זוהרת */}
-        <div className="w-72 h-72 rounded-full border border-emerald-200/70 bg-emerald-50/20 flex items-center justify-center p-3 transition-all duration-300 shadow-xs">
+        <div
+          className={`w-72 h-72 rounded-full border flex items-center justify-center p-3 transition-all duration-300 shadow-xs ${
+            open ? 'border-rose-200/70 bg-rose-50/20' : 'border-emerald-200/70 bg-emerald-50/20'
+          }`}
+        >
           {/* טבעת פנימית אמצעית */}
-          <div className="w-64 h-64 rounded-full border border-emerald-300/40 flex items-center justify-center p-2">
+          <div
+            className={`w-64 h-64 rounded-full border flex items-center justify-center p-2 ${
+              open ? 'border-rose-300/40' : 'border-emerald-300/40'
+            }`}
+          >
             {/* כפתור מעגלי ראשי */}
             <button
               type="button"
               disabled={punch.isPending || !has(PERM.ATTENDANCE_CLOCK)}
               onClick={() => punch.mutate(open ? 'out' : 'in')}
-              className={`w-56 h-56 rounded-full transition-all duration-200 active:scale-95 flex flex-col items-center justify-center text-white cursor-pointer select-none shadow-xl shadow-emerald-500/25 bg-[#10b981] hover:bg-[#059669] ${
-                punch.isPending ? 'opacity-85 cursor-wait' : ''
-              }`}
+              className={`w-56 h-56 rounded-full transition-all duration-200 active:scale-95 flex flex-col items-center justify-center text-white cursor-pointer select-none shadow-xl ${
+                open
+                  ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-500/30'
+                  : 'bg-[#10b981] hover:bg-[#059669] shadow-emerald-500/25'
+              } ${punch.isPending ? 'opacity-85 cursor-wait' : ''}`}
             >
               {punch.isPending ? (
                 <Loader2 className="w-12 h-12 text-white animate-spin mb-2" />
@@ -273,7 +283,7 @@ function TimeClock() {
               <span className="text-3xl font-black text-white tracking-wide mb-0.5">
                 {open ? 'יציאה' : 'כניסה'}
               </span>
-              <span className="text-xs text-emerald-100 font-medium">
+              <span className={`text-xs font-medium ${open ? 'text-rose-100' : 'text-emerald-100'}`}>
                 {open ? 'לחץ לסיום יום העבודה' : 'לחץ לתחילת יום העבודה'}
               </span>
             </button>

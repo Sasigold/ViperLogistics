@@ -27,7 +27,7 @@ export default function ClientLayout() {
     <div className="min-h-full bg-canvas">
       <header className="sticky top-0 z-30 border-b border-line bg-surface/85 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-2.5 px-4">
-          <img src="/favicon.svg" className="size-8 shrink-0" alt="ViperLogistics" />
+          <img src="/icons/icon-192.png" className="size-8 shrink-0 rounded-md" alt="ViperLogistics" />
           <div className="min-w-0">
             <h1 className="truncate type-title leading-tight">{me.customer?.name ?? 'פורטל לקוח'}</h1>
             <p className="truncate type-caption text-ink-tertiary">{me.profile.full_name}</p>

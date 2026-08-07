@@ -88,7 +88,7 @@ export default function AppLayout() {
               className="flex min-w-0 items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:focus-ring"
             >
               <span className={cx('truncate type-title', collapsed && 'lg:hidden')}>ViperLogistics</span>
-              <img src="/favicon.svg" alt="ViperLogistics" className="size-8 shrink-0" />
+              <img src="/icons/icon-192.png" alt="ViperLogistics" className="size-8 shrink-0 rounded-md" />
             </Link>
             <IconButton
               label="סגירת התפריט"
@@ -205,7 +205,7 @@ export default function AppLayout() {
               className="flex shrink-0 items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:focus-ring lg:hidden"
             >
               <span className="type-title">ViperLogistics</span>
-              <img src="/favicon.svg" alt="" className="size-7 shrink-0" />
+              <img src="/icons/icon-192.png" alt="" className="size-7 shrink-0 rounded-md" />
             </Link>
 
             <Breadcrumbs />

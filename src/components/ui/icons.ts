@@ -117,4 +117,10 @@ export {
   Zap,
   LayoutGrid,
   List,
+  CalendarCheck,
+  CalendarX,
+  PlusCircle,
+  FileText,
+  PencilLine,
 } from 'lucide-react'
+

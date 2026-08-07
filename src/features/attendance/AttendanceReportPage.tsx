@@ -1,6 +1,23 @@
 import { useMemo, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { AlertTriangle, Banknote, Clock, ICON, Plus, STROKE, Timer, Users } from '../../components/ui/icons'
+import {
+  Briefcase,
+  CalendarCheck,
+  CalendarX,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  ICON,
+  MapPin,
+  PencilLine,
+  Plus,
+  PlusCircle,
+  SlidersHorizontal,
+  STROKE,
+  LayoutGrid,
+  List,
+} from '../../components/ui/icons'
 import {
   Badge,
   Button,
@@ -13,7 +30,6 @@ import {
   MultiSelect,
   PageHeader,
   Select,
-  StatCard,
   cx,
   useToast,
 } from '../../components/ui'
@@ -23,20 +39,54 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
 import { useContractors, useStaff } from '../../lib/queries'
-import { fmtDate, fmtMoney, fmtTime } from '../../lib/dates'
-import { toISODate } from '../../lib/dates'
-import { startOfMonth } from 'date-fns'
+import { fmtDate, fmtMoney, fmtTime, toISODate } from '../../lib/dates'
+import { addMonths, eachDayOfInterval, endOfMonth, format, startOfMonth, subMonths } from 'date-fns'
 import { useAttendanceInvalidate, useAttendanceReport } from './attendanceQueries'
 import { AttendanceEntryDrawer } from './AttendanceEntryDrawer'
 import {
   STATUS_LABELS,
   STATUS_TONES,
   WORK_SITE_LABELS,
-  fmtDuration,
   flagLabel,
+  fmtDuration,
   needsAttention,
 } from './shiftFormat'
 import type { AttendanceReportRow, AttendanceStatus } from '../../types/domain'
+
+const HEBREW_MONTH_NAMES = [
+  'ינואר',
+  'פברואר',
+  'מרץ',
+  'אפריל',
+  'מאי',
+  'יוני',
+  'יולי',
+  'אוגוסט',
+  'ספטמבר',
+  'אוקטובר',
+  'נובמבר',
+  'דצמבר',
+]
+
+const HEBREW_DAY_LETTERS: Record<number, string> = {
+  0: "א'",
+  1: "ב'",
+  2: "ג'",
+  3: "ד'",
+  4: "ה'",
+  5: "ו'",
+  6: "ש'",
+}
+
+function fmtDurationHHMM(hours: number | null | undefined, padHour = true): string {
+  if (hours == null || isNaN(hours) || hours <= 0) return '00:00'
+  const totalMins = Math.round(hours * 60)
+  const h = Math.floor(totalMins / 60)
+  const m = totalMins % 60
+  const hh = padHour ? String(h).padStart(2, '0') : String(h)
+  const mm = String(m).padStart(2, '0')
+  return `${hh}:${mm}`
+}
 
 export default function AttendanceReportPage() {
   return (
@@ -47,11 +97,7 @@ export default function AttendanceReportPage() {
 }
 
 /**
- * מסך אחד לשלושת הקהלים של הדוח.
- *
- * הראייה נחתכת בשרת ולא כאן: attendance_report מחזיר לעובד את שלו, לקבלן את
- * הסגל שלו ולמנהל את כולם. הרכיב רק מציג פילטרים שיש בהם טעם למי שפתח אותו,
- * ולכן אותו קוד משרת גם את /attendance וגם את לשונית הפורטל.
+ * דוח נוכחות עובדים - מעוצב מחדש לפי העיצוב המבוקש
  */
 export function AttendanceReport({
   embedded,
@@ -66,14 +112,22 @@ export function AttendanceReport({
   const canAdd = has(PERM.ATTENDANCE_MANUAL_ENTRY)
   const canApprove = has(PERM.ATTENDANCE_APPROVE_ENTRY)
 
-  const [from, setFrom] = useState(() => toISODate(startOfMonth(new Date())))
-  const [to, setTo] = useState(() => toISODate(new Date()))
+  // Month navigation state
+  const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()))
+  const [showFilters, setShowFilters] = useState(false)
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards')
+
+  // Date range derived from month
+  const from = useMemo(() => toISODate(startOfMonth(monthDate)), [monthDate])
+  const to = useMemo(() => toISODate(endOfMonth(monthDate)), [monthDate])
+
   const [profileIds, setProfileIds] = useState<string[]>([])
   const [contractor, setContractor] = useState<string>('')
   const [onlyFlagged, setOnlyFlagged] = useState(false)
   const [status, setStatus] = useState<AttendanceStatus | ''>('')
   const [selected, setSelected] = useState<AttendanceReportRow | null>(null)
   const [adding, setAdding] = useState(false)
+  const [targetHours, setTargetHours] = useState(176)
 
   const { data: staff = [] } = useStaff()
   const { data: contractors = [] } = useContractors()
@@ -91,6 +145,131 @@ export function AttendanceReport({
   const totals = data?.totals
   const showMoney = !!data?.can_see_pay
 
+  const handlePrevMonth = () => setMonthDate((d) => subMonths(d, 1))
+  const handleNextMonth = () => setMonthDate((d) => addMonths(d, 1))
+
+  const monthName = HEBREW_MONTH_NAMES[monthDate.getMonth()]
+  const yearStr = monthDate.getFullYear()
+  const dateRangeStr = `${format(startOfMonth(monthDate), 'dd.MM.yyyy')} - ${format(endOfMonth(monthDate), 'dd.MM.yyyy')}`
+
+  const todayISO = useMemo(() => toISODate(new Date()), [])
+
+  // Build complete daily breakdown list (including work days & absences)
+  const daysList = useMemo(() => {
+    const start = startOfMonth(monthDate)
+    const end = endOfMonth(monthDate)
+    const days = eachDayOfInterval({ start, end })
+
+    return days.map((day) => {
+      const dateStr = toISODate(day)
+      const dayOfWeek = day.getDay()
+      const formattedDate = format(day, 'dd.MM.yy')
+      const hebrewDayLetter = HEBREW_DAY_LETTERS[dayOfWeek]
+      const dayRows = rows.filter((r) => r.work_date === dateStr)
+
+      if (dayRows.length > 0) {
+        const firstRow = dayRows[0]
+        const totalDayHours = dayRows.reduce((acc, r) => acc + (r.actual_hours ?? 0), 0)
+        const totalOvertime = dayRows.reduce((acc, r) => acc + (r.pay?.overtime_hours ?? 0), 0)
+
+        const clockIn = new Date(firstRow.clock_in_at)
+        const clockOut = firstRow.clock_out_at ? new Date(firstRow.clock_out_at) : null
+        const shiftTime = `${fmtTime(clockIn.toTimeString())} - ${clockOut ? fmtTime(clockOut.toTimeString()) : '…'}`
+
+        const location = firstRow.work_site
+          ? WORK_SITE_LABELS[firstRow.work_site]
+          : firstRow.contractor_id
+          ? 'מחסן ראשי'
+          : 'מרכז לוגיסטי'
+
+        return {
+          dateStr,
+          formattedDate,
+          dayOfWeek,
+          hebrewDayLetter,
+          shiftTime,
+          location,
+          hoursText: fmtDurationHHMM(totalDayHours, true),
+          overtimeText: totalOvertime > 0 ? `${fmtDurationHHMM(totalOvertime, true)} נוספות` : null,
+          status: firstRow.status === 'approved' ? 'completed' : firstRow.status,
+          row: firstRow,
+          hasData: true,
+          totalHours: totalDayHours,
+          totalOvertime,
+        }
+      }
+
+      // Check absence for past/current workdays (Sunday to Friday)
+      const isPastOrToday = dateStr <= todayISO
+      const isWorkDay = dayOfWeek !== 6 // 6 is Saturday (Shabbat)
+
+      if (isPastOrToday && isWorkDay) {
+        return {
+          dateStr,
+          formattedDate,
+          dayOfWeek,
+          hebrewDayLetter,
+          shiftTime: '-',
+          location: null,
+          hoursText: '-',
+          overtimeText: null,
+          status: 'absence',
+          row: null,
+          hasData: false,
+          totalHours: 0,
+          totalOvertime: 0,
+        }
+      }
+
+      return {
+        dateStr,
+        formattedDate,
+        dayOfWeek,
+        hebrewDayLetter,
+        shiftTime: '-',
+        location: null,
+        hoursText: '-',
+        overtimeText: null,
+        status: 'rest',
+        row: null,
+        hasData: false,
+        totalHours: 0,
+        totalOvertime: 0,
+      }
+    })
+  }, [monthDate, rows, todayISO])
+
+  // Calculated metrics
+  const totalWorkHours = useMemo(() => {
+    if (totals?.actual_hours != null) return totals.actual_hours
+    return daysList.reduce((acc, d) => acc + d.totalHours, 0)
+  }, [totals, daysList])
+
+  const overtimeHours = useMemo(() => {
+    if (totals?.overtime_hours != null) return totals.overtime_hours
+    return daysList.reduce((acc, d) => acc + d.totalOvertime, 0)
+  }, [totals, daysList])
+
+  const regularHours = useMemo(() => Math.max(0, totalWorkHours - overtimeHours), [totalWorkHours, overtimeHours])
+
+  const workDaysCount = useMemo(() => {
+    return daysList.filter((d) => d.hasData && d.totalHours > 0).length
+  }, [daysList])
+
+  const absenceDaysCount = useMemo(() => {
+    return daysList.filter((d) => d.status === 'absence').length
+  }, [daysList])
+
+  const dailyAverageHours = useMemo(() => {
+    return workDaysCount > 0 ? totalWorkHours / workDaysCount : 0
+  }, [totalWorkHours, workDaysCount])
+
+  const targetPercentage = useMemo(() => {
+    if (targetHours <= 0) return 0
+    return Math.min(100, Math.round((totalWorkHours / targetHours) * 100))
+  }, [totalWorkHours, targetHours])
+
+  // Data table columns for classic mode
   const columns = useMemo<Column<AttendanceReportRow>[]>(() => {
     const base: Column<AttendanceReportRow>[] = [
       {
@@ -146,15 +325,8 @@ export function AttendanceReport({
         header: 'לתשלום',
         align: 'center',
         sortValue: (r) => r.pay?.paid_hours ?? 0,
-        // שורה שאינה מאושרת מוצגת חיוורת: הסכום הוא מה שישולם *אם* יאושר,
-        // והוא אינו נכנס לסיכומים למעלה.
         render: (r) => (
-          <span
-            className={cx(
-              'tabular-nums font-semibold',
-              r.status !== 'approved' && 'text-ink-tertiary',
-            )}
-          >
+          <span className={cx('tabular-nums font-semibold', r.status !== 'approved' && 'text-ink-tertiary')}>
             {fmtDuration(r.pay?.paid_hours)}
           </span>
         ),
@@ -176,22 +348,14 @@ export function AttendanceReport({
         header: 'שטח/מחסן',
         align: 'center',
         render: (r) =>
-          r.work_site ? (
-            <Badge tone={r.work_site === 'warehouse' ? 'info' : 'neutral'}>
-              {WORK_SITE_LABELS[r.work_site]}
-            </Badge>
-          ) : null,
+          r.work_site ? <Badge tone={r.work_site === 'warehouse' ? 'info' : 'neutral'}>{WORK_SITE_LABELS[r.work_site]}</Badge> : null,
       },
       {
         key: 'flags',
         header: 'הערות',
         render: (r) => (
           <div className="flex flex-wrap gap-1">
-            {/* מאושר אינו מקבל תג: זה המצב הרגיל, ותג על כל שורה היה מסתיר
-                את השתיים שדורשות מבט. */}
-            {r.status !== 'approved' && (
-              <Badge tone={STATUS_TONES[r.status]}>{STATUS_LABELS[r.status]}</Badge>
-            )}
+            {r.status !== 'approved' && <Badge tone={STATUS_TONES[r.status]}>{STATUS_LABELS[r.status]}</Badge>}
             {r.source === 'manual' && <Badge tone="warning">ידני</Badge>}
             {r.flags.map((f) => (
               <Badge key={f} tone={needsAttention([f]) ? 'error' : 'neutral'}>
@@ -202,8 +366,7 @@ export function AttendanceReport({
         ),
       },
     ]
-    // עמודת הכסף מתווספת רק כשהשרת בכלל שלח סכומים — אחרת היא הייתה
-    // טור של מקפים שמרמז שאין שכר, במקום שאין הרשאה.
+
     if (showMoney) {
       base.push({
         key: 'total',
@@ -211,12 +374,7 @@ export function AttendanceReport({
         align: 'end',
         sortValue: (r) => r.pay?.total ?? 0,
         render: (r) => (
-          <span
-            className={cx(
-              'tabular-nums font-semibold',
-              r.status !== 'approved' && 'text-ink-tertiary',
-            )}
-          >
+          <span className={cx('tabular-nums font-semibold', r.status !== 'approved' && 'text-ink-tertiary')}>
             {fmtMoney(r.pay?.total)}
           </span>
         ),
@@ -225,10 +383,9 @@ export function AttendanceReport({
     return base
   }, [showMoney])
 
-  const flaggedCount = rows.filter((r) => needsAttention(r.flags)).length
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 max-w-5xl mx-auto pb-12">
+      {/* Page Header */}
       {!embedded && (
         <PageHeader
           title="דוח נוכחות"
@@ -244,106 +401,380 @@ export function AttendanceReport({
         />
       )}
 
-      <Card className="flex flex-wrap items-end gap-3 p-4">
-        <Field label="מתאריך" className="w-40">
-          <Input type="date" dir="ltr" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </Field>
-        <Field label="עד תאריך" className="w-40">
-          <Input type="date" dir="ltr" value={to} onChange={(e) => setTo(e.target.value)} />
-        </Field>
-        {canSeeAll && (
-          <>
-            <Field label="עובדים" className="min-w-52 flex-1">
-              <MultiSelect
-                options={staff.map((p) => ({ id: p.id, label: p.full_name }))}
-                values={profileIds}
-                onToggle={(id) =>
-                  setProfileIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-                }
-                placeholder="כל העובדים"
-              />
-            </Field>
-            {!contractorId && (
-              <Field label="קבלן" className="w-48">
-                <Select value={contractor} onChange={(e) => setContractor(e.target.value)}>
-                  <option value="">כל הקבלנים</option>
-                  {contractors.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            )}
-          </>
-        )}
-        <Field label="סטטוס" className="w-40">
-          <Select value={status} onChange={(e) => setStatus(e.target.value as AttendanceStatus | '')}>
-            <option value="">הכול</option>
-            <option value="pending">ממתין לאישור</option>
-            <option value="approved">מאושר</option>
-            <option value="rejected">נדחה</option>
-          </Select>
-        </Field>
-        <Checkbox
-          checked={onlyFlagged}
-          onChange={setOnlyFlagged}
-          label="רק רשומות עם חריגה"
-        />
-      </Card>
+      {/* Month Navigation Control */}
+      <div className="flex flex-col items-center justify-center my-2">
+        <div className="flex items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-full px-5 py-2 shadow-xs hover:shadow-md transition-shadow">
+          <button
+            onClick={handlePrevMonth}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors"
+            title="חודש קודם"
+          >
+            <ChevronRight size={20} />
+          </button>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          icon={<Users size={ICON.lg} strokeWidth={STROKE} />}
-          label="משמרות"
-          value={totals?.entries ?? 0}
-          hint={totals?.pending ? `${totals.pending} ממתינות לאישור` : undefined}
-        />
-        {/* השעות והשכר סופרים מאושרות בלבד — מה שממתין לאישור אינו נכנס
-            לכאן עד שיוכרע. */}
-        <StatCard
-          icon={<Clock size={ICON.lg} strokeWidth={STROKE} />}
-          label="שעות מאושרות"
-          value={fmtDuration(totals?.actual_hours)}
-          hint={`${fmtDuration(totals?.paid_hours)} לתשלום`}
-        />
-        <StatCard
-          icon={<Timer size={ICON.lg} strokeWidth={STROKE} />}
-          label="שעות נוספות"
-          value={fmtDuration(totals?.overtime_hours)}
-          tone="#f59e0b"
-        />
-        {showMoney ? (
-          <StatCard
-            icon={<Banknote size={ICON.lg} strokeWidth={STROKE} />}
-            label="שכר לתשלום"
-            value={fmtMoney(totals?.total)}
-            tone="#22c55e"
-          />
-        ) : (
-          <StatCard
-            icon={<AlertTriangle size={ICON.lg} strokeWidth={STROKE} />}
-            label="חריגות"
-            value={flaggedCount}
-            tone="#ef4444"
-            invertDelta
-          />
-        )}
+          <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-white text-lg">
+            <span>
+              {monthName} {yearStr}
+            </span>
+            <ChevronDown size={18} className="text-slate-400" />
+          </div>
+
+          <button
+            onClick={handleNextMonth}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors"
+            title="חודש הבא"
+          >
+            <ChevronLeft size={20} />
+          </button>
+        </div>
+        <span className="text-xs text-slate-400 font-medium mt-1.5 dir-ltr tracking-wide">{dateRangeStr}</span>
       </div>
 
-      <DataTable
-        rows={rows}
-        columns={columns}
-        getRowId={(r) => r.id}
-        loading={isLoading}
-        error={error ? (error as Error).message : undefined}
-        onRetry={() => void refetch()}
-        empty="לא נמצאו רשומות נוכחות בטווח הזה"
-        onRowClick={canEdit || canApprove ? (r) => setSelected(r) : undefined}
-        storageKey="attendance-report"
-        pageSize={50}
-      />
+      {/* Top Overview Card matching the image */}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-6 md:p-8 shadow-xs">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+          {/* Donut Progress Chart */}
+          <div className="md:col-span-4 flex flex-col items-center justify-center md:border-l border-slate-100 dark:border-slate-800 md:pl-8 pb-6 md:pb-0 border-b md:border-b-0">
+            <div className="relative w-40 h-40 flex items-center justify-center">
+              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="40"
+                  className="stroke-blue-100 dark:stroke-slate-800"
+                  strokeWidth="7"
+                  fill="transparent"
+                />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="40"
+                  className="stroke-blue-500 transition-all duration-1000 ease-out"
+                  strokeWidth="7"
+                  strokeDasharray={251.2}
+                  strokeDashoffset={251.2 * (1 - targetPercentage / 100)}
+                  strokeLinecap="round"
+                  fill="transparent"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+                  {targetPercentage}%
+                </span>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
+                  מהיעד החודשי
+                </span>
+              </div>
+            </div>
+            <div className="mt-4 text-xs font-semibold text-slate-700 dark:text-slate-300">
+              יעד: {fmtDurationHHMM(targetHours, false)} ש'
+            </div>
+          </div>
 
+          {/* 6 Metrics Grid (3x2) */}
+          <div className="md:col-span-8 grid grid-cols-3 gap-y-6 gap-x-4">
+            {/* 1. סה"כ שעות עבודה */}
+            <div className="flex flex-col items-center text-center">
+              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+                <Clock size={15} className="text-blue-500" />
+                <span>סה"כ שעות עבודה</span>
+              </div>
+              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
+                {fmtDurationHHMM(totalWorkHours)}
+              </span>
+            </div>
+
+            {/* 2. שעות רגילות */}
+            <div className="flex flex-col items-center text-center">
+              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+                <CalendarCheck size={15} className="text-blue-500" />
+                <span>שעות רגילות</span>
+              </div>
+              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
+                {fmtDurationHHMM(regularHours)}
+              </span>
+            </div>
+
+            {/* 3. שעות נוספות */}
+            <div className="flex flex-col items-center text-center">
+              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+                <PlusCircle size={15} className="text-blue-500" />
+                <span>שעות נוספות</span>
+              </div>
+              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
+                {fmtDurationHHMM(overtimeHours)}
+              </span>
+            </div>
+
+            <div className="col-span-3 border-t border-slate-100 dark:border-slate-800/80 my-0.5" />
+
+            {/* 4. ימי עבודה */}
+            <div className="flex flex-col items-center text-center">
+              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+                <Briefcase size={15} className="text-blue-500" />
+                <span>ימי עבודה</span>
+              </div>
+              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
+                {workDaysCount}
+              </span>
+            </div>
+
+            {/* 5. ימי היעדרות */}
+            <div className="flex flex-col items-center text-center">
+              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+                <CalendarX size={15} className="text-blue-500" />
+                <span>ימי היעדרות</span>
+              </div>
+              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
+                {absenceDaysCount}
+              </span>
+            </div>
+
+            {/* 6. ממוצע ליום */}
+            <div className="flex flex-col items-center text-center">
+              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+                <PencilLine size={15} className="text-blue-500" />
+                <span>ממוצע ליום</span>
+              </div>
+              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
+                {fmtDurationHHMM(dailyAverageHours, false)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter drawer / filter section */}
+      {showFilters && (
+        <Card className="flex flex-wrap items-end gap-3 p-4 animate-in fade-in duration-200">
+          {canSeeAll && (
+            <>
+              <Field label="עובדים" className="min-w-52 flex-1">
+                <MultiSelect
+                  options={staff.map((p) => ({ id: p.id, label: p.full_name }))}
+                  values={profileIds}
+                  onToggle={(id) =>
+                    setProfileIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+                  }
+                  placeholder="כל העובדים"
+                />
+              </Field>
+              {!contractorId && (
+                <Field label="קבלן" className="w-48">
+                  <Select value={contractor} onChange={(e) => setContractor(e.target.value)}>
+                    <option value="">כל הקבלנים</option>
+                    {contractors.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
+            </>
+          )}
+          <Field label="סטטוס" className="w-40">
+            <Select value={status} onChange={(e) => setStatus(e.target.value as AttendanceStatus | '')}>
+              <option value="">הכול</option>
+              <option value="pending">ממתין לאישור</option>
+              <option value="approved">מאושר</option>
+              <option value="rejected">נדחה</option>
+            </Select>
+          </Field>
+          <Field label="יעד חודשי (שעות)" className="w-36">
+            <Input
+              type="number"
+              value={targetHours}
+              onChange={(e) => setTargetHours(Number(e.target.value) || 176)}
+            />
+          </Field>
+          <Checkbox checked={onlyFlagged} onChange={setOnlyFlagged} label="רק רשומות עם חריגה" />
+        </Card>
+      )}
+
+      {/* Daily Breakdown Section Header */}
+      <div className="flex items-center justify-between pt-2">
+        <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">פירוט לפי יום</h3>
+
+        <div className="flex items-center gap-2">
+          {canSeeAll && (
+            <div className="w-48 hidden sm:block">
+              <Select
+                value={profileIds[0] || ''}
+                onChange={(e) => setProfileIds(e.target.value ? [e.target.value] : [])}
+              >
+                <option value="">כל העובדים</option>
+                {staff.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.full_name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+
+          <div className="flex border border-slate-200 dark:border-slate-800 rounded-full p-0.5 bg-slate-100 dark:bg-slate-800">
+            <button
+              onClick={() => setViewMode('cards')}
+              className={cx(
+                'px-3 py-1 text-xs font-semibold rounded-full transition-colors flex items-center gap-1',
+                viewMode === 'cards'
+                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
+              )}
+            >
+              <LayoutGrid size={13} />
+              <span>כרטיסים</span>
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={cx(
+                'px-3 py-1 text-xs font-semibold rounded-full transition-colors flex items-center gap-1',
+                viewMode === 'table'
+                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
+              )}
+            >
+              <List size={13} />
+              <span>טבלה</span>
+            </button>
+          </div>
+
+          <Button
+            variant={showFilters ? 'primary' : 'outlined'}
+            size="sm"
+            onClick={() => setShowFilters(!showFilters)}
+            className="rounded-full px-4 gap-1.5"
+          >
+            <SlidersHorizontal size={14} />
+            <span>סינון</span>
+          </Button>
+        </div>
+      </div>
+
+      {/* Main List / Table View */}
+      {viewMode === 'cards' ? (
+        <div className="space-y-2.5">
+          {/* Table Header Labels */}
+          <div className="grid grid-cols-12 gap-2 px-5 py-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+            <div className="col-span-3 sm:col-span-2 flex items-center gap-1">
+              <span>תאריך</span>
+              <ChevronDown size={14} className="text-slate-400" />
+            </div>
+            <div className="col-span-1 text-center">יום</div>
+            <div className="col-span-4 sm:col-span-4 text-center">סוג משמרת</div>
+            <div className="col-span-2 sm:col-span-3 text-center">שעות</div>
+            <div className="col-span-2 sm:col-span-2 text-left">סטטוס</div>
+          </div>
+
+          {/* Daily Card Rows */}
+          {daysList.map((d) => {
+            const isCompleted = d.status === 'completed' || d.status === 'approved'
+            const isAbsence = d.status === 'absence'
+            const isPending = d.status === 'pending'
+            const isRest = d.status === 'rest'
+
+            return (
+              <div
+                key={d.dateStr}
+                onClick={() => d.row && (canEdit || canApprove) && setSelected(d.row)}
+                className={cx(
+                  'grid grid-cols-12 gap-2 items-center px-5 py-3.5 bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 rounded-2xl transition-all shadow-2xs hover:shadow-md',
+                  d.row && (canEdit || canApprove) && 'cursor-pointer hover:border-blue-300 dark:hover:border-blue-700'
+                )}
+              >
+                {/* Date Column */}
+                <div className="col-span-3 sm:col-span-2 flex items-center gap-2">
+                  <span
+                    className={cx(
+                      'w-2.5 h-2.5 rounded-full flex-shrink-0',
+                      isCompleted && 'bg-emerald-500 shadow-xs shadow-emerald-500/50',
+                      isAbsence && 'bg-rose-500 shadow-xs shadow-rose-500/50',
+                      isPending && 'bg-amber-500 shadow-xs shadow-amber-500/50',
+                      isRest && 'bg-slate-300 dark:bg-slate-700'
+                    )}
+                  />
+                  <span className="font-bold text-slate-800 dark:text-slate-100 text-sm dir-ltr">
+                    {d.formattedDate}
+                  </span>
+                  <ChevronLeft size={14} className="text-slate-400 hidden sm:block mr-auto" />
+                </div>
+
+                {/* Day Column */}
+                <div className="col-span-1 text-center font-bold text-slate-700 dark:text-slate-300 text-sm">
+                  {d.hebrewDayLetter}
+                </div>
+
+                {/* Shift Type Column */}
+                <div className="col-span-4 sm:col-span-4 flex flex-col items-center justify-center text-center">
+                  <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm dir-ltr">
+                    {d.shiftTime}
+                  </span>
+                  {d.location ? (
+                    <div className="flex items-center justify-center gap-1 text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
+                      <MapPin size={11} className="text-slate-400" />
+                      <span>{d.location}</span>
+                    </div>
+                  ) : (
+                    <span className="text-slate-400 dark:text-slate-600 text-xs">-</span>
+                  )}
+                </div>
+
+                {/* Hours Column */}
+                <div className="col-span-2 sm:col-span-3 flex flex-col items-center justify-center text-center">
+                  <span className="font-bold text-slate-900 dark:text-white text-sm tabular-nums">
+                    {d.hoursText}
+                  </span>
+                  {d.overtimeText && (
+                    <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-400 mt-0.5">
+                      {d.overtimeText}
+                    </span>
+                  )}
+                </div>
+
+                {/* Status Column */}
+                <div className="col-span-2 sm:col-span-2 flex justify-end">
+                  {isCompleted && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-xl text-xs font-extrabold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/50">
+                      הושלם
+                    </span>
+                  )}
+                  {isAbsence && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-xl text-xs font-extrabold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200/70 dark:border-rose-800/50">
+                      היעדרות
+                    </span>
+                  )}
+                  {isPending && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-xl text-xs font-extrabold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/70 dark:border-amber-800/50">
+                      ממתין
+                    </span>
+                  )}
+                  {isRest && (
+                    <span className="text-xs text-slate-400 dark:text-slate-600 font-medium px-2 py-1">
+                      -
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <DataTable
+          rows={rows}
+          columns={columns}
+          getRowId={(r) => r.id}
+          loading={isLoading}
+          error={error ? (error as Error).message : undefined}
+          onRetry={() => void refetch()}
+          empty="לא נמצאו רשומות נוכחות בטווח הזה"
+          onRowClick={canEdit || canApprove ? (r) => setSelected(r) : undefined}
+          storageKey="attendance-report"
+          pageSize={50}
+        />
+      )}
+
+      {/* Entry Drawer & Manual Modal */}
       <AttendanceEntryDrawer row={selected} onClose={() => setSelected(null)} />
       {adding && <ManualEntryModal onClose={() => setAdding(false)} />}
     </div>
