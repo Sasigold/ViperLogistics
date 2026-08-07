@@ -30,7 +30,7 @@ import { useCustomers, useStatuses } from '../../lib/queries'
 import { fmtDate } from '../../lib/dates'
 import { useIsMobile } from '../../lib/useMediaQuery'
 import { EventFormModal } from '../events/EventFormModal'
-import { chipPaint } from './eventColors'
+import { chipPaint } from '../../lib/colors'
 import type { SavedFilter } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 

@@ -66,23 +66,9 @@ function Muted({ children }: { children?: ReactNode }) {
  * optimistic-concurrency write — only the wrapper changed.
  */
 export const BOARD_FIELDS: BoardField[] = [
-  {
-    key: 'customer',
-    viewPerm: PERM.CUSTOMERS_VIEW,
-    label: 'לקוח',
-    render: ({ row }) =>
-      row.customer_name ? (
-        <span className="flex items-center justify-center gap-1.5 px-1.5">
-          <span
-            className="size-2 shrink-0 rounded-full"
-            style={{ background: row.customer_color ?? 'var(--vl-text-tertiary)' }}
-          />
-          <span className={cx('truncate font-medium', FS)}>{row.customer_name}</span>
-        </span>
-      ) : (
-        <Muted />
-      ),
-  },
+  /* No `customer` row: the column's own header is painted in the customer's
+     colour and carries the name, so a row repeating it was 1/19 of the board
+     spent saying the same thing twice. */
   {
     key: 'end_client',
     label: 'לקוח האירוע',

@@ -5,7 +5,9 @@
  * the soft gradient used on calendar and board chips.
  */
 
-const FALLBACK = '#64748b'
+/** What to paint when a record has no colour of its own. */
+export const NEUTRAL = '#64748b'
+const FALLBACK = NEUTRAL
 
 function parseHex(hex: string | null | undefined): [number, number, number] | null {
   if (!hex) return null

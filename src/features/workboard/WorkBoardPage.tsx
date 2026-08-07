@@ -41,6 +41,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { useContractors, useCustomers, useExecutionMethods, useStatuses, useTaskTypes, useTrucks } from '../../lib/queries'
 import { fmtDate, fmtTime, toISODate } from '../../lib/dates'
+import { NEUTRAL, readableOn } from '../../lib/colors'
 import { useIsMobile } from '../../lib/useMediaQuery'
 import { TaskDrawer } from '../tasks/TaskDrawer'
 import { Can, RequirePermission } from '../auth/guards'
@@ -58,8 +59,8 @@ import { errorMessage } from '../../lib/errors'
 
 const SPINE_W = 46
 const DAY_HEAD_H = 30
-/** the band that ties one event's task columns together */
-const GROUP_HEAD_H = 20
+/** breathing room between one day's run of columns and the next day's */
+const DAY_GAP = 10
 
 /** a range wider than this is a report, not a board — empty days stop earning
  *  their width somewhere around a quarter */
@@ -74,9 +75,9 @@ const MAX_EMPTY_DAY_SPAN = 120
  * gaps — but it must not end up wider than the real columns beside it.
  */
 const DENSITY = {
-  comfortable: { col: 208, row: 38, tall: 46, legend: 150, head: 46, empty: 132, fs: '0.8125rem' },
-  compact: { col: 168, row: 30, tall: 36, legend: 132, head: 40, empty: 120, fs: '0.78125rem' },
-  minimal: { col: 112, row: 26, tall: 32, legend: 104, head: 34, empty: 96, fs: '0.75rem' },
+  comfortable: { col: 208, row: 38, tall: 46, legend: 150, head: 34, empty: 132, fs: '0.8125rem' },
+  compact: { col: 168, row: 30, tall: 36, legend: 132, head: 30, empty: 120, fs: '0.78125rem' },
+  minimal: { col: 112, row: 26, tall: 32, legend: 104, head: 26, empty: 96, fs: '0.75rem' },
 } as const
 type Density = keyof typeof DENSITY
 
@@ -120,7 +121,13 @@ function loadPrefs(): Prefs {
   }
 }
 
-type BoardColumn =
+/**
+ * `gapAfter` marks the last column of a day. The gap is carried inside that
+ * column's measured size rather than drawn as a column of its own, so the
+ * virtualizer's offsets and the day bands' — which we compute ourselves —
+ * cannot drift apart.
+ */
+type BoardColumn = { gapAfter?: boolean } & (
   | {
       kind: 'task'
       id: string
@@ -135,6 +142,7 @@ type BoardColumn =
     }
   | { kind: 'spine'; id: string; dayKey: string; count: number }
   | { kind: 'empty'; id: string; dayKey: string }
+)
 
 interface Band {
   dayKey: string
@@ -151,17 +159,6 @@ interface DayLayout {
   count: number
   overdue: number
   collapsed: boolean
-}
-
-/** a group's run of columns inside one day, drawn as a band above them */
-interface GroupBand {
-  id: string
-  groupKey: string
-  label: string
-  count: number
-  tone: GroupTone | null
-  start: number
-  width: number
 }
 
 /** inline cell writes a single column with optimistic-concurrency on updated_at */
@@ -283,8 +280,8 @@ export default function WorkBoardPage() {
   const available = useMemo(() => BOARD_FIELDS.filter((f) => !f.viewPerm || has(f.viewPerm)), [has])
   const fields = useMemo(() => available.filter((f) => !hidden.has(f.key)), [available, hidden])
   const metrics = DENSITY[density]
-  const groupHeadH = colorBy === 'none' ? 0 : GROUP_HEAD_H
-  const headerH = DAY_HEAD_H + groupHeadH + metrics.head
+  const headerH = DAY_HEAD_H + metrics.head
+  const canSeeCustomers = has(PERM.CUSTOMERS_VIEW)
   /** cards below `lg` unless the reader has said otherwise */
   const asCards = viewMode === 'auto' ? isMobile : viewMode === 'cards'
   /* A phone holding the grid is already asking a lot of a small screen; the
@@ -319,7 +316,7 @@ export default function WorkBoardPage() {
 
   /* ── group by day, then lay the columns out in reading order ───────────── */
 
-  const { columns, bands, groups, totalWidth, daysForList } = useMemo(() => {
+  const { columns, bands, totalWidth, daysForList } = useMemo(() => {
     const byDay = new Map<string, WorkBoardRow[]>()
     for (const r of rows) {
       const list = byDay.get(r.task_date)
@@ -338,7 +335,6 @@ export default function WorkBoardPage() {
 
     const cols: BoardColumn[] = []
     const bandList: Band[] = []
-    const groupList: GroupBand[] = []
     /** the same layout the grid is built from, so the mobile list and the
      *  desktop grid can never disagree about order or colour */
     const dayList: DayLayout[] = []
@@ -359,7 +355,6 @@ export default function WorkBoardPage() {
         offset += SPINE_W
       } else {
         for (const cluster of clusters) {
-          const groupStart = offset
           cluster.rows.forEach((row, i) => {
             cols.push({
               kind: 'task',
@@ -373,23 +368,21 @@ export default function WorkBoardPage() {
             })
             offset += metrics.col
           })
-          groupList.push({
-            id: `${dayKey}:${cluster.key}`,
-            groupKey: cluster.key,
-            label: cluster.label,
-            count: cluster.rows.length,
-            tone: cluster.tone,
-            start: groupStart,
-            width: offset - groupStart,
-          })
         }
       }
 
+      /* the band is measured before the gap is added, so it ends flush with
+         its last column instead of reaching into the space after it */
       bandList.push({ dayKey, start, width: offset - start, count: dayRows.length, overdue, collapsed })
       dayList.push({ dayKey, clusters, count: dayRows.length, overdue, collapsed })
+
+      if (dayKey !== dayKeys[dayKeys.length - 1]) {
+        cols[cols.length - 1].gapAfter = true
+        offset += DAY_GAP
+      }
     }
 
-    return { columns: cols, bands: bandList, groups: groupList, totalWidth: offset, daysForList: dayList }
+    return { columns: cols, bands: bandList, totalWidth: offset, daysForList: dayList }
   }, [rows, dayKeys, sortBy, collapsedDays, metrics.col, metrics.empty, today, colorBy, tones])
 
   /* ── horizontal virtualization (RTL-aware) ───────────────────────────── */
@@ -401,10 +394,11 @@ export default function WorkBoardPage() {
     count: columns.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: (i) => {
-      const kind = columns[i]?.kind
-      if (kind === 'spine') return SPINE_W
-      if (kind === 'empty') return metrics.empty
-      return metrics.col
+      const col = columns[i]
+      const gap = col?.gapAfter ? DAY_GAP : 0
+      if (col?.kind === 'spine') return SPINE_W + gap
+      if (col?.kind === 'empty') return metrics.empty + gap
+      return metrics.col + gap
     },
     overscan: 6,
   })
@@ -416,13 +410,15 @@ export default function WorkBoardPage() {
      widths did not. `measure()` drops the size cache and forces the estimate
      to be asked again. Layout effect, not effect: the track's total width is
      ours and updates immediately, so a frame with the new track and the old
-     columns would be a visible jump. */
+     columns would be a visible jump. Keyed on `columns` rather than on the
+     metrics: which column carries a day's trailing gap can move without the
+     count changing, and that is exactly the case react-virtual cannot see. */
   useLayoutEffect(() => {
     virtualizer.measure()
-  }, [virtualizer, metrics.col, metrics.empty])
+  }, [virtualizer, columns])
 
-  /* Day and group bands aren't virtualized — they're absolutely placed over the
-     same track — so they're clipped to what the viewport can actually reach. */
+  /* Day bands aren't virtualized — they're absolutely placed over the same
+     track — so they're clipped to what the viewport can actually reach. */
   const viewport = useMemo(() => {
     if (virtualItems.length === 0) return { start: 0, end: 0 }
     const last = virtualItems[virtualItems.length - 1]
@@ -430,7 +426,6 @@ export default function WorkBoardPage() {
   }, [virtualItems])
   const overlaps = (start: number, width: number) => start < viewport.end && start + width > viewport.start
   const visibleBands = bands.filter((b) => overlaps(b.start, b.width))
-  const visibleGroups = groups.filter((g) => overlaps(g.start, g.width))
 
   /* ── selection ────────────────────────────────────────────────────────── */
 
@@ -923,34 +918,18 @@ export default function WorkBoardPage() {
                       )
                     })}
 
-                    {/* the event band — one run per group, the thing that makes
-                        "these three columns are the same job" readable */}
-                    {groupHeadH > 0 &&
-                      visibleGroups.map((g) => (
-                        <GroupHeader
-                          key={g.id}
-                          band={g}
-                          active={activeGroup === g.groupKey}
-                          onHover={hoverGroup}
-                          style={{ insetInlineStart: g.start, width: g.width, top: DAY_HEAD_H, height: groupHeadH }}
-                        />
-                      ))}
-
                     {virtualItems.map((vi) => {
                       const col = columns[vi.index]
                       if (!col) return null
-                      /* an empty day has no event band to sit under, so its
-                         header fills the space instead of leaving a white gap */
-                      const bare = col.kind === 'empty'
                       return (
                         <div
                           key={col.id}
                           className="absolute"
                           style={{
                             insetInlineStart: vi.start,
-                            width: vi.size,
-                            top: bare ? DAY_HEAD_H : DAY_HEAD_H + groupHeadH,
-                            height: bare ? groupHeadH + metrics.head : metrics.head,
+                            width: vi.size - (col.gapAfter ? DAY_GAP : 0),
+                            top: DAY_HEAD_H,
+                            height: metrics.head,
                           }}
                         >
                           {col.kind === 'spine' ? (
@@ -963,7 +942,7 @@ export default function WorkBoardPage() {
                               today={today}
                               tone={col.tone}
                               groupKey={col.groupKey}
-                              active={activeGroup === col.groupKey}
+                              showCustomer={canSeeCustomers}
                               selected={selected.has(col.row.id)}
                               onToggle={toggleOne}
                               onOpen={openTask}
@@ -980,12 +959,13 @@ export default function WorkBoardPage() {
                     {virtualItems.map((vi) => {
                       const col = columns[vi.index]
                       if (!col) return null
+                      const width = vi.size - (col.gapAfter ? DAY_GAP : 0)
                       if (col.kind === 'spine')
                         return (
                           <div
                             key={col.id}
                             className="absolute top-0 border-s border-line bg-subtle/60"
-                            style={{ insetInlineStart: vi.start, width: vi.size, height: bodyHeight }}
+                            style={{ insetInlineStart: vi.start, width, height: bodyHeight }}
                           />
                         )
                       if (col.kind === 'empty')
@@ -995,7 +975,7 @@ export default function WorkBoardPage() {
                             dayKey={col.dayKey}
                             canCreate={has(PERM.TASKS_CREATE)}
                             onNewTask={newTaskOn}
-                            style={{ insetInlineStart: vi.start, width: vi.size, height: bodyHeight }}
+                            style={{ insetInlineStart: vi.start, width, height: bodyHeight }}
                           />
                         )
                       return (
@@ -1014,7 +994,7 @@ export default function WorkBoardPage() {
                           last={col.last}
                           active={activeGroup === col.groupKey}
                           onHover={hoverGroup}
-                          style={{ insetInlineStart: vi.start, width: vi.size }}
+                          style={{ insetInlineStart: vi.start, width }}
                         />
                       )
                     })}
@@ -1337,7 +1317,7 @@ const TaskHeader = memo(function TaskHeader({
   today,
   tone,
   groupKey,
-  active,
+  showCustomer,
   selected,
   onToggle,
   onOpen,
@@ -1347,72 +1327,58 @@ const TaskHeader = memo(function TaskHeader({
   today: string
   tone: GroupTone | null
   groupKey: string
-  active: boolean
+  /** the customer's identity is a permission; without it the header falls back */
+  showCustomer: boolean
   selected: boolean
   onToggle: (id: string) => void
   onOpen: (id: string) => void
   onHover: (key: string | null) => void
 }) {
   const overdue = row.task_date < today && !row.status_is_terminal
-  const label = row.end_client_name || row.title || row.customer_name || row.task_type_name
-  const time = fmtTime(row.onsite_start_time) || fmtTime(row.warehouse_start_time)
-  /* The group's colour outranks the overdue wash: lateness is already said
-     three times over — red day band, red time, the warning icon — and losing
-     the hue would break the one thing the colours exist for. */
-  const painted = tone && !selected
+  const label = showCustomer
+    ? (row.customer_name ?? 'ללא לקוח')
+    : row.end_client_name || row.title || row.task_type_name
+  /* The fill is the customer's own colour, straight from settings, so a
+     regular can find their customer's columns without reading a word. The
+     label flips between near-black and white by the fill's luminance —
+     `color-mix(…, black N%)` only holds over a tint, never over a solid. */
+  const fill = (showCustomer && row.customer_color) || NEUTRAL
 
   return (
     <div
       onMouseEnter={() => onHover(groupKey)}
       onMouseLeave={() => onHover(null)}
       className={cx(
-        'group relative flex h-full flex-col justify-center gap-0.5 border-b border-s border-line px-2',
-        selected ? 'bg-selected' : overdue ? 'bg-[var(--vl-board-overdue)]' : 'bg-surface',
+        'group relative flex h-full items-center gap-1 border-b border-s border-line px-1.5',
+        selected && 'bg-selected',
       )}
-      style={painted ? { background: active ? tone.tintStrong : tone.tint } : undefined}
+      style={selected ? undefined : { background: fill, color: readableOn(fill) }}
     >
-      <span
-        aria-hidden
-        className="absolute inset-x-0 top-0 h-1"
-        style={{ background: tone?.solid ?? row.customer_color ?? 'var(--vl-border-strong)' }}
-      />
-      <div className="flex items-center gap-1.5">
-        <Checkbox checked={selected} onChange={() => onToggle(row.id)} />
-        {tone && (
-          <Tooltip content={`קבוצה ${tone.index}`}>
-            <span
-              className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold tabular text-white"
-              style={{ background: tone.solid }}
-            >
-              {tone.index}
-            </span>
-          </Tooltip>
-        )}
-        {time ? (
-          <span className={cx('type-caption font-bold tabular', overdue ? 'text-error-text' : 'text-ink')} dir="ltr">
-            {time}
-          </span>
-        ) : (
-          <span className="type-caption text-ink-tertiary">ללא שעה</span>
-        )}
-        {overdue && (
-          <Tooltip content="משימה פתוחה שעברה את מועדה">
-            <AlertTriangle size={11} className="shrink-0 text-error" />
-          </Tooltip>
-        )}
-        <IconButton
-          label="פתיחת המשימה"
-          size="sm"
-          bare
-          className="ms-auto size-6 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-          onClick={() => onOpen(row.id)}
-        >
-          <Pencil size={12} />
-        </IconButton>
-      </div>
+      {/* with the event band gone this strip is the only thing left saying that
+          the columns beside this one belong to the same job */}
+      <span aria-hidden className="absolute inset-x-0 top-0 h-1" style={{ background: tone?.solid ?? 'transparent' }} />
+      <Checkbox checked={selected} onChange={() => onToggle(row.id)} />
       <Tooltip content={label}>
-        <span className="block truncate text-center type-caption font-medium text-ink-secondary">{label}</span>
+        <span className="min-w-0 flex-1 truncate text-center type-caption font-bold">{label}</span>
       </Tooltip>
+      {overdue && (
+        <Tooltip content="משימה פתוחה שעברה את מועדה">
+          {/* currentColor, not text-error: red is unreadable on half the palette */}
+          <AlertTriangle size={11} className="shrink-0" />
+        </Tooltip>
+      )}
+      <IconButton
+        label="פתיחת המשימה"
+        size="sm"
+        bare
+        className="size-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        /* inline so it beats the ghost variant's own colour, which would go
+           dark-on-dark the moment a customer picks a deep hue */
+        style={{ color: 'inherit' }}
+        onClick={() => onOpen(row.id)}
+      >
+        <Pencil size={12} />
+      </IconButton>
     </div>
   )
 })
@@ -1428,59 +1394,6 @@ function SpineHeader({ dayKey, count, onExpand }: { dayKey: string; count: numbe
         {count}
       </span>
     </button>
-  )
-}
-
-/* ===== the event band ======================================================
-   A run of columns belonging to one event, capped by a single strip. It is the
-   difference between "three columns that happen to be adjacent" and "one job
-   with three moving parts".                                                  */
-
-function GroupHeader({
-  band,
-  active,
-  onHover,
-  style,
-}: {
-  band: GroupBand
-  active: boolean
-  onHover: (key: string | null) => void
-  style: React.CSSProperties
-}) {
-  const { tone } = band
-  return (
-    <div
-      className="absolute flex items-center gap-1 overflow-hidden border-b border-s border-line px-1.5"
-      style={{
-        ...style,
-        background: tone ? (active ? tone.tintStrong : tone.tint) : 'var(--vl-subtle)',
-        borderBottomColor: tone?.border,
-      }}
-      onMouseEnter={() => onHover(band.groupKey)}
-      onMouseLeave={() => onHover(null)}
-    >
-      {tone ? (
-        <>
-          <span
-            aria-hidden
-            className="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold tabular text-white"
-            style={{ background: tone.solid }}
-          >
-            {tone.index}
-          </span>
-          <Tooltip content={`${band.label} · ${band.count} משימות`}>
-            <span className="truncate text-[11px] font-bold" style={{ color: tone.solid }}>
-              {band.label}
-            </span>
-          </Tooltip>
-          {band.count > 1 && (
-            <span className="ms-auto shrink-0 text-[10px] font-bold tabular text-ink-tertiary">×{band.count}</span>
-          )}
-        </>
-      ) : (
-        <span className="truncate text-[11px] text-ink-tertiary">ללא אירוע</span>
-      )}
-    </div>
   )
 }
 
