@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -57,9 +57,6 @@ import { errorMessage } from '../../lib/errors'
    legend on the inline-start edge is sticky and never scrolls away.       */
 
 const SPINE_W = 46
-/** a day with nothing on it still gets a column — an empty Tuesday is
- *  information, and a board that hides it reads as a board with no gaps */
-const EMPTY_W = 132
 const DAY_HEAD_H = 30
 /** the band that ties one event's task columns together */
 const GROUP_HEAD_H = 20
@@ -72,12 +69,14 @@ const MAX_EMPTY_DAY_SPAN = 120
  * Every dimension the board is drawn from, in one table. `minimal` squeezes the
  * whole frame — legend, header and type as well as the columns — because a
  * narrow column under a comfortable header just moves the crowding rather than
- * removing it.
+ * removing it. `empty` is the width of a day with nothing on it: an empty
+ * Tuesday is information, and a board that hides it reads as a board with no
+ * gaps — but it must not end up wider than the real columns beside it.
  */
 const DENSITY = {
-  comfortable: { col: 208, row: 38, tall: 46, legend: 150, head: 46, fs: '0.8125rem' },
-  compact: { col: 168, row: 30, tall: 36, legend: 132, head: 40, fs: '0.78125rem' },
-  minimal: { col: 112, row: 26, tall: 32, legend: 104, head: 34, fs: '0.75rem' },
+  comfortable: { col: 208, row: 38, tall: 46, legend: 150, head: 46, empty: 132, fs: '0.8125rem' },
+  compact: { col: 168, row: 30, tall: 36, legend: 132, head: 40, empty: 120, fs: '0.78125rem' },
+  minimal: { col: 112, row: 26, tall: 32, legend: 104, head: 34, empty: 96, fs: '0.75rem' },
 } as const
 type Density = keyof typeof DENSITY
 
@@ -354,7 +353,7 @@ export default function WorkBoardPage() {
 
       if (dayRows.length === 0) {
         cols.push({ kind: 'empty', id: `empty:${dayKey}`, dayKey })
-        offset += EMPTY_W
+        offset += metrics.empty
       } else if (collapsed) {
         cols.push({ kind: 'spine', id: `spine:${dayKey}`, dayKey, count: dayRows.length })
         offset += SPINE_W
@@ -391,7 +390,7 @@ export default function WorkBoardPage() {
     }
 
     return { columns: cols, bands: bandList, groups: groupList, totalWidth: offset, daysForList: dayList }
-  }, [rows, dayKeys, sortBy, collapsedDays, metrics.col, today, colorBy, tones])
+  }, [rows, dayKeys, sortBy, collapsedDays, metrics.col, metrics.empty, today, colorBy, tones])
 
   /* ── horizontal virtualization (RTL-aware) ───────────────────────────── */
 
@@ -404,12 +403,23 @@ export default function WorkBoardPage() {
     estimateSize: (i) => {
       const kind = columns[i]?.kind
       if (kind === 'spine') return SPINE_W
-      if (kind === 'empty') return EMPTY_W
+      if (kind === 'empty') return metrics.empty
       return metrics.col
     },
     overscan: 6,
   })
   const virtualItems = virtualizer.getVirtualItems()
+
+  /* react-virtual memoises its measurements on `count`/`getItemKey`/lanes and
+     deliberately not on `estimateSize`, so changing density alone leaves every
+     column at its old width — the row heights come from React and shrank, the
+     widths did not. `measure()` drops the size cache and forces the estimate
+     to be asked again. Layout effect, not effect: the track's total width is
+     ours and updates immediately, so a frame with the new track and the old
+     columns would be a visible jump. */
+  useLayoutEffect(() => {
+    virtualizer.measure()
+  }, [virtualizer, metrics.col, metrics.empty])
 
   /* Day and group bands aren't virtualized — they're absolutely placed over the
      same track — so they're clipped to what the viewport can actually reach. */
