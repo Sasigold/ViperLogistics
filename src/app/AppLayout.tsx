@@ -21,7 +21,7 @@ import { PERM } from '../lib/permissions'
 import { NotificationsBell } from '../features/notifications/NotificationsBell'
 import { CommandPalette } from '../features/search/CommandPalette'
 import { useOverdueCount } from '../features/tasks/useOverdueCount'
-import { NAV_SECTIONS, ROUTE_LABELS, bottomNavItems } from './nav'
+import { ROUTE_LABELS, bottomNavItems, visibleNavSections } from './nav'
 import type { NavItem, NavSection } from './nav'
 import { PageTitleProvider, useCurrentPageTitle } from './breadcrumbs'
 
@@ -58,9 +58,7 @@ export default function AppLayout() {
     return () => window.removeEventListener('keydown', h)
   }, [])
 
-  const sections = NAV_SECTIONS.map((s) => ({ ...s, items: s.items.filter((n) => has(n.perm)) })).filter(
-    (s) => s.items.length > 0,
-  )
+  const sections = visibleNavSections(has)
 
   return (
     <PageTitleProvider>

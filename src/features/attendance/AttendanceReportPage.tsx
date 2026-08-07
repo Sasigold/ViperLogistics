@@ -137,8 +137,11 @@ export function AttendanceReport({
   const [adding, setAdding] = useState(false)
   const [targetHours, setTargetHours] = useState(176)
 
-  const { data: staff = [] } = useStaff()
-  const { data: contractors = [] } = useContractors()
+  // עובד שרואה רק את עצמו לא מקבל מסנן עובדים ולא מסנן קבלנים, ולכן גם לא
+  // משלם על שתי השאילתות שממלאות אותם — profiles ו-contractors היו חוזרים
+  // אצלו כמעט ריקים ממילא, כי ה-RLS חוסם את הרוב.
+  const { data: staff = [] } = useStaff(canSeeAll || canAdd)
+  const { data: contractors = [] } = useContractors(canSeeAll)
   const { data: contractorStaff = [] } = useContractorStaff()
   const employeeOptions = useMemo(
     () => (canSeeAll ? staff.map((p) => ({ id: p.id, label: p.full_name })) : contractorStaff.map((p) => ({ id: p.id, label: p.full_name }))),
@@ -317,12 +320,18 @@ export function AttendanceReport({
           </div>
         ),
       },
-      {
-        key: 'name',
-        header: 'עובד',
-        sortValue: (r) => r.full_name,
-        render: (r) => <span className="truncate">{r.full_name}</span>,
-      },
+      // עמודת "עובד" קיימת רק כשיש יותר מעובד אחד בטבלה. בדוח של המשתמש
+      // עצמו היא הייתה חוזרת על אותו שם בכל שורה.
+      ...(showEmployeeFilter
+        ? [
+            {
+              key: 'name',
+              header: 'עובד',
+              sortValue: (r: AttendanceReportRow) => r.full_name,
+              render: (r: AttendanceReportRow) => <span className="truncate">{r.full_name}</span>,
+            } satisfies Column<AttendanceReportRow>,
+          ]
+        : []),
       {
         key: 'planned',
         header: 'מתוכנן',
@@ -413,7 +422,7 @@ export function AttendanceReport({
       })
     }
     return base
-  }, [showMoney])
+  }, [showMoney, showEmployeeFilter])
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-12">

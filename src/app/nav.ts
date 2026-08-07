@@ -5,6 +5,7 @@ import {
   CalendarClock,
   ClipboardList,
   Clock,
+  FileText,
   HardHat,
   LayoutDashboard,
   PartyPopper,
@@ -22,6 +23,11 @@ export interface NavItem {
   icon: ComponentType<{ size?: number | string; strokeWidth?: number | string; className?: string }>
   /** registry key checked with `has(perm)` */
   perm: string
+  /**
+   * Hides this entry from whoever holds any of these keys — for a destination
+   * that two entries point at, where the wider one already covers the narrower.
+   */
+  hiddenBy?: string[]
   /** key of a live counter rendered as a badge */
   badge?: 'overdue'
   end?: boolean
@@ -55,6 +61,18 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/my/schedule', label: 'לוח המשמרות שלי', shortLabel: 'משמרות', icon: CalendarClock, perm: PERM.ATTENDANCE_VIEW_SCHEDULE },
       { to: '/my/attendance', label: 'שעון נוכחות', shortLabel: 'שעון', icon: Clock, perm: PERM.ATTENDANCE_VIEW_OWN },
+      /* אותו מסך של "דוח נוכחות" שלמטה, מצומצם לשורות של המשתמש עצמו — השרת
+         כבר מחזיר רק אותן. מי שמחזיק view_all מגיע אליו דרך הרשומה בסקשן
+         "נתונים", ולעובד קבלן הוא יושב בלשונית הנוכחות שבפורטל; אצל שניהם
+         הרשומה הזאת נעלמת במקום להכפיל את היעד תחת כותרת צרה מדי. */
+      {
+        to: '/attendance',
+        label: 'דוח הנוכחות שלי',
+        shortLabel: 'דוח',
+        icon: FileText,
+        perm: PERM.ATTENDANCE_VIEW_OWN,
+        hiddenBy: [PERM.ATTENDANCE_VIEW_ALL, PERM.PORTAL_ATTENDANCE],
+      },
       { to: '/my/notifications', label: 'התראות', icon: Bell, perm: PERM.NOTIFICATIONS_PREFERENCES },
     ],
   },
@@ -73,6 +91,21 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [{ to: '/settings', label: 'הגדרות', icon: Settings, perm: PERM.SETTINGS_VIEW }],
   },
 ]
+
+/**
+ * מי רואה רשומה בתפריט. אותה תשובה משרתת את הסרגל, את הבר התחתון ואת
+ * ההפניה של `/`, כדי שמסך שהתפריט מציג יהיה גם המסך שהבית שולח אליו.
+ */
+export function navItemVisible(item: NavItem, has: (perm: string) => boolean): boolean {
+  return has(item.perm) && !item.hiddenBy?.some(has)
+}
+
+/** הסקשנים שנשארים אחרי הסינון — בלי סקשן שהתרוקן. */
+export function visibleNavSections(has: (perm: string) => boolean, sections = NAV_SECTIONS): NavSection[] {
+  return sections
+    .map((s) => ({ ...s, items: s.items.filter((n) => navItemVisible(n, has)) }))
+    .filter((s) => s.items.length > 0)
+}
 
 /**
  * The bottom bar has five slots: four destinations plus "עוד", which opens the

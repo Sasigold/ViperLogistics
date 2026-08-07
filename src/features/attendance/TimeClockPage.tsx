@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { useMutation } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import {
   Calendar,
   CalendarClock,
   Clock,
+  FileText,
   ICON,
   LogIn,
   LogOut,
@@ -421,6 +423,16 @@ function TimeClock() {
 
         {/* דיווחים ממתינים להסכמה במידה וקיימים */}
         {reports.length > 0 && <MyReportsCard reports={reports} />}
+
+        {/* המסך הזה מראה את היום; החודש כולו — שעות, ש״נ והיעדרויות — נמצא
+            בדוח, ומכאן הוא במרחק לחיצה גם כשהתפריט התחתון מלא. */}
+        <Link
+          to="/attendance"
+          className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white py-2.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+        >
+          <FileText size={ICON.sm} strokeWidth={STROKE} />
+          דוח הנוכחות החודשי שלי
+        </Link>
 
         {/* היסטוריית החתמות מתקפלת של היום */}
         <div className="border-t border-slate-100 pt-2 text-center">

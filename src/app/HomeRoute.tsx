@@ -3,7 +3,7 @@ import { Navigate } from 'react-router'
 import { Card, EmptyState, Skeleton } from '../components/ui'
 import { useAuth } from '../state/auth'
 import { PERM } from '../lib/permissions'
-import { NAV_SECTIONS } from './nav'
+import { NAV_SECTIONS, navItemVisible } from './nav'
 
 const DashboardPage = lazy(() => import('../features/dashboard/DashboardPage'))
 
@@ -34,7 +34,7 @@ export default function HomeRoute() {
   }
 
   // `to !== '/'` keeps the dashboard entry from redirecting this route to itself
-  const first = NAV_SECTIONS.flatMap((s) => s.items).find((n) => n.to !== '/' && has(n.perm))
+  const first = NAV_SECTIONS.flatMap((s) => s.items).find((n) => n.to !== '/' && navItemVisible(n, has))
   if (first) return <Navigate to={first.to} replace />
 
   return (

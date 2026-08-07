@@ -31,8 +31,13 @@ export function useCustomers() {
   return useQuery({ queryKey: ['customers', 'list'], queryFn: () => fetchList<Customer>('customers') })
 }
 
-export function useContractors() {
-  return useQuery({ queryKey: ['contractors', 'list'], queryFn: () => fetchList<Contractor>('contractors') })
+/** `enabled` הוא בשביל מסך שהרשימה בו היא מסנן אופציונלי ולא כל התוכן. */
+export function useContractors(enabled = true) {
+  return useQuery({
+    queryKey: ['contractors', 'list'],
+    enabled,
+    queryFn: () => fetchList<Contractor>('contractors'),
+  })
 }
 
 export function useTaskTypes() {
@@ -63,9 +68,10 @@ export function useFormFields() {
   })
 }
 
-export function useStaff() {
+export function useStaff(enabled = true) {
   return useQuery({
     queryKey: ['profiles', 'staff'],
+    enabled,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('profiles')
