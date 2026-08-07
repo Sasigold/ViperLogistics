@@ -1,10 +1,20 @@
 import { format, parseISO } from 'date-fns'
 import { he } from 'date-fns/locale'
-import type { AttendanceStatus, WorkSite } from '../../types/domain'
+import type { AttendanceStatus, StaffRole, WorkSite } from '../../types/domain'
 
 export const WORK_SITE_LABELS: Record<WorkSite, string> = {
   field: 'שטח',
   warehouse: 'מחסן',
+}
+
+/**
+ * התפקיד בשיבוץ למשימה. יושב כאן ולא במסך העובדים כי שני מסכים קוראים אותו
+ * — ניהול העובדים ופירוק המשמרת — ושתי רשימות זהות הן שתי רשימות שיסטו.
+ */
+export const ASSIGNMENT_ROLE_LABELS: Record<StaffRole, string> = {
+  worker: 'עובד',
+  driver: 'נהג',
+  team_lead: 'ראש צוות',
 }
 
 /**

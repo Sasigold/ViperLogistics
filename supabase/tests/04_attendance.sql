@@ -1187,3 +1187,230 @@ select t_expect_fail('אין בונוס על רשומה שנדחתה', $$
   select attendance_set_bonus('70000000-0000-0000-0000-0000000000e1', 100, 'מאוחר מדי')$$);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+-- ================= 7. לוח המשמרות של הצוות =================
+-- שלוש הבטחות: שהכללת מנוע הגזירה למערך לא שינתה את מה שהוא מחזיר לאדם
+-- אחד (זה מה שהשעון עומד עליו), שהרוסטר חוצה את profiles_select בלי לפרוץ
+-- אותו, ושפירוק המשמרת אינו דלת לקריאת משימות של אחרים.
+--
+-- הזריעה כאן על יום רחוק (current_date + 30) בכוונה: המקטעים שלמעלה מזיזים
+-- תאריכי משימות כדי לתרגל את ענף "מוקדם מדי", ולוח שנשען עליהם היה נשבר
+-- מכל שינוי שם.
+
+\echo '--- לוח משמרות צוות ---'
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000000f7', 'inactive@vl.test');
+
+insert into profiles (id, user_id, user_kind, full_name, is_active) values
+  ('20000000-0000-0000-0000-0000000000f7', '00000000-0000-0000-0000-0000000000f7',
+   'staff', 'עובד מושבת', false);
+
+insert into tasks (id, event_id, task_type_id, task_date, warehouse_start_time,
+                   onsite_start_time, hours_count, travel_hours, status_id, worker_count)
+select v.id, '30000000-0000-0000-0000-00000000a001',
+       (select id from task_types where code = 'setup'),
+       current_date + 30, v.wh, v.onsite, v.hrs, v.travel,
+       (select id from statuses where entity = 'task' and is_default), 2
+from (values
+  -- שתי משימות בפער 90 דקות ⇒ משמרת אחת בת שתי משימות.
+  -- זמני נסיעה שונים בכוונה: 0.5 בראשונה ו-0.25 באחרונה, כדי ש"האחרונה"
+  -- ו"המקסימום" ייתנו תשובות שונות.
+  ('60000000-0000-0000-0000-00000000b101'::uuid, '07:00'::time, '08:00'::time, 2.0::numeric, 0.5::numeric),
+  ('60000000-0000-0000-0000-00000000b102'::uuid, null::time,    '11:30'::time, 2.0::numeric, 0.25::numeric),
+  ('60000000-0000-0000-0000-00000000b103'::uuid, null::time,    '09:00'::time, 3.0::numeric, 0::numeric),
+  ('60000000-0000-0000-0000-00000000b104'::uuid, null::time,    '08:00'::time, 2.0::numeric, 0::numeric)
+) as v(id, wh, onsite, hrs, travel);
+
+insert into task_assignments (task_id, profile_id, role, work_site) values
+  ('60000000-0000-0000-0000-00000000b101', '20000000-0000-0000-0000-0000000000f3', 'worker', 'warehouse'),
+  ('60000000-0000-0000-0000-00000000b102', '20000000-0000-0000-0000-0000000000f3', 'worker', 'field'),
+  ('60000000-0000-0000-0000-00000000b104', '20000000-0000-0000-0000-0000000000f7', 'worker', 'field');
+
+insert into task_contractor_workers (task_id, contractor_worker_id, work_site) values
+  ('60000000-0000-0000-0000-00000000b103', '50000000-0000-0000-0000-000000000001', 'field');
+
+-- ---- שקילות: העטיפה של פרופיל יחיד ----
+select t_eq('planned_shifts מחזירה בדיוק כמו planned_shifts_many של פרופיל אחד',
+  (select count(*) from app.planned_shifts('20000000-0000-0000-0000-0000000000f3',
+     current_date + 30, current_date + 30))::int,
+  (select count(*) from app.planned_shifts_many(array['20000000-0000-0000-0000-0000000000f3']::uuid[],
+     current_date + 30, current_date + 30))::int);
+
+select t_eq('ואותן שעות התחלה',
+  (select array_agg(shift_start order by shift_start) from app.planned_shifts(
+     '20000000-0000-0000-0000-0000000000f3', current_date + 30, current_date + 30)),
+  (select array_agg(shift_start order by shift_start) from app.planned_shifts_many(
+     array['20000000-0000-0000-0000-0000000000f3']::uuid[], current_date + 30, current_date + 30)));
+
+select t_eq('ואותו seq',
+  (select array_agg(seq order by shift_start) from app.planned_shifts(
+     '20000000-0000-0000-0000-0000000000f3', current_date + 30, current_date + 30)),
+  (select array_agg(seq order by shift_start) from app.planned_shifts_many(
+     array['20000000-0000-0000-0000-0000000000f3']::uuid[], current_date + 30, current_date + 30)));
+
+-- ---- הפרדה בין פרופילים בקריאה אחת ----
+select t_eq('שני עובדים בקריאה אחת מחזירים שתי משמרות',
+  (select count(*) from app.planned_shifts_many(
+     array['20000000-0000-0000-0000-0000000000f3','20000000-0000-0000-0000-0000000000b2']::uuid[],
+     current_date + 30, current_date + 30))::int, 2);
+
+select t_eq('המשמרת של העובד מאגדת את שתי המשימות שלו',
+  (select array_length(task_ids, 1) from app.planned_shifts_many(
+     array['20000000-0000-0000-0000-0000000000f3','20000000-0000-0000-0000-0000000000b2']::uuid[],
+     current_date + 30, current_date + 30)
+    where profile_id = '20000000-0000-0000-0000-0000000000f3'), 2);
+
+select t_eq('ומשימה של עובד אחר אינה נבלעת לתוכה',
+  (select array_length(task_ids, 1) from app.planned_shifts_many(
+     array['20000000-0000-0000-0000-0000000000f3','20000000-0000-0000-0000-0000000000b2']::uuid[],
+     current_date + 30, current_date + 30)
+    where profile_id = '20000000-0000-0000-0000-0000000000b2'), 1);
+
+select t_eq('ה-seq נספר לכל עובד בנפרד',
+  (select array_agg(distinct seq) from app.planned_shifts_many(
+     array['20000000-0000-0000-0000-0000000000f3','20000000-0000-0000-0000-0000000000b2']::uuid[],
+     current_date + 30, current_date + 30)), array[1]);
+
+-- ---- הרוסטר ----
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f4', false);
+
+select t_eq('המנהל רואה ברוסטר גם עובד קבלן שקיבל התחברות',
+  (select count(*) from jsonb_array_elements(shift_roster(current_date + 30, current_date + 30)) r
+    where r ->> 'id' = '20000000-0000-0000-0000-0000000000b2')::int, 1);
+
+select t_eq('אף שבקריאה ישירה ל-profiles הוא אינו רואה אותו כלל',
+  (select count(*) from profiles where id = '20000000-0000-0000-0000-0000000000b2')::int, 0);
+
+select t_eq('איש קשר אצל לקוח אינו ברוסטר',
+  (select count(*) from jsonb_array_elements(shift_roster(current_date + 30, current_date + 30)) r
+    where r ->> 'id' = '20000000-0000-0000-0000-0000000000c1')::int, 0);
+
+select t_eq('עובד מושבת עם שיבוץ בטווח כן מופיע, ומסומן כלא פעיל',
+  (select r ->> 'is_active' from jsonb_array_elements(shift_roster(current_date + 30, current_date + 30)) r
+    where r ->> 'id' = '20000000-0000-0000-0000-0000000000f7'), 'false');
+
+select t_eq('ובטווח שאין לו בו כלום הוא נעלם',
+  (select count(*) from jsonb_array_elements(shift_roster(current_date + 60, current_date + 60)) r
+    where r ->> 'id' = '20000000-0000-0000-0000-0000000000f7')::int, 0);
+
+-- ---- team_shifts ----
+select t_eq('המנהל מקבל את המשמרות של עובד הצוות ושל עובד הקבלן גם יחד',
+  (select count(distinct s ->> 'profile_id') from team_shifts(current_date + 30, current_date + 30) s)::int, 3);
+
+select t_expect_fail('טווח גדול מדי נדחה', $$
+  select * from team_shifts(current_date, current_date + 100)$$);
+
+select t_expect_fail('וטווח הפוך נדחה', $$
+  select * from team_shifts(current_date, current_date - 1)$$);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+select t_eq('עובד בלי view_all שמבקש עובד אחר מקבל רשימה ריקה ולא שגיאה',
+  (select count(*) from team_shifts(current_date + 30, current_date + 30,
+     array['20000000-0000-0000-0000-0000000000f4']::uuid[]))::int, 0);
+select t_eq('אבל את עצמו הוא כן מקבל',
+  (select count(*) from team_shifts(current_date + 30, current_date + 30,
+     array['20000000-0000-0000-0000-0000000000f3']::uuid[]))::int, 1);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
+select t_eq('מנהל הקבלן אינו מקבל משמרות של עובד צוות',
+  (select count(*) from team_shifts(current_date + 30, current_date + 30) s
+    where s ->> 'profile_id' = '20000000-0000-0000-0000-0000000000f3')::int, 0);
+select t_eq('אבל כן של הסגל שלו',
+  (select count(*) from team_shifts(current_date + 30, current_date + 30) s
+    where s ->> 'profile_id' = '20000000-0000-0000-0000-0000000000b2')::int, 1);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- ---- פירוק המשמרת ----
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+
+select t_eq('הפירוק מחזיר את שתי המשימות',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000000f3',
+     array['60000000-0000-0000-0000-00000000b101',
+           '60000000-0000-0000-0000-00000000b102']::uuid[]) -> 'totals' ->> 'tasks')::int, 2);
+
+select t_eq('המשימה הראשונה מסומנת כיוצאת מהמחסן',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000000f3',
+     array['60000000-0000-0000-0000-00000000b101',
+           '60000000-0000-0000-0000-00000000b102']::uuid[]) -> 'tasks' -> 0 ->> 'work_site'), 'warehouse');
+
+select t_eq('ואין לפניה המתנה',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000000f3',
+     array['60000000-0000-0000-0000-00000000b101',
+           '60000000-0000-0000-0000-00000000b102']::uuid[]) -> 'tasks' -> 0 ->> 'gap_minutes'), null::text);
+
+select t_eq('הפער עד השנייה הוא 90 דקות',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000000f3',
+     array['60000000-0000-0000-0000-00000000b101',
+           '60000000-0000-0000-0000-00000000b102']::uuid[]) -> 'tasks' -> 1 ->> 'gap_minutes')::int, 90);
+
+select t_eq('וזה גם סך ההמתנה במשמרת',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000000f3',
+     array['60000000-0000-0000-0000-00000000b101',
+           '60000000-0000-0000-0000-00000000b102']::uuid[]) -> 'totals' ->> 'idle_minutes')::int, 90);
+
+select t_eq('שעות העבודה הן סכום המשימות',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000000f3',
+     array['60000000-0000-0000-0000-00000000b101',
+           '60000000-0000-0000-0000-00000000b102']::uuid[]) -> 'totals' ->> 'work_hours')::numeric, 4.00::numeric);
+
+-- 0.25 של המשימה האחרונה, ולא 0.5 של הראשונה ולא 0.75 של שתיהן
+select t_eq('זמן הנסיעה הוא של המשימה האחרונה, לא המקסימום ולא הסכום',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000000f3',
+     array['60000000-0000-0000-0000-00000000b101',
+           '60000000-0000-0000-0000-00000000b102']::uuid[]) -> 'totals' ->> 'travel_hours')::numeric,
+  0.25::numeric);
+
+select t_eq('וזה בדיוק מה שהגזירה עצמה סופרת',
+  (select travel_hours from app.planned_shifts('20000000-0000-0000-0000-0000000000f3',
+     current_date + 30, current_date + 30)), 0.25::numeric);
+
+select t_eq('הסיכום מחושב מהמשימות ולא מהשורה שנשלחה',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000000f3',
+     array['60000000-0000-0000-0000-00000000b101',
+           '60000000-0000-0000-0000-00000000b102']::uuid[]) -> 'shift' ->> 'work_site'), 'warehouse');
+
+select t_expect_fail('משימה שאינה משובצת לעובד נחסמת', $$
+  select shift_task_breakdown('20000000-0000-0000-0000-0000000000f3',
+    array['60000000-0000-0000-0000-00000000b101',
+          '60000000-0000-0000-0000-00000000b103']::uuid[])$$);
+
+select t_expect_fail('ועובד בלי view_all אינו יכול לפרק משמרת של אחר', $$
+  select shift_task_breakdown('20000000-0000-0000-0000-0000000000b2',
+    array['60000000-0000-0000-0000-00000000b103']::uuid[])$$);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
+select t_expect_ok('מנהל הקבלן כן יכול לפרק משמרת של הסגל שלו', $$
+  select shift_task_breakdown('20000000-0000-0000-0000-0000000000b2',
+    array['60000000-0000-0000-0000-00000000b103']::uuid[])$$);
+select t_expect_fail('ולא של עובד צוות', $$
+  select shift_task_breakdown('20000000-0000-0000-0000-0000000000f3',
+    array['60000000-0000-0000-0000-00000000b101']::uuid[])$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- מי עוד משובץ הוא מידע על אנשים אחרים, ולכן הוא רוכב על board.view_staffing
+insert into user_permission_grants (profile_id, permission_key, allowed) values
+  ('20000000-0000-0000-0000-0000000000f3', 'board.view_staffing', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+select t_eq('בלי board.view_staffing שמות המשובצים אינם נמסרים',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000000f3',
+     array['60000000-0000-0000-0000-00000000b101']::uuid[]) -> 'tasks' -> 0 ->> 'team'), null::text);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);

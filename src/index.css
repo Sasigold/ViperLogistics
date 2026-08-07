@@ -982,3 +982,36 @@
     display: none;
   }
 }
+
+/* ── 9. לוחות המשמרות ──────────────────────────────────────────────────────
+   בשונה מלוח השנה, כאן השעה *היא* התוכן: שני הלוחות מציגים שבוע (או שלושה
+   ימים) על ציר שעות, ואין להם נפילה לאחור לרשימה. לכן מה שקטן במסך צר הוא
+   הטקסט — ואת שבע העמודות מחזיקים ברוחב מינימלי וגוללים אליהן, במקום לרסק
+   כל יום ל-45 פיקסלים שבהם שם הלקוח הוא כתם.
+
+   --vl-shift-fs נצרך על ידי הצ׳יפים עצמם (ShiftChip), ונקבע כאן כברירת מחדל
+   כדי שגם לוח שלא הזריק אותו ייראה נכון.                                    */
+.vl-shiftcal {
+  --vl-shift-fs: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .vl-shiftcal {
+    --vl-shift-fs: 0.6875rem;
+  }
+  /* שבעה ימים על ציר שעות אינם נדחסים לרוחב טלפון — הם נגללים */
+  .vl-shiftcal .fc {
+    min-width: 44rem;
+  }
+  .vl-shiftcal .fc-timegrid-slot-label-cushion,
+  .vl-shiftcal .fc-col-header-cell-cushion {
+    padding: 0.25rem 0.3125rem;
+    font-size: 0.6875rem;
+  }
+  .vl-shiftcal .fc-timegrid-slot {
+    height: 1.75rem;
+  }
+  .vl-shiftcal .fc-toolbar-title {
+    font-size: 0.875rem;
+  }
+}
