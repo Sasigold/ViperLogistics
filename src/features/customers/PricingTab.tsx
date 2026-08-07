@@ -39,12 +39,12 @@ import {
   fmtMoney,
   useConfirm,
   useToast,
+  StickySaveBar,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { useCustomerPricingRules, useTaskTypes } from '../../lib/queries'
-import { StickySaveBar } from '../contractors/ContractorDetailPage'
 import { PricingZonesEditor } from '../pricing/PricingZonesEditor'
 import {
   AFTER_KINDS,

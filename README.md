@@ -196,7 +196,7 @@ npm run dev
 ## מבנה
 
 ```
-supabase/migrations/   # 0001..0024 — סכמה, זריעה, RLS, RPCs, הרשאות, תמחור, נוכחות
+supabase/migrations/   # 0001..0027 — סכמה, זריעה, RLS, RPCs, הרשאות, תמחור, נוכחות
 supabase/functions/    # admin-users (ניהול חשבונות), geocode-proxy (Nominatim)
 src/features/          # מודול לכל פיצ'ר: calendar, workboard, events, customers,
                        # users, contractors, portal, attendance, settings,

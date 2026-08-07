@@ -24,6 +24,7 @@ import {
   cx,
   useConfirm,
   useToast,
+  StickySaveBar,
 } from '../../components/ui'
 import type { Column } from '../../components/ui'
 import { supabase, invokeFunction } from '../../lib/supabase'
@@ -198,40 +199,6 @@ function DetailsTab({ contractor }: { contractor: Contractor }) {
         <StickySaveBar dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} onReset={() => setForm(contractor)} />
       )}
     </Card>
-  )
-}
-
-/** Save bar that only asserts itself once something actually changed. */
-export function StickySaveBar({
-  dirty,
-  saving,
-  onSave,
-  onReset,
-}: {
-  dirty: boolean
-  saving?: boolean
-  onSave: () => void
-  onReset?: () => void
-}) {
-  return (
-    <div
-      className={cx(
-        'sticky bottom-0 flex items-center gap-2 border-t border-line-subtle px-4 py-3 transition-colors',
-        dirty ? 'bg-warning-subtle' : 'bg-subtle/50',
-      )}
-    >
-      <span className="type-caption text-ink-tertiary">{dirty ? 'יש שינויים שלא נשמרו' : 'הכול שמור'}</span>
-      <div className="ms-auto flex gap-2">
-        {dirty && onReset && (
-          <Button size="sm" variant="ghost" onClick={onReset}>
-            ביטול שינויים
-          </Button>
-        )}
-        <Button size="sm" variant="primary" loading={saving} disabled={!dirty} onClick={onSave}>
-          שמירה
-        </Button>
-      </div>
-    </div>
   )
 }
 

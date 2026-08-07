@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { ChevronDown, TrendingDown, TrendingUp } from 'lucide-react'
-import { cx } from './primitives'
+import { Button, cx } from './primitives'
 
 /* ===== Card ===============================================================
    One container for every panel in the product: same radius, same border,
@@ -278,6 +278,45 @@ export function FilterBar({
           ניקוי סינון
         </button>
       )}
+    </div>
+  )
+}
+
+/* ===== StickySaveBar ======================================================
+   Footer for an edit surface: quiet until something actually changed. Lived
+   inside the contractor detail screen and was imported out of it by the
+   customer screens, which made Customers depend on Contractors for a
+   primitive that belongs to neither.                                      */
+
+export function StickySaveBar({
+  dirty,
+  saving,
+  onSave,
+  onReset,
+}: {
+  dirty: boolean
+  saving?: boolean
+  onSave: () => void
+  onReset?: () => void
+}) {
+  return (
+    <div
+      className={cx(
+        'sticky bottom-0 flex items-center gap-2 border-t border-line-subtle px-4 py-3 transition-colors',
+        dirty ? 'bg-warning-subtle' : 'bg-subtle/50',
+      )}
+    >
+      <span className="type-caption text-ink-tertiary">{dirty ? 'יש שינויים שלא נשמרו' : 'הכול שמור'}</span>
+      <div className="ms-auto flex gap-2">
+        {dirty && onReset && (
+          <Button size="sm" variant="ghost" onClick={onReset}>
+            ביטול שינויים
+          </Button>
+        )}
+        <Button size="sm" variant="primary" loading={saving} disabled={!dirty} onClick={onSave}>
+          שמירה
+        </Button>
+      </div>
     </div>
   )
 }

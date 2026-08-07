@@ -78,7 +78,12 @@ const empty: EventForm = {
   teardown_price: '',
 }
 
-const DRAFT_KEY = 'vl-event-draft'
+/**
+ * The draft key is per-profile. It used to be one global key, so on a shared
+ * or kiosk browser an abandoned draft — customer contact name, phone, notes,
+ * location — pre-filled the next person's new-event form.
+ */
+const draftKey = (profileId?: string | null) => `vl-event-draft:${profileId ?? 'anon'}`
 
 /** The two auto-created tasks the last wizard step edits. */
 const SECTIONS = [
@@ -214,10 +219,10 @@ export function EventFormModal({
         teardown_date: event.event_date,
       })
     } else {
-      const draft = localStorage.getItem(DRAFT_KEY)
+      const draft = localStorage.getItem(draftKey(me?.profile.id))
       setForm(draft ? { ...empty, ...(JSON.parse(draft) as Partial<EventForm>) } : empty)
     }
-  }, [open, event, contact, supplierIds])
+  }, [open, event, contact, supplierIds, me?.profile.id])
 
   /** Edit mode: the section values live on the auto-created tasks, not on the event. */
   useEffect(() => {
@@ -238,9 +243,9 @@ export function EventFormModal({
   // auto-save draft for new events
   useEffect(() => {
     if (!open || event) return
-    const t = setTimeout(() => localStorage.setItem(DRAFT_KEY, JSON.stringify(form)), 600)
+    const t = setTimeout(() => localStorage.setItem(draftKey(me?.profile.id), JSON.stringify(form)), 600)
     return () => clearTimeout(t)
-  }, [form, open, event])
+  }, [form, open, event, me?.profile.id])
 
   const fieldState = useMemo(() => {
     const map = new Map(config.map((c) => [c.field_key, c.state]))
@@ -377,7 +382,7 @@ export function EventFormModal({
       toast.success(event ? 'האירוע עודכן' : 'האירוע נוצר', {
         description: event ? undefined : 'משימות הקמה ופירוק נוצרו אוטומטית',
       })
-      localStorage.removeItem(DRAFT_KEY)
+      localStorage.removeItem(draftKey(me?.profile.id))
       void qc.invalidateQueries({ queryKey: ['events'] })
       void qc.invalidateQueries({ queryKey: ['tasks'] })
       void qc.invalidateQueries({ queryKey: ['calendar'] })

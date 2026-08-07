@@ -55,7 +55,7 @@ export type { ModalSize, ToastKind, ToastOptions, ConfirmOptions, ContextMenuIte
 export { Spinner, Skeleton, SkeletonText, SkeletonCard, SkeletonTable, SkeletonList, EmptyState, ErrorState } from './feedback'
 export type { EmptyArt } from './feedback'
 
-export { Card, CardHeader, CardBody, CardFooter, CollapsibleCard, StatCard, PageHeader, FilterBar } from './Card'
+export { Card, CardHeader, CardBody, CardFooter, CollapsibleCard, StatCard, PageHeader, FilterBar, StickySaveBar } from './Card'
 
 export { Tabs, SegmentedControl } from './Tabs'
 export type { TabItem } from './Tabs'

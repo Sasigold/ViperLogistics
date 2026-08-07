@@ -38,6 +38,7 @@ import {
   Textarea,
   useConfirm,
   useToast,
+  StickySaveBar,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
@@ -52,7 +53,6 @@ import {
   useTaskTypes,
 } from '../../lib/queries'
 import { usePageTitle } from '../../app/breadcrumbs'
-import { StickySaveBar } from '../contractors/ContractorDetailPage'
 import PricingTab from './PricingTab'
 import { useWarehouses } from '../attendance/attendanceQueries'
 import { RequirePermission } from '../auth/guards'
