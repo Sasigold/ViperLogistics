@@ -861,3 +861,80 @@ select t_expect_fail('anon אינו יכול לשלוף דוח',
   $$select attendance_report(null, null)$$);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+-- ================= 6. כפל-שיבוץ =================
+
+\echo '--- כפל-שיבוץ ---'
+
+-- שלוש משימות באותו יום לאותו עובד:
+--   A  10:00–12:00   B  11:00–13:00 (חופפת ל-A)   C  13:30–14:30 (צמודה, לא חופפת)
+-- C היא המקרה שאסור לדווח עליו: הפער מ-B הוא 30 דקות, ולכן היא מתמזגת עם
+-- B למשמרת אחת ב-planned_shifts — אבל משמרת אחת אינה חפיפה.
+insert into tasks (id, event_id, task_type_id, task_date, onsite_start_time, hours_count,
+                   travel_hours, status_id, worker_count)
+select v.id, '30000000-0000-0000-0000-00000000a001',
+       (select id from task_types where code = 'setup'),
+       current_date + 20, v.onsite, v.hrs, 0,
+       (select id from statuses where entity = 'task' and is_default), 1
+from (values
+  ('60000000-0000-0000-0000-00000000c001'::uuid, '10:00'::time, 2.0::numeric),
+  ('60000000-0000-0000-0000-00000000c002'::uuid, '11:00'::time, 2.0::numeric),
+  ('60000000-0000-0000-0000-00000000c003'::uuid, '13:30'::time, 1.0::numeric)
+) as v(id, onsite, hrs);
+
+insert into task_assignments (task_id, profile_id, role, work_site) values
+  ('60000000-0000-0000-0000-00000000c001', '20000000-0000-0000-0000-0000000000f3', 'worker', 'field'),
+  ('60000000-0000-0000-0000-00000000c003', '20000000-0000-0000-0000-0000000000f3', 'worker', 'field');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+
+select t_eq('משימה צמודה שאינה חופפת אינה התנגשות',
+  jsonb_array_length(assignment_conflicts('60000000-0000-0000-0000-00000000c003')), 0);
+
+-- עכשיו משבצים אותו גם ל-B, שחופפת ל-A
+select t_eq('שיבוץ לשתי משימות חופפות מדווח כהתנגשות',
+  jsonb_array_length(assignment_conflicts('60000000-0000-0000-0000-00000000c002',
+    array['20000000-0000-0000-0000-0000000000f3'::uuid])), 1);
+
+select t_eq('וההתנגשות מצביעה על המשימה הנכונה',
+  (assignment_conflicts('60000000-0000-0000-0000-00000000c002',
+     array['20000000-0000-0000-0000-0000000000f3'::uuid]) -> 0 ->> 'task_id'),
+  '60000000-0000-0000-0000-00000000c001');
+
+select t_eq('ומזהה את סוג הנושא',
+  (assignment_conflicts('60000000-0000-0000-0000-00000000c002',
+     array['20000000-0000-0000-0000-0000000000f3'::uuid]) -> 0 ->> 'kind'), 'worker');
+
+-- p_extra_profiles הוא השאלה "מה יקרה אם", ולכן בלעדיו אין עדיין התנגשות
+select t_eq('בלי המועמד אין על מה לדווח',
+  jsonb_array_length(assignment_conflicts('60000000-0000-0000-0000-00000000c002')), 0);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- אותה משאית בשתי משימות חופפות. אין משאיות בזריעה, ולכן אחת נוצרת כאן —
+-- בלי זה truck_id היה נשאר null והבדיקה הייתה עוברת בלי לבדוק כלום.
+insert into trucks (id, name) values
+  ('80000000-0000-0000-0000-000000000001', 'משאית לבדיקת התנגשות');
+update tasks set truck_id = '80000000-0000-0000-0000-000000000001'
+ where id in ('60000000-0000-0000-0000-00000000c001', '60000000-0000-0000-0000-00000000c002');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+
+select t_eq('משאית אחת בשתי משימות חופפות מדווחת',
+  (select count(*) from jsonb_array_elements(
+     assignment_conflicts('60000000-0000-0000-0000-00000000c002')) r
+    where r ->> 'kind' = 'truck')::int, 1);
+
+-- משימה בלי שעות אינה יכולה להתנגש: אין לה חלון
+update tasks set onsite_start_time = null, warehouse_start_time = null
+ where id = '60000000-0000-0000-0000-00000000c001';
+
+select t_eq('משימה בלי שעה אינה מתנגשת בכלום',
+  jsonb_array_length(assignment_conflicts('60000000-0000-0000-0000-00000000c002',
+    array['20000000-0000-0000-0000-0000000000f3'::uuid])), 0);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Banknote,
@@ -45,7 +45,15 @@ import {
 } from '../../lib/queries'
 import { Breakdown } from '../customers/PricingTab'
 import { useWarehouses } from '../attendance/attendanceQueries'
-import type { PriceBreakdown, StaffRole, TaskPricing, TaskRow, WorkSite } from '../../types/domain'
+import type {
+  AssignmentConflict,
+  PriceBreakdown,
+  StaffRole,
+  TaskPricing,
+  TaskRow,
+  WorkSite,
+} from '../../types/domain'
+import { fmtDate } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 
 interface Assignment {
@@ -64,6 +72,10 @@ export interface TaskDrawerProps {
   /** initial values for a new task */
   initial?: Partial<TaskRow>
 }
+
+/** 'HH:MM' מתוך timestamptz, בשעון המקומי — ההתנגשות מוצגת בשעה שהיא קורית. */
+const clockTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', hour12: false })
 
 export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) {
   const qc = useQueryClient()
@@ -151,6 +163,31 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       setCustomerPrice('')
     }
   }, [open, taskId, existing, initial])
+
+  /**
+   * כפל-שיבוץ. הבדיקה יושבת ב-SQL (app.task_window / assignment_conflicts)
+   * ולא כאן, כדי שהיומן, הלוח והמגירה יגיעו לאותה תשובה.
+   *
+   * המשובצים שנבחרו ועדיין לא נשמרו נשלחים כמועמדים, ולכן האזהרה מופיעה
+   * בזמן השיבוץ ולא רק אחרי השמירה. היא אזהרה ולא חסימה: יש מקרים אמיתיים
+   * שבהם אותו אדם באמת עושה את שתי המשימות, וההכרעה היא של מי שמשבץ.
+   */
+  const candidateIds = useMemo(
+    () => [...new Set(assignments.map((a) => a.profile_id))].sort(),
+    [assignments],
+  )
+  const { data: conflicts = [] } = useQuery({
+    queryKey: ['tasks', 'conflicts', taskId, candidateIds],
+    enabled: open && !!taskId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('assignment_conflicts', {
+        p_task_id: taskId,
+        p_extra_profiles: candidateIds,
+      })
+      if (error) throw error
+      return (data ?? []) as AssignmentConflict[]
+    },
+  })
 
   const allowedMethods = useAllowedExecutionMethods(form.task_type_id, form.customer_id)
 
@@ -532,6 +569,20 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                 <p className="rounded-lg border border-warning-border bg-warning-subtle px-3 py-2 type-caption text-warning-text">
                   חסרים {needed - assignedCount} אנשים ביחס לכמות שהוגדרה
                 </p>
+              )}
+              {conflicts.length > 0 && (
+                <div className="rounded-lg border border-error-border bg-error-subtle px-3 py-2 type-caption text-error-text">
+                  <p className="font-semibold">שיבוץ כפול</p>
+                  <ul className="mt-1 space-y-0.5">
+                    {conflicts.map((c) => (
+                      <li key={`${c.kind}:${c.subject_id}:${c.task_id}`}>
+                        {c.subject_name} משובץ גם ל״{c.task_label}״
+                        {c.customer_name ? ` (${c.customer_name})` : ''} ב-{fmtDate(c.task_date)},{' '}
+                        {clockTime(c.starts_at)}–{clockTime(c.ends_at)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
               <Field label="ראש צוות">
                 <MultiSelect

@@ -867,3 +867,20 @@ export interface ClockStatus {
   /** הדיווחים הידניים שלי שממתינים לאישור או שנדחו, 45 יום אחורה */
   reports: AttendanceEntry[]
 }
+
+/**
+ * שורה אחת מ-assignment_conflicts: מישהו שמשובץ למשימה הנבדקת ומשובץ גם
+ * למשימה שחופפת לה בזמן.
+ */
+export interface AssignmentConflict {
+  kind: 'worker' | 'contractor_worker' | 'truck'
+  subject_id: string
+  subject_name: string | null
+  role: string | null
+  task_id: string
+  task_label: string | null
+  customer_name: string | null
+  task_date: string
+  starts_at: string
+  ends_at: string
+}
