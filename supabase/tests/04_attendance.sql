@@ -230,6 +230,31 @@ create or replace function t_clock_in(p_lat double precision default null,
 returns jsonb language sql as $$ select attendance_clock_in(p_lat, p_lng, p_acc, null) $$;
 grant execute on function t_clock_in(double precision, double precision, numeric) to authenticated;
 
+-- מכאן והלאה הבדיקות מריצות החתמות אמיתיות מול now(), ולכן הן תלויות בשעה
+-- שבה החבילה רצה. הזריעה הקבועה (07:00 / 11:30 / 18:00) סיפקה משמרת שכבר
+-- התחילה רק אם החבילה הורצה בבוקר: מ-13:30 ואילך המשמרת הבאה היא זו של 18:00,
+-- ו-allow_early_clock_in=false הפך כל החתמה כאן ל"לא ניתן להתחיל לפני 18:00".
+-- לכן המשימה הראשונה מעוגנת לשעה שעברה, ושתי האחרות מוזזות מהיום — כך
+-- שלשעון יש בדיוק משמרת אחת להיצמד אליה, בכל שעה שבה החבילה תרוץ.
+-- גזירת המשמרות (סעיף 2) כבר רצה על הזריעה הקבועה ואינה מושפעת.
+do $$
+declare
+  now_il timestamp := now() at time zone 'Asia/Jerusalem';
+  wh_start time;
+begin
+  -- שעה אחורה, אלא אם החבילה רצה ממש אחרי חצות — אז 00:00, שהוא עדיין בעבר
+  wh_start := case when now_il::time < '01:00' then '00:00'::time
+                   else (now_il - interval '1 hour')::time end;
+  update tasks
+     set task_date = now_il::date,
+         warehouse_start_time = wh_start,
+         onsite_start_time = wh_start + interval '1 hour'
+   where id = '60000000-0000-0000-0000-00000000a001';
+  update tasks set task_date = now_il::date + 10
+   where id in ('60000000-0000-0000-0000-00000000a002',
+                '60000000-0000-0000-0000-00000000a003');
+end $$;
+
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
 
@@ -243,10 +268,12 @@ select t_eq('נרשמה בדיוק רשומה אחת',
   (select count(*) from attendance_entries
     where profile_id = '20000000-0000-0000-0000-0000000000f3')::int, 1);
 
+-- הציפייה נגזרת מהמשימה עצמה ולא מקובעת, כי שעת ההתחלה מעוגנת ל-now()
 select t_eq('והיא נצמדה למשמרת של היום',
   (select to_char(shift_start at time zone 'Asia/Jerusalem', 'HH24:MI')
      from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3'),
-  '07:00');
+  (select to_char(warehouse_start_time, 'HH24:MI')
+     from tasks where id = '60000000-0000-0000-0000-00000000a001'));
 
 select t_expect_fail('אין החתמת יציאה בלי משמרת פתוחה',
   $$select attendance_clock_out(null, null, null, null)$$);
