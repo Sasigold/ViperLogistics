@@ -210,7 +210,7 @@ npm test            # שניהם
 ## מבנה
 
 ```
-supabase/migrations/   # 0001..0030 — סכמה, זריעה, RLS, RPCs, הרשאות, תמחור, נוכחות
+supabase/migrations/   # 0001..0031 — סכמה, זריעה, RLS, RPCs, הרשאות, תמחור, נוכחות
 supabase/functions/    # admin-users (ניהול חשבונות), geocode-proxy (Nominatim),
                        # notify-dispatch (משלוח התראות)
 src/features/          # מודול לכל פיצ'ר: calendar, workboard, events, customers,
