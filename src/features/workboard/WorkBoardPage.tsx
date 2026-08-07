@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { addDays, differenceInCalendarDays, eachDayOfInterval, endOfMonth, parseISO, startOfMonth, startOfWeek } from 'date-fns'
@@ -20,7 +20,6 @@ import {
 } from '../../components/ui/icons'
 import {
   AvatarGroup,
-  BulkBar,
   Button,
   Checkbox,
   EmptyState,
@@ -45,7 +44,7 @@ import { fmtDate, fmtTime, toISODate } from '../../lib/dates'
 import { NEUTRAL, readableOn } from '../../lib/colors'
 import { useIsMobile } from '../../lib/useMediaQuery'
 import { TaskDrawer } from '../tasks/TaskDrawer'
-import { Can, RequirePermission } from '../auth/guards'
+import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { BOARD_FIELDS, DEFAULT_HIDDEN_FIELDS } from './boardFields'
 import type { BoardLookups } from './boardFields'
@@ -185,7 +184,8 @@ function useInlineUpdate() {
 export default function WorkBoardPage() {
   const { has } = useAuth()
   const canInline = has(PERM.BOARD_INLINE_EDIT)
-  const canBulk = has(PERM.BOARD_BULK_EDIT)
+  const canOpenEvent = has(PERM.EVENTS_VIEW)
+  const navigate = useNavigate()
   /**
    * Resolved per cell rather than once for the board: a field carries the key
    * that governs it, so the row can be half-editable. Stable across renders so
@@ -208,8 +208,6 @@ export default function WorkBoardPage() {
     open: !!params.get('task'),
     taskId: params.get('task'),
   })
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [bulkOpen, setBulkOpen] = useState(false)
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
   const [hidden, setHidden] = useState<Set<string>>(new Set(prefs.current.hidden ?? DEFAULT_HIDDEN_FIELDS))
   const [density, setDensity] = useState<Density>(prefs.current.density ?? 'comfortable')
@@ -432,22 +430,9 @@ export default function WorkBoardPage() {
   const overlaps = (start: number, width: number) => start < viewport.end && start + width > viewport.start
   const visibleBands = bands.filter((b) => overlaps(b.start, b.width))
 
-  /* ── selection ────────────────────────────────────────────────────────── */
-
-  const taskIds = useMemo(() => rows.map((r) => r.id), [rows])
-  const allSelected = taskIds.length > 0 && selected.size === taskIds.length
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(taskIds))
-  const toggleOne = useCallback(
-    (id: string) =>
-      setSelected((s) => {
-        const n = new Set(s)
-        if (n.has(id)) n.delete(id)
-        else n.add(id)
-        return n
-      }),
-    [],
-  )
   const openTask = useCallback((id: string) => setDrawer({ open: true, taskId: id }), [])
+  /** stable, because TaskHeader is memoised on a shallow prop compare */
+  const openEvent = useCallback((id: string) => void navigate(`/events/${id}`), [navigate])
   /** an empty day's only affordance: start the day that isn't there yet */
   const newTaskOn = useCallback((dayKey: string) => setDrawer({ open: true, taskId: null, date: dayKey }), [])
   const hoverGroup = useCallback((key: string | null) => setActiveGroup(key), [])
@@ -809,13 +794,6 @@ export default function WorkBoardPage() {
                 )}
               </Popover>
 
-              {selected.size > 0 && canBulk && (
-                <Button size="sm" onClick={() => setBulkOpen(true)}>
-                  <Pencil size={ICON.sm} strokeWidth={STROKE} />
-                  <span className="hidden sm:inline">עריכה ({selected.size})</span>
-                </Button>
-              )}
-
               {has(PERM.TASKS_CREATE) && (
                 <Button size="sm" variant="primary" onClick={() => setDrawer({ open: true, taskId: null })}>
                   <Plus size={ICON.sm} strokeWidth={STROKE} />
@@ -869,9 +847,7 @@ export default function WorkBoardPage() {
               containerRef={cardsRef}
               days={daysForList}
               today={today}
-              selected={selected}
               canCreate={has(PERM.TASKS_CREATE)}
-              onToggle={toggleOne}
               onOpen={openTask}
               onToggleDay={toggleDay}
               onNewTask={newTaskOn}
@@ -888,17 +864,12 @@ export default function WorkBoardPage() {
                   className="sticky z-30 shrink-0 border-e border-line bg-surface"
                   style={{ insetInlineStart: 0, width: metrics.legend }}
                 >
+                  {/* empty, but it still has to hold the legend level with the
+                      day band and the column headers beside it */}
                   <div
-                    className="sticky top-0 z-10 flex items-end justify-center border-b border-line bg-subtle px-2.5 pb-2"
+                    className="sticky top-0 z-10 border-b border-line bg-subtle"
                     style={{ height: headerH }}
-                  >
-                    <Checkbox
-                      label={<span className="type-caption font-semibold">בחר הכל</span>}
-                      checked={allSelected}
-                      indeterminate={selected.size > 0}
-                      onChange={toggleAll}
-                    />
-                  </div>
+                  />
                   {fields.map((f, i) => (
                     <div
                       key={f.key}
@@ -1005,9 +976,9 @@ export default function WorkBoardPage() {
                               today={today}
                               groupKey={col.groupKey}
                               showCustomer={canSeeCustomers}
-                              selected={selected.has(col.row.id)}
-                              onToggle={toggleOne}
+                              canOpenEvent={canOpenEvent}
                               onOpen={openTask}
+                              onOpenEvent={openEvent}
                               onHover={hoverGroup}
                             />
                           )}
@@ -1049,7 +1020,6 @@ export default function WorkBoardPage() {
                           lookups={lookups}
                           fields={fields}
                           heights={rowHeights}
-                          selected={selected.has(col.row.id)}
                           tone={col.tone}
                           groupKey={col.groupKey}
                           first={col.first}
@@ -1066,17 +1036,6 @@ export default function WorkBoardPage() {
             </div>
           )}
         </div>
-
-        {selected.size > 0 && (
-          <BulkBar count={selected.size} onClear={() => setSelected(new Set())}>
-            {canBulk && (
-              <Button size="sm" variant="primary" onClick={() => setBulkOpen(true)}>
-                <Pencil size={ICON.sm} />
-                עריכה מרובה
-              </Button>
-            )}
-          </BulkBar>
-        )}
 
         <Modal
           open={filterSheet}
@@ -1123,15 +1082,6 @@ export default function WorkBoardPage() {
           taskId={drawer.taskId}
           initial={drawer.date ? ({ task_date: drawer.date } as Partial<TaskRow>) : undefined}
         />
-        <BulkEditModal
-          open={bulkOpen}
-          onClose={() => setBulkOpen(false)}
-          taskIds={[...selected]}
-          onDone={() => {
-            setSelected(new Set())
-            setBulkOpen(false)
-          }}
-        />
       </div>
     </RequirePermission>
   )
@@ -1139,16 +1089,14 @@ export default function WorkBoardPage() {
 
 /* ===== mobile board =======================================================
    Days stack vertically, tasks inside them are cards. Every affordance the
-   desktop grid offers through hover — open, select, fold a day — has a real
+   desktop grid offers through hover — open a task, fold a day — has a real
    target here, and nothing scrolls sideways.                               */
 
 function MobileBoard({
   containerRef,
   days,
   today,
-  selected,
   canCreate,
-  onToggle,
   onOpen,
   onToggleDay,
   onNewTask,
@@ -1157,9 +1105,7 @@ function MobileBoard({
   containerRef: React.Ref<HTMLDivElement>
   days: DayLayout[]
   today: string
-  selected: Set<string>
   canCreate: boolean
-  onToggle: (id: string) => void
   onOpen: (id: string) => void
   onToggleDay: (dayKey: string) => void
   onNewTask: (dayKey: string) => void
@@ -1267,8 +1213,6 @@ function MobileBoard({
                           row={row}
                           tone={cluster.tone}
                           overdue={row.task_date < today && !row.status_is_terminal}
-                          selected={selected.has(row.id)}
-                          onToggle={onToggle}
                           onOpen={onOpen}
                         />
                       </li>
@@ -1287,15 +1231,11 @@ const MobileTaskCard = memo(function MobileTaskCard({
   row,
   tone,
   overdue,
-  selected,
-  onToggle,
   onOpen,
 }: {
   row: WorkBoardRow
   tone: GroupTone | null
   overdue: boolean
-  selected: boolean
-  onToggle: (id: string) => void
   onOpen: (id: string) => void
 }) {
   const label = row.end_client_name || row.title || row.customer_name || row.task_type_name
@@ -1309,20 +1249,14 @@ const MobileTaskCard = memo(function MobileTaskCard({
 
   return (
     <div
-      className={cx(
-        'flex items-stretch gap-1.5 px-2.5 py-1.5',
-        selected ? 'bg-selected' : overdue && 'bg-[var(--vl-board-overdue)]',
-      )}
-      style={!selected && tone ? { background: tone.tint } : undefined}
+      className={cx('flex items-stretch gap-1.5 px-2.5 py-1.5', overdue && 'bg-[var(--vl-board-overdue)]')}
+      style={tone ? { background: tone.tint } : undefined}
     >
       <span
         aria-hidden
         className="w-1 shrink-0 rounded-full"
         style={{ background: tone?.solid ?? row.customer_color ?? 'var(--vl-border-strong)' }}
       />
-      <span className="flex items-start pt-0.5">
-        <Checkbox checked={selected} onChange={() => onToggle(row.id)} />
-      </span>
       <button onClick={() => onOpen(row.id)} className="min-w-0 flex-1 space-y-0.5 text-start">
         <span className="flex items-center gap-1.5">
           {time ? (
@@ -1382,9 +1316,9 @@ const TaskHeader = memo(function TaskHeader({
   today,
   groupKey,
   showCustomer,
-  selected,
-  onToggle,
+  canOpenEvent,
   onOpen,
+  onOpenEvent,
   onHover,
 }: {
   row: WorkBoardRow
@@ -1392,9 +1326,9 @@ const TaskHeader = memo(function TaskHeader({
   groupKey: string
   /** the customer's identity is a permission; without it the header falls back */
   showCustomer: boolean
-  selected: boolean
-  onToggle: (id: string) => void
+  canOpenEvent: boolean
   onOpen: (id: string) => void
+  onOpenEvent: (eventId: string) => void
   onHover: (key: string | null) => void
 }) {
   const overdue = row.task_date < today && !row.status_is_terminal
@@ -1406,20 +1340,26 @@ const TaskHeader = memo(function TaskHeader({
      label flips between near-black and white by the fill's luminance —
      `color-mix(…, black N%)` only holds over a tint, never over a solid. */
   const fill = (showCustomer && row.customer_color) || NEUTRAL
+  /* A task with no event, or a reader who may not open one, gets plain text
+     rather than a control that goes nowhere. */
+  const eventId = canOpenEvent ? row.event_id : null
+  const name = 'min-w-0 flex-1 truncate text-center type-caption font-bold'
 
   return (
     <div
       onMouseEnter={() => onHover(groupKey)}
       onMouseLeave={() => onHover(null)}
-      className={cx(
-        'group relative flex h-full items-center gap-1 border-b border-line px-1.5',
-        selected && 'bg-selected',
-      )}
-      style={selected ? undefined : { background: fill, color: readableOn(fill) }}
+      className="group relative flex h-full items-center gap-1 border-b border-line px-1.5"
+      style={{ background: fill, color: readableOn(fill) }}
     >
-      <Checkbox checked={selected} onChange={() => onToggle(row.id)} />
-      <Tooltip content={label}>
-        <span className="min-w-0 flex-1 truncate text-center type-caption font-bold">{label}</span>
+      <Tooltip content={eventId ? `${label} — פתיחת האירוע` : label}>
+        {eventId ? (
+          <button onClick={() => onOpenEvent(eventId)} className={cx(name, 'hover:underline')}>
+            {label}
+          </button>
+        ) : (
+          <span className={name}>{label}</span>
+        )}
       </Tooltip>
       {overdue && (
         <Tooltip content="משימה פתוחה שעברה את מועדה">
@@ -1497,7 +1437,6 @@ const TaskColumn = memo(
     lookups,
     fields,
     heights,
-    selected,
     tone,
     groupKey,
     first,
@@ -1512,7 +1451,6 @@ const TaskColumn = memo(
     lookups: BoardLookups
     fields: typeof BOARD_FIELDS
     heights: number[]
-    selected: boolean
     tone: GroupTone | null
     groupKey: string
     first: boolean
@@ -1539,13 +1477,13 @@ const TaskColumn = memo(
       <div
         onMouseEnter={() => onHover(groupKey)}
         onMouseLeave={() => onHover(null)}
-        className={cx('absolute top-0', selected ? 'bg-selected' : 'bg-surface')}
+        className="absolute top-0 bg-surface"
         style={{
           ...style,
           position: 'absolute',
           /* the same wash the header carries — a column whose body was paler
              than its own heading read as two different things stacked */
-          ...(tone && !selected ? { background: active ? tone.tintStrong : tone.tint } : null),
+          ...(tone ? { background: active ? tone.tintStrong : tone.tint } : null),
           ...edges,
         }}
       >
@@ -1566,7 +1504,6 @@ const TaskColumn = memo(
   (a, b) =>
     a.row === b.row &&
     a.canEditCell === b.canEditCell &&
-    a.selected === b.selected &&
     a.fields === b.fields &&
     a.heights === b.heights &&
     a.lookups === b.lookups &&
@@ -1577,99 +1514,3 @@ const TaskColumn = memo(
     a.style.insetInlineStart === b.style.insetInlineStart &&
     a.style.width === b.style.width,
 )
-
-/* ===== bulk edit ========================================================== */
-
-function BulkEditModal({ open, onClose, taskIds, onDone }: { open: boolean; onClose: () => void; taskIds: string[]; onDone: () => void }) {
-  const qc = useQueryClient()
-  const toast = useToast()
-  const { data: statuses = [] } = useStatuses('task')
-  const { data: contractors = [] } = useContractors()
-  const { data: methods = [] } = useExecutionMethods()
-  const [patch, setPatch] = useState<Record<string, string>>({})
-
-  const apply = useMutation({
-    mutationFn: async () => {
-      const clean: Record<string, string> = {}
-      for (const [k, v] of Object.entries(patch)) if (v !== '__skip__') clean[k] = v
-      if (Object.keys(clean).length === 0) throw new Error('לא נבחרו שדות לעדכון')
-      const { data, error } = await supabase.rpc('bulk_update_tasks', { p_task_ids: taskIds, p_patch: clean })
-      if (error) throw error
-      return data as number
-    },
-    onSuccess: (count) => {
-      toast.success(`${count} משימות עודכנו`)
-      void qc.invalidateQueries({ queryKey: ['workboard'] })
-      void qc.invalidateQueries({ queryKey: ['calendar'] })
-      setPatch({})
-      onDone()
-    },
-    onError: (e) => toast.error(errorMessage(e)),
-  })
-
-  const setIf = (key: string, value: string) => setPatch((p) => ({ ...p, [key]: value }))
-  const changed = Object.values(patch).filter((v) => v !== '__skip__').length
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="עריכה מרובה"
-      description={`השינויים יחולו על ${taskIds.length} משימות שנבחרו`}
-      footer={
-        <>
-          <Button onClick={onClose}>ביטול</Button>
-          <Button variant="primary" loading={apply.isPending} disabled={changed === 0} onClick={() => apply.mutate()}>
-            עדכון {changed > 0 && `(${changed} שדות)`}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        {/* Each control is gated by the same key the column trigger checks, so
-            the modal can't offer a change the database will reject. */}
-        <Can perm={PERM.TASKS_CHANGE_STATUS}>
-          <Field label="סטטוס">
-            <Select value={patch.status_id ?? '__skip__'} onChange={(e) => setIf('status_id', e.target.value)}>
-              <option value="__skip__">ללא שינוי</option>
-              {statuses.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </Select>
-          </Field>
-        </Can>
-        <Can perm={PERM.TASKS_RESCHEDULE}>
-          <Field label="תאריך">
-            <Input type="date" value={patch.task_date ?? ''} onChange={(e) => setIf('task_date', e.target.value || '__skip__')} />
-          </Field>
-        </Can>
-        <Can perm={PERM.TASKS_CHANGE_EXECUTION_METHOD}>
-          <Field label="אופן ביצוע">
-            <Select value={patch.execution_method_id ?? '__skip__'} onChange={(e) => setIf('execution_method_id', e.target.value)}>
-              <option value="__skip__">ללא שינוי</option>
-              {methods.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </Select>
-          </Field>
-        </Can>
-        <Can perm={PERM.TASKS_DELEGATE}>
-          <Field label="קבלן">
-            <Select value={patch.contractor_id ?? '__skip__'} onChange={(e) => setIf('contractor_id', e.target.value)}>
-              <option value="__skip__">ללא שינוי</option>
-              <option value="">הסרת קבלן</option>
-              {contractors.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </Select>
-          </Field>
-        </Can>
-        <Can perm={PERM.TASKS_RESCHEDULE}>
-          <Field label="שעת התחלה במחסן">
-            <Input type="time" value={patch.warehouse_start_time ?? ''} onChange={(e) => setIf('warehouse_start_time', e.target.value || '__skip__')} />
-          </Field>
-        </Can>
-      </div>
-    </Modal>
-  )
-}
