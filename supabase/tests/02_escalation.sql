@@ -139,6 +139,68 @@ select t_eq('the auto setup/teardown tasks are visible to the client',
   (select count(*)::int from tasks t join events e on e.id = t.event_id
     where e.event_number = 'A-3' and t.deleted_at is null), 2);
 
+\echo '--- a role is a bundle of grants, and the same rules apply to it ---'
+-- guard_permission_grant polices one key at a time. Until 0026, profile_roles
+-- checked only "do you hold users.manage_permissions" and "is this your user",
+-- never what was *inside* the role — so attaching a staff role was a way around
+-- every rule above it.
+select t_expect_fail('cannot attach a staff role to a sub-user',
+  $$insert into profile_roles (profile_id, role_id)
+    select '20000000-0000-0000-0000-0000000000c2', id from permission_roles where key = 'ops_manager'$$);
+select t_expect_fail('cannot attach a client role carrying a key it does not hold',
+  $$insert into profile_roles (profile_id, role_id)
+    values ('20000000-0000-0000-0000-0000000000c2','40000000-0000-0000-0000-000000000091')$$);
+select t_expect_fail('cannot attach a role to a staff profile',
+  $$insert into profile_roles (profile_id, role_id)
+    select '20000000-0000-0000-0000-0000000000f1', id from permission_roles where key = 'customer_viewer'$$);
+select t_expect_ok('CAN attach a client role whose keys it holds',
+  $$insert into profile_roles (profile_id, role_id)
+    select '20000000-0000-0000-0000-0000000000c2', id from permission_roles where key = 'customer_viewer'$$);
+
+\echo '--- what 0026 opened, and what it deliberately did not ---'
+select t_expect_ok('CAN grant board.view',
+  $$insert into user_permission_grants values ('20000000-0000-0000-0000-0000000000c2','board.view',true)$$);
+select t_expect_ok('CAN grant attendance.clock',
+  $$insert into user_permission_grants values ('20000000-0000-0000-0000-0000000000c2','attendance.clock',true)$$);
+select t_expect_fail('cannot grant attendance.view_all',
+  $$insert into user_permission_grants values ('20000000-0000-0000-0000-0000000000c2','attendance.view_all',true)$$);
+select t_expect_fail('cannot grant board.inline_edit',
+  $$insert into user_permission_grants values ('20000000-0000-0000-0000-0000000000c2','board.inline_edit',true)$$);
+select t_expect_fail('cannot grant users.set_admin',
+  $$insert into user_permission_grants values ('20000000-0000-0000-0000-0000000000c2','users.set_admin',true)$$);
+select t_expect_fail('cannot grant board.view_staffing',
+  $$insert into user_permission_grants values ('20000000-0000-0000-0000-0000000000c2','board.view_staffing',true)$$);
+
+\echo '--- the two keys a client inherits without anyone granting them ---'
+-- app.has never consults applies_to, so implied_by decides these. Asserted
+-- rather than left to be discovered: both screens open for every existing
+-- client the day the /client redirect comes down.
+select t_eq('board.view is inherited from tasks.view', (select app.has('board.view')), true);
+select t_eq('calendar.drag is inherited from events.change_date', (select app.has('calendar.drag')), true);
+select t_eq('board.view_staffing is not inherited by anyone', (select app.has('board.view_staffing')), false);
+
+\echo '--- the calendar drag path ---'
+select t_expect_ok('update_event moves a date — what dragging now calls',
+  $$select update_event((select id from events where event_number = 'A-3'),
+      '{"event_date":"2026-09-20"}'::jsonb)$$);
+select t_eq('the drag landed',
+  (select event_date from events where event_number = 'A-3'), '2026-09-20'::date);
+select t_eq('and did not blank the setup task it left alone',
+  (select (count(*) = 2)::boolean from tasks t join events e on e.id = t.event_id
+    where e.event_number = 'A-3' and t.deleted_at is null), true);
+
+\echo '--- the one dashboard RPC, seen from the client seat ---'
+select t_eq('dashboard_stats hides the roster count',
+  (select (dashboard_stats(current_date - 30, current_date + 400) ->> 'available_workers') is null), true);
+select t_eq('dashboard_stats hides the contractor breakdown',
+  (select (dashboard_stats(current_date - 30, current_date + 400) ->> 'by_contractor') is null), true);
+select t_eq('dashboard_stats hides the per-customer breakdown',
+  (select (dashboard_stats(current_date - 30, current_date + 400) ->> 'by_customer') is null), true);
+select t_eq('but still counts the events that are theirs',
+  (select (dashboard_stats(current_date - 400, current_date + 400) ->> 'events_count')::int > 0), true);
+select t_eq('and get_my_permissions offers only their own kind of account',
+  (select get_my_permissions() -> 'creatable_user_kinds'), '["customer_user"]'::jsonb);
+
 -- ================= regression: staff and admin are unaffected =================
 reset role;
 \echo '--- staff regression ---'
@@ -163,4 +225,11 @@ select t_expect_ok('admin sets a kind-wide field default',
 select t_expect_ok('admin can promote someone to admin',
   $$update profiles set is_admin = true where id = '20000000-0000-0000-0000-0000000000f2'$$);
 select t_eq('admin sees every event', (select (count(*) >= 2) from events), true);
+select t_eq('and the dashboard sections a client is refused are present for the admin',
+  (select (dashboard_stats(current_date - 30, current_date + 400) ->> 'by_contractor') is not null), true);
+select t_eq('admin may open any kind of account',
+  (select jsonb_array_length(get_my_permissions() -> 'creatable_user_kinds')), 3);
+select t_expect_ok('admin attaches a staff role, which the client could not',
+  $$insert into profile_roles (profile_id, role_id)
+    select '20000000-0000-0000-0000-0000000000f1', id from permission_roles where key = 'ops_manager'$$);
 reset role;

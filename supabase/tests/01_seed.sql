@@ -43,7 +43,21 @@ insert into user_permission_grants (profile_id, permission_key, allowed) values
   ('20000000-0000-0000-0000-0000000000c1', 'users.edit',               true),
   ('20000000-0000-0000-0000-0000000000c1', 'users.delete',             true),
   ('20000000-0000-0000-0000-0000000000c1', 'users.create_login',       true),
-  ('20000000-0000-0000-0000-0000000000c1', 'users.manage_permissions', true);
+  ('20000000-0000-0000-0000-0000000000c1', 'users.manage_permissions', true),
+  -- 0026 made the personal attendance keys grantable to a client. Held here so
+  -- the "can hand on what you hold" branch is reachable — without it the guard
+  -- would refuse for the other reason and prove nothing about applies_to.
+  ('20000000-0000-0000-0000-0000000000c1', 'attendance.clock',         true);
+
+-- A client-facing role that carries a key no client admin holds. The
+-- profile_roles guard has three separate reasons to refuse a role, and without
+-- this fixture the "carries a key you do not hold" one would never be reached:
+-- every seeded client role is a subset of what the client admin already has.
+insert into permission_roles (id, key, name_he, user_kind, is_system) values
+  ('40000000-0000-0000-0000-000000000091', 'test_client_pricer', 'תפקיד בדיקה', 'customer_user', false);
+insert into role_permissions (role_id, permission_key, allowed) values
+  ('40000000-0000-0000-0000-000000000091', 'events.view', true),
+  ('40000000-0000-0000-0000-000000000091', 'pricing.edit', true);
 
 -- an event belonging to the *other* customer, for cross-tenant probes
 insert into events (id, customer_id, event_date) values
