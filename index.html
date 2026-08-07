@@ -6,11 +6,10 @@
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <!-- מותקן כאפליקציה: זום בצביטה או בדאבל-טאפ הוא מחווה של אתר, לא של אפליקציה.
-         viewport-fit=cover נדרש כדי ש-env(safe-area-inset-*) יחזיר ערך אמיתי. -->
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
-    />
+         בלי viewport-fit=cover: ה-webview כבר נעצר מעל האזורים הבטוחים, ולכן
+         env(safe-area-inset-*) חייב להישאר 0 — אחרת הריפוד שנשען עליו נספר
+         פעמיים, והמסך כולו נדחף למעלה מעל התפריט התחתון. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#05070c" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

@@ -92,7 +92,11 @@ export function Field({
   )
 
   return (
-    <div className={cx('space-y-1.5', className)}>
+    /* min-w-0: as a grid or flex item this wrapper's automatic minimum size is
+       its content's — and a native date control reports a very wide one, in
+       Hebrew above all ("7 באוג׳ 2026"). Without this the wrapper, not the
+       input, is what grows past the card's padding and out of the frame. */
+    <div className={cx('min-w-0 space-y-1.5', className)}>
       {label && (
         <div className="flex items-center gap-2">
           <label htmlFor={id} className="block type-caption font-medium text-ink-secondary">
