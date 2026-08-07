@@ -789,6 +789,8 @@ export interface AttendanceReportRow {
   employee_note: string | null
   manager_note: string | null
   edited_at: string | null
+  /** האם שעות נוספות חלות על העובד הזה — ההגדרה האפקטיבית שלו, לא כמה עשה */
+  overtime_enabled: boolean
   pay: PayBreakdown
 }
 

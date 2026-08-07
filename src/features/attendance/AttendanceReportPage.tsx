@@ -3,7 +3,6 @@ import { useMutation } from '@tanstack/react-query'
 import {
   Briefcase,
   CalendarCheck,
-  CalendarX,
   ChevronDown,
   Download,
   ChevronLeft,
@@ -11,7 +10,6 @@ import {
   Clock,
   ICON,
   MapPin,
-  PencilLine,
   Plus,
   PlusCircle,
   SlidersHorizontal,
@@ -135,7 +133,6 @@ export function AttendanceReport({
   const [status, setStatus] = useState<AttendanceStatus | ''>('')
   const [selected, setSelected] = useState<AttendanceReportRow | null>(null)
   const [adding, setAdding] = useState(false)
-  const [targetHours, setTargetHours] = useState(176)
 
   // עובד שרואה רק את עצמו לא מקבל מסנן עובדים ולא מסנן קבלנים, ולכן גם לא
   // משלם על שתי השאילתות שממלאות אותם — profiles ו-contractors היו חוזרים
@@ -180,6 +177,17 @@ export function AttendanceReport({
   const totals = data?.totals
   const showMoney = !!data?.can_see_pay
 
+  /**
+   * שעות נוספות הן הגדרה פר-עובד (worker_pay_settings.overtime_enabled), והשרת
+   * מוסר אותה על כל שורה. למי שהיא כבויה אצלו אין "00:00 שעות נוספות" — פשוט
+   * אין לו את המושג הזה, ולכן העמודה, האריח והשורה נעלמים ולא מתאפסים. בדוח
+   * של כמה עובדים די בכך שהיא חלה על אחד מהם.
+   *
+   * `!== false` ולא `=== true`: מול שרת שטרם קיבל את 0032 השדה פשוט חסר,
+   * ואז ההתנהגות היא זו שהייתה — להציג — ולא להעלים בשקט טור שיש בו נתונים.
+   */
+  const showOvertime = useMemo(() => rows.some((r) => r.overtime_enabled !== false), [rows])
+
   const handlePrevMonth = () => setMonthDate((d) => subMonths(d, 1))
   const handleNextMonth = () => setMonthDate((d) => addMonths(d, 1))
 
@@ -189,120 +197,97 @@ export function AttendanceReport({
 
   const todayISO = useMemo(() => toISODate(new Date()), [])
 
-  // Build complete daily breakdown list (including work days & absences)
-  const daysList = useMemo(() => {
+  /**
+   * שורה אחת לכל משמרת, לא לכל יום.
+   *
+   * יום עם שתי משמרות — יציאה לשטח בבוקר וחזרה למחסן בערב, או שתי משימות
+   * שהפער ביניהן גדול מ-merge_gap_minutes — הוא מקרה רגיל ולא חריג, וכל
+   * משמרת היא רשומה משלה: שעות משלה, סטטוס משלו ואישור נפרד. כשהיום קופל
+   * לשורה אחת נלקחו השעות של כולן והשעון והסטטוס של הראשונה בלבד, וגם
+   * הקליק פתח תמיד את הראשונה.
+   *
+   * `seq` הוא המספור של השרת בתוך היום, ולכן גם סדר התצוגה וגם התווית.
+   * ימים בלי משמרת ממשיכים לתפוס שורה, כדי שהחודש יישאר רציף.
+   */
+  const shiftRows = useMemo(() => {
     const start = startOfMonth(monthDate)
     const end = endOfMonth(monthDate)
-    const days = eachDayOfInterval({ start, end })
 
-    return days.map((day) => {
+    return eachDayOfInterval({ start, end }).flatMap((day) => {
       const dateStr = toISODate(day)
       const dayOfWeek = day.getDay()
       const formattedDate = format(day, 'dd.MM.yy')
       const hebrewDayLetter = HEBREW_DAY_LETTERS[dayOfWeek]
-      const dayRows = rows.filter((r) => r.work_date === dateStr)
+      const base = { formattedDate, hebrewDayLetter }
+
+      const dayRows = rows
+        .filter((r) => r.work_date === dateStr)
+        .sort((a, b) => a.seq - b.seq || a.clock_in_at.localeCompare(b.clock_in_at))
 
       if (dayRows.length > 0) {
-        const firstRow = dayRows[0]
-        const totalDayHours = dayRows.reduce((acc, r) => acc + (r.actual_hours ?? 0), 0)
-        const totalOvertime = dayRows.reduce((acc, r) => acc + (r.pay?.overtime_hours ?? 0), 0)
-
-        const clockIn = new Date(firstRow.clock_in_at)
-        const clockOut = firstRow.clock_out_at ? new Date(firstRow.clock_out_at) : null
-        const shiftTime = `${fmtTime(clockIn.toTimeString())} - ${clockOut ? fmtTime(clockOut.toTimeString()) : '…'}`
-
-        const location = firstRow.work_site
-          ? WORK_SITE_LABELS[firstRow.work_site]
-          : firstRow.contractor_id
-          ? 'מחסן ראשי'
-          : 'מרכז לוגיסטי'
-
-        return {
-          dateStr,
-          formattedDate,
-          dayOfWeek,
-          hebrewDayLetter,
-          shiftTime,
-          location,
-          hoursText: fmtDurationHHMM(totalDayHours, true),
-          overtimeText: totalOvertime > 0 ? `${fmtDurationHHMM(totalOvertime, true)} נוספות` : null,
-          status: firstRow.status === 'approved' ? 'completed' : firstRow.status,
-          row: firstRow,
-          hasData: true,
-          totalHours: totalDayHours,
-          totalOvertime,
-        }
+        return dayRows.map((r) => {
+          const clockIn = new Date(r.clock_in_at)
+          const clockOut = r.clock_out_at ? new Date(r.clock_out_at) : null
+          const overtime = r.pay?.overtime_hours ?? 0
+          return {
+            ...base,
+            key: r.id,
+            shiftLabel: dayRows.length > 1 ? `משמרת ${r.seq}` : null,
+            employeeName: r.full_name,
+            shiftTime: `${fmtTime(clockIn.toTimeString())} - ${clockOut ? fmtTime(clockOut.toTimeString()) : '…'}`,
+            location: r.work_site
+              ? WORK_SITE_LABELS[r.work_site]
+              : r.contractor_id
+              ? 'מחסן ראשי'
+              : 'מרכז לוגיסטי',
+            hoursText: fmtDurationHHMM(r.actual_hours, true),
+            overtimeText: overtime > 0 ? `${fmtDurationHHMM(overtime, true)} נוספות` : null,
+            status: r.status === 'approved' ? 'completed' : r.status,
+            row: r,
+            hours: r.actual_hours ?? 0,
+          }
+        })
       }
 
-      // Check absence for past/current workdays (Sunday to Friday)
+      // יום חול שעבר ואין בו החתמה. שבת אינה יום עבודה, ולכן היא "מנוחה".
       const isPastOrToday = dateStr <= todayISO
-      const isWorkDay = dayOfWeek !== 6 // 6 is Saturday (Shabbat)
-
-      if (isPastOrToday && isWorkDay) {
-        return {
-          dateStr,
-          formattedDate,
-          dayOfWeek,
-          hebrewDayLetter,
+      const isWorkDay = dayOfWeek !== 6
+      return [
+        {
+          ...base,
+          key: dateStr,
+          shiftLabel: null,
+          employeeName: null,
           shiftTime: '-',
           location: null,
           hoursText: '-',
           overtimeText: null,
-          status: 'absence',
+          status: isPastOrToday && isWorkDay ? 'absence' : 'rest',
           row: null,
-          hasData: false,
-          totalHours: 0,
-          totalOvertime: 0,
-        }
-      }
-
-      return {
-        dateStr,
-        formattedDate,
-        dayOfWeek,
-        hebrewDayLetter,
-        shiftTime: '-',
-        location: null,
-        hoursText: '-',
-        overtimeText: null,
-        status: 'rest',
-        row: null,
-        hasData: false,
-        totalHours: 0,
-        totalOvertime: 0,
-      }
+          hours: 0,
+        },
+      ]
     })
   }, [monthDate, rows, todayISO])
 
   // Calculated metrics
   const totalWorkHours = useMemo(() => {
     if (totals?.actual_hours != null) return totals.actual_hours
-    return daysList.reduce((acc, d) => acc + d.totalHours, 0)
-  }, [totals, daysList])
+    return shiftRows.reduce((acc, d) => acc + d.hours, 0)
+  }, [totals, shiftRows])
 
   const overtimeHours = useMemo(() => {
     if (totals?.overtime_hours != null) return totals.overtime_hours
-    return daysList.reduce((acc, d) => acc + d.totalOvertime, 0)
-  }, [totals, daysList])
+    return rows.reduce((acc, r) => acc + (r.pay?.overtime_hours ?? 0), 0)
+  }, [totals, rows])
 
   const regularHours = useMemo(() => Math.max(0, totalWorkHours - overtimeHours), [totalWorkHours, overtimeHours])
 
-  const workDaysCount = useMemo(() => {
-    return daysList.filter((d) => d.hasData && d.totalHours > 0).length
-  }, [daysList])
-
-  const absenceDaysCount = useMemo(() => {
-    return daysList.filter((d) => d.status === 'absence').length
-  }, [daysList])
-
-  const dailyAverageHours = useMemo(() => {
-    return workDaysCount > 0 ? totalWorkHours / workDaysCount : 0
-  }, [totalWorkHours, workDaysCount])
-
-  const targetPercentage = useMemo(() => {
-    if (targetHours <= 0) return 0
-    return Math.min(100, Math.round((totalWorkHours / targetHours) * 100))
-  }, [totalWorkHours, targetHours])
+  /** ימים, לא משמרות: יום עם שתי משמרות הוא עדיין יום עבודה אחד. */
+  const workDaysCount = useMemo(
+    () => new Set(rows.filter((r) => (r.actual_hours ?? 0) > 0).map((r) => r.work_date)).size,
+    [rows],
+  )
 
   // Data table columns for classic mode
   const columns = useMemo<Column<AttendanceReportRow>[]>(() => {
@@ -372,18 +357,22 @@ export function AttendanceReport({
           </span>
         ),
       },
-      {
-        key: 'overtime',
-        header: 'ש״נ',
-        align: 'center',
-        sortValue: (r) => r.pay?.overtime_hours ?? 0,
-        render: (r) =>
-          r.pay?.overtime_hours ? (
-            <Badge tone="warning">{fmtDuration(r.pay.overtime_hours)}</Badge>
-          ) : (
-            <span className="text-ink-tertiary">—</span>
-          ),
-      },
+      ...(showOvertime
+        ? [
+            {
+              key: 'overtime',
+              header: 'ש״נ',
+              align: 'center',
+              sortValue: (r: AttendanceReportRow) => r.pay?.overtime_hours ?? 0,
+              render: (r: AttendanceReportRow) =>
+                r.pay?.overtime_hours ? (
+                  <Badge tone="warning">{fmtDuration(r.pay.overtime_hours)}</Badge>
+                ) : (
+                  <span className="text-ink-tertiary">—</span>
+                ),
+            } satisfies Column<AttendanceReportRow>,
+          ]
+        : []),
       {
         key: 'site',
         header: 'שטח/מחסן',
@@ -422,7 +411,7 @@ export function AttendanceReport({
       })
     }
     return base
-  }, [showMoney, showEmployeeFilter])
+  }, [showMoney, showEmployeeFilter, showOvertime])
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-12">
@@ -483,72 +472,30 @@ export function AttendanceReport({
         <span className="text-xs text-slate-400 font-medium mt-1.5 dir-ltr tracking-wide">{dateRangeStr}</span>
       </div>
 
-      {/* Top Overview Card matching the image */}
+      {/* סיכום החודש: מה שנמדד, בלי מה שנגזר ממנו */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-6 md:p-8 shadow-xs">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-          {/* Donut Progress Chart */}
-          <div className="md:col-span-4 flex flex-col items-center justify-center md:border-l border-slate-100 dark:border-slate-800 md:pl-8 pb-6 md:pb-0 border-b md:border-b-0">
-            <div className="relative w-40 h-40 flex items-center justify-center">
-              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  className="stroke-blue-100 dark:stroke-slate-800"
-                  strokeWidth="7"
-                  fill="transparent"
-                />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  className="stroke-blue-500 transition-all duration-1000 ease-out"
-                  strokeWidth="7"
-                  strokeDasharray={251.2}
-                  strokeDashoffset={251.2 * (1 - targetPercentage / 100)}
-                  strokeLinecap="round"
-                  fill="transparent"
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-                  {targetPercentage}%
-                </span>
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
-                  מהיעד החודשי
-                </span>
-              </div>
+        <div className={cx('grid gap-y-6 gap-x-4', showOvertime ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-3')}>
+          <div className="flex flex-col items-center text-center">
+            <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+              <Clock size={15} className="text-blue-500" />
+              <span>סה"כ שעות עבודה</span>
             </div>
-            <div className="mt-4 text-xs font-semibold text-slate-700 dark:text-slate-300">
-              יעד: {fmtDurationHHMM(targetHours, false)} ש'
-            </div>
+            <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
+              {fmtDurationHHMM(totalWorkHours)}
+            </span>
           </div>
 
-          {/* 6 Metrics Grid (3x2) */}
-          <div className="md:col-span-8 grid grid-cols-3 gap-y-6 gap-x-4">
-            {/* 1. סה"כ שעות עבודה */}
-            <div className="flex flex-col items-center text-center">
-              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
-                <Clock size={15} className="text-blue-500" />
-                <span>סה"כ שעות עבודה</span>
-              </div>
-              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
-                {fmtDurationHHMM(totalWorkHours)}
-              </span>
+          <div className="flex flex-col items-center text-center">
+            <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+              <CalendarCheck size={15} className="text-blue-500" />
+              <span>שעות רגילות</span>
             </div>
+            <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
+              {fmtDurationHHMM(regularHours)}
+            </span>
+          </div>
 
-            {/* 2. שעות רגילות */}
-            <div className="flex flex-col items-center text-center">
-              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
-                <CalendarCheck size={15} className="text-blue-500" />
-                <span>שעות רגילות</span>
-              </div>
-              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
-                {fmtDurationHHMM(regularHours)}
-              </span>
-            </div>
-
-            {/* 3. שעות נוספות */}
+          {showOvertime && (
             <div className="flex flex-col items-center text-center">
               <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
                 <PlusCircle size={15} className="text-blue-500" />
@@ -558,41 +505,16 @@ export function AttendanceReport({
                 {fmtDurationHHMM(overtimeHours)}
               </span>
             </div>
+          )}
 
-            <div className="col-span-3 border-t border-slate-100 dark:border-slate-800/80 my-0.5" />
-
-            {/* 4. ימי עבודה */}
-            <div className="flex flex-col items-center text-center">
-              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
-                <Briefcase size={15} className="text-blue-500" />
-                <span>ימי עבודה</span>
-              </div>
-              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
-                {workDaysCount}
-              </span>
+          <div className="flex flex-col items-center text-center">
+            <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+              <Briefcase size={15} className="text-blue-500" />
+              <span>ימי עבודה</span>
             </div>
-
-            {/* 5. ימי היעדרות */}
-            <div className="flex flex-col items-center text-center">
-              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
-                <CalendarX size={15} className="text-blue-500" />
-                <span>ימי היעדרות</span>
-              </div>
-              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
-                {absenceDaysCount}
-              </span>
-            </div>
-
-            {/* 6. ממוצע ליום */}
-            <div className="flex flex-col items-center text-center">
-              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
-                <PencilLine size={15} className="text-blue-500" />
-                <span>ממוצע ליום</span>
-              </div>
-              <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
-                {fmtDurationHHMM(dailyAverageHours, false)}
-              </span>
-            </div>
+            <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tight tabular-nums">
+              {workDaysCount}
+            </span>
           </div>
         </div>
       </div>
@@ -631,13 +553,6 @@ export function AttendanceReport({
               <option value="approved">מאושר</option>
               <option value="rejected">נדחה</option>
             </Select>
-          </Field>
-          <Field label="יעד חודשי (שעות)" className="w-36">
-            <Input
-              type="number"
-              value={targetHours}
-              onChange={(e) => setTargetHours(Number(e.target.value) || 176)}
-            />
           </Field>
           <Checkbox checked={onlyFlagged} onChange={setOnlyFlagged} label="רק רשומות עם חריגה" />
         </Card>
@@ -718,8 +633,9 @@ export function AttendanceReport({
             <div className="col-span-2 sm:col-span-2 text-left">סטטוס</div>
           </div>
 
-          {/* Daily Card Rows */}
-          {daysList.map((d) => {
+          {/* שורה למשמרת ולא ליום: יום עם כמה משמרות מופיע כמה פעמים, כל אחת
+              עם השעות והסטטוס שלה, וקליק שפותח אותה ולא את הראשונה */}
+          {shiftRows.map((d) => {
             const isCompleted = d.status === 'completed' || d.status === 'approved'
             const isAbsence = d.status === 'absence'
             const isPending = d.status === 'pending'
@@ -727,7 +643,7 @@ export function AttendanceReport({
 
             return (
               <div
-                key={d.dateStr}
+                key={d.key}
                 onClick={() => d.row && (canEdit || canApprove) && setSelected(d.row)}
                 className={cx(
                   'grid grid-cols-12 gap-2 items-center px-5 py-3.5 bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 rounded-2xl transition-all shadow-2xs hover:shadow-md',
@@ -745,8 +661,15 @@ export function AttendanceReport({
                       isRest && 'bg-slate-300 dark:bg-slate-700'
                     )}
                   />
-                  <span className="font-bold text-slate-800 dark:text-slate-100 text-sm dir-ltr">
-                    {d.formattedDate}
+                  <span className="min-w-0">
+                    <span className="block font-bold text-slate-800 dark:text-slate-100 text-sm dir-ltr">
+                      {d.formattedDate}
+                    </span>
+                    {d.shiftLabel && (
+                      <span className="block text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                        {d.shiftLabel}
+                      </span>
+                    )}
                   </span>
                   <ChevronLeft size={14} className="text-slate-400 hidden sm:block mr-auto" />
                 </div>
@@ -758,6 +681,13 @@ export function AttendanceReport({
 
                 {/* Shift Type Column */}
                 <div className="col-span-4 sm:col-span-4 flex flex-col items-center justify-center text-center">
+                  {/* בדוח של כמה עובדים אותו יום מופיע פעם לכל אחד, ובלי השם
+                      אי אפשר לדעת של מי המשמרת */}
+                  {showEmployeeFilter && d.employeeName && (
+                    <span className="max-w-full truncate text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                      {d.employeeName}
+                    </span>
+                  )}
                   <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm dir-ltr">
                     {d.shiftTime}
                   </span>
@@ -776,7 +706,7 @@ export function AttendanceReport({
                   <span className="font-bold text-slate-900 dark:text-white text-sm tabular-nums">
                     {d.hoursText}
                   </span>
-                  {d.overtimeText && (
+                  {showOvertime && d.overtimeText && (
                     <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-400 mt-0.5">
                       {d.overtimeText}
                     </span>
