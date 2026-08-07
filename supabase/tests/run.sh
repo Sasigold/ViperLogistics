@@ -47,6 +47,15 @@ echo
 echo "== privilege-escalation suite =="
 OUT=$($PSQL -d vl -f "$HERE/02_escalation.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
 echo "$OUT"
+
+echo
+echo "== pricing suite =="
+# 03 seeds rows of its own and must run after 02, which asserts on row counts.
+OUT2=$($PSQL -d vl -f "$HERE/03_pricing.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT2"
+OUT="$OUT
+$OUT2"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
