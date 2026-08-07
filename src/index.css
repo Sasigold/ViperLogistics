@@ -591,15 +591,22 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Native date/time controls size themselves from their content and refuse to
-     shrink, so inside a flex row or a grid cell they push past the card edge.
-     Pinning them to the box — and starting the value at the field's own edge
-     instead of centring it, which is what WebKit does — keeps them contained. */
+  /* Native date/time controls size themselves from their content and push past
+     the card edge on iOS. Dropping the platform appearance is the part that
+     actually contains them: WebKit lays a temporal input out as an inline-flex
+     box whose own automatic minimum is its shadow UI's width, and a minimum
+     beats `max-width: 100%` — which is why width and max-width alone were
+     being ignored. Without the appearance they size like any other field.
+     The picker itself is untouched: tapping still opens the native wheel. */
   input[type='date'],
   input[type='time'],
   input[type='datetime-local'] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
     min-width: 0;
     max-width: 100%;
+    overflow: hidden;
   }
 
   input[type='date']::-webkit-date-and-time-value,
