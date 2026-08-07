@@ -1,6 +1,6 @@
 import { Link } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { CalendarDays, CircleCheck, ClipboardList, ICON, PartyPopper, STROKE } from '../../components/ui/icons'
+import { Banknote, CalendarDays, CircleCheck, ClipboardList, ICON, PartyPopper, STROKE } from '../../components/ui/icons'
 import {
   Card,
   CardBody,
@@ -9,6 +9,7 @@ import {
   SkeletonCard,
   StatCard,
   StatusPill,
+  fmtMoney,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/dates'
@@ -38,6 +39,15 @@ export default function ClientDashboardPage() {
       ) : (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {/* null כשהלקוח לא קיבל את מפתח pricing.view */}
+            {stats.pricing_total !== null && stats.pricing_total !== undefined && (
+              <StatCard
+                icon={<Banknote size={ICON.xl} strokeWidth={STROKE} />}
+                label="סך תמחור"
+                value={fmtMoney(stats.pricing_total)}
+                tone="#1fa189"
+              />
+            )}
             <StatCard
               icon={<PartyPopper size={ICON.xl} strokeWidth={STROKE} />}
               label="אירועים"

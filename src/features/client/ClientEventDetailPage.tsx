@@ -12,6 +12,7 @@ import {
   SkeletonCard,
   SkeletonList,
   StatusPill,
+  fmtMoney,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
@@ -66,6 +67,9 @@ export default function ClientEventDetailPage() {
       return data as WorkBoardRow[]
     },
   })
+
+  const priced = tasks.filter((t) => t.customer_price != null)
+  const eventTotal = priced.length ? priced.reduce((sum, t) => sum + Number(t.customer_price), 0) : null
 
   if (isLoading) return <SkeletonCard lines={6} />
   if (!data)
@@ -138,6 +142,37 @@ export default function ClientEventDetailPage() {
             </dl>
           </CardBody>
         </Card>
+
+        {/* work_board_view מחזירה customer_price ריק למי שאין לו pricing.view,
+            ולכן הכרטיס פשוט לא מופיע ללקוח שלא ניתן לו המפתח. */}
+        {eventTotal !== null && (
+          <Card>
+            <CardHeader title="תמחור" subtitle="המחיר לאירוע זה" />
+            <CardBody padded={false}>
+              <ul>
+                {tasks
+                  .filter((t) => t.customer_price != null)
+                  .map((t) => (
+                    <li
+                      key={t.id}
+                      className="flex items-center justify-between gap-3 border-b border-line-subtle px-4 py-2.5"
+                    >
+                      <span className="type-body">{t.title || t.task_type_name}</span>
+                      <span dir="ltr" className="tabular type-body font-medium">
+                        {fmtMoney(t.customer_price)}
+                      </span>
+                    </li>
+                  ))}
+                <li className="flex items-baseline justify-between gap-3 px-4 py-3">
+                  <span className="type-body font-semibold">סך הכול</span>
+                  <span dir="ltr" className="tabular type-title font-semibold">
+                    {fmtMoney(eventTotal)}
+                  </span>
+                </li>
+              </ul>
+            </CardBody>
+          </Card>
+        )}
 
         <Card>
           <CardHeader title="משימות האירוע" subtitle={loadingTasks ? 'טוען...' : `${tasks.length} משימות`} />

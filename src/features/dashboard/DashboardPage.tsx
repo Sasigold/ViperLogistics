@@ -5,6 +5,7 @@ import { addDays, differenceInCalendarDays, endOfMonth, startOfMonth, startOfWee
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import {
   AlertTriangle,
+  Banknote,
   Calendar,
   CalendarDays,
   ClipboardList,
@@ -30,6 +31,7 @@ import {
   StatCard,
   StatusPill,
   Tooltip,
+  fmtMoney,
   fmtRelative,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
@@ -53,6 +55,8 @@ interface Stats {
   by_contractor: { name: string; cnt: number }[]
   by_worker: { name: string; cnt: number }[]
   by_status: { name: string; color: string; cnt: number }[]
+  /** null כשאין למשתמש pricing.revenue — ה-RPC מחזיר null ולא מסתיר את המפתח */
+  revenue: { total: number; priced_tasks: number; by_customer: { name: string; color: string; total: number }[] } | null
 }
 
 const CHART_H = 250
@@ -259,6 +263,17 @@ export default function DashboardPage() {
               tone="#22c55e"
               onClick={() => navigate('/users')}
             />
+            {/* הכנסות מלקוחות — נפרד מהתשלומים לקבלנים, ובהרשאה נפרדת */}
+            {stats.revenue && (
+              <StatCard
+                icon={<Banknote size={ICON.xl} strokeWidth={STROKE} />}
+                label="הכנסות בטווח"
+                value={fmtMoney(stats.revenue.total)}
+                tone="#1fa189"
+                hint={`${stats.revenue.priced_tasks} משימות מתומחרות`}
+                delta={prev?.revenue ? stats.revenue.total - prev.revenue.total : null}
+              />
+            )}
           </div>
         )}
 

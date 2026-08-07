@@ -280,14 +280,25 @@ export function useEventAutoTasks(eventId?: string | null) {
     queryKey: ['tasks', 'autoByEvent', eventId],
     enabled: !!eventId,
     queryFn: async () => {
+      // task_pricing מסוננת ב-RLS, ולכן היא פשוט חוזרת ריקה למי שאינו רשאי
+      // לראות מחירים — השדה בטופס הוא שמגודר, לא השאילתה.
       const { data, error } = await supabase
         .from('tasks')
-        .select('id, task_date, onsite_start_time, hours_count, worker_count, execution_method_id, task_types!inner(code)')
+        .select(
+          'id, task_date, onsite_start_time, hours_count, worker_count, execution_method_id,' +
+            ' task_types!inner(code), task_pricing(price, is_manual)',
+        )
         .eq('event_id', eventId)
         .is('deleted_at', null)
         .in('task_types.code', ['setup', 'teardown'])
       if (error) throw error
-      return data as unknown as EventAutoTask[]
+      // PostgREST מחזיר אובייקט ליחס 1:1 ומערך אחרת; שני המקרים מטופלים כאן
+      // כדי שהטופס לא יישבר על שינוי בזיהוי היחס.
+      return ((data ?? []) as unknown as Record<string, unknown>[]).map((row) => {
+        const p = row.task_pricing
+        const one = Array.isArray(p) ? p[0] : p
+        return { ...row, price: (one as { price?: number } | null)?.price ?? null }
+      }) as unknown as EventAutoTask[]
     },
   })
 }

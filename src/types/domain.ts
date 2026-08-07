@@ -211,6 +211,8 @@ export interface EventAutoTask {
   hours_count: number | null
   worker_count: number
   execution_method_id: string | null
+  /** null גם כשקיים מחיר, אם למשתמש אין pricing.view */
+  price: number | null
   task_types: { code: 'setup' | 'teardown' }
 }
 
@@ -573,6 +575,8 @@ export interface CustomerDashboard {
   events_done: number
   tasks_count: number
   tasks_open: number
+  /** null כשללקוח לא ניתן המפתח pricing.view */
+  pricing_total: number | null
   by_status: { name: string; color: string; cnt: number }[]
   next_events: {
     id: string

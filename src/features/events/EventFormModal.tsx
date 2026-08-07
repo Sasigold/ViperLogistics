@@ -57,11 +57,13 @@ type EventForm = {
   setup_time: string
   setup_worker_count: string
   setup_hours_count: string
+  setup_price: string
   setup_execution_method: string
   teardown_date: string
   teardown_time: string
   teardown_worker_count: string
   teardown_hours_count: string
+  teardown_price: string
   teardown_execution_method: string
 }
 
@@ -71,7 +73,9 @@ const empty: EventForm = {
   location_notes: '', volume_m: '', truck_count: '', contact_name: '', contact_phone: '',
   notes: '', status_id: '', no_parking: false, porterage: false, supplier_pickup: false, supplier_ids: [],
   setup_date: '', setup_time: '', setup_worker_count: '', setup_hours_count: '', setup_execution_method: '',
+  setup_price: '',
   teardown_date: '', teardown_time: '', teardown_worker_count: '', teardown_hours_count: '', teardown_execution_method: '',
+  teardown_price: '',
 }
 
 const DRAFT_KEY = 'vl-event-draft'
@@ -89,11 +93,19 @@ const SECTION_LABELS = [
   ['worker_count', 'כמות עובדים'],
   ['hours_count', 'כמות שעות'],
   ['execution_method', 'אופן ביצוע'],
+  ['price', 'מחיר ללקוח'],
 ] as const
 
 /** Field keys of one section — same names in form_fields, in the form and in the RPC payload. */
 const sectionFields = (code: 'setup' | 'teardown') =>
-  [`${code}_date`, `${code}_time`, `${code}_worker_count`, `${code}_hours_count`, `${code}_execution_method`] as const
+  [
+    `${code}_date`,
+    `${code}_time`,
+    `${code}_worker_count`,
+    `${code}_hours_count`,
+    `${code}_execution_method`,
+    `${code}_price`,
+  ] as const
 
 /** The contact pair is one permission, not two — see the event_contacts policy. */
 const CONTACT_KEYS = ['contact_name', 'contact_phone']
@@ -151,6 +163,10 @@ export function EventFormModal({
   const { data: customers = [] } = useCustomers()
   const { data: statuses = [] } = useStatuses('event')
   const effectiveCustomerId = isCustomer ? me?.profile.customer_id : form.customer_id || null
+  /* לקוח שמתומחר אוטומטית — שדה המחיר אצלו לקריאה בלבד. משתמש לקוח אינו
+     קורא את שורת הלקוח שלו מ-useCustomers, ולכן ההיעדר נחשב "לא אוטומטי":
+     ממילא אצלו השדה מוסתר בברירת מחדל, והשרת הוא זה שמכריע. */
+  const autoPriced = customers.find((c) => c.id === effectiveCustomerId)?.pricing_mode === 'auto'
   const config = useEffectiveFormConfig(effectiveCustomerId)
   const { data: suppliers = [] } = useSuppliers(effectiveCustomerId)
 
@@ -211,6 +227,7 @@ export function EventFormModal({
       patch[`${code}_worker_count`] = t?.worker_count ? String(t.worker_count) : ''
       patch[`${code}_hours_count`] = t?.hours_count != null ? String(t.hours_count) : ''
       patch[`${code}_execution_method`] = t?.execution_method_id ?? ''
+      patch[`${code}_price`] = t?.price != null ? String(t.price) : ''
     }
     setForm((f) => ({ ...f, ...patch }))
   }, [open, event, autoTasks])
@@ -336,6 +353,8 @@ export function EventFormModal({
         if (!typeIdOf(code)) continue
         for (const key of sectionFields(code)) {
           if (!show(key) || ro(key)) continue
+          // אצל לקוח אוטומטי המחיר מגיע מהמחשבון; שליחתו הייתה נועלת אותו
+          if (key.endsWith('_price') && autoPriced) continue
           // task_date is NOT NULL — omitting an empty date keeps the current one
           if (key.endsWith('_date') && !form[key]) continue
           payload[key] = form[key]
@@ -665,6 +684,7 @@ export function EventFormModal({
                 ro={ro}
                 methods={code === 'setup' ? setupMethods : teardownMethods}
                 allMethods={allMethods}
+                autoPriced={autoPriced}
               />
             ) : null,
           )}
@@ -686,6 +706,7 @@ function TaskSection({
   ro,
   methods,
   allMethods,
+  autoPriced,
 }: {
   code: 'setup' | 'teardown'
   title: string
@@ -697,12 +718,14 @@ function TaskSection({
   ro: (key: string) => boolean
   methods: ExecutionMethod[]
   allMethods: ExecutionMethod[]
+  autoPriced: boolean
 }) {
   const dateKey = `${code}_date` as const
   const timeKey = `${code}_time` as const
   const workersKey = `${code}_worker_count` as const
   const hoursKey = `${code}_hours_count` as const
   const methodKey = `${code}_execution_method` as const
+  const priceKey = `${code}_price` as const
 
   if (!sectionFields(code).some(show)) return null
 
@@ -745,6 +768,26 @@ function TaskSection({
                 value={form[hoursKey]}
                 onChange={(e) => set({ [hoursKey]: e.target.value })}
                 disabled={ro(hoursKey)}
+              />
+            </Field>
+          )}
+          {/* אצל לקוח אוטומטי המחיר מוצג ולא נערך: הזנה ידנית כאן הייתה
+              נועלת אותו ומנתקת אותו מהמחשבון בלי שהמזין מתכוון לכך. */}
+          {show(priceKey) && (
+            <Field
+              label="מחיר ללקוח (₪)"
+              required={req(priceKey)}
+              error={err(priceKey, form[priceKey])}
+              hint={autoPriced ? 'מחושב אוטומטית ממחשבון התמחור' : undefined}
+            >
+              <Input
+                type="number"
+                step="any"
+                min="0"
+                dir="ltr"
+                value={form[priceKey]}
+                onChange={(e) => set({ [priceKey]: e.target.value })}
+                disabled={ro(priceKey) || autoPriced}
               />
             </Field>
           )}
