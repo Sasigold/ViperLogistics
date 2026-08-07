@@ -104,5 +104,4 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/my/attendance': 'שעון נוכחות',
   '/settings': 'הגדרות',
   '/portal': 'פורטל קבלן',
-  '/client': 'פורטל לקוח',
 }

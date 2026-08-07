@@ -16,6 +16,7 @@ import {
 } from '../components/ui/icons'
 import { Avatar, Divider, IconButton, Kbd, MenuItem, MenuSeparator, Popover, Tooltip, cx } from '../components/ui'
 import { useAuth } from '../state/auth'
+import { RouteGate } from '../features/auth/guards'
 import { PERM } from '../lib/permissions'
 import { NotificationsBell } from '../features/notifications/NotificationsBell'
 import { CommandPalette } from '../features/search/CommandPalette'
@@ -303,7 +304,9 @@ export default function AppLayout() {
                 : 'overflow-y-auto p-3 pb-shell sm:p-4 sm:pb-shell lg:p-6 lg:pb-6',
             )}
           >
-            <Outlet />
+            <RouteGate>
+              <Outlet />
+            </RouteGate>
           </main>
         </div>
 

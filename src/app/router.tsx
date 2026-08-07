@@ -1,9 +1,11 @@
 import { Suspense, lazy } from 'react'
 import type { ReactNode } from 'react'
-import { createBrowserRouter } from 'react-router'
+import { Navigate, createBrowserRouter, useParams } from 'react-router'
 import AppLayout from './AppLayout'
+import HomeRoute from './HomeRoute'
 import LoginPage from '../features/auth/LoginPage'
 import { RequireAuth } from '../features/auth/guards'
+import { PERM } from '../lib/permissions'
 import { Skeleton } from '../components/ui'
 
 /**
@@ -14,7 +16,6 @@ import { Skeleton } from '../components/ui'
  * The shell (layout, auth guard, login) stays eager: it is needed on the very
  * first paint, so splitting it would only add a round trip.
  */
-const DashboardPage = lazy(() => import('../features/dashboard/DashboardPage'))
 const CalendarPage = lazy(() => import('../features/calendar/CalendarPage'))
 const WorkBoardPage = lazy(() => import('../features/workboard/WorkBoardPage'))
 const EventsPage = lazy(() => import('../features/events/EventsPage'))
@@ -25,14 +26,6 @@ const UsersPage = lazy(() => import('../features/users/UsersPage'))
 const ContractorsPage = lazy(() => import('../features/contractors/ContractorsPage'))
 const ContractorDetailPage = lazy(() => import('../features/contractors/ContractorDetailPage'))
 const PortalPage = lazy(() => import('../features/portal/PortalPage'))
-const ClientLayout = lazy(() => import('../features/client/ClientLayout'))
-const ClientIndexRedirect = lazy(() => import('../features/client/ClientIndexRedirect'))
-const ClientDashboardPage = lazy(() => import('../features/client/ClientDashboardPage'))
-const ClientEventsPage = lazy(() => import('../features/client/ClientEventsPage'))
-const ClientEventDetailPage = lazy(() => import('../features/client/ClientEventDetailPage'))
-const ClientCalendarPage = lazy(() => import('../features/client/ClientCalendarPage'))
-const ClientTasksPage = lazy(() => import('../features/client/ClientTasksPage'))
-const ClientUsersPage = lazy(() => import('../features/client/ClientUsersPage'))
 const SettingsPage = lazy(() => import('../features/settings/SettingsPage'))
 const TimeClockPage = lazy(() => import('../features/attendance/TimeClockPage'))
 const MySchedulePage = lazy(() => import('../features/attendance/MySchedulePage'))
@@ -59,45 +52,71 @@ function PageFallback() {
 
 const page = (node: ReactNode) => <Suspense fallback={<PageFallback />}>{node}</Suspense>
 
+/** Keeps a bookmarked client event link pointing at the same event. */
+function ClientEventRedirect() {
+  const { id } = useParams<{ id: string }>()
+  return <Navigate to={id ? `/events/${id}` : '/events'} replace />
+}
+
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   {
     element: <RequireAuth />,
     children: [
       { path: '/portal', element: page(<PortalPage />) },
-      // the client portal carries its own chrome, so it sits outside AppLayout
-      {
-        path: '/client',
-        element: page(<ClientLayout />),
-        children: [
-          { index: true, element: page(<ClientIndexRedirect />) },
-          { path: 'dashboard', element: page(<ClientDashboardPage />) },
-          { path: 'events', element: page(<ClientEventsPage />) },
-          { path: 'events/:id', element: page(<ClientEventDetailPage />) },
-          { path: 'calendar', element: page(<ClientCalendarPage />) },
-          { path: 'tasks', element: page(<ClientTasksPage />) },
-          { path: 'users', element: page(<ClientUsersPage />) },
-        ],
-      },
+
+      /* Clients used to live under /client with their own shell. They now use
+         the same screens as everyone else, narrowed by their permissions, so
+         these only keep old bookmarks and notification links working.
+         Removable once the logs are quiet — no earlier than 2027. */
+      { path: '/client', element: <Navigate to="/" replace /> },
+      { path: '/client/dashboard', element: <Navigate to="/" replace /> },
+      { path: '/client/events', element: <Navigate to="/events" replace /> },
+      { path: '/client/events/:id', element: <ClientEventRedirect /> },
+      { path: '/client/calendar', element: <Navigate to="/calendar" replace /> },
+      { path: '/client/tasks', element: <Navigate to="/board" replace /> },
+      { path: '/client/users', element: <Navigate to="/users" replace /> },
+
       {
         element: <AppLayout />,
         children: [
-          { path: '/', element: page(<DashboardPage />) },
-          { path: '/calendar', element: page(<CalendarPage />) },
-          { path: '/board', element: page(<WorkBoardPage />) },
-          { path: '/events', element: page(<EventsPage />) },
-          { path: '/events/:id', element: page(<EventDetailPage />) },
-          { path: '/customers', element: page(<CustomersPage />) },
-          { path: '/customers/:id', element: page(<CustomerDetailPage />) },
-          { path: '/users', element: page(<UsersPage />) },
-          { path: '/contractors', element: page(<ContractorsPage />) },
-          { path: '/contractors/:id', element: page(<ContractorDetailPage />) },
-          { path: '/attendance', element: page(<AttendanceReportPage />) },
-          // /my/* חי בתוך ה-shell הרגיל גם עבור עובד קבלן: הניווט מסונן
-          // בהרשאות ממילא, ולכן מי שרק מחתים שעון רואה שתי כניסות ותו לא.
-          { path: '/my/schedule', element: page(<MySchedulePage />) },
-          { path: '/my/attendance', element: page(<TimeClockPage />) },
-          { path: '/settings', element: page(<SettingsPage />) },
+          /* `handle.perm` is what RouteGate reads. Declaring it here rather than
+             only inside the screen means a route cannot exist without an answer
+             to "who may open this" — the guarantee the /client redirect used to
+             provide by accident, and which two screens had already lost.
+             `open` marks a route that decides for itself. */
+          { path: '/', handle: { open: true }, element: page(<HomeRoute />) },
+          { path: '/calendar', handle: { perm: PERM.CALENDAR_VIEW }, element: page(<CalendarPage />) },
+          { path: '/board', handle: { perm: PERM.BOARD_VIEW }, element: page(<WorkBoardPage />) },
+          { path: '/events', handle: { perm: PERM.EVENTS_VIEW }, element: page(<EventsPage />) },
+          { path: '/events/:id', handle: { perm: PERM.EVENTS_VIEW }, element: page(<EventDetailPage />) },
+          { path: '/customers', handle: { perm: PERM.CUSTOMERS_VIEW }, element: page(<CustomersPage />) },
+          { path: '/customers/:id', handle: { perm: PERM.CUSTOMERS_VIEW }, element: page(<CustomerDetailPage />) },
+          { path: '/users', handle: { perm: PERM.USERS_VIEW }, element: page(<UsersPage />) },
+          { path: '/contractors', handle: { perm: PERM.CONTRACTORS_VIEW }, element: page(<ContractorsPage />) },
+          {
+            path: '/contractors/:id',
+            handle: { perm: PERM.CONTRACTORS_VIEW },
+            element: page(<ContractorDetailPage />),
+          },
+          /* view_own, not view_all: the report widens from "my hours" to "the
+             roster's" on the key, so it has always served both. The sidebar
+             entry stays on view_all — advertising it and opening it are
+             different questions. */
+          {
+            path: '/attendance',
+            handle: { perm: PERM.ATTENDANCE_VIEW_OWN },
+            element: page(<AttendanceReportPage />),
+          },
+          // /my/* הוא המסך של האדם עצמו — שעון ומשמרות — ולכן הוא פתוח לכל סוג
+          // משתמש שיש לו את המפתח, כולל עובד קבלן ואיש קשר אצל לקוח.
+          {
+            path: '/my/schedule',
+            handle: { perm: PERM.ATTENDANCE_VIEW_SCHEDULE },
+            element: page(<MySchedulePage />),
+          },
+          { path: '/my/attendance', handle: { perm: PERM.ATTENDANCE_VIEW_OWN }, element: page(<TimeClockPage />) },
+          { path: '/settings', handle: { perm: PERM.SETTINGS_VIEW }, element: page(<SettingsPage />) },
         ],
       },
     ],

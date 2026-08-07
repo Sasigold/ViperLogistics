@@ -14,6 +14,8 @@ import {
 } from '../../components/ui/icons'
 import { EmptyState, Kbd, cx } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../state/auth'
+import { PERM } from '../../lib/permissions'
 import type { SearchResult } from '../../types/domain'
 
 const KINDS = {
@@ -31,6 +33,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const [q, setQ] = useState('')
   const [active, setActive] = useState(0)
   const navigate = useNavigate()
+  const has = useAuth((s) => s.has)
   const listRef = useRef<HTMLDivElement>(null)
 
   const { data: results = [], isFetching } = useQuery({
@@ -43,9 +46,14 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     },
   })
 
-  // group results by kind so 20 rows read as four short lists
+  /* Group by kind so 20 rows read as four short lists — and drop the kinds
+     whose destination screen this user cannot open. `global_search` already
+     scopes the rows, but a hit that navigates to a permission-denied card is
+     worse than no hit: it offers a door that does not open. */
   const groups = useMemo(() => {
-    const order: (keyof typeof KINDS)[] = ['task', 'event', 'customer', 'profile']
+    const order = (['task', 'event', 'customer', 'profile'] as (keyof typeof KINDS)[]).filter((kind) =>
+      kind === 'customer' ? has(PERM.CUSTOMERS_VIEW) : kind === 'profile' ? has(PERM.USERS_VIEW) : true,
+    )
     const flat: SearchResult[] = []
     const out: { kind: keyof typeof KINDS; items: SearchResult[]; offset: number }[] = []
     for (const kind of order) {
@@ -55,7 +63,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       flat.push(...items)
     }
     return { groups: out, flat }
-  }, [results])
+  }, [results, has])
 
   useEffect(() => setActive(0), [q, results])
   useEffect(() => {
