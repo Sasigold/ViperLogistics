@@ -393,3 +393,23 @@ select t_expect_ok('מחיקת אזור מסמנת deleted_at',
 select t_eq('ואחרי המחיקה חוזרים לאזור הגלובלי',
   (select travel_hours from app.zone_for_point('10000000-0000-0000-0000-0000000000b1', 32.08, 34.78)),
   0.5::numeric);
+
+-- pz_select הייתה פוליסת ה-SELECT היחידה בסכמה בלי deleted_at is null, ולכן
+-- אזור שנמחק המשיך להופיע ברשימה לכל מי שמחזיק pricing.view. החישוב עצמו
+-- (app.zone_for_point) סינן נכון — הבדיקה שמעל מוכיחה את זה — ולכן זו הייתה
+-- דליפת קריאה בלבד, ודווקא משום כך אף אחד לא נתקל בה.
+insert into user_permission_grants (profile_id, permission_key, allowed) values
+  ('20000000-0000-0000-0000-0000000000f1', 'pricing.view', true)
+on conflict (profile_id, permission_key) do update set allowed = excluded.allowed;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f1', false);
+
+select t_eq('אזור שנמחק אינו נראה גם למי שרשאי לראות אזורים',
+  (select count(*) from pricing_zones where name = 'גוש דן — הסכם מיוחד'), 0::bigint);
+
+select t_eq('ואזור חי כן נראה לו',
+  (select count(*) from pricing_zones where name = 'גוש דן'), 1::bigint);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);

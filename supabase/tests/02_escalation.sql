@@ -233,3 +233,30 @@ select t_expect_ok('admin attaches a staff role, which the client could not',
   $$insert into profile_roles (profile_id, role_id)
     select '20000000-0000-0000-0000-0000000000f1', id from permission_roles where key = 'ops_manager'$$);
 reset role;
+
+-- 0016 החליף את מסך היומן הגולמי ב-event_activity ובדרך מחק את audit_read
+-- בלי להעמיד פוליסה חלופית. RLS מופעל על audit_log, ולכן טבלה עם אפס
+-- פוליסות SELECT אינה קריאה לאיש — כולל אדמין — בזמן שהיא ממשיכה להיכתב
+-- מכל הטבלאות המבוקרות. 0027 מחזיר אותה מאחורי מפתח מפורש.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f1', false);
+select t_eq('בלי settings.audit_log היומן אינו נקרא',
+  (select count(*) from audit_log), 0::bigint);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+insert into user_permission_grants (profile_id, permission_key, allowed) values
+  ('20000000-0000-0000-0000-0000000000f1', 'settings.audit_log', true)
+on conflict (profile_id, permission_key) do update set allowed = excluded.allowed;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f1', false);
+select t_eq('ועם המפתח הוא נקרא שוב', (select (count(*) > 0) from audit_log), true);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select t_eq('ואדמין קורא אותו בלי הגדרה נוספת', (select (count(*) > 0) from audit_log), true);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);

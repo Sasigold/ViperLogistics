@@ -292,6 +292,37 @@ select t_expect_ok('אבל כן יכול להוסיף הערה משלו', $$
   update attendance_entries set employee_note = 'איחרתי בגלל פקק'
    where profile_id = '20000000-0000-0000-0000-0000000000f3'$$);
 
+-- מסלול הראיות. clock_in_at היה מוגן ב-field_registry, אבל הקואורדינטות,
+-- המרחק והדגלים לא היו רשומים שם כלל — ולכן PATCH ישיר ל-PostgREST על
+-- השורה של העובד עצמו יכול היה להפוך החתמה מחוץ לרדיוס להחתמה תקינה.
+-- זה מה שהופך את "נדרש מיקום" לאכיפה: לא די בכך שה-RPC בודק, אם אפשר
+-- לשכתב את התוצאה אחריו.
+-- הביטוי מבטיח שינוי אמיתי בכל מצב: השוואה ל-'{}' הייתה עוברת בשקט כשהרשומה
+-- ממילא בלי דגלים, ואז הבדיקה מאשרת את עצמה במקום את ההגנה.
+select t_expect_fail('עובד אינו יכול לגעת בדגלים של הרשומה שלו', $$
+  update attendance_entries set flags = flags || 'forged'::text
+   where profile_id = '20000000-0000-0000-0000-0000000000f3'$$);
+
+select t_expect_fail('ואינו יכול לשכתב את המרחק שנמדד', $$
+  update attendance_entries set clock_in_distance_m = 0
+   where profile_id = '20000000-0000-0000-0000-0000000000f3'$$);
+
+select t_expect_fail('ואינו יכול לזייף את הקואורדינטות', $$
+  update attendance_entries set clock_in_lat = 32.0853, clock_in_lng = 34.7818
+   where profile_id = '20000000-0000-0000-0000-0000000000f3'$$);
+
+select t_expect_fail('ואינו יכול לשנות את מקור הרשומה', $$
+  update attendance_entries set source = 'manual'
+   where profile_id = '20000000-0000-0000-0000-0000000000f3'$$);
+
+select t_expect_fail('ואינו יכול להעביר את המשמרת ליום אחר', $$
+  update attendance_entries set work_date = current_date - 1
+   where profile_id = '20000000-0000-0000-0000-0000000000f3'$$);
+
+select t_expect_fail('ואינו יכול לנתק את הרשומה מהמשימה שאליה נצמדה', $$
+  update attendance_entries set task_ids = '{}'
+   where profile_id = '20000000-0000-0000-0000-0000000000f3'$$);
+
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
