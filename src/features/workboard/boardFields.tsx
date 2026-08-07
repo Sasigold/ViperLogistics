@@ -268,9 +268,23 @@ export const BOARD_FIELDS: BoardField[] = [
       const contractors = (row.contractor_worker_list ?? []).map((w) => w.name)
       const total = workers.length + drivers.length + contractors.length
       if (total === 0) return <Muted>לא שובץ</Muted>
+      // מי שיוצא מהמחסן מתחיל בשעה אחרת מכולם, ולכן הספירה שווה מבט מהלוח
+      // בלי לפתוח את המשימה.
+      const fromWarehouse = [
+        ...(row.workers ?? []),
+        ...(row.drivers ?? []),
+        ...(row.contractor_worker_list ?? []),
+      ].filter((p) => p.work_site === 'warehouse')
       return (
         <span className="flex flex-wrap items-center gap-1 px-1.5">
           {workers.length > 0 && <AvatarGroup names={workers} max={4} size="xs" />}
+          {fromWarehouse.length > 0 && (
+            <Tooltip content={`מתחילים מהמחסן: ${fromWarehouse.map((p) => p.name).join(', ')}`}>
+              <span className="inline-flex items-center gap-0.5 rounded bg-subtle px-1 text-[10px] font-bold tabular text-ink-secondary">
+                🏭 {fromWarehouse.length}
+              </span>
+            </Tooltip>
+          )}
           {drivers.length > 0 && (
             <Tooltip content={`נהגים: ${drivers.join(', ')}`}>
               <span className="inline-flex items-center gap-0.5 rounded bg-info-subtle px-1 text-[10px] font-bold tabular text-info-text">

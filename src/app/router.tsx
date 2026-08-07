@@ -34,6 +34,9 @@ const ClientCalendarPage = lazy(() => import('../features/client/ClientCalendarP
 const ClientTasksPage = lazy(() => import('../features/client/ClientTasksPage'))
 const ClientUsersPage = lazy(() => import('../features/client/ClientUsersPage'))
 const SettingsPage = lazy(() => import('../features/settings/SettingsPage'))
+const TimeClockPage = lazy(() => import('../features/attendance/TimeClockPage'))
+const MySchedulePage = lazy(() => import('../features/attendance/MySchedulePage'))
+const AttendanceReportPage = lazy(() => import('../features/attendance/AttendanceReportPage'))
 
 /** Shaped like a real screen so the chunk swap doesn't flash an empty page. */
 function PageFallback() {
@@ -89,6 +92,11 @@ export const router = createBrowserRouter([
           { path: '/users', element: page(<UsersPage />) },
           { path: '/contractors', element: page(<ContractorsPage />) },
           { path: '/contractors/:id', element: page(<ContractorDetailPage />) },
+          { path: '/attendance', element: page(<AttendanceReportPage />) },
+          // /my/* חי בתוך ה-shell הרגיל גם עבור עובד קבלן: הניווט מסונן
+          // בהרשאות ממילא, ולכן מי שרק מחתים שעון רואה שתי כניסות ותו לא.
+          { path: '/my/schedule', element: page(<MySchedulePage />) },
+          { path: '/my/attendance', element: page(<TimeClockPage />) },
           { path: '/settings', element: page(<SettingsPage />) },
         ],
       },

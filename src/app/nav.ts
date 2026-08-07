@@ -1,7 +1,9 @@
 import {
   Building2,
   Calendar,
+  CalendarClock,
   ClipboardList,
+  Clock,
   HardHat,
   LayoutDashboard,
   PartyPopper,
@@ -46,12 +48,22 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    // הסקשן הזה הוא היחיד שעובד מן השורה — ועובד קבלן שקיבל התחברות —
+    // רואה בכלל, ולכן הוא יושב לפני הנתונים ולא אחריהם.
+    title: 'הנוכחות שלי',
+    items: [
+      { to: '/my/schedule', label: 'לוח המשמרות שלי', shortLabel: 'משמרות', icon: CalendarClock, perm: PERM.ATTENDANCE_VIEW_SCHEDULE },
+      { to: '/my/attendance', label: 'שעון נוכחות', shortLabel: 'שעון', icon: Clock, perm: PERM.ATTENDANCE_VIEW_OWN },
+    ],
+  },
+  {
     title: 'נתונים',
     items: [
       { to: '/events', label: 'אירועים', icon: PartyPopper, perm: PERM.EVENTS_VIEW, primary: true },
       { to: '/customers', label: 'לקוחות', icon: Building2, perm: PERM.CUSTOMERS_VIEW },
       { to: '/users', label: 'עובדים', icon: Users, perm: PERM.USERS_VIEW },
       { to: '/contractors', label: 'קבלנים', icon: HardHat, perm: PERM.CONTRACTORS_VIEW },
+      { to: '/attendance', label: 'דוח נוכחות', shortLabel: 'נוכחות', icon: Clock, perm: PERM.ATTENDANCE_VIEW_ALL },
     ],
   },
   {
@@ -87,6 +99,9 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/customers': 'לקוחות',
   '/users': 'עובדים',
   '/contractors': 'קבלנים',
+  '/attendance': 'דוח נוכחות',
+  '/my/schedule': 'לוח המשמרות שלי',
+  '/my/attendance': 'שעון נוכחות',
   '/settings': 'הגדרות',
   '/portal': 'פורטל קבלן',
   '/client': 'פורטל לקוח',

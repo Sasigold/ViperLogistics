@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Banknote, Briefcase, ICON, Plus, STROKE, Trash2, User, Wallet } from '../../components/ui/icons'
+import { Banknote, Briefcase, Clock, ICON, Plus, STROKE, Trash2, User, Wallet } from '../../components/ui/icons'
 import {
   Avatar,
+  Badge,
   Button,
   Card,
   CardBody,
@@ -13,6 +14,7 @@ import {
   Field,
   IconButton,
   Input,
+  Modal,
   PageHeader,
   Skeleton,
   StatCard,
@@ -24,7 +26,7 @@ import {
   useToast,
 } from '../../components/ui'
 import type { Column } from '../../components/ui'
-import { supabase } from '../../lib/supabase'
+import { supabase, invokeFunction } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { useContractorWorkers } from '../../lib/queries'
 import { fmtDate, fmtMoney } from '../../lib/dates'
@@ -252,9 +254,27 @@ export function WorkersTab({
   const toast = useToast()
   const has = useAuth((s) => s.has)
   const mayManage = canManage ?? has(PERM.CONTRACTORS_MANAGE_WORKERS)
+  // יצירת חשבון היא פעולה של המשרד, לא של הקבלן — ולכן מפתח users ולא portal.
+  const canCreateLogin = has(PERM.USERS_CREATE_LOGIN) && has(PERM.USERS_CREATE)
   const { confirm, dialog } = useConfirm()
   const { data: workers = [], isLoading } = useContractorWorkers(contractorId)
   const [form, setForm] = useState({ full_name: '', phone: '', id_number: '' })
+  const [clockFor, setClockFor] = useState<ContractorWorker | null>(null)
+  // מי מהסגל כבר קיבל התחברות. profiles.contractor_worker_id הוא הקישור
+  // היחיד בין שורת הסגל לחשבון, ולכן זו גם הבדיקה וגם מה שמזין את התווית.
+  const { data: linked = [] } = useQuery({
+    queryKey: ['profiles', 'byContractorWorker', contractorId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, contractor_worker_id')
+        .eq('contractor_id', contractorId)
+        .not('contractor_worker_id', 'is', null)
+        .is('deleted_at', null)
+      if (error) throw error
+      return data as { id: string; contractor_worker_id: string }[]
+    },
+  })
 
   const add = useMutation({
     mutationFn: async () => {
@@ -340,6 +360,16 @@ export function WorkersTab({
                     {[w.phone, w.id_number].filter(Boolean).join(' · ') || '—'}
                   </p>
                 </div>
+                {linked.some((l) => l.contractor_worker_id === w.id) ? (
+                  <Badge tone="success">שעון נוכחות</Badge>
+                ) : (
+                  canCreateLogin && (
+                    <Button size="sm" onClick={() => setClockFor(w)}>
+                      <Clock size={ICON.sm} strokeWidth={STROKE} />
+                      חשבון נוכחות
+                    </Button>
+                  )
+                )}
                 {mayManage && (
                   <IconButton label={`הסרת ${w.full_name}`} size="sm" onClick={() => void remove(w)} className="hover:text-error">
                     <Trash2 size={ICON.sm} strokeWidth={STROKE} />
@@ -350,7 +380,121 @@ export function WorkersTab({
           </ul>
         )}
       </CardBody>
+      {clockFor && (
+        <ClockAccountModal
+          worker={clockFor}
+          contractorId={contractorId}
+          onClose={() => setClockFor(null)}
+          onDone={() => void qc.invalidateQueries({ queryKey: ['profiles'] })}
+        />
+      )}
     </Card>
+  )
+}
+
+/**
+ * נותן לעובד קבלן חשבון שכל תפקידו להחתים שעון.
+ *
+ * שלושת השלבים חייבים לקרות יחד: שורת profiles (בלעדיה app.has מחזיר false
+ * לכל מפתח והמערכת כולה סגורה בפניו), חשבון התחברות, והתפקיד הצר —
+ * שבלעדיו הוא יורש מברירות המחדל של contractor_user את פורטל הקבלן על כל
+ * הנתונים הכספיים שבו.
+ */
+function ClockAccountModal({
+  worker,
+  contractorId,
+  onClose,
+  onDone,
+}: {
+  worker: ContractorWorker
+  contractorId: string
+  onClose: () => void
+  onDone: () => void
+}) {
+  const toast = useToast()
+  const [creds, setCreds] = useState({ email: '', password: '' })
+
+  const create = useMutation({
+    mutationFn: async () => {
+      if (!creds.email || !creds.password) throw new Error('חובה להזין אימייל וסיסמה')
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .insert({
+          full_name: worker.full_name,
+          phone: worker.phone,
+          user_kind: 'contractor_user',
+          contractor_id: contractorId,
+          contractor_worker_id: worker.id,
+        })
+        .select('id')
+        .single()
+      if (error) throw error
+
+      const { data: role } = await supabase
+        .from('permission_roles')
+        .select('id')
+        .eq('key', 'contractor_worker')
+        .maybeSingle()
+      if (role) {
+        const { error: roleErr } = await supabase
+          .from('profile_roles')
+          .insert({ profile_id: profile.id, role_id: (role as { id: string }).id })
+        if (roleErr) throw roleErr
+      }
+
+      await invokeFunction('admin-users', {
+        action: 'create_login',
+        email: creds.email,
+        password: creds.password,
+        profile_id: profile.id,
+      })
+    },
+    onSuccess: () => {
+      toast.success('נוצר חשבון נוכחות לעובד')
+      onDone()
+      onClose()
+    },
+    onError: (e) => toast.error((e as Error).message),
+  })
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="sm"
+      title={`חשבון נוכחות ל${worker.full_name}`}
+      footer={
+        <>
+          <Button onClick={onClose}>ביטול</Button>
+          <Button variant="primary" loading={create.isPending} onClick={() => create.mutate()}>
+            יצירה
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="type-caption text-ink-tertiary">
+          החשבון מאפשר לעובד להחתים שעון ולראות את המשמרות שלו בלבד — לא את פורטל הקבלן.
+        </p>
+        <Field label="אימייל" required>
+          <Input
+            data-autofocus
+            dir="ltr"
+            type="email"
+            value={creds.email}
+            onChange={(e) => setCreds((c) => ({ ...c, email: e.target.value }))}
+          />
+        </Field>
+        <Field label="סיסמה" required>
+          <Input
+            dir="ltr"
+            type="text"
+            value={creds.password}
+            onChange={(e) => setCreds((c) => ({ ...c, password: e.target.value }))}
+          />
+        </Field>
+      </div>
+    </Modal>
   )
 }
 

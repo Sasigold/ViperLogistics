@@ -221,6 +221,8 @@ export interface AssignmentPerson {
   name: string
   truck_id?: string | null
   truck_name?: string | null
+  /** מהיכן הוא מתחיל — קובע את שעת ההתחלה של המשמרת שלו */
+  work_site?: 'field' | 'warehouse'
 }
 
 export interface WorkBoardRow {
@@ -261,7 +263,7 @@ export interface WorkBoardRow {
   team_lead_name: string | null
   workers: AssignmentPerson[] | null
   drivers: AssignmentPerson[] | null
-  contractor_worker_list: { id: string; name: string }[] | null
+  contractor_worker_list: { id: string; name: string; work_site?: 'field' | 'warehouse' }[] | null
   /** null גם כשקיים מחיר, אם למשתמש אין pricing.view — הקבלן תמיד כאן. */
   customer_price: number | null
   price_is_manual: boolean | null
@@ -622,4 +624,175 @@ export interface SearchResult {
   title: string
   subtitle: string
   extra: string | null
+}
+
+/* ===== נוכחות ומשמרות ===================================================== */
+
+/** מהיכן העובד מתחיל את המשמרת. */
+export type WorkSite = 'field' | 'warehouse'
+
+/** משמרת נגזרת — מיוצרת ב-app.planned_shifts ולא נשמרת בשום טבלה. */
+export interface PlannedShift {
+  profile_id: string
+  work_date: string
+  seq: number
+  shift_start: string
+  shift_end: string
+  planned_hours: number | null
+  work_site: WorkSite
+  task_ids: string[]
+  first_task_id: string | null
+  last_task_id: string | null
+  start_lat: number | null
+  start_lng: number | null
+  end_lat: number | null
+  end_lng: number | null
+  travel_hours: number | null
+  label: string | null
+  customer_id: string | null
+  customer_color: string | null
+}
+
+/** שורת חישוב אחת בפירוט השכר. */
+export interface PayLine {
+  key: string
+  label: string
+  hours: number
+  rate: number
+  /** null כשאין תעריף שעתי, או כשלמשתמש אין הרשאה לראות סכומים */
+  amount: number | null
+}
+
+export interface PayBreakdown {
+  version: number
+  paid_hours: number
+  worked_hours: number
+  base_hours: number
+  overtime_hours: number
+  topup_hours: number
+  is_rest_day: boolean
+  /** השדות האלה מושמטים מהאובייקט למי שאינו רשאי לראות כסף */
+  hourly_rate?: number | null
+  rate_hours?: number
+  total?: number | null
+  lines?: PayLine[]
+}
+
+export interface AttendanceEntry {
+  id: string
+  profile_id: string
+  work_date: string
+  seq: number
+  shift_start: string | null
+  shift_end: string | null
+  planned_hours: number | null
+  work_site: WorkSite | null
+  task_ids: string[]
+  clock_in_at: string
+  clock_out_at: string | null
+  clock_in_lat: number | null
+  clock_in_lng: number | null
+  clock_in_distance_m: number | null
+  clock_out_distance_m: number | null
+  raw_clock_in_at: string | null
+  raw_clock_out_at: string | null
+  actual_hours: number | null
+  source: 'clock' | 'manual'
+  flags: string[]
+  employee_note: string | null
+  manager_note: string | null
+  edited_at: string | null
+}
+
+/** שורת הדוח, כפי ש-attendance_report מרכיב אותה. */
+export interface AttendanceReportRow {
+  id: string
+  profile_id: string
+  full_name: string
+  contractor_id: string | null
+  work_date: string
+  seq: number
+  shift_start: string | null
+  shift_end: string | null
+  planned_hours: number | null
+  work_site: WorkSite | null
+  task_ids: string[]
+  clock_in_at: string
+  clock_out_at: string | null
+  actual_hours: number | null
+  in_distance_m: number | null
+  out_distance_m: number | null
+  raw_clock_in_at: string | null
+  raw_clock_out_at: string | null
+  source: 'clock' | 'manual'
+  flags: string[]
+  employee_note: string | null
+  manager_note: string | null
+  edited_at: string | null
+  pay: PayBreakdown
+}
+
+export interface AttendanceReport {
+  rows: AttendanceReportRow[]
+  can_see_pay: boolean
+  totals: {
+    entries: number
+    actual_hours: number
+    paid_hours: number
+    overtime_hours: number
+    total: number | null
+  }
+}
+
+export interface WorkerPaySettings {
+  profile_id: string
+  hourly_rate: number | null
+  overtime_enabled: boolean
+  min_hours_per_shift: number | null
+  travel_paid: boolean
+  /** null בכל אחד מאלה = לך לפי ההגדרה הגלובלית */
+  clock_enabled: boolean | null
+  requires_location: boolean | null
+  location_radius_m: number | null
+  allow_early_clock_in: boolean | null
+  early_grace_minutes: number | null
+  allow_clock_without_shift: boolean | null
+  notes: string | null
+}
+
+export interface OvertimeTier {
+  /** null = "וכל מה שמעל" */
+  hours: number | null
+  rate: number
+}
+
+export interface OvertimeConfig {
+  version: number
+  daily: { base_hours: number; tiers: OvertimeTier[] }
+  rest_day: { dow: number[]; base_hours: number; base_rate: number; tiers: OvertimeTier[] }
+  weekly: { enabled: boolean; base_hours: number; rate: number }
+  rounding: { minutes: number; mode: 'nearest' | 'up' | 'down' }
+  top_up: { counts_toward_overtime: boolean }
+}
+
+export interface ClockConfig {
+  version: number
+  merge_gap_minutes: number
+  clock_enabled: boolean
+  requires_location: boolean
+  location_radius_m: number
+  allow_early_clock_in: boolean
+  early_grace_minutes: number
+  allow_clock_without_shift: boolean
+  max_accuracy_m: number
+  auto_close_after_hours: number
+  warehouse: { lat: number | null; lng: number | null; label?: string }
+}
+
+/** מה שדף השעון צריך כדי לצייר את עצמו, מ-attendance_my_status. */
+export interface ClockStatus {
+  open_entry: AttendanceEntry | null
+  shift: PlannedShift | null
+  rules: ClockConfig
+  today: AttendanceEntry[]
 }

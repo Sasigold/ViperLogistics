@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Boxes,
   ClipboardList,
+  Clock,
   ICON,
   Map,
   Plus,
@@ -43,6 +44,7 @@ import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { RolesTab } from '../permissions/RolesTab'
 import { PricingZonesEditor } from '../pricing/PricingZonesEditor'
+import { OvertimeSettingsTab } from '../attendance/OvertimeSettingsTab'
 
 /**
  * Each tab names the permission that governs it, so a coordinator who may edit
@@ -55,6 +57,7 @@ const TABS = [
   { key: 'statuses', label: 'סטטוסים', icon: <Zap size={ICON.sm} />, perm: PERM.SETTINGS_STATUSES },
   { key: 'trucks', label: 'משאיות', icon: <Truck size={ICON.sm} />, perm: PERM.SETTINGS_TRUCKS },
   { key: 'zones', label: 'אזורי נסיעה', icon: <Map size={ICON.sm} />, perm: PERM.PRICING_MANAGE_RULES },
+  { key: 'attendance', label: 'נוכחות ושעות נוספות', icon: <Clock size={ICON.sm} />, perm: PERM.ATTENDANCE_SETTINGS },
   { key: 'roles', label: 'הרשאות ותפקידים', icon: <Shield size={ICON.sm} />, perm: PERM.SETTINGS_PERMISSIONS },
   { key: 'recycle', label: 'סל מיחזור', icon: <RotateCcw size={ICON.sm} />, perm: PERM.SETTINGS_RECYCLE_BIN },
 ] as const
@@ -78,6 +81,7 @@ export default function SettingsPage() {
         {active === 'trucks' && <TrucksTab />}
         {/* customerId=null — האזורים שחלים על כל הלקוחות שאין להם אזור משלהם */}
         {active === 'zones' && <PricingZonesEditor customerId={null} />}
+        {active === 'attendance' && <OvertimeSettingsTab />}
         {active === 'roles' && <RolesTab />}
         {active === 'recycle' && <RecycleBinTab />}
       </div>

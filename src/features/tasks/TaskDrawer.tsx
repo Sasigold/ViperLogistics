@@ -24,6 +24,7 @@ import {
   Field,
   Input,
   MultiSelect,
+  SegmentedControl,
   Select,
   Skeleton,
   Textarea,
@@ -43,13 +44,15 @@ import {
   useTrucks,
 } from '../../lib/queries'
 import { Breakdown } from '../customers/PricingTab'
-import type { PriceBreakdown, StaffRole, TaskPricing, TaskRow } from '../../types/domain'
+import type { PriceBreakdown, StaffRole, TaskPricing, TaskRow, WorkSite } from '../../types/domain'
 
 interface Assignment {
   id?: string
   profile_id: string
   role: StaffRole
   truck_id: string | null
+  /** מהיכן הוא מתחיל — קובע את שעת ההתחלה של המשמרת שלו */
+  work_site: WorkSite
 }
 
 export interface TaskDrawerProps {
@@ -184,11 +187,13 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
         id = data.id
       }
       // sync assignments (delete + reinsert is fine at this scale; audit keeps history)
-      const { data: current } = await supabase.from('task_assignments').select('id, profile_id, role, truck_id').eq('task_id', id)
-      const wanted = assignments.map((a) => `${a.profile_id}:${a.role}:${a.truck_id ?? ''}`)
-      const existingKeys = (current ?? []).map((a) => `${a.profile_id}:${a.role}:${a.truck_id ?? ''}`)
-      const toDelete = (current ?? []).filter((a) => !wanted.includes(`${a.profile_id}:${a.role}:${a.truck_id ?? ''}`))
-      const toInsert = assignments.filter((a) => !existingKeys.includes(`${a.profile_id}:${a.role}:${a.truck_id ?? ''}`))
+      const { data: current } = await supabase.from('task_assignments').select('id, profile_id, role, truck_id, work_site').eq('task_id', id)
+      const key = (a: { profile_id: string; role: string; truck_id: string | null; work_site?: string | null }) =>
+        `${a.profile_id}:${a.role}:${a.truck_id ?? ''}:${a.work_site ?? 'field'}`
+      const wanted = assignments.map(key)
+      const existingKeys = (current ?? []).map(key)
+      const toDelete = (current ?? []).filter((a) => !wanted.includes(key(a)))
+      const toInsert = assignments.filter((a) => !existingKeys.includes(key(a)))
       if (toDelete.length) {
         const { error } = await supabase
           .from('task_assignments')
@@ -199,7 +204,15 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       if (toInsert.length) {
         const { error } = await supabase
           .from('task_assignments')
-          .insert(toInsert.map((a) => ({ task_id: id, profile_id: a.profile_id, role: a.role, truck_id: a.truck_id })))
+          .insert(
+            toInsert.map((a) => ({
+              task_id: id,
+              profile_id: a.profile_id,
+              role: a.role,
+              truck_id: a.truck_id,
+              work_site: a.work_site,
+            })),
+          )
         if (error) throw error
       }
       // contractor price
@@ -272,9 +285,12 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       const found = prev.find((a) => a.role === role && a.profile_id === profileId)
       if (found) return prev.filter((a) => a !== found)
       if (role === 'team_lead') {
-        return [...prev.filter((a) => a.role !== 'team_lead'), { profile_id: profileId, role, truck_id: null }]
+        return [
+          ...prev.filter((a) => a.role !== 'team_lead'),
+          { profile_id: profileId, role, truck_id: null, work_site: 'field' as WorkSite },
+        ]
       }
-      return [...prev, { profile_id: profileId, role, truck_id: null }]
+      return [...prev, { profile_id: profileId, role, truck_id: null, work_site: 'field' as WorkSite }]
     })
   }
 
@@ -534,6 +550,34 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                   disabled={!canAssign.driver}
                 />
               </Field>
+
+              {/*
+                שטח או מחסן, פר-משובץ. השדה קובע את שעת ההתחלה של המשמרת
+                שלו: מי שיוצא מהמחסן מתחיל ב"תחילה במחסן" ומי שמגיע לאתר
+                ב"תחילה בשטח". בלי שעת מחסן על המשימה אין להבחנה משמעות,
+                ולכן הפאנל מוסתר.
+              */}
+              {form.warehouse_start_time && assignments.length > 0 && (
+                <div className="space-y-2 rounded-lg border border-line-subtle bg-subtle/50 p-3">
+                  <p className="type-overline">נקודת התחלה</p>
+                  {assignments.map((a) => (
+                    <div key={`${a.profile_id}:${a.role}`} className="flex items-center gap-2">
+                      <span className="w-32 shrink-0 truncate type-body">{nameOf(a.profile_id)}</span>
+                      <SegmentedControl
+                        items={[
+                          { key: 'field' as WorkSite, label: 'שטח' },
+                          { key: 'warehouse' as WorkSite, label: 'מחסן' },
+                        ]}
+                        value={a.work_site}
+                        onChange={(work_site) =>
+                          canAssign[a.role] &&
+                          setAssignments((prev) => prev.map((x) => (x === a ? { ...x, work_site } : x)))
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {byRole('driver').length > 0 && (
                 <div className="space-y-2 rounded-lg border border-line-subtle bg-subtle/50 p-3">

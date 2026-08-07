@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ICON, KeyRound, Plus, STROKE, Shield, User, UserCheck } from '../../components/ui/icons'
+import { Clock, ICON, KeyRound, Plus, STROKE, Shield, User, UserCheck } from '../../components/ui/icons'
 import {
   Avatar,
   Badge,
@@ -32,6 +32,7 @@ import { PERM } from '../../lib/permissions'
 import { useContractors, useCustomers } from '../../lib/queries'
 import { RequirePermission } from '../auth/guards'
 import { UserPermissionsTab } from '../permissions/UserPermissionsTab'
+import { EmployeeWorkSettingsCard } from '../attendance/EmployeeWorkSettingsCard'
 import type { Profile, StaffRole, UserKind } from '../../types/domain'
 
 const kindLabels: Record<UserKind, string> = { staff: 'צוות', customer_user: 'לקוח', contractor_user: 'קבלן' }
@@ -282,17 +283,18 @@ export default function UsersPage() {
 
 const DRAWER_TABS = [
   { key: 'details' as const, label: 'פרטים', icon: <User size={ICON.sm} /> },
+  { key: 'work' as const, label: 'שכר ונוכחות', icon: <Clock size={ICON.sm} /> },
   { key: 'permissions' as const, label: 'הרשאות', icon: <Shield size={ICON.sm} /> },
 ]
 
 function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profile | null; onClose: () => void }) {
   const qc = useQueryClient()
   const toast = useToast()
-  const { me, can } = useAuth()
+  const { me, can, has } = useAuth()
   const isAdmin = !!me?.profile.is_admin
   const { data: customers = [] } = useCustomers()
   const { data: contractors = [] } = useContractors()
-  const [tab, setTab] = useState<'details' | 'permissions'>('details')
+  const [tab, setTab] = useState<'details' | 'work' | 'permissions'>('details')
 
   const [form, setForm] = useState({
     full_name: '',
@@ -420,6 +422,10 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
         ? 'יש לבחור קבלן'
         : undefined
   const canSave = can('users', profile ? 'edit' : 'create') || isAdmin
+  // הלשונית הזו כותבת ל-worker_pay_settings מאחורי מפתחות משלה; מי שאין לו
+  // אף אחד משניהם היה מקבל כרטיס ריק.
+  const canWorkTab = isAdmin || has(PERM.ATTENDANCE_MANAGE_PAY) || has(PERM.ATTENDANCE_MANAGE_CLOCK)
+  const drawerTabs = DRAWER_TABS.filter((x) => x.key !== 'work' || canWorkTab)
 
   return (
     <Drawer
@@ -456,7 +462,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
         )
       }
     >
-      {profile && <Tabs className="mb-4" size="sm" items={DRAWER_TABS} value={tab} onChange={setTab} />}
+      {profile && <Tabs className="mb-4" size="sm" items={drawerTabs} value={tab} onChange={setTab} />}
 
       {tab === 'details' ? (
         <div className="space-y-4">
@@ -607,6 +613,8 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
             </CardBody>
           </Card>
         </div>
+      ) : tab === 'work' ? (
+        profile && <EmployeeWorkSettingsCard profileId={profile.id} />
       ) : (
         profile && <UserPermissionsTab profile={profile} />
       )}

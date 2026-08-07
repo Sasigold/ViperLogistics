@@ -44,6 +44,7 @@ import { PERM } from '../../lib/permissions'
 import { useContractorWorkers } from '../../lib/queries'
 import { fmtDate, fmtMoney, fmtTime } from '../../lib/dates'
 import { WorkersTab } from '../contractors/ContractorDetailPage'
+import { AttendanceReport } from '../attendance/AttendanceReportPage'
 import type { WorkBoardRow } from '../../types/domain'
 
 interface PortalStats {
@@ -59,6 +60,7 @@ interface PortalStats {
 const TABS = [
   { key: 'tasks' as const, label: 'המשימות שלי', icon: <Briefcase size={ICON.sm} />, perm: PERM.PORTAL_VIEW },
   { key: 'workers' as const, label: 'העובדים שלי', icon: <Users size={ICON.sm} />, perm: PERM.PORTAL_MANAGE_WORKERS },
+  { key: 'attendance' as const, label: 'נוכחות', icon: <Clock size={ICON.sm} />, perm: PERM.PORTAL_ATTENDANCE },
 ]
 
 export default function PortalPage() {
@@ -74,7 +76,7 @@ export default function PortalPage() {
   const contractorId = me?.profile.contractor_id ?? null
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
-  const [tab, setTab] = useState<'tasks' | 'workers'>('tasks')
+  const [tab, setTab] = useState<'tasks' | 'workers' | 'attendance'>('tasks')
 
   const { data: stats, isLoading } = useQuery({
     queryKey: ['portal', 'stats', from, to],
@@ -207,6 +209,10 @@ export default function PortalPage() {
 
         {tab === 'tasks' ? (
           <PortalTasks contractorId={contractorId!} from={from} to={to} canAssign={canAssign} />
+        ) : tab === 'attendance' ? (
+          /* אותו רכיב דוח של המנהל. התחימה לסגל של הקבלן נעשית בשרת, ולכן
+             הפרופ כאן הוא נוחות ולא הגנה. */
+          <AttendanceReport embedded contractorId={contractorId} />
         ) : (
           contractorId && <WorkersTab contractorId={contractorId} canManage={has(PERM.PORTAL_MANAGE_WORKERS)} />
         )}

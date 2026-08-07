@@ -57,6 +57,15 @@ OUT="$OUT
 $OUT2"
 
 echo
+echo "== attendance suite =="
+# 04 seeds its own people and tasks, and must run last: it moves task dates
+# around to exercise the clock's "too early" branch.
+OUT3=$($PSQL -d vl -f "$HERE/04_attendance.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT3"
+OUT="$OUT
+$OUT3"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

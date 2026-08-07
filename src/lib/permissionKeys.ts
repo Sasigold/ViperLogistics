@@ -13,6 +13,19 @@
  */
 
 export const PERM = {
+  ATTENDANCE_VIEW_OWN: 'attendance.view_own',
+  ATTENDANCE_VIEW_SCHEDULE: 'attendance.view_schedule',
+  ATTENDANCE_CLOCK: 'attendance.clock',
+  ATTENDANCE_VIEW_OWN_PAY: 'attendance.view_own_pay',
+  ATTENDANCE_VIEW_ALL: 'attendance.view_all',
+  ATTENDANCE_EDIT_ENTRY: 'attendance.edit_entry',
+  ATTENDANCE_MANUAL_ENTRY: 'attendance.manual_entry',
+  ATTENDANCE_DELETE: 'attendance.delete',
+  ATTENDANCE_MANAGE_CLOCK: 'attendance.manage_clock',
+  ATTENDANCE_VIEW_PAY: 'attendance.view_pay',
+  ATTENDANCE_MANAGE_PAY: 'attendance.manage_pay',
+  ATTENDANCE_SETTINGS: 'attendance.settings',
+  ATTENDANCE_EXPORT: 'attendance.export',
   BOARD_VIEW: 'board.view',
   BOARD_INLINE_EDIT: 'board.inline_edit',
   BOARD_BULK_EDIT: 'board.bulk_edit',
@@ -75,6 +88,8 @@ export const PERM = {
   PRICING_MANAGE_RULES: 'pricing.manage_rules',
   PRICING_REVENUE: 'pricing.revenue',
   PORTAL_VIEW: 'portal.view',
+  PORTAL_ATTENDANCE: 'portal.attendance',
+  PORTAL_ATTENDANCE_PAY: 'portal.attendance_pay',
   PORTAL_ASSIGN_WORKERS: 'portal.assign_workers',
   PORTAL_VIEW_FINANCIALS: 'portal.view_financials',
   PORTAL_MANAGE_WORKERS: 'portal.manage_workers',

@@ -28,8 +28,13 @@ export function RequireAuth() {
   // the staff shell is also what keeps a staff screen — including one added
   // later, before anyone remembers to gate it — from being reachable by URL.
   const path = location.pathname
-  if (me.profile.user_kind === 'contractor_user' && !path.startsWith('/portal')) {
-    return <Navigate to="/portal" replace />
+  // /my/* הוא המסך של האדם עצמו — שעון ומשמרות — ולכן הוא פתוח לכל סוג
+  // משתמש שיש לו את המפתח. עובד קבלן שקיבל התחברות רק כדי להחתים שעון אינו
+  // מנהל הקבלן, ואין לו מה לעשות בפורטל.
+  const isPersonal = path.startsWith('/my/')
+  if (me.profile.user_kind === 'contractor_user' && !path.startsWith('/portal') && !isPersonal) {
+    const toPortal = me.profile.is_admin || me.capabilities['portal.view']
+    return <Navigate to={toPortal ? '/portal' : '/my/schedule'} replace />
   }
   if (me.profile.user_kind === 'customer_user' && !path.startsWith('/client')) {
     return <Navigate to="/client" replace />
