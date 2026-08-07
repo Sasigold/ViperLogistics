@@ -14,6 +14,7 @@ import {
   PageHeader,
   Select,
   StatCard,
+  cx,
   useToast,
 } from '../../components/ui'
 import type { Column } from '../../components/ui'
@@ -27,8 +28,15 @@ import { toISODate } from '../../lib/dates'
 import { startOfMonth } from 'date-fns'
 import { useAttendanceInvalidate, useAttendanceReport } from './attendanceQueries'
 import { AttendanceEntryDrawer } from './AttendanceEntryDrawer'
-import { WORK_SITE_LABELS, fmtDuration, flagLabel, needsAttention } from './shiftFormat'
-import type { AttendanceReportRow } from '../../types/domain'
+import {
+  STATUS_LABELS,
+  STATUS_TONES,
+  WORK_SITE_LABELS,
+  fmtDuration,
+  flagLabel,
+  needsAttention,
+} from './shiftFormat'
+import type { AttendanceReportRow, AttendanceStatus } from '../../types/domain'
 
 export default function AttendanceReportPage() {
   return (
@@ -56,12 +64,14 @@ export function AttendanceReport({
   const canSeeAll = has(PERM.ATTENDANCE_VIEW_ALL)
   const canEdit = has(PERM.ATTENDANCE_EDIT_ENTRY)
   const canAdd = has(PERM.ATTENDANCE_MANUAL_ENTRY)
+  const canApprove = has(PERM.ATTENDANCE_APPROVE_ENTRY)
 
   const [from, setFrom] = useState(() => toISODate(startOfMonth(new Date())))
   const [to, setTo] = useState(() => toISODate(new Date()))
   const [profileIds, setProfileIds] = useState<string[]>([])
   const [contractor, setContractor] = useState<string>('')
   const [onlyFlagged, setOnlyFlagged] = useState(false)
+  const [status, setStatus] = useState<AttendanceStatus | ''>('')
   const [selected, setSelected] = useState<AttendanceReportRow | null>(null)
   const [adding, setAdding] = useState(false)
 
@@ -74,6 +84,7 @@ export function AttendanceReport({
     profileIds,
     contractorId: contractorId ?? (contractor || null),
     onlyFlagged,
+    status: status ? [status] : null,
   })
 
   const rows = data?.rows ?? []
@@ -135,8 +146,17 @@ export function AttendanceReport({
         header: 'לתשלום',
         align: 'center',
         sortValue: (r) => r.pay?.paid_hours ?? 0,
+        // שורה שאינה מאושרת מוצגת חיוורת: הסכום הוא מה שישולם *אם* יאושר,
+        // והוא אינו נכנס לסיכומים למעלה.
         render: (r) => (
-          <span className="tabular-nums font-semibold">{fmtDuration(r.pay?.paid_hours)}</span>
+          <span
+            className={cx(
+              'tabular-nums font-semibold',
+              r.status !== 'approved' && 'text-ink-tertiary',
+            )}
+          >
+            {fmtDuration(r.pay?.paid_hours)}
+          </span>
         ),
       },
       {
@@ -167,6 +187,11 @@ export function AttendanceReport({
         header: 'הערות',
         render: (r) => (
           <div className="flex flex-wrap gap-1">
+            {/* מאושר אינו מקבל תג: זה המצב הרגיל, ותג על כל שורה היה מסתיר
+                את השתיים שדורשות מבט. */}
+            {r.status !== 'approved' && (
+              <Badge tone={STATUS_TONES[r.status]}>{STATUS_LABELS[r.status]}</Badge>
+            )}
             {r.source === 'manual' && <Badge tone="warning">ידני</Badge>}
             {r.flags.map((f) => (
               <Badge key={f} tone={needsAttention([f]) ? 'error' : 'neutral'}>
@@ -185,7 +210,16 @@ export function AttendanceReport({
         header: 'שכר',
         align: 'end',
         sortValue: (r) => r.pay?.total ?? 0,
-        render: (r) => <span className="tabular-nums font-semibold">{fmtMoney(r.pay?.total)}</span>,
+        render: (r) => (
+          <span
+            className={cx(
+              'tabular-nums font-semibold',
+              r.status !== 'approved' && 'text-ink-tertiary',
+            )}
+          >
+            {fmtMoney(r.pay?.total)}
+          </span>
+        ),
       })
     }
     return base
@@ -243,6 +277,14 @@ export function AttendanceReport({
             )}
           </>
         )}
+        <Field label="סטטוס" className="w-40">
+          <Select value={status} onChange={(e) => setStatus(e.target.value as AttendanceStatus | '')}>
+            <option value="">הכול</option>
+            <option value="pending">ממתין לאישור</option>
+            <option value="approved">מאושר</option>
+            <option value="rejected">נדחה</option>
+          </Select>
+        </Field>
         <Checkbox
           checked={onlyFlagged}
           onChange={setOnlyFlagged}
@@ -255,10 +297,13 @@ export function AttendanceReport({
           icon={<Users size={ICON.lg} strokeWidth={STROKE} />}
           label="משמרות"
           value={totals?.entries ?? 0}
+          hint={totals?.pending ? `${totals.pending} ממתינות לאישור` : undefined}
         />
+        {/* השעות והשכר סופרים מאושרות בלבד — מה שממתין לאישור אינו נכנס
+            לכאן עד שיוכרע. */}
         <StatCard
           icon={<Clock size={ICON.lg} strokeWidth={STROKE} />}
-          label="שעות בפועל"
+          label="שעות מאושרות"
           value={fmtDuration(totals?.actual_hours)}
           hint={`${fmtDuration(totals?.paid_hours)} לתשלום`}
         />
@@ -294,7 +339,7 @@ export function AttendanceReport({
         error={error ? (error as Error).message : undefined}
         onRetry={() => void refetch()}
         empty="לא נמצאו רשומות נוכחות בטווח הזה"
-        onRowClick={canEdit ? (r) => setSelected(r) : undefined}
+        onRowClick={canEdit || canApprove ? (r) => setSelected(r) : undefined}
         storageKey="attendance-report"
         pageSize={50}
       />

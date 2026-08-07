@@ -562,8 +562,221 @@ select t_expect_ok('אבל כן של העובד שלו', $$
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
+-- ================= 6. דיווח עצמי ואישור =================
+-- ההבטחה כאן היא אחת: שעות שדווחו ידנית אינן שעות עד שמישהו אמר כן. שאר
+-- הבדיקות סובבות סביבה — מי יכול לומר כן, ומה חוסם דיווח לפני שהוא בכלל
+-- מגיע להכרעה.
+
+\echo '--- דיווח עצמי: הגשה ---'
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+
+select t_expect_ok('עובד מדווח משמרת שלא הוחתמה', $$
+  select attendance_submit_entry(now() - interval '2 days',
+                                 now() - interval '2 days' + interval '6 hours', 'נגמרה הסוללה')$$);
+
+select t_expect_fail('דיווח בלי שעת סיום נדחה', $$
+  select attendance_submit_entry(now() - interval '4 days', null, null)$$);
+
+select t_expect_fail('דיווח על משמרת שטרם הסתיימה נדחה', $$
+  select attendance_submit_entry(now() + interval '1 hour', now() + interval '5 hours', null)$$);
+
+select t_expect_fail('דיווח מעבר לחלון האחורה נדחה', $$
+  select attendance_submit_entry(now() - interval '40 days',
+                                 now() - interval '40 days' + interval '5 hours', null)$$);
+
+select t_expect_fail('דיווח שחופף לשעות שכבר נרשמו נדחה', $$
+  select attendance_submit_entry(now() - interval '2 days' + interval '2 hours',
+                                 now() - interval '2 days' + interval '8 hours', null)$$);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('הדיווח נשמר כממתין לאישור',
+  (select status from attendance_entries
+    where profile_id = '20000000-0000-0000-0000-0000000000f3'
+      and 'self_reported' = any(flags)), 'pending');
+
+select t_eq('ומסומן כדיווח עצמי ולא כהחתמת שעון',
+  (select source from attendance_entries
+    where profile_id = '20000000-0000-0000-0000-0000000000f3'
+      and 'self_reported' = any(flags)), 'manual');
+
+-- app.profiles_with הוא הצד ההפוך של app.has: לא "האם אני רשאי" אלא "מי
+-- רשאי". f4 קיבל attendance.edit_entry, ו-approve_entry נגזר ממנו.
+select t_eq('הדיווח יצר התראה למי שרשאי לאשר',
+  (select count(*) from notifications
+    where type = 'attendance_submitted'
+      and recipient_id = '20000000-0000-0000-0000-0000000000f4')::int, 1);
+
+\echo '--- דיווח עצמי: לא נספר עד שאושר ---'
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+
+select t_eq('6 השעות שדווחו נספרות בנפרד כממתינות',
+  (attendance_report(current_date - 7, current_date + 1) -> 'totals' ->> 'pending_hours')::numeric,
+  6.00::numeric);
+
+-- ההבטחה עצמה: הסיכום שווה בדיוק לסכום השורות המאושרות, ולא לכולן.
+select t_eq('וסך השעות בדוח סופר מאושרות בלבד',
+  (attendance_report(current_date - 7, current_date + 1) -> 'totals' ->> 'actual_hours')::numeric,
+  (select round(coalesce(sum((r ->> 'actual_hours')::numeric), 0), 2)
+     from jsonb_array_elements(attendance_report(current_date - 7, current_date + 1) -> 'rows') r
+    where r ->> 'status' = 'approved'));
+
+select t_eq('והשכר לתשלום אינו כולל אותן',
+  (attendance_report(current_date - 7, current_date + 1) -> 'totals' ->> 'total')::numeric,
+  (select round(coalesce(sum((r #>> '{pay,total}')::numeric), 0), 2)
+     from jsonb_array_elements(attendance_report(current_date - 7, current_date + 1) -> 'rows') r
+    where r ->> 'status' = 'approved'));
+
+-- בלי זה כל השאר הוא קישוט: הטבלה חשופה דרך PostgREST, והעובד רשאי לעדכן
+-- את השורה שלו. field_registry הוא מה שעוצר אותו בעמודה אחת.
+select t_expect_fail('עובד אינו יכול לאשר את הדיווח של עצמו', $$
+  update attendance_entries set status = 'approved'
+   where profile_id = '20000000-0000-0000-0000-0000000000f3' and status = 'pending'$$);
+
+select t_expect_fail('ואינו יכול לזייף מי אישר ומתי', $$
+  update attendance_entries set reviewed_at = now()
+   where profile_id = '20000000-0000-0000-0000-0000000000f3' and status = 'pending'$$);
+
+select t_expect_fail('ואינו יכול להריץ את ההכרעה בעצמו', $$
+  select attendance_review_entry(
+    (select id from attendance_entries
+      where profile_id = '20000000-0000-0000-0000-0000000000f3' and status = 'pending'), true, null)$$);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+\echo '--- דיווח עצמי: ההכרעה ---'
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f4', false);
+
+select t_expect_fail('דחייה בלי נימוק נחסמת', $$
+  select attendance_review_entry(
+    (select id from attendance_entries
+      where profile_id = '20000000-0000-0000-0000-0000000000f3' and status = 'pending'), false, null)$$);
+
+-- f4 לא קיבל את attendance.approve_entry במפורש; הוא מגיע אליו מ-edit_entry
+select t_expect_ok('מי שרשאי לתקן שעות רשאי גם לאשר', $$
+  select attendance_review_entry(
+    (select id from attendance_entries
+      where profile_id = '20000000-0000-0000-0000-0000000000f3' and status = 'pending'),
+    true, 'אושר')$$);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('הדיווח אושר',
+  (select status from attendance_entries
+    where profile_id = '20000000-0000-0000-0000-0000000000f3'
+      and 'self_reported' = any(flags)), 'approved');
+
+select t_eq('ונרשם מי אישר אותו',
+  (select reviewed_by from attendance_entries
+    where profile_id = '20000000-0000-0000-0000-0000000000f3'
+      and 'self_reported' = any(flags)), '20000000-0000-0000-0000-0000000000f4'::uuid);
+
+select t_eq('העובד קיבל התראה על האישור',
+  (select count(*) from notifications
+    where type = 'attendance_approved'
+      and recipient_id = '20000000-0000-0000-0000-0000000000f3')::int, 1);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+
+select t_eq('ומאותו רגע השעות נספרות',
+  (attendance_report(current_date - 7, current_date + 1) -> 'totals' ->> 'pending_hours')::numeric,
+  0.00::numeric);
+
+select t_eq('והן בתוך סך השעות של הדוח',
+  (select count(*) from jsonb_array_elements(
+     attendance_report(current_date - 7, current_date + 1) -> 'rows') r
+   where r ->> 'status' = 'approved' and (r -> 'flags') @> '["self_reported"]'::jsonb)::int, 1);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f4', false);
+select t_expect_fail('אי אפשר להכריע פעמיים באותו דיווח', $$
+  select attendance_review_entry(
+    (select id from attendance_entries
+      where profile_id = '20000000-0000-0000-0000-0000000000f3'
+        and 'self_reported' = any(flags)), false, 'שוב')$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+\echo '--- דיווח עצמי: משיכה ודחייה ---'
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+
+select t_expect_ok('דיווח נוסף, על יום אחר', $$
+  select attendance_submit_entry(now() - interval '5 days',
+                                 now() - interval '5 days' + interval '4 hours', 'שכחתי')$$);
+
+-- כל עוד הדיווח ממתין הוא שייך לעובד; אחרי שהוכרע הוא רשומת נוכחות ככל אחרת
+select t_expect_ok('עובד מושך דיווח שממתין לאישור', $$
+  select attendance_delete_entry((select id from attendance_entries
+    where profile_id = '20000000-0000-0000-0000-0000000000f3'
+      and status = 'pending' and deleted_at is null), false)$$);
+
+select t_expect_fail('אבל אינו יכול למחוק רשומה מאושרת', $$
+  select attendance_delete_entry((select id from attendance_entries
+    where profile_id = '20000000-0000-0000-0000-0000000000f3'
+      and 'self_reported' = any(flags) and status = 'approved'), false)$$);
+
+select t_expect_ok('דיווח שלישי, כדי לבדוק דחייה', $$
+  select attendance_submit_entry(now() - interval '6 days',
+                                 now() - interval '6 days' + interval '3 hours', null)$$);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f4', false);
+select t_expect_ok('מנהל דוחה עם נימוק', $$
+  select attendance_review_entry(
+    (select id from attendance_entries
+      where profile_id = '20000000-0000-0000-0000-0000000000f3'
+        and status = 'pending' and deleted_at is null),
+    false, 'לא היית משובץ באותו יום')$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('הנימוק נשמר על הרשומה',
+  (select manager_note from attendance_entries
+    where profile_id = '20000000-0000-0000-0000-0000000000f3' and status = 'rejected'),
+  'לא היית משובץ באותו יום');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+select t_eq('ושעות שנדחו אינן נספרות אף פעם',
+  (select count(*) from jsonb_array_elements(
+     attendance_report(current_date - 10, current_date + 1) -> 'rows') r
+   where r ->> 'status' = 'rejected')::int, 1);
+
+select t_eq('גם לא בסיכום',
+  (attendance_report(current_date - 10, current_date + 1) -> 'totals' ->> 'actual_hours')::numeric,
+  (select round(coalesce(sum((r ->> 'actual_hours')::numeric), 0), 2)
+     from jsonb_array_elements(attendance_report(current_date - 10, current_date + 1) -> 'rows') r
+    where r ->> 'status' = 'approved'));
+
+-- רשומה שנדחתה אינה חוסמת דיווח מתוקן על אותן שעות
+select t_expect_ok('אפשר לדווח שוב על שעות שנדחו', $$
+  select attendance_submit_entry(now() - interval '6 days',
+                                 now() - interval '6 days' + interval '3 hours', 'דיווח מתוקן')$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
 \echo '--- anon ---'
 set role anon;
+select t_expect_fail('anon אינו יכול לדווח משמרת',
+  $$select attendance_submit_entry(now() - interval '1 day', now(), null)$$);
 select t_expect_fail('anon אינו יכול להחתים שעון',
   $$select attendance_clock_in(null, null, null, null)$$);
 select t_expect_fail('anon אינו יכול לשלוף דוח',

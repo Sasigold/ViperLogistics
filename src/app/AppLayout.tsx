@@ -11,7 +11,6 @@ import {
   STROKE,
   Search,
   Sun,
-  Truck,
   User,
   X,
 } from '../components/ui/icons'
@@ -88,10 +87,8 @@ export default function AppLayout() {
               to="/"
               className="flex min-w-0 items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:focus-ring"
             >
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary shadow-xs">
-                <Truck size={ICON.md} strokeWidth={STROKE} />
-              </span>
               <span className={cx('truncate type-title', collapsed && 'lg:hidden')}>ViperLogistics</span>
+              <img src="/favicon.svg" alt="ViperLogistics" className="size-8 shrink-0" />
             </Link>
             <IconButton
               label="סגירת התפריט"
@@ -205,9 +202,10 @@ export default function AppLayout() {
             <Link
               to="/"
               aria-label="ViperLogistics — לדף הבית"
-              className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary shadow-xs focus-visible:outline-none focus-visible:focus-ring lg:hidden"
+              className="flex shrink-0 items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:focus-ring lg:hidden"
             >
-              <Truck size={ICON.md} strokeWidth={STROKE} />
+              <span className="type-title">ViperLogistics</span>
+              <img src="/favicon.svg" alt="" className="size-7 shrink-0" />
             </Link>
 
             <Breadcrumbs />
@@ -296,7 +294,15 @@ export default function AppLayout() {
             </div>
           </header>
 
-          <main id="main" className="min-h-0 flex-1 overflow-y-auto p-3 pb-shell sm:p-4 sm:pb-shell lg:p-6 lg:pb-6">
+          <main
+            id="main"
+            className={cx(
+              'min-h-0 flex-1 flex flex-col',
+              location.pathname.startsWith('/board')
+                ? 'p-2 sm:p-2.5 lg:p-3 overflow-hidden'
+                : 'overflow-y-auto p-3 pb-shell sm:p-4 sm:pb-shell lg:p-6 lg:pb-6',
+            )}
+          >
             <Outlet />
           </main>
         </div>

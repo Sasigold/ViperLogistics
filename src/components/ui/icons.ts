@@ -111,6 +111,7 @@ export {
   Sun,
   Moon,
   LogOut,
+  LogIn,
   Shield,
   KeyRound,
   Zap,

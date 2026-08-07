@@ -12,6 +12,7 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import type {
   AttendanceReport,
+  AttendanceStatus,
   ClockConfig,
   ClockStatus,
   OvertimeConfig,
@@ -115,6 +116,8 @@ export interface ReportFilters {
   profileIds?: string[] | null
   contractorId?: string | null
   onlyFlagged?: boolean
+  /** null = כל הסטטוסים. הסינון נעשה בשרת כדי שהסיכומים יתאימו לשורות. */
+  status?: AttendanceStatus[] | null
 }
 
 export function useAttendanceReport(f: ReportFilters, enabled = true) {
@@ -128,10 +131,48 @@ export function useAttendanceReport(f: ReportFilters, enabled = true) {
         p_profile_ids: f.profileIds?.length ? f.profileIds : null,
         p_contractor_id: f.contractorId ?? null,
         p_only_flagged: f.onlyFlagged ?? false,
+        p_status: f.status?.length ? f.status : null,
       })
       if (error) throw error
       return data as AttendanceReport
     },
+  })
+}
+
+/**
+ * דיווח משמרת ידני של העובד עצמו. נכתב בסטטוס 'ממתין לאישור' ואינו נספר
+ * בשעות עד שמנהל יאשר — כל הבדיקות (חפיפה, חלון אחורה, משמרת עתידית)
+ * יושבות ב-RPC, ולכן הטופס כאן מוודא רק שיש מה לשלוח.
+ */
+export function useSubmitAttendanceEntry() {
+  const invalidate = useAttendanceInvalidate()
+  return useMutation({
+    mutationFn: async (v: { clockIn: string; clockOut: string; note?: string | null }) => {
+      const { data, error } = await supabase.rpc('attendance_submit_entry', {
+        p_clock_in: new Date(v.clockIn).toISOString(),
+        p_clock_out: new Date(v.clockOut).toISOString(),
+        p_note: v.note || null,
+      })
+      if (error) throw error
+      return data as { entry_id: string; hours: number }
+    },
+    onSuccess: invalidate,
+  })
+}
+
+/** אישור או דחייה של דיווח. דחייה מחייבת נימוק — השרת דוחה בלעדיו. */
+export function useReviewAttendanceEntry() {
+  const invalidate = useAttendanceInvalidate()
+  return useMutation({
+    mutationFn: async (v: { id: string; approve: boolean; note?: string | null }) => {
+      const { error } = await supabase.rpc('attendance_review_entry', {
+        p_id: v.id,
+        p_approve: v.approve,
+        p_note: v.note || null,
+      })
+      if (error) throw error
+    },
+    onSuccess: invalidate,
   })
 }
 

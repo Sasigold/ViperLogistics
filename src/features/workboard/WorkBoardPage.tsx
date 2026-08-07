@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   CalendarDays,
   ChevronDown,
+  ChevronUp,
   Columns3,
   Filter,
   ICON,
@@ -27,7 +28,6 @@ import {
   Input,
   MenuLabel,
   Modal,
-  PageHeader,
   Popover,
   SegmentedControl,
   Select,
@@ -199,6 +199,7 @@ export default function WorkBoardPage() {
   const [sortBy, setSortBy] = useState<SortKey>(prefs.current.sort ?? 'time')
   const [colorBy, setColorBy] = useState<ColorBy>(prefs.current.colorBy ?? 'event')
   const [showEmptyDays, setShowEmptyDays] = useState(prefs.current.emptyDays ?? true)
+  const [showFilters, setShowFilters] = useState(false)
   /** the group under the pointer — its whole run lights up, across days */
   const [activeGroup, setActiveGroup] = useState<string | null>(null)
 
@@ -536,92 +537,65 @@ export default function WorkBoardPage() {
 
   return (
     <RequirePermission perm={PERM.BOARD_VIEW}>
-      <div className="flex h-full min-h-0 flex-col gap-3">
-        <PageHeader
-          title="לוח עבודה"
-          subtitle={
-            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="tabular">{rows.length} משימות</span>
-              <span className="tabular">{workingDays} ימי עבודה</span>
-              {colorBy === 'event' && tones.size > 0 && <span className="tabular">{tones.size} אירועים</span>}
-              {overdueTotal > 0 && (
-                <span className="inline-flex items-center gap-1 font-medium text-error-text">
-                  <AlertTriangle size={ICON.xs} />
-                  {overdueTotal} באיחור
-                </span>
-              )}
-            </span>
-          }
-          actions={
-            <>
-              {selected.size > 0 && canBulk && (
-                <Button size="sm" onClick={() => setBulkOpen(true)}>
-                  <Pencil size={ICON.sm} strokeWidth={STROKE} />
-                  עריכה מרובה ({selected.size})
-                </Button>
-              )}
-              {has(PERM.TASKS_CREATE) && (
-                <Button size="sm" variant="primary" onClick={() => setDrawer({ open: true, taskId: null })}>
-                  <Plus size={ICON.sm} strokeWidth={STROKE} />
-                  משימה חדשה
-                </Button>
-              )}
-            </>
-          }
-        >
-          {/* ── mobile toolbar: two rows, everything else behind "סינון" ──── */}
-          <div className="surface space-y-2 p-2 lg:hidden">
-            {presetRow}
-            <div className="flex items-center gap-1.5">
+      <div className="flex h-full min-h-0 flex-col gap-2">
+        {/* ── compact header & toolbar ─────────────────────────────────── */}
+        <div className="flex shrink-0 flex-col gap-2">
+          {/* Main top bar */}
+          <div className="surface flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl">
+            {/* Title & Stats */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              <h1 className="type-title font-bold text-ink shrink-0">לוח עבודה</h1>
+              <div className="hidden sm:flex flex-wrap items-center gap-1.5 type-caption text-ink-tertiary">
+                <span className="tabular font-medium text-ink bg-subtle px-2 py-0.5 rounded-full">{rows.length} משימות</span>
+                <span className="tabular bg-subtle px-2 py-0.5 rounded-full">{workingDays} ימי עבודה</span>
+                {colorBy === 'event' && tones.size > 0 && <span className="tabular bg-subtle px-2 py-0.5 rounded-full">{tones.size} אירועים</span>}
+                {overdueTotal > 0 && (
+                  <span className="inline-flex items-center gap-1 font-medium text-error-text bg-error-subtle px-2 py-0.5 rounded-full">
+                    <AlertTriangle size={ICON.xs} />
+                    {overdueTotal} באיחור
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Main actions & inline search/date controls */}
+            <div className="flex flex-wrap items-center gap-1.5 ms-auto">
+              <div className="hidden lg:flex items-center gap-1.5">
+                {presetRow}
+                <div className="h-4 w-px bg-line shrink-0 mx-0.5" aria-hidden />
+                {dateFields}
+              </div>
+
               <Input
-                className="min-w-0 flex-1"
+                className="w-28 sm:w-36 lg:w-40"
                 inputSize="sm"
                 placeholder="חיפוש..."
                 value={filters.q}
                 onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
                 aria-label="חיפוש חופשי"
               />
+
               <Button
                 size="sm"
-                variant={activeFilterCount > 0 ? 'outlined' : 'secondary'}
+                variant={showFilters || activeFilterCount > 0 ? 'outlined' : 'secondary'}
+                onClick={() => setShowFilters((v) => !v)}
                 className="shrink-0"
-                onClick={() => setFilterSheet(true)}
               >
                 <Filter size={ICON.sm} strokeWidth={STROKE} />
-                סינון
+                <span className="hidden sm:inline">סינון</span>
                 {activeFilterCount > 0 && (
-                  <span className="inline-flex size-4 items-center justify-center rounded-full bg-primary type-caption font-bold tabular text-on-primary">
+                  <span className="inline-flex size-4 items-center justify-center rounded-full bg-primary type-caption font-bold tabular text-on-primary text-[10px]">
                     {activeFilterCount}
                   </span>
                 )}
+                {showFilters ? <ChevronUp size={ICON.xs} /> : <ChevronDown size={ICON.xs} />}
               </Button>
-            </div>
-            <p className="type-caption tabular text-ink-tertiary">
-              {fmtDate(from)} – {fmtDate(to)}
-            </p>
-          </div>
 
-          {/* ── desktop toolbar: everything inline ───────────────────────── */}
-          <div className="surface hidden flex-wrap items-center gap-2 p-2.5 lg:flex">
-            {dateFields}
-            {presetRow}
-
-            <Input
-              className="w-44"
-              inputSize="sm"
-              placeholder="חיפוש..."
-              value={filters.q}
-              onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
-              aria-label="חיפוש חופשי"
-            />
-            {lookupFilters}
-
-            <div className="ms-auto flex items-center gap-1.5">
               <Popover
                 trigger={({ toggle, ...aria }) => (
                   <Button size="sm" variant="ghost" onClick={toggle} {...aria}>
                     <SlidersHorizontal size={ICON.sm} strokeWidth={STROKE} />
-                    תצוגה
+                    <span className="hidden sm:inline">תצוגה</span>
                   </Button>
                 )}
               >
@@ -686,8 +660,8 @@ export default function WorkBoardPage() {
                 trigger={({ toggle, ...aria }) => (
                   <Button size="sm" variant="ghost" onClick={toggle} {...aria}>
                     <Columns3 size={ICON.sm} strokeWidth={STROKE} />
-                    שדות
-                    <span className="tabular text-ink-tertiary">
+                    <span className="hidden sm:inline">שדות</span>
+                    <span className="tabular text-ink-tertiary text-xs">
                       {fields.length}/{BOARD_FIELDS.length}
                     </span>
                   </Button>
@@ -715,9 +689,39 @@ export default function WorkBoardPage() {
                   </div>
                 )}
               </Popover>
+
+              {selected.size > 0 && canBulk && (
+                <Button size="sm" onClick={() => setBulkOpen(true)}>
+                  <Pencil size={ICON.sm} strokeWidth={STROKE} />
+                  <span className="hidden sm:inline">עריכה ({selected.size})</span>
+                </Button>
+              )}
+
+              {has(PERM.TASKS_CREATE) && (
+                <Button size="sm" variant="primary" onClick={() => setDrawer({ open: true, taskId: null })}>
+                  <Plus size={ICON.sm} strokeWidth={STROKE} />
+                  <span className="hidden sm:inline">משימה חדשה</span>
+                </Button>
+              )}
             </div>
           </div>
-        </PageHeader>
+
+          {/* Secondary Collapsible Filters Row */}
+          {showFilters && (
+            <div className="surface flex flex-wrap items-center gap-2 p-2 rounded-xl text-sm transition-all duration-150">
+              <div className="lg:hidden flex flex-wrap items-center gap-1.5 w-full pb-2 border-b border-line-subtle">
+                {presetRow}
+                {dateFields}
+              </div>
+              {lookupFilters}
+              {activeFilterCount > 0 && (
+                <Button size="sm" variant="ghost" className="text-ink-tertiary ms-auto" onClick={resetFilters}>
+                  איפוס סינון
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* ── the board ──────────────────────────────────────────────────── */}
         <div className="surface min-h-0 flex-1 overflow-hidden">

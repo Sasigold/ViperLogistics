@@ -59,6 +59,13 @@ export function OvertimeSettingsTab() {
   const patchOt = (p: Partial<OvertimeConfig>) => setOt((c) => (c ? { ...c, ...p } : c))
   const patchCk = (p: Partial<ClockConfig>) => setCk((c) => (c ? { ...c, ...p } : c))
 
+  // המפתח נוסף ב-0024, ולכן קונפיגורציה שנשמרה לפניו לא מכילה אותו. ברירות
+  // המחדל כאן הן אותן ברירות מחדל של ה-RPC, כדי שהמסך לא יציג "כבוי" למשהו
+  // שבשרת פועל.
+  const selfEntry = ck.self_entry ?? { enabled: true, max_backdate_days: 14, max_hours: 16 }
+  const patchSelf = (p: Partial<ClockConfig['self_entry']>) =>
+    patchCk({ self_entry: { ...selfEntry, ...p } })
+
   const save = async () => {
     try {
       await saveOvertime.mutateAsync(ot)
@@ -294,6 +301,40 @@ export function OvertimeSettingsTab() {
             </Field>
           </div>
 
+          {/* דיווח ידני של עובד הוא פתח המילוט לשעון שלא עבד. הוא נכתב
+              כ"ממתין לאישור" ואינו נספר בשעות עד שמנהל מכריע, ולכן ההגדרות
+              כאן הן על היקף הדיווח ולא על מי סופר אותו. */}
+          <div className="grid gap-4 border-t border-line-subtle pt-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="דיווח משמרת ידני" hint="עובד מדווח משמרת שלא הוחתמה, לאישור מנהל">
+              <Switch
+                checked={selfEntry.enabled}
+                onChange={(v) => patchSelf({ enabled: v })}
+                label="מותר לעובדים"
+              />
+            </Field>
+            <Field label="חלון דיווח (ימים אחורה)" hint="מעבר לזה רק מנהל מזין">
+              <Input
+                type="number"
+                dir="ltr"
+                min={1}
+                step={1}
+                disabled={!selfEntry.enabled}
+                value={selfEntry.max_backdate_days}
+                onChange={(e) => patchSelf({ max_backdate_days: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="אורך משמרת מרבי (שעות)">
+              <Input
+                type="number"
+                dir="ltr"
+                min={1}
+                step={1}
+                disabled={!selfEntry.enabled}
+                value={selfEntry.max_hours}
+                onChange={(e) => patchSelf({ max_hours: Number(e.target.value) })}
+              />
+            </Field>
+          </div>
         </CardBody>
       </Card>
 

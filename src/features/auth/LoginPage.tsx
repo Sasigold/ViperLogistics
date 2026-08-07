@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router'
-import { AlertCircle, ICON, STROKE, Truck } from '../../components/ui/icons'
+import { AlertCircle, ICON, STROKE } from '../../components/ui/icons'
 import { Button, Field, Input } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
@@ -39,9 +39,7 @@ export default function LoginPage() {
 
       <div className="relative w-full max-w-sm">
         <div className="mb-7 flex flex-col items-center gap-3 text-center">
-          <span className="flex size-14 items-center justify-center rounded-2xl bg-primary text-on-primary shadow-lg">
-            <Truck size={26} strokeWidth={STROKE} />
-          </span>
+          <img src="/favicon.svg" className="size-14 shrink-0 drop-shadow-md" alt="ViperLogistics" />
           <div>
             <h1 className="type-heading">ViperLogistics</h1>
             <p className="mt-0.5 type-caption text-ink-tertiary">מערכת ניהול כוח אדם לאירועים</p>

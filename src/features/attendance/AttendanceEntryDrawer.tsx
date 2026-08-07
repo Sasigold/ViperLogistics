@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { ICON, MapPin, STROKE, Trash2 } from '../../components/ui/icons'
+import { Check, ICON, MapPin, STROKE, Trash2, X } from '../../components/ui/icons'
 import {
   Badge,
   Button,
@@ -15,8 +15,15 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { fmtDateTime, fmtMoney } from '../../lib/dates'
-import { useAttendanceInvalidate } from './attendanceQueries'
-import { WORK_SITE_LABELS, fmtDistance, fmtDuration, flagLabel } from './shiftFormat'
+import { useAttendanceInvalidate, useReviewAttendanceEntry } from './attendanceQueries'
+import {
+  STATUS_LABELS,
+  STATUS_TONES,
+  WORK_SITE_LABELS,
+  fmtDistance,
+  fmtDuration,
+  flagLabel,
+} from './shiftFormat'
 import type { AttendanceReportRow } from '../../types/domain'
 
 /** timestamptz -> הערך ש-<input type="datetime-local"> מצפה לו, בשעון המקומי. */
@@ -40,6 +47,9 @@ export function AttendanceEntryDrawer({
   const invalidate = useAttendanceInvalidate()
   const canEdit = has(PERM.ATTENDANCE_EDIT_ENTRY)
   const canDelete = has(PERM.ATTENDANCE_DELETE)
+  const canApprove = has(PERM.ATTENDANCE_APPROVE_ENTRY)
+  const isPending = row?.status === 'pending'
+  const review = useReviewAttendanceEntry()
 
   const [form, setForm] = useState({ clockIn: '', clockOut: '', note: '' })
 
@@ -86,6 +96,28 @@ export function AttendanceEntryDrawer({
     onError: (e) => toast.error((e as Error).message),
   })
 
+  /**
+   * ההכרעה על דיווח. הנימוק נלקח משדה "הערת מנהל" שכבר בטופס, ולא משדה
+   * שני משלו: זה בדיוק אותו טקסט, והעובד רואה אותו כשהדיווח נדחה.
+   */
+  const decide = (approve: boolean) => {
+    if (!row) return
+    if (!approve && !form.note.trim()) {
+      toast.error('דחייה מחייבת נימוק — כתוב אותו בהערת המנהל')
+      return
+    }
+    review.mutate(
+      { id: row.id, approve, note: form.note },
+      {
+        onSuccess: () => {
+          toast.success(approve ? 'הדיווח אושר ונספר בשעות' : 'הדיווח נדחה')
+          onClose()
+        },
+        onError: (e) => toast.error((e as Error).message),
+      },
+    )
+  }
+
   const pay = row?.pay
   const corrected = !!row && (!!row.raw_clock_in_at || !!row.raw_clock_out_at)
 
@@ -97,7 +129,7 @@ export function AttendanceEntryDrawer({
         title={row?.full_name ?? ''}
         description={row ? `${row.work_date} · משמרת ${row.seq}` : undefined}
         footer={
-          canEdit && (
+          (canEdit || (isPending && canApprove)) && (
             <>
               {canDelete && (
                 <Button
@@ -110,10 +142,32 @@ export function AttendanceEntryDrawer({
                   מחיקה
                 </Button>
               )}
-              <Button onClick={onClose}>ביטול</Button>
-              <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
-                שמירה
-              </Button>
+              {/* כשיש הכרעה לקבל, היא הפעולה הראשית. "שמירת תיקון" נשארת
+                  זמינה כדי לתקן שעה לפני האישור, אבל אינה מתחרה עליה. */}
+              {isPending && canApprove ? (
+                <>
+                  {canEdit && (
+                    <Button loading={save.isPending} onClick={() => save.mutate()}>
+                      שמירת תיקון
+                    </Button>
+                  )}
+                  <Button variant="danger" loading={review.isPending} onClick={() => decide(false)}>
+                    <X size={ICON.sm} strokeWidth={STROKE} />
+                    דחייה
+                  </Button>
+                  <Button variant="primary" loading={review.isPending} onClick={() => decide(true)}>
+                    <Check size={ICON.sm} strokeWidth={STROKE} />
+                    אישור
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button onClick={onClose}>ביטול</Button>
+                  <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
+                    שמירה
+                  </Button>
+                </>
+              )}
             </>
           )
         }
@@ -121,6 +175,7 @@ export function AttendanceEntryDrawer({
         {row && (
           <div className="space-y-4">
             <div className="flex flex-wrap gap-1.5">
+              <Badge tone={STATUS_TONES[row.status]}>{STATUS_LABELS[row.status]}</Badge>
               <Badge tone={row.source === 'manual' ? 'warning' : 'neutral'}>
                 {row.source === 'manual' ? 'הוזן ידנית' : 'שעון'}
               </Badge>
@@ -131,6 +186,18 @@ export function AttendanceEntryDrawer({
                 </Badge>
               ))}
             </div>
+
+            {row.status === 'pending' ? (
+              <p className="rounded-lg border border-warning-border bg-warning-subtle px-3 py-2 type-body text-warning-text">
+                הדיווח ממתין להכרעה. השעות אינן נספרות בסיכומים ובשכר עד שיאושר.
+              </p>
+            ) : (
+              row.reviewed_at && (
+                <p className="type-caption text-ink-tertiary">
+                  {row.status === 'approved' ? 'אושר' : 'נדחה'} ב-{fmtDateTime(row.reviewed_at)}
+                </p>
+              )
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="שעת כניסה" required>

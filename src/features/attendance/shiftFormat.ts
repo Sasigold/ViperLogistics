@@ -1,6 +1,6 @@
 import { format, parseISO } from 'date-fns'
 import { he } from 'date-fns/locale'
-import type { WorkSite } from '../../types/domain'
+import type { AttendanceStatus, WorkSite } from '../../types/domain'
 
 export const WORK_SITE_LABELS: Record<WorkSite, string> = {
   field: 'שטח',
@@ -18,10 +18,27 @@ export const FLAG_LABELS: Record<string, string> = {
   low_accuracy: 'דיוק מיקום נמוך',
   auto_closed: 'נסגרה אוטומטית',
   manual: 'הוזן ידנית',
+  self_reported: 'דיווח עצמי',
   edited: 'תוקן',
 }
 
 export const flagLabel = (f: string) => FLAG_LABELS[f] ?? f
+
+/**
+ * מצב האישור. 'approved' אינו מקבל תווית: רשומה מאושרת היא המצב הרגיל,
+ * ותג על כל שורה בדוח היה רעש שמסתיר את שתי השורות שבאמת דורשות מבט.
+ */
+export const STATUS_LABELS: Record<AttendanceStatus, string> = {
+  pending: 'ממתין לאישור',
+  approved: 'מאושר',
+  rejected: 'נדחה',
+}
+
+export const STATUS_TONES: Record<AttendanceStatus, 'warning' | 'success' | 'error'> = {
+  pending: 'warning',
+  approved: 'success',
+  rejected: 'error',
+}
 
 /** דגלים שמצדיקים תשומת לב של מנהל, להבדיל מאלה שהם רק מידע. */
 export const ATTENTION_FLAGS = new Set(['no_site_coords', 'no_shift', 'auto_closed', 'low_accuracy'])

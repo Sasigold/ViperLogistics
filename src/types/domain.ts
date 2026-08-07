@@ -699,6 +699,12 @@ export interface PayBreakdown {
   lines?: PayLine[]
 }
 
+/**
+ * מצב האישור של רשומת נוכחות. pending הוא דיווח ידני של עובד שטרם הוכרע,
+ * ואינו נספר בשעות ובשכר עד שיאושר.
+ */
+export type AttendanceStatus = 'pending' | 'approved' | 'rejected'
+
 export interface AttendanceEntry {
   id: string
   profile_id: string
@@ -719,6 +725,9 @@ export interface AttendanceEntry {
   raw_clock_out_at: string | null
   actual_hours: number | null
   source: 'clock' | 'manual'
+  status: AttendanceStatus
+  reviewed_by: string | null
+  reviewed_at: string | null
   flags: string[]
   employee_note: string | null
   manager_note: string | null
@@ -746,6 +755,8 @@ export interface AttendanceReportRow {
   raw_clock_in_at: string | null
   raw_clock_out_at: string | null
   source: 'clock' | 'manual'
+  status: AttendanceStatus
+  reviewed_at: string | null
   flags: string[]
   employee_note: string | null
   manager_note: string | null
@@ -756,8 +767,11 @@ export interface AttendanceReportRow {
 export interface AttendanceReport {
   rows: AttendanceReportRow[]
   can_see_pay: boolean
+  /** הסיכומים סופרים שורות מאושרות בלבד; מה שממתין נספר בנפרד */
   totals: {
     entries: number
+    pending: number
+    pending_hours: number
     actual_hours: number
     paid_hours: number
     overtime_hours: number
@@ -807,6 +821,12 @@ export interface ClockConfig {
   allow_clock_without_shift: boolean
   max_accuracy_m: number
   auto_close_after_hours: number
+  /** דיווח משמרת ידני של עובד, לאישור מנהל */
+  self_entry: {
+    enabled: boolean
+    max_backdate_days: number
+    max_hours: number
+  }
 }
 
 /** מה שדף השעון צריך כדי לצייר את עצמו, מ-attendance_my_status. */
@@ -814,5 +834,8 @@ export interface ClockStatus {
   open_entry: AttendanceEntry | null
   shift: PlannedShift | null
   rules: ClockConfig
+  can_submit: boolean
   today: AttendanceEntry[]
+  /** הדיווחים הידניים שלי שממתינים לאישור או שנדחו, 45 יום אחורה */
+  reports: AttendanceEntry[]
 }
