@@ -919,7 +919,7 @@ export default function WorkBoardPage() {
                         <div
                           key={b.dayKey}
                           className={cx(
-                            'absolute top-0 flex items-center gap-1.5 overflow-hidden border-b border-s border-line px-2',
+                            'absolute top-0 flex items-center justify-center gap-1.5 overflow-hidden border-b border-s border-line px-2',
                             isToday
                               ? 'bg-[var(--vl-board-today)]'
                               : b.overdue > 0
@@ -969,7 +969,12 @@ export default function WorkBoardPage() {
                               </span>
                             </Tooltip>
                           )}
-                          {!quiet && <span className="ms-auto shrink-0 type-caption tabular text-ink-tertiary">{b.count}</span>}
+                          {/* out of the flow, or it would push the date off centre */}
+                          {!quiet && (
+                            <span className="absolute inset-y-0 end-2 flex items-center type-caption tabular text-ink-tertiary">
+                              {b.count}
+                            </span>
+                          )}
                         </div>
                       )
                     })}
@@ -996,7 +1001,6 @@ export default function WorkBoardPage() {
                             <TaskHeader
                               row={col.row}
                               today={today}
-                              tone={col.tone}
                               groupKey={col.groupKey}
                               showCustomer={canSeeCustomers}
                               selected={selected.has(col.row.id)}
@@ -1374,7 +1378,6 @@ const MobileTaskCard = memo(function MobileTaskCard({
 const TaskHeader = memo(function TaskHeader({
   row,
   today,
-  tone,
   groupKey,
   showCustomer,
   selected,
@@ -1384,7 +1387,6 @@ const TaskHeader = memo(function TaskHeader({
 }: {
   row: WorkBoardRow
   today: string
-  tone: GroupTone | null
   groupKey: string
   /** the customer's identity is a permission; without it the header falls back */
   showCustomer: boolean
@@ -1408,14 +1410,11 @@ const TaskHeader = memo(function TaskHeader({
       onMouseEnter={() => onHover(groupKey)}
       onMouseLeave={() => onHover(null)}
       className={cx(
-        'group relative flex h-full items-center gap-1 border-b border-s border-line px-1.5',
+        'group relative flex h-full items-center gap-1 border-b border-line px-1.5',
         selected && 'bg-selected',
       )}
       style={selected ? undefined : { background: fill, color: readableOn(fill) }}
     >
-      {/* with the event band gone this strip is the only thing left saying that
-          the columns beside this one belong to the same job */}
-      <span aria-hidden className="absolute inset-x-0 top-0 h-1" style={{ background: tone?.solid ?? 'transparent' }} />
       <Checkbox checked={selected} onChange={() => onToggle(row.id)} />
       <Tooltip content={label}>
         <span className="min-w-0 flex-1 truncate text-center type-caption font-bold">{label}</span>
@@ -1521,19 +1520,24 @@ const TaskColumn = memo(
     style: React.CSSProperties
   }) {
     /* The group's own colour draws its outer edges, so a run of columns reads
-       as one block; the seams inside the run stay quiet. */
-    const edges = tone
-      ? {
-          borderInlineStartColor: first ? tone.border : undefined,
-          boxShadow: last ? `inset -1px 0 0 0 ${tone.border}` : undefined,
-        }
-      : undefined
+       as one block; the seams inside the run stay quiet. Both edges are inset
+       shadows rather than a border and a shadow: the column carries no border
+       of its own any more, and a leading edge declared as a border-*colour*
+       with no width would silently draw nothing. */
+    const edges =
+      tone && (first || last)
+        ? {
+            boxShadow: [first && `inset 1px 0 0 0 ${tone.border}`, last && `inset -1px 0 0 0 ${tone.border}`]
+              .filter(Boolean)
+              .join(', '),
+          }
+        : undefined
 
     return (
       <div
         onMouseEnter={() => onHover(groupKey)}
         onMouseLeave={() => onHover(null)}
-        className={cx('absolute top-0 border-s border-line', selected ? 'bg-selected' : 'bg-surface')}
+        className={cx('absolute top-0', selected ? 'bg-selected' : 'bg-surface')}
         style={{
           ...style,
           position: 'absolute',
