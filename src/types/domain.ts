@@ -569,21 +569,49 @@ export interface MyPermissions {
   permissions: Record<string, Partial<Record<PermissionAction, boolean>>>
   /** every registry key, already resolved by the server */
   capabilities: Record<string, boolean>
+  /**
+   * Which kinds of person this user may open an account for, resolved by the
+   * server through `app.may_create_profile` — the same predicate the insert
+   * policy uses, so the form can never offer an option the write would refuse.
+   */
+  creatable_user_kinds: UserKind[]
   field_permissions: FieldPermission[]
   scopes: MyScope[]
   /** company form config already intersected with this user's overrides */
   form_config: { field_key: string; state: FieldState }[]
 }
 
-export interface CustomerDashboard {
+/**
+ * `dashboard_stats`, the one dashboard RPC. A section the caller holds no key
+ * for comes back `null` rather than zero or `[]` — 0 means "none", null means
+ * "not for you", and the screen draws the first and omits the second.
+ */
+export interface DashboardStats {
   events_count: number
   events_upcoming: number
   events_done: number
   tasks_count: number
   tasks_open: number
-  /** null כשללקוח לא ניתן המפתח pricing.view */
-  pricing_total: number | null
+  tasks_today: number
+  tasks_week: number
+  tasks_overdue: number
+  /** null ללא dashboard.all_workers */
+  available_workers: number | null
+  /** null ללא customers.view — ללקוח יש לקוח אחד והגרף חסר משמעות */
+  by_customer: { name: string; color: string; cnt: number }[] | null
+  /** null ללא dashboard.contractors */
+  by_contractor: { name: string; cnt: number }[] | null
+  /** null ללא dashboard.all_workers */
+  by_worker: { name: string; cnt: number }[] | null
   by_status: { name: string; color: string; cnt: number }[]
+  /** null ללא dashboard.financial */
+  financial: { expected: number; paid: number } | null
+  /** null ללא pricing.revenue */
+  revenue: {
+    total: number
+    priced_tasks: number
+    by_customer: { name: string; color: string; total: number }[] | null
+  } | null
   next_events: {
     id: string
     event_date: string

@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import type { FieldState, MyPermissions, PermissionAction } from '../types/domain'
+import { PERM } from '../lib/permissionKeys'
+import type { FieldState, MyPermissions, PermissionAction, UserKind } from '../types/domain'
 
 interface AuthState {
   session: Session | null
@@ -23,6 +24,10 @@ interface AuthState {
   formFieldState: (key: string) => FieldState
   /** form composition AND data access — what a client actually gets to see */
   showsEventField: (key: string) => boolean
+  /** `events.create` plus the per-company switch the RPC enforces anyway */
+  canCreateEvent: () => boolean
+  /** kinds of account this user may open, resolved server-side */
+  creatableKinds: () => UserKind[]
 }
 
 /**
@@ -129,4 +134,19 @@ export const useAuth = create<AuthState>((set, get) => ({
     const canViewField = get().canViewField
     return columnsOf(key).every((c) => canViewField('event', c))
   },
+
+  /**
+   * `customers.can_create_events` is a company switch that sits outside the
+   * permission registry, and `create_event` refuses without it. A user bound to
+   * a company is asked about it; everyone else has no company to ask, so the
+   * key alone decides. The test is the presence of that company — a fact —
+   * rather than the user's kind.
+   */
+  canCreateEvent: () => {
+    const me = get().me
+    if (!get().has(PERM.EVENTS_CREATE)) return false
+    return me?.customer ? me.customer.can_create_events : true
+  },
+
+  creatableKinds: () => get().me?.creatable_user_kinds ?? [],
 }))

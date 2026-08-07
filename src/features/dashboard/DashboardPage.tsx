@@ -42,22 +42,7 @@ import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
 import { TaskDrawer } from '../tasks/TaskDrawer'
 import { EventFormModal } from '../events/EventFormModal'
-import type { WorkBoardRow } from '../../types/domain'
-
-interface Stats {
-  events_count: number
-  tasks_count: number
-  tasks_today: number
-  tasks_week: number
-  tasks_overdue: number
-  available_workers: number
-  by_customer: { name: string; color: string; cnt: number }[]
-  by_contractor: { name: string; cnt: number }[]
-  by_worker: { name: string; cnt: number }[]
-  by_status: { name: string; color: string; cnt: number }[]
-  /** null כשאין למשתמש pricing.revenue — ה-RPC מחזיר null ולא מסתיר את המפתח */
-  revenue: { total: number; priced_tasks: number; by_customer: { name: string; color: string; total: number }[] } | null
-}
+import type { DashboardStats, WorkBoardRow } from '../../types/domain'
 
 const CHART_H = 250
 
@@ -78,7 +63,7 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const { has } = useAuth()
+  const { has, canCreateEvent } = useAuth()
   const [from, setFrom] = useState(toISODate(startOfMonth(new Date())))
   const [to, setTo] = useState(toISODate(endOfMonth(new Date())))
   const [taskDrawer, setTaskDrawer] = useState<{ open: boolean; id: string | null }>({ open: false, id: null })
@@ -99,7 +84,7 @@ export default function DashboardPage() {
     queryFn: async () => {
       const { data, error } = await supabase.rpc('dashboard_stats', { p_from: from, p_to: to })
       if (error) throw error
-      return data as Stats
+      return data as DashboardStats
     },
   })
 
@@ -108,7 +93,7 @@ export default function DashboardPage() {
     queryFn: async () => {
       const { data, error } = await supabase.rpc('dashboard_stats', { p_from: prevRange.from, p_to: prevRange.to })
       if (error) throw error
-      return data as Stats
+      return data as DashboardStats
     },
   })
 
@@ -256,13 +241,16 @@ export default function DashboardPage() {
               tone="#ef4444"
               onClick={() => navigate('/board')}
             />
-            <StatCard
-              icon={<Users size={ICON.xl} strokeWidth={STROKE} />}
-              label="עובדים זמינים היום"
-              value={stats.available_workers}
-              tone="#22c55e"
-              onClick={() => navigate('/users')}
-            />
+            {/* null — ולא 0 — למי שאינו רואה סטטיסטיקות של כלל העובדים */}
+            {stats.available_workers !== null && (
+              <StatCard
+                icon={<Users size={ICON.xl} strokeWidth={STROKE} />}
+                label="עובדים זמינים היום"
+                value={stats.available_workers}
+                tone="#22c55e"
+                onClick={() => navigate('/users')}
+              />
+            )}
             {/* הכנסות מלקוחות — נפרד מהתשלומים לקבלנים, ובהרשאה נפרדת */}
             {stats.revenue && (
               <StatCard
@@ -280,7 +268,7 @@ export default function DashboardPage() {
         {/* ── quick actions ───────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="type-overline">פעולות מהירות</span>
-          {has(PERM.EVENTS_CREATE) && (
+          {canCreateEvent() && (
             <Button size="sm" variant="primary" onClick={() => setEventModal(true)}>
               <Plus size={ICON.sm} strokeWidth={STROKE} />
               אירוע חדש
@@ -380,6 +368,34 @@ export default function DashboardPage() {
           </Card>
         </div>
 
+        {/* Came from the client dashboard, kept for everyone: the tasks lists
+            below answer "what is happening", this answers "what is booked". */}
+        {!!stats?.next_events.length && (
+          <Card>
+            <CardHeader title="האירועים הקרובים" icon={<CalendarDays size={ICON.md} strokeWidth={STROKE} />} />
+            <CardBody padded={false}>
+              <ul>
+                {stats.next_events.map((e) => (
+                  <li key={e.id} className="border-b border-line-subtle last:border-0">
+                    <Link
+                      to={`/events/${e.id}`}
+                      className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-hover"
+                    >
+                      <span className="w-24 shrink-0 tabular type-body font-medium text-primary-text">
+                        {fmtDate(e.event_date)}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{e.end_client_name || 'ללא שם'}</span>
+                      {e.event_number && (
+                        <span className="shrink-0 tabular type-caption text-ink-tertiary">{e.event_number}</span>
+                      )}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </CardBody>
+          </Card>
+        )}
+
         {/* ── task lists ──────────────────────────────────────────────────── */}
         <div className="grid gap-4 lg:grid-cols-3">
           <TaskListCard
@@ -417,39 +433,50 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* ── charts ──────────────────────────────────────────────────────── */}
-        <div className="grid gap-4 lg:grid-cols-3">
-          <ChartCard title="משימות לפי לקוח" empty={!stats?.by_customer.length} loading={isLoading}>
-            <BarChart data={stats?.by_customer ?? []} margin={{ top: 4, right: 4, bottom: 4, left: -20 }}>
-              <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--vl-text-tertiary)' }} axisLine={false} tickLine={false} interval={0} angle={-25} textAnchor="end" height={54} />
-              <YAxis tick={{ fontSize: 11, fill: 'var(--vl-text-tertiary)' }} allowDecimals={false} axisLine={false} tickLine={false} />
-              <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
-              <Bar dataKey="cnt" name="משימות" radius={[6, 6, 0, 0]} maxBarSize={44}>
-                {(stats?.by_customer ?? []).map((c, i) => (
-                  <Cell key={i} fill={c.color} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ChartCard>
+        {/* ── charts ──────────────────────────────────────────────────────
+            A section the reader holds no key for arrives as null rather than
+            an empty array, and is dropped rather than drawn empty: an empty
+            chart says "no data this range", which is a different claim.   */}
+        {(stats?.by_customer || stats?.by_worker || stats?.by_contractor || isLoading) && (
+          <div className="grid gap-4 lg:grid-cols-3">
+            {(isLoading || stats?.by_customer) && (
+              <ChartCard title="משימות לפי לקוח" empty={!stats?.by_customer?.length} loading={isLoading}>
+                <BarChart data={stats?.by_customer ?? []} margin={{ top: 4, right: 4, bottom: 4, left: -20 }}>
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--vl-text-tertiary)' }} axisLine={false} tickLine={false} interval={0} angle={-25} textAnchor="end" height={54} />
+                  <YAxis tick={{ fontSize: 11, fill: 'var(--vl-text-tertiary)' }} allowDecimals={false} axisLine={false} tickLine={false} />
+                  <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
+                  <Bar dataKey="cnt" name="משימות" radius={[6, 6, 0, 0]} maxBarSize={44}>
+                    {(stats?.by_customer ?? []).map((c, i) => (
+                      <Cell key={i} fill={c.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ChartCard>
+            )}
 
-          <ChartCard title="עומס עובדים" subtitle="שיבוצים בטווח" empty={!stats?.by_worker.length} loading={isLoading}>
-            <BarChart data={stats?.by_worker ?? []} layout="vertical" margin={{ top: 4, right: 12, bottom: 4, left: 4 }}>
-              <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--vl-text-tertiary)' }} allowDecimals={false} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="name" width={86} tick={{ fontSize: 11, fill: 'var(--vl-text-tertiary)' }} axisLine={false} tickLine={false} />
-              <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
-              <Bar dataKey="cnt" name="שיבוצים" fill="var(--vl-primary)" radius={[0, 6, 6, 0]} maxBarSize={18} />
-            </BarChart>
-          </ChartCard>
+            {(isLoading || stats?.by_worker) && (
+              <ChartCard title="עומס עובדים" subtitle="שיבוצים בטווח" empty={!stats?.by_worker?.length} loading={isLoading}>
+                <BarChart data={stats?.by_worker ?? []} layout="vertical" margin={{ top: 4, right: 12, bottom: 4, left: 4 }}>
+                  <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--vl-text-tertiary)' }} allowDecimals={false} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="name" width={86} tick={{ fontSize: 11, fill: 'var(--vl-text-tertiary)' }} axisLine={false} tickLine={false} />
+                  <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
+                  <Bar dataKey="cnt" name="שיבוצים" fill="var(--vl-primary)" radius={[0, 6, 6, 0]} maxBarSize={18} />
+                </BarChart>
+              </ChartCard>
+            )}
 
-          <ChartCard title="התפלגות קבלנים" empty={!stats?.by_contractor.length} loading={isLoading}>
-            <BarChart data={stats?.by_contractor ?? []} margin={{ top: 4, right: 4, bottom: 4, left: -20 }}>
-              <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--vl-text-tertiary)' }} axisLine={false} tickLine={false} interval={0} angle={-25} textAnchor="end" height={54} />
-              <YAxis tick={{ fontSize: 11, fill: 'var(--vl-text-tertiary)' }} allowDecimals={false} axisLine={false} tickLine={false} />
-              <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
-              <Bar dataKey="cnt" name="משימות" fill="#f59e0b" radius={[6, 6, 0, 0]} maxBarSize={44} />
-            </BarChart>
-          </ChartCard>
-        </div>
+            {(isLoading || stats?.by_contractor) && (
+              <ChartCard title="התפלגות קבלנים" empty={!stats?.by_contractor?.length} loading={isLoading}>
+                <BarChart data={stats?.by_contractor ?? []} margin={{ top: 4, right: 4, bottom: 4, left: -20 }}>
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--vl-text-tertiary)' }} axisLine={false} tickLine={false} interval={0} angle={-25} textAnchor="end" height={54} />
+                  <YAxis tick={{ fontSize: 11, fill: 'var(--vl-text-tertiary)' }} allowDecimals={false} axisLine={false} tickLine={false} />
+                  <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
+                  <Bar dataKey="cnt" name="משימות" fill="#f59e0b" radius={[6, 6, 0, 0]} maxBarSize={44} />
+                </BarChart>
+              </ChartCard>
+            )}
+          </div>
+        )}
 
         <TaskDrawer
           open={taskDrawer.open}

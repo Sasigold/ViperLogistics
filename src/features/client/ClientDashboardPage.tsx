@@ -15,16 +15,21 @@ import { supabase } from '../../lib/supabase'
 import { fmtDate } from '../../lib/dates'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
-import type { CustomerDashboard } from '../../types/domain'
+import { toISODate } from '../../lib/dates'
+import { endOfMonth, startOfMonth } from 'date-fns'
+import type { DashboardStats } from '../../types/domain'
 
 export default function ClientDashboardPage() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ['client', 'dashboard'],
     queryFn: async () => {
       // SECURITY INVOKER on the RPC, so RLS scopes the numbers to this customer
-      const { data, error } = await supabase.rpc('customer_dashboard', { p_from: null, p_to: null })
+      const { data, error } = await supabase.rpc('dashboard_stats', {
+        p_from: toISODate(startOfMonth(new Date())),
+        p_to: toISODate(endOfMonth(new Date())),
+      })
       if (error) throw error
-      return data as CustomerDashboard
+      return data as DashboardStats
     },
   })
 
@@ -39,12 +44,12 @@ export default function ClientDashboardPage() {
       ) : (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {/* null כשהלקוח לא קיבל את מפתח pricing.view */}
-            {stats.pricing_total !== null && stats.pricing_total !== undefined && (
+            {/* null כשהלקוח לא קיבל את מפתח pricing.revenue */}
+            {stats.revenue && (
               <StatCard
                 icon={<Banknote size={ICON.xl} strokeWidth={STROKE} />}
                 label="סך תמחור"
-                value={fmtMoney(stats.pricing_total)}
+                value={fmtMoney(stats.revenue.total)}
                 tone="#1fa189"
               />
             )}
