@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   CalendarX,
   ChevronDown,
+  Download,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -117,6 +118,8 @@ export function AttendanceReport({
   const canAdd = has(PERM.ATTENDANCE_MANUAL_ENTRY)
   const canApprove = has(PERM.ATTENDANCE_APPROVE_ENTRY)
 
+  const toast = useToast()
+
   // Month navigation state
   const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()))
   const [showFilters, setShowFilters] = useState(false)
@@ -150,6 +153,25 @@ export function AttendanceReport({
     onlyFlagged,
     status: status ? [status] : null,
   })
+
+  /**
+   * הייצוא הוא הסיבה היחידה ש-ExcelJS ייטען, ולכן הוא נטען רק בלחיצה —
+   * אותו דפוס של ExcelDialog. הנתונים הם בדיוק מה שהמסך כבר קיבל, כדי
+   * שהקובץ יסכים עם המסך גם כשמסננים.
+   */
+  const [exporting, setExporting] = useState(false)
+  const runExport = async () => {
+    if (!data) return
+    setExporting(true)
+    try {
+      const { exportAttendanceReport } = await import('./exportAttendance')
+      await exportAttendanceReport(data, { from, to })
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const rows = data?.rows ?? []
   const totals = data?.totals
@@ -401,12 +423,24 @@ export function AttendanceReport({
           title="דוח נוכחות"
           subtitle={canSeeAll ? 'שעות, שעות נוספות ושכר לכל העובדים' : 'השעות שלי'}
           actions={
-            canAdd && (
-              <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
-                <Plus size={ICON.sm} strokeWidth={STROKE} />
-                הזנה ידנית
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void runExport()}
+                loading={exporting}
+                disabled={!data || rows.length === 0}
+              >
+                <Download size={ICON.sm} strokeWidth={STROKE} />
+                ייצוא לאקסל
               </Button>
-            )
+              {canAdd && (
+                <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
+                  <Plus size={ICON.sm} strokeWidth={STROKE} />
+                  הזנה ידנית
+                </Button>
+              )}
+            </div>
           }
         />
       )}
