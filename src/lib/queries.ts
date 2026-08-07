@@ -6,7 +6,10 @@ import type {
   Contractor,
   ContractorWorker,
   Customer,
+  CustomerPricingRule,
   EventAutoTask,
+  PricingZone,
+  TaskPricing,
   ExecutionMethod,
   FieldState,
   FormField,
@@ -107,6 +110,59 @@ export function useContractorWorkers(contractorId?: string | null) {
         .order('full_name')
       if (error) throw error
       return data as ContractorWorker[]
+    },
+  })
+}
+
+/**
+ * מחשבוני התמחור של לקוח, אחד לכל סוג משימה.
+ *
+ * customer_pricing_rules חסומה ב-RLS למי שאין לו pricing.manage_rules או
+ * pricing.view, ולכן ההוק הזה יחזיר רשימה ריקה ולא ישבור — הקריאה גם ככה
+ * נעשית רק ממסך שמגודר באותו מפתח.
+ */
+export function useCustomerPricingRules(customerId?: string | null) {
+  return useQuery({
+    queryKey: ['customer_pricing_rules', customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customer_pricing_rules')
+        .select('*')
+        .eq('customer_id', customerId)
+      if (error) throw error
+      return data as CustomerPricingRule[]
+    },
+  })
+}
+
+/** null כשאין עדיין מחיר, או כשהמשתמש אינו רשאי לראות אותו. */
+export function useTaskPricing(taskId?: string | null) {
+  return useQuery({
+    queryKey: ['task_pricing', taskId],
+    enabled: !!taskId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('task_pricing')
+        .select('*')
+        .eq('task_id', taskId)
+        .maybeSingle()
+      if (error) throw error
+      return (data as TaskPricing) ?? null
+    },
+  })
+}
+
+/** אזורי הנסיעה של לקוח מסוים, ואת הגלובליים שחלים על כולם. */
+export function usePricingZones(customerId?: string | null) {
+  return useQuery({
+    queryKey: ['pricing_zones', customerId ?? 'global'],
+    queryFn: async () => {
+      let q = supabase.from('pricing_zones').select('*').is('deleted_at', null)
+      q = customerId ? q.or(`customer_id.eq.${customerId},customer_id.is.null`) : q.is('customer_id', null)
+      const { data, error } = await q.order('priority').order('name')
+      if (error) throw error
+      return data as PricingZone[]
     },
   })
 }

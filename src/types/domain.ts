@@ -3,6 +3,8 @@ export type StaffRole = 'worker' | 'driver' | 'team_lead'
 export type FieldState = 'visible' | 'hidden' | 'required'
 export type PermissionAction = 'view' | 'create' | 'edit' | 'delete'
 
+export type PricingMode = 'manual' | 'auto'
+
 export interface Customer {
   id: string
   name: string
@@ -12,6 +14,8 @@ export interface Customer {
   contact_phone: string | null
   contact_email: string | null
   notes: string | null
+  /** manual = המחיר מוזן ביד; auto = מחושב ממחשבון התמחור של הלקוח */
+  pricing_mode: PricingMode
   is_active: boolean
   deleted_at: string | null
 }
@@ -191,6 +195,10 @@ export interface TaskRow {
   status_id: string
   contractor_id: string | null
   location_text: string | null
+  /** דריסה של זמן הנסיעה. null = לפי אזור הגיאופנס של מיקום האירוע. */
+  travel_hours: number | null
+  /** דריסה של "נדרש ראש צוות". null = לפי הקבוע במחשבון. */
+  requires_team_lead: boolean | null
   updated_at: string
   deleted_at: string | null
 }
@@ -252,6 +260,192 @@ export interface WorkBoardRow {
   workers: AssignmentPerson[] | null
   drivers: AssignmentPerson[] | null
   contractor_worker_list: { id: string; name: string }[] | null
+  /** null גם כשקיים מחיר, אם למשתמש אין pricing.view — הקבלן תמיד כאן. */
+  customer_price: number | null
+  price_is_manual: boolean | null
+  price_breakdown: PriceBreakdown | null
+  travel_hours: number | null
+  requires_team_lead: boolean | null
+}
+
+/* ===== תמחור ============================================================== */
+
+/**
+ * שני מודלים, כי לתמחור אירועים יש שתי צורות שונות באמת:
+ *   worker_hours — שעות × תעריף ⇒ מחיר לעובד, × כמות עובדים, + תוספות ומקדמים.
+ *                  זו הצורה של הקמה/פירוק.
+ *   line_items   — סכום שורות בלתי תלויות. כרטיס תעריפים לפי קוב או משאית.
+ * הטיפוסים כאן חייבים להישאר תואמים ל-app.price_calc במיגרציה 0017 — היא
+ * המבצעת, וזה רק החוזה מולה.
+ */
+export type PricingModel = 'worker_hours' | 'line_items'
+
+export type PriceCondOp =
+  | 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte'
+  | 'in' | 'not_in' | 'is_true' | 'is_false' | 'between'
+
+export interface PriceTest {
+  field: string
+  op: PriceCondOp
+  value?: unknown
+}
+/** null או אובייקט ריק = תמיד אמת. */
+export type PriceCond = { all: PriceTest[] } | { any: PriceTest[] } | PriceTest | null
+
+/** רכיב זמן במודל worker_hours. */
+export interface PricingHourComponent {
+  id: string
+  label: string
+  kind: 'const' | 'input' | 'stepped'
+  /** const */
+  hours?: number
+  /** input — שם משתנה, עם מכפיל (למשל נסיעה ×2 להלוך-חזור) */
+  input?: string
+  multiplier?: number
+  /** stepped — "הראשון שעה, כל נוסף חצי שעה" */
+  first?: number
+  each_additional?: number
+  when?: PriceCond
+  enabled?: boolean
+}
+
+export interface PricingWorkerAdjustment {
+  id: string
+  label: string
+  add: number
+  when?: PriceCond
+}
+
+/** תוספת שמתווספת אחרי ההכפלה בכמות העובדים. */
+export interface PricingAfterWorkers {
+  id: string
+  label: string
+  kind: 'fixed' | 'per_worker' | 'percent' | 'var'
+  amount?: number
+  /** per_worker — לפי העובדים המקוריים או לפי אלה שיוצאים בפועל */
+  workers_basis?: 'base' | 'effective'
+  input?: string
+  multiplier?: number
+  when?: PriceCond
+}
+
+export interface PricingTier {
+  up_to: number | null
+  amount?: number
+  rate?: number
+}
+
+/** רכיב במודל line_items. */
+export interface PricingComponent {
+  id: string
+  label: string
+  kind: 'fixed' | 'per_unit' | 'tiered' | 'surcharge' | 'var'
+  amount?: number
+  input?: string
+  rate?: number
+  multiplier?: number
+  included_units?: number
+  min_units?: number
+  max_units?: number
+  mode?: 'flat' | 'progressive'
+  tiers?: PricingTier[]
+  amount_kind?: 'fixed' | 'percent'
+  when?: PriceCond
+  enabled?: boolean
+}
+
+export interface PricingMultiplier {
+  id: string
+  label: string
+  factor: number
+  when?: PriceCond
+  enabled?: boolean
+}
+
+export interface PricingConfig {
+  version: number
+  model: PricingModel
+  /** ערכי בסיס למשתנים שאין להם שדה — הפסקה, ספייר, "נדרש ראש צוות" */
+  constants?: Record<string, unknown>
+  /* worker_hours */
+  hour_rate?: number
+  per_worker_fee?: number
+  hours?: PricingHourComponent[]
+  workers?: { input: string; adjustments?: PricingWorkerAdjustment[] }
+  after_workers?: PricingAfterWorkers[]
+  /* line_items */
+  components?: PricingComponent[]
+  /* משותף */
+  multipliers?: PricingMultiplier[]
+  discount?: { kind: 'fixed' | 'percent'; amount: number; label?: string } | null
+  min_price?: number | null
+  max_price?: number | null
+  rounding?: { mode: 'nearest' | 'up' | 'down'; to: number }
+}
+
+/** שורת פירוט אחת בחישוב. amount null = השורה מסבירה ולא מוסיפה כסף. */
+export interface PriceLine {
+  id: string | null
+  label: string | null
+  amount: number | null
+  detail: string | null
+}
+
+export interface PriceHourLine {
+  id: string | null
+  label: string | null
+  hours: number
+}
+
+/** מה ש-app.price_calc מחזירה — נשמר כפי שהוא ב-task_pricing.breakdown. */
+export interface PriceBreakdown {
+  version: number
+  model: PricingModel
+  total: number
+  subtotal: number
+  hours: number
+  per_worker: number
+  base_workers: number
+  workers: number
+  hour_lines: PriceHourLine[]
+  lines: PriceLine[]
+}
+
+export interface TaskPricing {
+  task_id: string
+  price: number
+  is_manual: boolean
+  breakdown: PriceBreakdown | null
+  calculated_at: string | null
+}
+
+export interface CustomerPricingRule {
+  id: string
+  customer_id: string
+  task_type_id: string
+  config: PricingConfig
+  is_active: boolean
+}
+
+export interface PricingZone {
+  id: string
+  /** null = אזור גלובלי. אזור של לקוח תמיד גובר עליו. */
+  customer_id: string | null
+  name: string
+  shape: 'polygon' | 'circle'
+  /** [[lat, lng], ...] — הסדר שבו Leaflet ו-events.location_lat עובדים */
+  points: [number, number][] | null
+  center_lat: number | null
+  center_lng: number | null
+  radius_km: number | null
+  travel_hours: number
+  surcharge: number
+  /** נמוך יותר גובר, כדי שאזור קטן ינצח אזור גדול שמכיל אותו */
+  priority: number
+  color: string
+  notes: string | null
+  is_active: boolean
+  deleted_at: string | null
 }
 
 export interface FieldPermission {

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Boxes,
   Building2,
+  Calculator,
   Eye,
   EyeOff,
   ICON,
@@ -51,19 +52,23 @@ import {
 } from '../../lib/queries'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { StickySaveBar } from '../contractors/ContractorDetailPage'
+import PricingTab from './PricingTab'
 import { RequirePermission } from '../auth/guards'
 import type { Customer, FieldState, Supplier } from '../../types/domain'
 
 const TABS = [
-  { key: 'details', label: 'פרטים', icon: <Building2 size={ICON.sm} /> },
-  { key: 'fields', label: 'שדות טופס', icon: <SlidersHorizontal size={ICON.sm} /> },
-  { key: 'methods', label: 'אופני ביצוע', icon: <Boxes size={ICON.sm} /> },
-  { key: 'suppliers', label: 'ספקים', icon: <Package size={ICON.sm} /> },
+  { key: 'details', label: 'פרטים', icon: <Building2 size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
+  { key: 'fields', label: 'שדות טופס', icon: <SlidersHorizontal size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
+  { key: 'methods', label: 'אופני ביצוע', icon: <Boxes size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
+  { key: 'suppliers', label: 'ספקים', icon: <Package size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
+  { key: 'pricing', label: 'תמחור', icon: <Calculator size={ICON.sm} />, perm: PERM.PRICING_MANAGE_RULES },
 ] as const
 
 export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('details')
+  const { has } = useAuth()
+  const visibleTabs = TABS.filter((t) => has(t.perm))
 
   const { data: customer, isLoading } = useQuery({
     queryKey: ['customers', 'one', id],
@@ -105,13 +110,14 @@ export default function CustomerDetailPage() {
           }
           subtitle={[customer.contact_name, customer.contact_phone].filter(Boolean).join(' · ') || 'ללא פרטי קשר'}
         >
-          <Tabs items={TABS} value={tab} onChange={setTab} />
+          <Tabs items={visibleTabs} value={tab} onChange={setTab} />
         </PageHeader>
 
         {tab === 'details' && <DetailsTab customer={customer} />}
         {tab === 'fields' && <FieldsTab customerId={customer.id} />}
         {tab === 'methods' && <MethodsTab customerId={customer.id} />}
         {tab === 'suppliers' && <SuppliersTab customerId={customer.id} />}
+        {tab === 'pricing' && <PricingTab customer={customer} />}
       </div>
     </RequirePermission>
   )

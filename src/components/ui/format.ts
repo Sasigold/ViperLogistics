@@ -48,6 +48,28 @@ export function relativeDayLabel(isoDate: string): string | null {
   return null
 }
 
+const ILS = new Intl.NumberFormat('he-IL', {
+  style: 'currency',
+  currency: 'ILS',
+  maximumFractionDigits: 2,
+  minimumFractionDigits: 0,
+})
+
+/** 5616 -> "‏5,616 ₪". Empty string for null, so callers can render it raw. */
+export function fmtMoney(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return ''
+  const n = typeof value === 'string' ? Number(value) : value
+  return Number.isFinite(n) ? ILS.format(n) : ''
+}
+
+/** 9.5 -> "9.5 ש׳", 9 -> "9 ש׳". Trailing zeros are noise on an hours count. */
+export function fmtHoursShort(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return ''
+  const n = typeof value === 'string' ? Number(value) : value
+  if (!Number.isFinite(n)) return ''
+  return `${Number(n.toFixed(2))} ש׳`
+}
+
 /** 12500 -> "12.5K"; keeps stat tiles from wrapping. */
 export function compactNumber(n: number): string {
   return new Intl.NumberFormat('he-IL', { notation: 'compact', maximumFractionDigits: 1 }).format(n)

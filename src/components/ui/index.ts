@@ -65,4 +65,12 @@ export type { Column } from './DataTable'
 
 export { ICON, STROKE } from './icons'
 
-export { fmtRelative, daysFromToday, relativeDayLabel, compactNumber, pctDelta } from './format'
+export {
+  fmtRelative,
+  daysFromToday,
+  relativeDayLabel,
+  compactNumber,
+  pctDelta,
+  fmtMoney,
+  fmtHoursShort,
+} from './format'
