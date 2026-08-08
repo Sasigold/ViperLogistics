@@ -926,8 +926,9 @@
    column would read "כל היום" on every single row — hence the rule below.
 
    The default toolbar lays three chunks on one row; below ~640px that squeezes
-   the month title to nothing. Stacking the chunks and letting the view switcher
-   span the full width keeps every control tappable.                           */
+   the month title to nothing. Stacking the chunks keeps every control tappable
+   — and on a phone the calendar hands its view switcher to the page header, so
+   what stacks here is just the title and the prev/next/today group.           */
 
 .vl-calendar .fc-list-event-time {
   display: none;
@@ -980,6 +981,38 @@
   /* a hidden time column would otherwise eat a third of the row */
   .fc .fc-list-event-graphic {
     display: none;
+  }
+
+  /* לוח השנה נפתח על החודש גם בטלפון, ותא של חודש ברוחב טלפון הוא ~50px:
+     הצ׳יפ בתוכו הוא סימון ולא כרטיס. מכאן הכל מתכווץ — הרווח בין הסימונים,
+     הריפוד שלהם, מספר היום וכותרות העמודות — כדי שיישארו שלושה סימונים
+     קריאים בתא במקום שניים שנחתכים. (שאר הלוחות, כמו לוח המשמרות, ממשיכים
+     לקבל את המידות הרגילות של .fc שלמעלה.)                                  */
+  .vl-calendar .fc-event {
+    margin: 1px;
+  }
+  .vl-calendar .fc-daygrid-event-harness {
+    margin-top: 1px;
+  }
+  .vl-calendar .fc-daygrid-day-events {
+    margin-bottom: 0.125rem;
+  }
+  .vl-calendar .fc-daygrid-day-frame {
+    min-height: 3.75rem;
+  }
+  .vl-calendar .fc-col-header-cell-cushion,
+  .vl-calendar .fc-daygrid-day-number {
+    padding: 0.125rem 0.25rem;
+    font-size: 0.625rem;
+  }
+  .vl-calendar .fc-day-today .fc-daygrid-day-number {
+    min-width: 1.25rem;
+    margin: 0.125rem;
+    padding: 0.0625rem 0.25rem;
+  }
+  .vl-calendar .fc-daygrid-more-link {
+    font-size: 0.5625rem;
+    padding: 0;
   }
 }
 
