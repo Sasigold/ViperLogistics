@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { AvatarGroup, StatusPill, Tooltip, cx } from '../../components/ui'
+import { Checkbox, Popover, StatusPill, Tooltip, cx } from '../../components/ui'
 import { fmtHours, fmtTime } from '../../lib/dates'
 import type { ExecutionMethod, Status, Truck, WorkBoardRow } from '../../types/domain'
 import { PERM } from '../../lib/permissions'
@@ -37,6 +37,11 @@ export interface BoardField {
   viewPerm?: string
   /** taller row — for the team list */
   tall?: boolean
+  /**
+   * The cell holds its own trigger (a popover, a list) rather than a plain
+   * input, so the board must not try to focus something inside it on click.
+   */
+  selfEditing?: boolean
 }
 
 /**
@@ -54,10 +59,134 @@ const INLINE =
   'focus:border-primary focus:bg-surface focus:outline-none focus:ring-2 focus:ring-[var(--vl-focus-ring)] ' +
   'disabled:pointer-events-none disabled:opacity-70'
 
+/**
+ * The same editor look for a `<select>`, minus the platform's own disclosure
+ * arrow: in a 19-row grid the arrows read as a column of chevrons rather than
+ * as an affordance, and the cell is clickable in its entirety anyway.
+ */
+const INLINE_SELECT = cx(INLINE, 'cursor-pointer truncate appearance-none [&::-ms-expand]:hidden')
+
 const READONLY = `block w-full truncate px-1.5 py-0.5 text-center ${FS}`
 
 function Muted({ children }: { children?: ReactNode }) {
   return <span className={cx('block w-full px-1.5 text-center text-ink-tertiary', FS)}>{children ?? '—'}</span>
+}
+
+/** the trucks a row currently carries, from the view's ordered list */
+function truckNames(row: WorkBoardRow): string[] {
+  const list = row.truck_list ?? []
+  if (list.length > 0) return list.map((t) => t.name)
+  return row.truck_name ? [row.truck_name] : []
+}
+
+/**
+ * More than one truck goes out on a big event, so the cell is a set and not a
+ * choice. The order is kept: the first truck is the one that stays in
+ * `truck_id`, which is what pricing, attendance and the shift board read.
+ */
+function TruckCell({ row, canEdit, patch, lookups }: CellContext) {
+  const selected = row.truck_ids ?? (row.truck_id ? [row.truck_id] : [])
+  const names = truckNames(row)
+  const label = names.length > 0 ? names.join(', ') : row.truck_free_text || '—'
+  const active = lookups.trucks.filter((t) => t.is_active || selected.includes(t.id))
+
+  const toggle = (id: string) => {
+    const next = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]
+    patch(row, { truck_ids: next })
+  }
+
+  if (!canEdit)
+    return names.length > 0 || row.truck_free_text ? (
+      <Tooltip content={label}>
+        <span className={READONLY}>{label}</span>
+      </Tooltip>
+    ) : (
+      <Muted />
+    )
+
+  return (
+    <Popover
+      className="block px-1"
+      trigger={({ toggle: open, ...aria }) => (
+        <button
+          type="button"
+          onClick={open}
+          {...aria}
+          title={label}
+          className={cx(INLINE, 'cursor-pointer truncate')}
+        >
+          {names.length > 0 ? (
+            <span className="flex items-center justify-center gap-1">
+              <span className="truncate">{names[0]}</span>
+              {names.length > 1 && (
+                <span className="shrink-0 rounded bg-subtle px-1 text-[10px] font-bold tabular text-ink-secondary">
+                  +{names.length - 1}
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className="text-ink-tertiary">{row.truck_free_text || '—'}</span>
+          )}
+        </button>
+      )}
+    >
+      {() => (
+        <div className="max-h-72 w-52 overflow-y-auto p-1">
+          {active.length === 0 ? (
+            <p className="px-2 py-1.5 type-caption text-ink-tertiary">אין משאיות פעילות</p>
+          ) : (
+            active.map((t) => (
+              <div key={t.id} className="px-2 py-1">
+                <Checkbox label={t.name} checked={selected.includes(t.id)} onChange={() => toggle(t.id)} />
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </Popover>
+  )
+}
+
+/**
+ * Everyone assigned, by name, one per line. The counters this replaced fit in
+ * a single row but answered the wrong question: a dispatcher looking at the
+ * board wants to know *who* is on the job, and had to open the task to find
+ * out. The board grows the row instead — see `teamRowHeight` on the page.
+ */
+function TeamCell({ row }: CellContext) {
+  const people = [
+    ...(row.workers ?? []).map((w) => ({ key: `w:${w.profile_id}`, name: w.name, mark: '', site: w.work_site })),
+    ...(row.drivers ?? []).map((d) => ({
+      key: `d:${d.profile_id}`,
+      name: d.truck_name ? `${d.name} · ${d.truck_name}` : d.name,
+      mark: '🚚',
+      site: d.work_site,
+    })),
+    ...(row.contractor_worker_list ?? []).map((w) => ({
+      key: `c:${w.id}`,
+      name: w.name,
+      mark: '👷',
+      site: w.work_site,
+    })),
+  ]
+  if (people.length === 0) return <Muted>לא שובץ</Muted>
+
+  return (
+    <span className="flex w-full flex-col items-stretch gap-px px-1 py-0.5">
+      {people.map((p) => (
+        <span key={p.key} className={cx('flex items-center gap-1 truncate text-start', FS)} title={p.name}>
+          {p.mark && <span className="shrink-0 text-[10px]">{p.mark}</span>}
+          {/* מי שיוצא מהמחסן מתחיל בשעה אחרת מכולם, ולכן הסימון נשאר לצד השם */}
+          {p.site === 'warehouse' && (
+            <Tooltip content="מתחיל מהמחסן">
+              <span className="shrink-0 text-[10px]">🏭</span>
+            </Tooltip>
+          )}
+          <span className="truncate">{p.name}</span>
+        </span>
+      ))}
+    </span>
+  )
 }
 
 /**
@@ -211,25 +340,9 @@ export const BOARD_FIELDS: BoardField[] = [
   {
     key: 'truck',
     editPerm: PERM.TASKS_CHANGE_TRUCK,
-    label: 'משאית',
-    render: ({ row, canEdit, patch, lookups }) => (
-      <select
-        aria-label="משאית"
-        value={row.truck_id ?? ''}
-        disabled={!canEdit}
-        onChange={(e) => patch(row, { truck_id: e.target.value || null })}
-        className={cx(INLINE, 'cursor-pointer truncate')}
-      >
-        <option value="">{row.truck_free_text || '—'}</option>
-        {lookups.trucks
-          .filter((t) => t.is_active)
-          .map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-      </select>
-    ),
+    label: 'משאיות',
+    selfEditing: true,
+    render: (ctx) => <TruckCell {...ctx} />,
   },
   {
     key: 'execution_method',
@@ -241,7 +354,7 @@ export const BOARD_FIELDS: BoardField[] = [
         value={row.execution_method_id ?? ''}
         disabled={!canEdit}
         onChange={(e) => patch(row, { execution_method_id: e.target.value || null })}
-        className={cx(INLINE, 'cursor-pointer truncate')}
+        className={INLINE_SELECT}
       >
         <option value="">—</option>
         {lookups.methods
@@ -265,46 +378,7 @@ export const BOARD_FIELDS: BoardField[] = [
     viewPerm: PERM.BOARD_VIEW_STAFFING,
     label: 'צוות',
     tall: true,
-    render: ({ row }) => {
-      const workers = (row.workers ?? []).map((w) => w.name)
-      const drivers = (row.drivers ?? []).map((d) => (d.truck_name ? `${d.name} (${d.truck_name})` : d.name))
-      const contractors = (row.contractor_worker_list ?? []).map((w) => w.name)
-      const total = workers.length + drivers.length + contractors.length
-      if (total === 0) return <Muted>לא שובץ</Muted>
-      // מי שיוצא מהמחסן מתחיל בשעה אחרת מכולם, ולכן הספירה שווה מבט מהלוח
-      // בלי לפתוח את המשימה.
-      const fromWarehouse = [
-        ...(row.workers ?? []),
-        ...(row.drivers ?? []),
-        ...(row.contractor_worker_list ?? []),
-      ].filter((p) => p.work_site === 'warehouse')
-      return (
-        <span className="flex flex-wrap items-center justify-center gap-1 px-1.5">
-          {workers.length > 0 && <AvatarGroup names={workers} max={4} size="xs" />}
-          {fromWarehouse.length > 0 && (
-            <Tooltip content={`מתחילים מהמחסן: ${fromWarehouse.map((p) => p.name).join(', ')}`}>
-              <span className="inline-flex items-center gap-0.5 rounded bg-subtle px-1 text-[10px] font-bold tabular text-ink-secondary">
-                🏭 {fromWarehouse.length}
-              </span>
-            </Tooltip>
-          )}
-          {drivers.length > 0 && (
-            <Tooltip content={`נהגים: ${drivers.join(', ')}`}>
-              <span className="inline-flex items-center gap-0.5 rounded bg-info-subtle px-1 text-[10px] font-bold tabular text-info-text">
-                🚚 {drivers.length}
-              </span>
-            </Tooltip>
-          )}
-          {contractors.length > 0 && (
-            <Tooltip content={`עובדי קבלן: ${contractors.join(', ')}`}>
-              <span className="inline-flex items-center gap-0.5 rounded bg-warning-subtle px-1 text-[10px] font-bold tabular text-warning-text">
-                👷 {contractors.length}
-              </span>
-            </Tooltip>
-          )}
-        </span>
-      )
-    },
+    render: (ctx) => <TeamCell {...ctx} />,
   },
   {
     key: 'contractor',
@@ -323,7 +397,7 @@ export const BOARD_FIELDS: BoardField[] = [
             aria-label="סטטוס"
             value={row.status_id}
             onChange={(e) => patch(row, { status_id: e.target.value })}
-            className="w-full cursor-pointer truncate rounded-md border border-transparent px-1.5 py-0.5 text-center text-[0.75rem] font-semibold focus:outline-none focus:ring-2 focus:ring-[var(--vl-focus-ring)]"
+            className="w-full cursor-pointer truncate appearance-none rounded-md border border-transparent px-1.5 py-0.5 text-center text-[0.75rem] font-semibold focus:outline-none focus:ring-2 focus:ring-[var(--vl-focus-ring)] [&::-ms-expand]:hidden"
             style={{
               background: `color-mix(in srgb, ${row.status_color} 20%, transparent)`,
               color: `color-mix(in srgb, ${row.status_color}, black 28%)`,

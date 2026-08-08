@@ -23,6 +23,11 @@ export function toISODate(d: Date): string {
   return format(d, 'yyyy-MM-dd')
 }
 
+/** 'אוגוסט 2026' — כותרת חודש בניווט של לו״ז העבודה */
+export function fmtMonth(d: Date): string {
+  return format(d, 'MMMM yyyy', { locale: he })
+}
+
 /** hours as decimal -> 'H:MM' */
 export function fmtHours(h: number | null | undefined): string {
   if (h == null) return ''

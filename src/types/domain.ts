@@ -192,6 +192,7 @@ export interface TaskRow {
   worker_count: number
   execution_method_id: string | null
   truck_id: string | null
+  truck_ids: string[] | null
   truck_free_text: string | null
   notes: string | null
   status_id: string
@@ -255,6 +256,9 @@ export interface WorkBoardRow {
   truck_id: string | null
   truck_name: string | null
   truck_free_text: string | null
+  /** כל המשאיות של המשימה, לפי סדר. הראשונה היא גם `truck_id`. */
+  truck_ids: string[] | null
+  truck_list: { id: string; name: string }[] | null
   notes: string | null
   status_id: string
   status_name: string

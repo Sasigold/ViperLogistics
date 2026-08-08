@@ -2,12 +2,14 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { useNavigate, useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { addDays, differenceInCalendarDays, eachDayOfInterval, endOfMonth, parseISO, startOfMonth, startOfWeek } from 'date-fns'
+import { addMonths, differenceInCalendarDays, eachDayOfInterval, endOfMonth, isSameMonth, parseISO, startOfMonth } from 'date-fns'
 import {
   AlertTriangle,
   CalendarCheck,
   CalendarDays,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Columns3,
   Filter,
@@ -19,15 +21,12 @@ import {
   SlidersHorizontal,
 } from '../../components/ui/icons'
 import {
-  AvatarGroup,
   Button,
   Checkbox,
   EmptyState,
-  Field,
   IconButton,
   Input,
   MenuLabel,
-  Modal,
   Popover,
   SegmentedControl,
   Select,
@@ -40,7 +39,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { useContractors, useCustomers, useExecutionMethods, useStatuses, useTaskTypes, useTrucks } from '../../lib/queries'
-import { fmtDate, fmtTime, toISODate } from '../../lib/dates'
+import { fmtDate, fmtMonth, fmtTime, toISODate } from '../../lib/dates'
 import { NEUTRAL, readableOn } from '../../lib/colors'
 import { useIsMobile } from '../../lib/useMediaQuery'
 import { TaskDrawer } from '../tasks/TaskDrawer'
@@ -65,6 +64,9 @@ const DAY_GAP = 10
 /** a range wider than this is a report, not a board — empty days stop earning
  *  their width somewhere around a quarter */
 const MAX_EMPTY_DAY_SPAN = 120
+
+/** the team row grows with the crew, up to this many names before it scrolls */
+const MAX_TEAM_LINES = 10
 
 /**
  * Every dimension the board is drawn from, in one table. `minimal` squeezes the
@@ -136,9 +138,6 @@ type BoardColumn = { gapAfter?: boolean } & (
       /** the event (or customer) this column belongs to, and its colour */
       groupKey: string
       tone: GroupTone | null
-      /** edges of the group, so a run of columns reads as one block */
-      first: boolean
-      last: boolean
     }
   | { kind: 'spine'; id: string; dayKey: string; count: number }
   | { kind: 'empty'; id: string; dayKey: string }
@@ -149,7 +148,6 @@ interface Band {
   start: number
   width: number
   count: number
-  overdue: number
   collapsed: boolean
 }
 
@@ -157,7 +155,6 @@ interface DayLayout {
   dayKey: string
   clusters: Cluster[]
   count: number
-  overdue: number
   collapsed: boolean
 }
 
@@ -198,11 +195,20 @@ export default function WorkBoardPage() {
   const [params] = useSearchParams()
   const prefs = useRef(loadPrefs())
   const isMobile = useIsMobile()
-  const [filterSheet, setFilterSheet] = useState(false)
 
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 })
-  const [from, setFrom] = useState(params.get('date') || toISODate(weekStart))
-  const [to, setTo] = useState(params.get('date') || toISODate(addDays(weekStart, 6)))
+  /**
+   * The board is a month at a time. Two free date pickers plus four presets
+   * were six controls answering a question that has one natural answer — the
+   * month you are working in — and a range nobody chose deliberately (a week
+   * starting on whatever Sunday) was the default. `?date=` still decides which
+   * month opens, so a link from the calendar or a notification lands right.
+   */
+  const [month, setMonth] = useState(() => {
+    const d = params.get('date')
+    return startOfMonth(d ? parseISO(d) : new Date())
+  })
+  const from = toISODate(month)
+  const to = toISODate(endOfMonth(month))
   const [filters, setFilters] = useState({ customer: '', status: '', type: '', contractor: '', q: '' })
   const [drawer, setDrawer] = useState<{ open: boolean; taskId: string | null; date?: string }>({
     open: !!params.get('task'),
@@ -290,9 +296,31 @@ export default function WorkBoardPage() {
      type comes down a step there on top of whatever density is set. */
   const boardFontSize = isMobile ? DENSITY.minimal.fs : metrics.fs
 
+  /**
+   * The team row lists everyone by name, so its height is the size of the
+   * biggest crew on the board rather than a constant — one row per person,
+   * with a ceiling so a single 30-strong day can't push every other field off
+   * the screen (that crew scrolls inside its own cell).
+   */
+  const teamRowHeight = useMemo(() => {
+    const line = Math.round(metrics.row * 0.5)
+    const most = rows.reduce(
+      (m, r) =>
+        Math.max(
+          m,
+          (r.workers?.length ?? 0) + (r.drivers?.length ?? 0) + (r.contractor_worker_list?.length ?? 0),
+        ),
+      0,
+    )
+    return Math.max(metrics.tall, Math.min(most, MAX_TEAM_LINES) * line + 6)
+  }, [rows, metrics])
+
   /** one height array drives both the legend and every task column, so the
    *  grid can never drift out of alignment */
-  const rowHeights = useMemo(() => fields.map((f) => (f.tall ? metrics.tall : metrics.row)), [fields, metrics])
+  const rowHeights = useMemo(
+    () => fields.map((f) => (f.key === 'team' ? teamRowHeight : f.tall ? metrics.tall : metrics.row)),
+    [fields, metrics, teamRowHeight],
+  )
   const bodyHeight = rowHeights.reduce((a, b) => a + b, 0)
 
   const today = toISODate(new Date())
@@ -345,7 +373,6 @@ export default function WorkBoardPage() {
     for (const dayKey of dayKeys) {
       const dayRows = byDay.get(dayKey) ?? []
       const clusters = clusterDay(dayRows, colorBy, tones, cmp)
-      const overdue = dayKey < today ? dayRows.filter((r) => !r.status_is_terminal).length : 0
       const collapsed = collapsedDays.has(dayKey)
       const start = offset
 
@@ -357,7 +384,7 @@ export default function WorkBoardPage() {
         offset += SPINE_W
       } else {
         for (const cluster of clusters) {
-          cluster.rows.forEach((row, i) => {
+          cluster.rows.forEach((row) => {
             cols.push({
               kind: 'task',
               id: row.id,
@@ -365,8 +392,6 @@ export default function WorkBoardPage() {
               dayKey,
               groupKey: cluster.key,
               tone: cluster.tone,
-              first: i === 0,
-              last: i === cluster.rows.length - 1,
             })
             offset += metrics.col
           })
@@ -375,8 +400,8 @@ export default function WorkBoardPage() {
 
       /* the band is measured before the gap is added, so it ends flush with
          its last column instead of reaching into the space after it */
-      bandList.push({ dayKey, start, width: offset - start, count: dayRows.length, overdue, collapsed })
-      dayList.push({ dayKey, clusters, count: dayRows.length, overdue, collapsed })
+      bandList.push({ dayKey, start, width: offset - start, count: dayRows.length, collapsed })
+      dayList.push({ dayKey, clusters, count: dayRows.length, collapsed })
 
       if (dayKey !== dayKeys[dayKeys.length - 1]) {
         cols[cols.length - 1].gapAfter = true
@@ -385,7 +410,7 @@ export default function WorkBoardPage() {
     }
 
     return { columns: cols, bands: bandList, totalWidth: offset, daysForList: dayList }
-  }, [rows, dayKeys, sortBy, collapsedDays, metrics.col, metrics.empty, today, colorBy, tones])
+  }, [rows, dayKeys, sortBy, collapsedDays, metrics.col, metrics.empty, colorBy, tones])
 
   /* ── horizontal virtualization (RTL-aware) ───────────────────────────── */
 
@@ -445,21 +470,8 @@ export default function WorkBoardPage() {
       return n
     })
 
-  const setRange = (a: Date, b: Date) => {
-    setFrom(toISODate(a))
-    setTo(toISODate(b))
-  }
   const now = new Date()
-  const presets = [
-    { label: 'היום', run: () => setRange(now, now) },
-    { label: 'השבוע', run: () => setRange(startOfWeek(now, { weekStartsOn: 0 }), addDays(startOfWeek(now, { weekStartsOn: 0 }), 6)) },
-    {
-      label: 'שבוע הבא',
-      run: () =>
-        setRange(addDays(startOfWeek(now, { weekStartsOn: 0 }), 7), addDays(startOfWeek(now, { weekStartsOn: 0 }), 13)),
-    },
-    { label: 'החודש', run: () => setRange(startOfMonth(now), endOfMonth(now)) },
-  ]
+  const shiftMonth = (by: number) => setMonth((m) => addMonths(m, by))
 
   /* ── jump to today ────────────────────────────────────────────────────────
      Not `virtualizer.scrollToIndex`: virtual-core reads a horizontal offset as
@@ -488,12 +500,11 @@ export default function WorkBoardPage() {
   const goToToday = () => {
     // a folded day would otherwise "arrive" as a 46px spine
     setCollapsedDays((s) => (s.has(today) ? new Set([...s].filter((d) => d !== today)) : s))
-    if (today >= from && today <= to) {
+    if (isSameMonth(month, now)) {
       if (!scrollToToday()) toast.info('אין משימות היום בטווח המוצג')
       return
     }
-    const weekStart = startOfWeek(now, { weekStartsOn: 0 })
-    setRange(weekStart, addDays(weekStart, 6))
+    setMonth(startOfMonth(now))
     setJumpPending(true)
   }
 
@@ -519,41 +530,27 @@ export default function WorkBoardPage() {
      on mobile. Left inline, the six controls stacked to about 400px — most of
      a phone screen — before the board even started.                        */
 
-  const dateFields = (
-    /* two date controls in one row leave each of them under their own minimum
-       width on a phone, so the row wraps before either one gets clipped */
-    <div className="flex flex-wrap items-center gap-1.5">
-      <Input
-        type="date"
-        inputSize="sm"
-        className="grow basis-32 min-w-0 lg:w-36 lg:grow-0 lg:basis-auto"
-        value={from}
-        onChange={(e) => setFrom(e.target.value)}
-        aria-label="מתאריך"
-      />
-      <span className="shrink-0 type-caption text-ink-tertiary">עד</span>
-      <Input
-        type="date"
-        inputSize="sm"
-        className="grow basis-32 min-w-0 lg:w-36 lg:grow-0 lg:basis-auto"
-        value={to}
-        onChange={(e) => setTo(e.target.value)}
-        aria-label="עד תאריך"
-      />
-    </div>
-  )
-
-  const presetRow = (
-    <div className="scroll-row gap-1">
-      {presets.map((p) => (
-        <button
-          key={p.label}
-          onClick={p.run}
-          className="scroll-row-item rounded-md px-2 py-1 type-caption font-medium text-ink-tertiary transition-colors hover:bg-hover hover:text-ink"
-        >
-          {p.label}
-        </button>
-      ))}
+  /* One control for the whole date question: which month. The arrows are
+     logical — "back" is the inline-end side under RTL — so the chevrons point
+     the way the reader's eye travels. */
+  const monthNav = (
+    <div className="flex shrink-0 items-center gap-0.5 rounded-lg bg-subtle p-0.5">
+      <IconButton label="חודש קודם" size="sm" bare onClick={() => shiftMonth(-1)}>
+        <ChevronRight size={ICON.sm} strokeWidth={STROKE} className="rtl:rotate-0 ltr:rotate-180" />
+      </IconButton>
+      <button
+        onClick={() => setMonth(startOfMonth(now))}
+        title="חזרה לחודש הנוכחי"
+        className={cx(
+          'min-w-24 rounded-md px-2 py-0.5 text-center type-caption font-bold transition-colors hover:bg-hover',
+          isSameMonth(month, now) ? 'text-ink' : 'text-ink-secondary',
+        )}
+      >
+        {fmtMonth(month)}
+      </button>
+      <IconButton label="חודש הבא" size="sm" bare onClick={() => shiftMonth(1)}>
+        <ChevronLeft size={ICON.sm} strokeWidth={STROKE} className="rtl:rotate-0 ltr:rotate-180" />
+      </IconButton>
     </div>
   )
 
@@ -627,7 +624,8 @@ export default function WorkBoardPage() {
           <div className="surface flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl">
             {/* Title & Stats */}
             <div className="flex items-center gap-2.5 min-w-0">
-              <h1 className="type-title font-bold text-ink shrink-0">לוח עבודה</h1>
+              <h1 className="type-title font-bold text-ink shrink-0">לו״ז עבודה</h1>
+              {monthNav}
               <div className="hidden sm:flex flex-wrap items-center gap-1.5 type-caption text-ink-tertiary">
                 <span className="tabular font-medium text-ink bg-subtle px-2 py-0.5 rounded-full">{rows.length} משימות</span>
                 <span className="tabular bg-subtle px-2 py-0.5 rounded-full">{workingDays} ימי עבודה</span>
@@ -643,12 +641,6 @@ export default function WorkBoardPage() {
 
             {/* Main actions & inline search/date controls */}
             <div className="flex flex-wrap items-center gap-1.5 ms-auto">
-              <div className="hidden lg:flex items-center gap-1.5">
-                {presetRow}
-                <div className="h-4 w-px bg-line shrink-0 mx-0.5" aria-hidden />
-                {dateFields}
-              </div>
-
               <Input
                 className="w-28 sm:w-36 lg:w-40"
                 inputSize="sm"
@@ -658,8 +650,8 @@ export default function WorkBoardPage() {
                 aria-label="חיפוש חופשי"
               />
 
-              {/* icon only on purpose: the preset row above already says "היום",
-                  and it means something else — narrow the range to one day */}
+              {/* icon only on purpose: this scrolls to today's column, while
+                  the month title beside it jumps to today's *month* */}
               <IconButton label="מעבר לעמודה של היום" size="sm" onClick={goToToday}>
                 <CalendarCheck size={ICON.sm} strokeWidth={STROKE} />
               </IconButton>
@@ -806,10 +798,6 @@ export default function WorkBoardPage() {
           {/* Secondary Collapsible Filters Row */}
           {showFilters && (
             <div className="surface flex flex-wrap items-center gap-2 p-2 rounded-xl text-sm transition-all duration-150">
-              <div className="lg:hidden flex flex-wrap items-center gap-1.5 w-full pb-2 border-b border-line-subtle">
-                {presetRow}
-                {dateFields}
-              </div>
               {lookupFilters}
               {activeFilterCount > 0 && (
                 <Button size="sm" variant="ghost" className="text-ink-tertiary ms-auto" onClick={resetFilters}>
@@ -893,11 +881,10 @@ export default function WorkBoardPage() {
                           key={b.dayKey}
                           className={cx(
                             'absolute top-0 flex items-center justify-center gap-1.5 overflow-hidden border-b border-s border-line px-2',
-                            isToday
-                              ? 'bg-[var(--vl-board-today)]'
-                              : b.overdue > 0
-                                ? 'bg-[var(--vl-board-overdue)]'
-                                : 'bg-[var(--vl-board-band)]',
+                            /* a past day is a past day — the tasks on it carry
+                               their own overdue mark, and painting the whole
+                               band red turned every old week into a wall */
+                            isToday ? 'bg-[var(--vl-board-today)]' : 'bg-[var(--vl-board-band)]',
                           )}
                           style={{ insetInlineStart: b.start, width: b.width, height: DAY_HEAD_H }}
                         >
@@ -917,13 +904,7 @@ export default function WorkBoardPage() {
                             <span
                               className={cx(
                                 'truncate type-caption font-bold tabular',
-                                quiet
-                                  ? 'text-ink-tertiary'
-                                  : isToday
-                                    ? 'text-primary-text'
-                                    : b.overdue > 0
-                                      ? 'text-error-text'
-                                      : 'text-ink-secondary',
+                                quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
                               )}
                             >
                               {fmtDate(b.dayKey)}
@@ -932,20 +913,6 @@ export default function WorkBoardPage() {
                           {isToday && (
                             <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
                               היום
-                            </span>
-                          )}
-                          {b.overdue > 0 && !isToday && (
-                            <Tooltip content={`${b.overdue} משימות פתוחות שעברו את מועדן`}>
-                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-error px-1.5 py-px text-[10px] font-bold tabular text-white">
-                                <AlertTriangle size={9} />
-                                {b.overdue}
-                              </span>
-                            </Tooltip>
-                          )}
-                          {/* out of the flow, or it would push the date off centre */}
-                          {!quiet && (
-                            <span className="absolute inset-y-0 end-2 flex items-center type-caption tabular text-ink-tertiary">
-                              {b.count}
                             </span>
                           )}
                         </div>
@@ -1022,8 +989,6 @@ export default function WorkBoardPage() {
                           heights={rowHeights}
                           tone={col.tone}
                           groupKey={col.groupKey}
-                          first={col.first}
-                          last={col.last}
                           active={activeGroup === col.groupKey}
                           onHover={hoverGroup}
                           style={{ insetInlineStart: vi.start, width }}
@@ -1036,45 +1001,6 @@ export default function WorkBoardPage() {
             </div>
           )}
         </div>
-
-        <Modal
-          open={filterSheet}
-          onClose={() => setFilterSheet(false)}
-          title="סינון לוח העבודה"
-          description={`${rows.length} משימות בטווח הנוכחי`}
-          footer={
-            <>
-              <Button onClick={resetFilters} disabled={activeFilterCount === 0}>
-                ניקוי
-              </Button>
-              <Button variant="primary" onClick={() => setFilterSheet(false)}>
-                הצגה
-              </Button>
-            </>
-          }
-        >
-          <div className="space-y-4">
-            <Field label="טווח תאריכים">{dateFields}</Field>
-            <div className="grid gap-3">{lookupFilters}</div>
-            <Field label="מיון בתוך היום">
-              <SegmentedControl
-                block
-                items={SORTS.map((s) => ({ key: s.key, label: s.label }))}
-                value={sortBy}
-                onChange={setSortBy}
-              />
-            </Field>
-            <Field label="צביעה לפי" hint="משימות של אותו אירוע מקבלות את אותו צבע">
-              <SegmentedControl
-                block
-                items={COLOR_BY_OPTIONS.map((o) => ({ key: o.key, label: o.label }))}
-                value={colorBy}
-                onChange={setColorBy}
-              />
-            </Field>
-            <Checkbox label="הצגת ימים ריקים" checked={showEmptyDays} onChange={setShowEmptyDays} />
-          </div>
-        </Modal>
 
         <TaskDrawer
           open={drawer.open}
@@ -1120,11 +1046,7 @@ function MobileBoard({
             <h3
               className={cx(
                 'sticky top-0 z-10 flex items-center gap-1.5 border-b border-line px-2.5 py-1.5 backdrop-blur-sm',
-                isToday
-                  ? 'bg-[var(--vl-board-today)]'
-                  : day.overdue > 0
-                    ? 'bg-[var(--vl-board-overdue)]'
-                    : 'bg-[var(--vl-board-band)]',
+                isToday ? 'bg-[var(--vl-board-today)]' : 'bg-[var(--vl-board-band)]',
               )}
             >
               <button
@@ -1142,13 +1064,7 @@ function MobileBoard({
                 <span
                   className={cx(
                     'truncate type-button tabular',
-                    quiet
-                      ? 'text-ink-tertiary'
-                      : isToday
-                        ? 'text-primary-text'
-                        : day.overdue > 0
-                          ? 'text-error-text'
-                          : 'text-ink-secondary',
+                    quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
                   )}
                 >
                   {fmtDate(day.dayKey)}
@@ -1158,16 +1074,10 @@ function MobileBoard({
                     היום
                   </span>
                 )}
-                {day.overdue > 0 && !isToday && (
-                  <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-error px-1.5 py-px text-[10px] font-bold tabular text-white">
-                    <AlertTriangle size={9} />
-                    {day.overdue}
-                  </span>
-                )}
               </button>
               {/* a quiet day is one line, not a section — a week with four of
                   them shouldn't push the actual work off the screen */}
-              {quiet ? (
+              {quiet && (
                 <>
                   <span className="type-caption text-ink-tertiary">אין משימות</span>
                   {canCreate && (
@@ -1176,8 +1086,6 @@ function MobileBoard({
                     </IconButton>
                   )}
                 </>
-              ) : (
-                <span className="shrink-0 type-caption tabular text-ink-tertiary">{day.count}</span>
               )}
             </h3>
 
@@ -1287,9 +1195,15 @@ const MobileTaskCard = memo(function MobileTaskCard({
           </span>
         )}
 
-        <span className="flex items-center gap-1.5">
+        {/* every name, not a stack of initials: knowing who is on the job is
+            the question this line exists to answer */}
+        <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
           {team.length > 0 ? (
-            <AvatarGroup names={team} max={4} size="xs" />
+            team.map((name) => (
+              <span key={name} className="rounded bg-subtle px-1 type-caption text-ink-secondary">
+                {name}
+              </span>
+            ))
           ) : (
             <span className="type-caption text-ink-tertiary">לא שובץ</span>
           )}
@@ -1429,6 +1343,39 @@ function EmptyDayColumn({
 
 /* ===== one task's column of field cells =================================== */
 
+/**
+ * Hands a click anywhere in the cell to the editor inside it. `showPicker` is
+ * what makes a single click enough on a `<select>` and on the time inputs —
+ * focus alone would leave the reader with a focused control and no list — and
+ * it is called straight out of the click, which is the user activation the
+ * API requires. Browsers without it (and Safari's `<select>`) simply focus,
+ * which is still one click better than before.
+ */
+function focusCellEditor(e: React.MouseEvent<HTMLDivElement>) {
+  const target = e.target as HTMLElement
+  /* a click that already landed on the control, or on something else with its
+     own job, is that control's to handle */
+  if (target !== e.currentTarget && target.closest('input, select, textarea, button, a, [role="button"]')) return
+  const el = e.currentTarget.querySelector<HTMLInputElement | HTMLSelectElement>(
+    'input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
+  )
+  if (!el) return
+  el.focus()
+  const withPicker = el as { showPicker?: () => void }
+  if (typeof withPicker.showPicker !== 'function') return
+  if (el instanceof HTMLInputElement && el.type !== 'time' && el.type !== 'date') {
+    /* typing over a number or a note is the usual next move, so the click
+       leaves the old value selected rather than a caret somewhere in it */
+    el.select()
+    return
+  }
+  try {
+    withPicker.showPicker()
+  } catch {
+    /* not every browser allows it on every control — focus is the fallback */
+  }
+}
+
 const TaskColumn = memo(
   function TaskColumn({
     row,
@@ -1439,8 +1386,6 @@ const TaskColumn = memo(
     heights,
     tone,
     groupKey,
-    first,
-    last,
     active,
     onHover,
     style,
@@ -1453,26 +1398,14 @@ const TaskColumn = memo(
     heights: number[]
     tone: GroupTone | null
     groupKey: string
-    first: boolean
-    last: boolean
     active: boolean
     onHover: (key: string | null) => void
     style: React.CSSProperties
   }) {
-    /* The group's own colour draws its outer edges, so a run of columns reads
-       as one block; the seams inside the run stay quiet. Both edges are inset
-       shadows rather than a border and a shadow: the column carries no border
-       of its own any more, and a leading edge declared as a border-*colour*
-       with no width would silently draw nothing. */
-    const edges =
-      tone && (first || last)
-        ? {
-            boxShadow: [first && `inset 1px 0 0 0 ${tone.border}`, last && `inset -1px 0 0 0 ${tone.border}`]
-              .filter(Boolean)
-              .join(', '),
-          }
-        : undefined
-
+    /* A run of columns used to be bracketed by a dark line on each outer edge.
+       It read as a frame around the group and cut the board into boxes, so the
+       block is now held together by its fill alone — a heavier wash of the
+       group's own hue, which is the same signal without the ruling. */
     return (
       <div
         onMouseEnter={() => onHover(groupKey)}
@@ -1484,20 +1417,31 @@ const TaskColumn = memo(
           /* the same wash the header carries — a column whose body was paler
              than its own heading read as two different things stacked */
           ...(tone ? { background: active ? tone.tintStrong : tone.tint } : null),
-          ...edges,
         }}
       >
-        {fields.map((f, i) => (
-          <div
-            key={f.key}
-            className="flex items-center justify-center overflow-hidden border-b border-line-subtle transition-colors hover:bg-hover"
-            style={{ height: heights[i] }}
-          >
-            <div className="min-w-0 flex-1 text-center">
-              {f.render({ row, canEdit: canEditCell(f.editPerm), patch, lookups })}
+        {fields.map((f, i) => {
+          const canEdit = canEditCell(f.editPerm)
+          /* The whole cell is the control. Before this, the editor was an
+             input inset in a 208×38 box and a click a few pixels off its edge
+             did nothing at all — so the cell forwards the click to whatever
+             editor it holds, and opens the picker where the platform has one. */
+          const clickable = canEdit && !!f.editPerm && !f.selfEditing
+          return (
+            <div
+              key={f.key}
+              onClick={clickable ? focusCellEditor : undefined}
+              className={cx(
+                'flex items-center justify-center overflow-hidden border-b border-line-subtle transition-colors hover:bg-hover',
+                clickable && 'cursor-pointer',
+              )}
+              style={{ height: heights[i] }}
+            >
+              <div className="min-w-0 max-h-full flex-1 overflow-y-auto text-center">
+                {f.render({ row, canEdit, patch, lookups })}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     )
   },
@@ -1509,8 +1453,6 @@ const TaskColumn = memo(
     a.lookups === b.lookups &&
     a.tone === b.tone &&
     a.active === b.active &&
-    a.first === b.first &&
-    a.last === b.last &&
     a.style.insetInlineStart === b.style.insetInlineStart &&
     a.style.width === b.style.width,
 )

@@ -161,8 +161,10 @@
   /* how much of a group's hue reaches the surface behind it. One dial per
      role, resolved per theme: the same percentage that reads as a hint on
      white reads as a slab on near-black, so dark keeps its own numbers. */
-  --vl-tone-tint: 16%;
-  --vl-tone-tint-strong: 28%;
+  /* 30% is the group's whole outline now: the dark rule that used to bracket
+     a run of columns is gone, and the fill alone has to carry the block. */
+  --vl-tone-tint: 30%;
+  --vl-tone-tint-strong: 42%;
   --vl-tone-border: 60%;
 
   /* the work board's day bands. Deliberately not the app-wide `*-subtle`
@@ -265,8 +267,8 @@
   --vl-ev-10: #d6a582;
   --vl-ev-11: #a8c0e6;
 
-  --vl-tone-tint: 13%;
-  --vl-tone-tint-strong: 24%;
+  --vl-tone-tint: 30%;
+  --vl-tone-tint-strong: 40%;
   --vl-tone-border: 50%;
 
   --vl-board-today: color-mix(in srgb, var(--vl-primary) 22%, var(--vl-surface));

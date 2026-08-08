@@ -52,7 +52,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/', label: 'דשבורד', icon: LayoutDashboard, perm: PERM.DASHBOARD_VIEW, end: true, primary: true },
       { to: '/calendar', label: 'לוח שנה', icon: Calendar, perm: PERM.CALENDAR_VIEW, primary: true },
-      { to: '/board', label: 'לוח עבודה', shortLabel: 'לוח', icon: ClipboardList, perm: PERM.BOARD_VIEW, badge: 'overdue', primary: true },
+      { to: '/board', label: 'לו״ז עבודה', shortLabel: 'לו״ז', icon: ClipboardList, perm: PERM.BOARD_VIEW, badge: 'overdue', primary: true },
     ],
   },
   {
@@ -134,7 +134,7 @@ export function bottomNavItems(sections: NavSection[], slots = 4): NavItem[] {
 export const ROUTE_LABELS: Record<string, string> = {
   '/': 'דשבורד',
   '/calendar': 'לוח שנה',
-  '/board': 'לוח עבודה',
+  '/board': 'לו״ז עבודה',
   '/events': 'אירועים',
   '/customers': 'לקוחות',
   '/users': 'עובדים',

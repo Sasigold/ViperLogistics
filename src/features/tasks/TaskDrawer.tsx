@@ -191,6 +191,13 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
 
   const allowedMethods = useAllowedExecutionMethods(form.task_type_id, form.customer_id)
 
+  /* משימות שנשמרו לפני ריבוי המשאיות מגיעות עם truck_id בלבד */
+  const truckIds = useMemo(
+    () => form.truck_ids ?? (form.truck_id ? [form.truck_id] : []),
+    [form.truck_ids, form.truck_id],
+  )
+  const firstTruckName = trucks.find((t) => t.id === truckIds[0])?.name ?? ''
+
   const set = (patch: Partial<TaskRow>) => setForm((f) => ({ ...f, ...patch }))
 
   const save = useMutation({
@@ -207,7 +214,9 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
         hours_count: form.hours_count ?? null,
         worker_count: form.worker_count ?? 0,
         execution_method_id: form.execution_method_id || null,
-        truck_id: form.truck_id || null,
+        /* truck_id נגזר מהרשימה בטריגר (0035), ולכן נשלחת הרשימה בלבד —
+           שליחת שניהם הייתה משאירה למסד שתי אמיתות לבחור ביניהן. */
+        truck_ids: truckIds,
         truck_free_text: form.truck_free_text || null,
         notes: form.notes || null,
         status_id: form.status_id || statuses.find((s) => s.is_default)?.id,
@@ -525,17 +534,22 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                     ))}
                   </Select>
                 </Field>
-                <Field label="משאית (מרשימה)">
-                  <Select value={form.truck_id ?? ''} onChange={(e) => set({ truck_id: e.target.value || null })} disabled={!canChangeTruck}>
-                    <option value="">—</option>
-                    {trucks
-                      .filter((t) => t.is_active)
-                      .map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                  </Select>
+                {/* אירוע גדול יוצא ביותר ממשאית אחת. הראשונה ברשימה היא זו
+                    שנשמרת גם ב-truck_id, ולפיה מחושבים המחיר והנוכחות. */}
+                <Field label="משאיות" hint={truckIds.length > 1 ? `הראשונה: ${firstTruckName}` : undefined}>
+                  <MultiSelect
+                    options={trucks
+                      .filter((t) => t.is_active || truckIds.includes(t.id))
+                      .map((t) => ({ id: t.id, label: t.name }))}
+                    values={truckIds}
+                    onToggle={(id) =>
+                      set({
+                        truck_ids: truckIds.includes(id) ? truckIds.filter((x) => x !== id) : [...truckIds, id],
+                      })
+                    }
+                    placeholder="בחירת משאיות..."
+                    disabled={!canChangeTruck}
+                  />
                 </Field>
                 <Field label="משאית (מלל חופשי)">
                   <Input
