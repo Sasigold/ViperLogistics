@@ -74,6 +74,8 @@ export const PERM = {
   DASHBOARD_PAYROLL: 'dashboard.payroll',
   DASHBOARD_MARGIN: 'dashboard.margin',
   DASHBOARD_MANAGE_DEFAULT: 'dashboard.manage_default',
+  DASHBOARD_BUILD_WIDGET: 'dashboard.build_widget',
+  DASHBOARD_SHARE_WIDGET: 'dashboard.share_widget',
   EVENTS_VIEW: 'events.view',
   EVENTS_CREATE: 'events.create',
   EVENTS_EDIT: 'events.edit',
