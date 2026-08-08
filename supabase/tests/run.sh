@@ -88,6 +88,16 @@ OUT="$OUT
 $OUT5"
 
 echo
+echo "== notifications suite =="
+# 07 runs last: it switches notifications.email and notifications.push on, and
+# any earlier suite that counts delivery rows would see a different picture.
+# It puts both back to off at the end.
+OUT6=$($PSQL -d vl -f "$HERE/07_notifications.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT6"
+OUT="$OUT
+$OUT6"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

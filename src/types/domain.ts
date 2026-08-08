@@ -640,6 +640,78 @@ export interface Notification {
   entity_id: string | null
   read_at: string | null
   created_at: string
+  /** הסוג הושתק לנמען הזה: השורה נשמרה כיומן אך אינה מוצגת בפעמון. */
+  muted: boolean
+}
+
+/** ערוצי ההתראות (0046). 'inapp' הוא הפעמון במערכת. */
+export type NotificationChannel = 'inapp' | 'email' | 'push'
+
+/**
+ * המצב שמנהל קובע לתא במטריצה.
+ *   off     — לא נשלח, והמשתמש אינו יכול להדליק
+ *   opt_in  — כבוי כברירת מחדל, המשתמש יכול להדליק
+ *   opt_out — דלוק כברירת מחדל, המשתמש יכול לכבות
+ *   forced  — נעול: תמיד נשלח, והמשתמש אינו יכול לכבות
+ */
+export type NotificationMode = 'off' | 'opt_in' | 'opt_out' | 'forced'
+
+/** הקהלים במטריצה. 'admin' אינו user_kind אלא profiles.is_admin. */
+export type NotificationAudience = 'admin' | 'staff' | 'contractor_user' | 'customer_user'
+
+export interface NotificationType {
+  key: string
+  label_he: string
+  description_he: string | null
+  group_he: string
+  audiences: NotificationAudience[]
+  entity_type: string | null
+  default_mode_inapp: NotificationMode
+  default_mode_email: NotificationMode
+  default_mode_push: NotificationMode
+  is_active: boolean
+  sort_order: number
+}
+
+export interface NotificationPolicy {
+  audience: NotificationAudience
+  type: string
+  channel: NotificationChannel
+  mode: NotificationMode
+}
+
+export interface NotificationPolicyOverride extends Omit<NotificationPolicy, 'audience'> {
+  profile_id: string
+  note: string | null
+}
+
+/** תא בודד כפי ש-my_notification_settings מחזיר אותו. */
+export interface NotificationCell {
+  mode: NotificationMode
+  enabled: boolean
+  /** המנהל קבע — המשתמש אינו יכול לשנות. */
+  locked: boolean
+  /** הערוץ עצמו דלוק במערכת. */
+  channel_enabled: boolean
+}
+
+export interface NotificationSetting {
+  type: string
+  label_he: string
+  description_he: string | null
+  group_he: string
+  channels: Record<NotificationChannel, NotificationCell>
+}
+
+export interface PushSubscriptionRow {
+  id: string
+  profile_id: string
+  endpoint: string
+  user_agent: string | null
+  created_at: string
+  last_seen_at: string
+  failure_count: number
+  last_error: string | null
 }
 
 export interface SavedFilter {

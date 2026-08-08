@@ -255,6 +255,7 @@ export function MyNotificationsWidget(_props: WidgetProps) {
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
+        .eq('muted', false)
         .order('created_at', { ascending: false })
         .limit(30)
       if (error) throw error

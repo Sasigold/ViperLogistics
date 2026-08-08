@@ -1,0 +1,27 @@
+{
+  /* ה-Service Worker אינו יכול לחלוק תוכנית עם האפליקציה: tsconfig.app.json
+     טוען את ספריית DOM, ו-WebWorker מגדירה מחדש את self, caches ו-fetch —
+     שילוב של השתיים נותן עשרות שגיאות "duplicate identifier". לכן src/sw.ts
+     מוחרג שם ונבדק כאן, ו-`types` ריק במכוון: ירושה של vite/client הייתה
+     גוררת את DOM חזרה פנימה דרך הדלת האחורית. */
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.worker.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "WebWorker"],
+    "module": "esnext",
+    "types": [],
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src/sw.ts"]
+}

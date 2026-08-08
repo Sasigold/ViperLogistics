@@ -87,6 +87,7 @@ export {
   MessageSquarePlus,
   Bell,
   BellOff,
+  Smartphone,
   TrendingUp,
   TrendingDown,
   // domain

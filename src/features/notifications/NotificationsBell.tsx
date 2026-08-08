@@ -19,6 +19,9 @@ export function NotificationsBell() {
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
+        // muted = סוג שהמשתמש או המנהל השתיקו בפעמון. השורה נשמרת כיומן
+        // (‏notification_deliveries תלויה בה) אבל אינה מוצגת כאן.
+        .eq('muted', false)
         .order('created_at', { ascending: false })
         .limit(30)
       if (error) throw error
@@ -36,7 +39,13 @@ export function NotificationsBell() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${me.profile.id}` },
         (payload) => {
-          toast.info((payload.new as Notification).title)
+          const row = payload.new as Notification
+          if (row.muted) return
+          // דחיפה שהגיעה למערכת ההפעלה כבר הודיעה למשתמש. טוסט נוסף באותו
+          // רגע הוא אותה הודעה פעמיים.
+          const pushed =
+            typeof Notification !== 'undefined' && window.Notification.permission === 'granted'
+          if (!pushed) toast.info(row.title)
           void qc.invalidateQueries({ queryKey: ['notifications'] })
         },
       )

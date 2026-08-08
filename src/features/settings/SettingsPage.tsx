@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Bell,
   Boxes,
   ClipboardList,
   Clock,
@@ -45,6 +46,7 @@ import { PERM } from '../../lib/permissions'
 import { RolesTab } from '../permissions/RolesTab'
 import { PricingZonesEditor } from '../pricing/PricingZonesEditor'
 import { OvertimeSettingsTab } from '../attendance/OvertimeSettingsTab'
+import { NotificationsAdminTab } from '../notifications/NotificationsAdminTab'
 import { errorMessage } from '../../lib/errors'
 
 /**
@@ -59,6 +61,7 @@ const TABS = [
   { key: 'trucks', label: 'משאיות', icon: <Truck size={ICON.sm} />, perm: PERM.SETTINGS_TRUCKS },
   { key: 'zones', label: 'אזורי נסיעה', icon: <Map size={ICON.sm} />, perm: PERM.PRICING_MANAGE_RULES },
   { key: 'attendance', label: 'נוכחות ושעות נוספות', icon: <Clock size={ICON.sm} />, perm: PERM.ATTENDANCE_SETTINGS },
+  { key: 'notifications', label: 'התראות', icon: <Bell size={ICON.sm} />, perm: PERM.NOTIFICATIONS_MANAGE },
   { key: 'roles', label: 'הרשאות ותפקידים', icon: <Shield size={ICON.sm} />, perm: PERM.SETTINGS_PERMISSIONS },
   { key: 'recycle', label: 'סל מיחזור', icon: <RotateCcw size={ICON.sm} />, perm: PERM.SETTINGS_RECYCLE_BIN },
 ] as const
@@ -83,6 +86,7 @@ export default function SettingsPage() {
         {/* customerId=null — האזורים שחלים על כל הלקוחות שאין להם אזור משלהם */}
         {active === 'zones' && <PricingZonesEditor customerId={null} />}
         {active === 'attendance' && <OvertimeSettingsTab />}
+        {active === 'notifications' && <NotificationsAdminTab />}
         {active === 'roles' && <RolesTab />}
         {active === 'recycle' && <RecycleBinTab />}
       </div>

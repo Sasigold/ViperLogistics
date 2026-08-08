@@ -107,6 +107,7 @@ export const PERM = {
   PORTAL_VIEW_FINANCIALS: 'portal.view_financials',
   PORTAL_MANAGE_WORKERS: 'portal.manage_workers',
   NOTIFICATIONS_PREFERENCES: 'notifications.preferences',
+  NOTIFICATIONS_MANAGE: 'notifications.manage',
   SETTINGS_VIEW: 'settings.view',
   SETTINGS_EDIT: 'settings.edit',
   SETTINGS_TASK_TYPES: 'settings.task_types',

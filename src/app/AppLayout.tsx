@@ -20,6 +20,7 @@ import { useAuth } from '../state/auth'
 import { RouteGate } from '../features/auth/guards'
 import { PERM } from '../lib/permissions'
 import { NotificationsBell } from '../features/notifications/NotificationsBell'
+import { usePushNavigation, usePushSync } from '../features/notifications/pushQueries'
 import { CommandPalette } from '../features/search/CommandPalette'
 import { useOverdueCount } from '../features/tasks/useOverdueCount'
 import { ROUTE_LABELS, bottomNavItems, visibleNavSections } from './nav'
@@ -40,9 +41,16 @@ export default function AppLayout() {
   const [mobileNav, setMobileNav] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1')
   const location = useLocation()
+  const navigate = useNavigate()
 
   const canSeeTasks = has(PERM.TASKS_VIEW)
   const { data: overdue = 0 } = useOverdueCount(canSeeTasks)
+
+  // מיישר את מנוי הדחיפה של הדפדפן מול המסד בכל עלייה. ראו את ההסבר
+  // ב-pushQueries: זה מה שממלא את מקומו של pushsubscriptionchange, שאין
+  // ל-Service Worker דרך לטפל בו בלי session.
+  usePushSync()
+  usePushNavigation(navigate)
 
   useEffect(() => localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0'), [collapsed])
   useEffect(() => setMobileNav(false), [location.pathname])

@@ -27,5 +27,8 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  /* נבדק ב-tsconfig.worker.json: WebWorker ו-DOM אינן יכולות לחיות באותה
+     תוכנית. ראו את ההערה שם. */
+  "exclude": ["src/sw.ts"]
 }
