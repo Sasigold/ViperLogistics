@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2 } from 'lucide-react'
@@ -115,11 +115,18 @@ export function Tooltip({
   content,
   placement = 'top',
   delay = 250,
+  openOnClick,
   children,
 }: {
   content: ReactNode
   placement?: Placement
   delay?: number
+  /**
+   * Also open on click, and stay open until the next press elsewhere. A phone
+   * has no hover, so anything whose *only* affordance is a tooltip — a cell
+   * that clipped its own text, say — is unreachable on touch without this.
+   */
+  openOnClick?: boolean
   children: ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -138,6 +145,18 @@ export function Tooltip({
     setOpen(false)
     setPos(null)
   }
+
+  /* Opened by a tap, it cannot wait for a pointer to leave — nothing ever
+     leaves on touch. The next press anywhere else puts it away. */
+  useEffect(() => {
+    if (!open || !openOnClick) return
+    const onDown = (e: Event) => {
+      if (e.target instanceof Node && anchor.current?.contains(e.target)) return
+      hide()
+    }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  })
 
   useLayoutEffect(() => {
     if (!open || !anchor.current || !bubble.current) return
@@ -167,6 +186,7 @@ export function Tooltip({
         className="contents"
         onPointerEnter={show}
         onPointerLeave={hide}
+        onClick={openOnClick ? () => setOpen((v) => !v) : undefined}
         onFocusCapture={() => setOpen(true)}
         onBlurCapture={hide}
         aria-describedby={open ? id : undefined}

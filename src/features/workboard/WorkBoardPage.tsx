@@ -18,6 +18,7 @@ import {
   Pencil,
   Plus,
   STROKE,
+  Search,
   SlidersHorizontal,
 } from '../../components/ui/icons'
 import {
@@ -38,7 +39,15 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { useContractors, useCustomers, useExecutionMethods, useStatuses, useTaskTypes, useTrucks } from '../../lib/queries'
+import {
+  useContractors,
+  useCustomers,
+  useExecutionMethods,
+  useStaff,
+  useStatuses,
+  useTaskTypes,
+  useTrucks,
+} from '../../lib/queries'
 import { fmtDate, fmtMonth, fmtTime, toISODate } from '../../lib/dates'
 import { NEUTRAL, readableOn } from '../../lib/colors'
 import { useIsMobile } from '../../lib/useMediaQuery'
@@ -49,7 +58,7 @@ import { BOARD_FIELDS, DEFAULT_HIDDEN_FIELDS } from './boardFields'
 import type { BoardLookups } from './boardFields'
 import { COLOR_BY_OPTIONS, buildTones, clusterDay } from './grouping'
 import type { Cluster, ColorBy, GroupTone } from './grouping'
-import type { TaskRow, WorkBoardRow } from '../../types/domain'
+import type { StaffRole, TaskRow, WorkBoardRow } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
 /* ── geometry ─────────────────────────────────────────────────────────────
@@ -80,8 +89,20 @@ const DENSITY = {
   comfortable: { col: 208, row: 38, tall: 46, legend: 150, head: 34, empty: 132, fs: '0.8125rem' },
   compact: { col: 168, row: 30, tall: 36, legend: 132, head: 30, empty: 120, fs: '0.78125rem' },
   minimal: { col: 112, row: 26, tall: 32, legend: 104, head: 26, empty: 96, fs: '0.75rem' },
+  /* A whole month of days at once is a different job from reading one of them:
+     at this width a cell holds a time or a first name and little else, and the
+     board answers "which days are heavy" rather than "what is on this task".
+     Anything it cuts is still one hover — or one tap — away. */
+  micro: { col: 74, row: 22, tall: 28, legend: 84, head: 22, empty: 58, fs: '0.6875rem' },
 } as const
 type Density = keyof typeof DENSITY
+
+const DENSITY_OPTIONS: { key: Density; label: string }[] = [
+  { key: 'comfortable', label: 'מרווח' },
+  { key: 'compact', label: 'צפוף' },
+  { key: 'minimal', label: 'מינימלי' },
+  { key: 'micro', label: 'זעיר' },
+]
 
 /**
  * Which of the two boards to draw. `auto` is the old behaviour — cards below
@@ -178,6 +199,57 @@ function useInlineUpdate() {
   })
 }
 
+/**
+ * Staffing is not a column on `tasks`, so the staffing cells cannot ride the
+ * patch above: a team lead, a worker and a driver are each a row in
+ * `task_assignments`, and RLS there is granular per role. One row in, one row
+ * out — no read-modify-write of the whole set, so two dispatchers assigning
+ * two different people at the same moment do not overwrite each other.
+ */
+function useAssignmentUpdate() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  return useMutation({
+    mutationFn: async ({
+      row,
+      role,
+      profileId,
+      on,
+    }: {
+      row: WorkBoardRow
+      role: StaffRole
+      profileId: string
+      on: boolean
+    }) => {
+      if (!on) {
+        const { error } = await supabase
+          .from('task_assignments')
+          .delete()
+          .eq('task_id', row.id)
+          .eq('profile_id', profileId)
+          .eq('role', role)
+        if (error) throw error
+        return
+      }
+      /* one lead per task is a unique index, so the seat is cleared first */
+      if (role === 'team_lead') {
+        const { error } = await supabase
+          .from('task_assignments')
+          .delete()
+          .eq('task_id', row.id)
+          .eq('role', 'team_lead')
+        if (error) throw error
+      }
+      const { error } = await supabase
+        .from('task_assignments')
+        .insert({ task_id: row.id, profile_id: profileId, role, work_site: 'field' })
+      if (error) throw error
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['workboard'] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+}
+
 export default function WorkBoardPage() {
   const { has } = useAuth()
   const canInline = has(PERM.BOARD_INLINE_EDIT)
@@ -224,6 +296,8 @@ export default function WorkBoardPage() {
   /** "go to today" asked for a range that isn't loaded yet — scroll once it is */
   const [jumpPending, setJumpPending] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  /** phone only — the field lives behind its icon until it is asked for */
+  const [searchOpen, setSearchOpen] = useState(false)
   /** the group under the pointer — its whole run lights up, across days */
   const [activeGroup, setActiveGroup] = useState<string | null>(null)
   const toast = useToast()
@@ -245,7 +319,10 @@ export default function WorkBoardPage() {
   const { data: contractors = [] } = useContractors()
   const { data: methods = [] } = useExecutionMethods()
   const { data: trucks = [] } = useTrucks()
+  /* only fetched for the staffing cells, and those are gated by the same key */
+  const { data: staff = [] } = useStaff(has(PERM.BOARD_VIEW_STAFFING))
   const inline = useInlineUpdate()
+  const staffing = useAssignmentUpdate()
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['workboard', 'range', from, to, filters],
@@ -272,10 +349,18 @@ export default function WorkBoardPage() {
     },
   })
 
-  const lookups = useMemo<BoardLookups>(() => ({ statuses, trucks, methods }), [statuses, trucks, methods])
+  const lookups = useMemo<BoardLookups>(
+    () => ({ statuses, trucks, methods, contractors, staff }),
+    [statuses, trucks, methods, contractors, staff],
+  )
   const patchCell = useCallback(
     (row: WorkBoardRow, patch: Record<string, unknown>) => inline.mutate({ row, patch }),
     [inline],
+  )
+  const assignCell = useCallback(
+    (row: WorkBoardRow, role: StaffRole, profileId: string, on: boolean) =>
+      staffing.mutate({ row, role, profileId, on }),
+    [staffing],
   )
 
   /**
@@ -293,8 +378,10 @@ export default function WorkBoardPage() {
   /** cards below `lg` unless the reader has said otherwise */
   const asCards = viewMode === 'auto' ? isMobile : viewMode === 'cards'
   /* A phone holding the grid is already asking a lot of a small screen; the
-     type comes down a step there on top of whatever density is set. */
-  const boardFontSize = isMobile ? DENSITY.minimal.fs : metrics.fs
+     type comes down a step there on top of whatever density is set — but never
+     back *up*, so choosing "זעיר" on a phone still gets the smallest type. */
+  const boardFontSize =
+    isMobile && (density === 'comfortable' || density === 'compact') ? DENSITY.minimal.fs : metrics.fs
 
   /**
    * The team row lists everyone by name, so its height is the size of the
@@ -641,14 +728,27 @@ export default function WorkBoardPage() {
 
             {/* Main actions & inline search/date controls */}
             <div className="flex flex-wrap items-center gap-1.5 ms-auto">
+              {/* On a phone the field alone took a whole row of a toolbar that
+                  has five other controls in it, and search is the one thing
+                  here nobody uses twice in a row — so it folds into its icon
+                  and opens over the toolbar when it is actually wanted. */}
               <Input
-                className="w-28 sm:w-36 lg:w-40"
+                className="hidden w-36 sm:block lg:w-40"
                 inputSize="sm"
                 placeholder="חיפוש..."
                 value={filters.q}
                 onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
                 aria-label="חיפוש חופשי"
               />
+              <IconButton
+                label={searchOpen ? 'סגירת החיפוש' : 'חיפוש'}
+                size="sm"
+                className="sm:hidden"
+                variant={filters.q ? 'outlined' : undefined}
+                onClick={() => setSearchOpen((v) => !v)}
+              >
+                <Search size={ICON.sm} strokeWidth={STROKE} />
+              </IconButton>
 
               {/* icon only on purpose: this scrolls to today's column, while
                   the month title beside it jumps to today's *month* */}
@@ -718,16 +818,7 @@ export default function WorkBoardPage() {
                       />
                     </div>
                     <MenuLabel>צפיפות</MenuLabel>
-                    <SegmentedControl
-                      block
-                      items={[
-                        { key: 'comfortable', label: 'מרווח' },
-                        { key: 'compact', label: 'צפוף' },
-                        { key: 'minimal', label: 'מינימלי' },
-                      ]}
-                      value={density}
-                      onChange={setDensity}
-                    />
+                    <SegmentedControl block items={DENSITY_OPTIONS} value={density} onChange={setDensity} />
                     <MenuLabel>מיון בתוך היום</MenuLabel>
                     <SegmentedControl
                       block
@@ -794,6 +885,30 @@ export default function WorkBoardPage() {
               )}
             </div>
           </div>
+
+          {searchOpen && (
+            <div className="surface flex items-center gap-1.5 p-2 rounded-xl sm:hidden">
+              <Input
+                className="flex-1"
+                inputSize="sm"
+                autoFocus
+                placeholder="חיפוש..."
+                value={filters.q}
+                onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
+                aria-label="חיפוש חופשי"
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setFilters((f) => ({ ...f, q: '' }))
+                  setSearchOpen(false)
+                }}
+              >
+                סגירה
+              </Button>
+            </div>
+          )}
 
           {/* Secondary Collapsible Filters Row */}
           {showFilters && (
@@ -864,7 +979,11 @@ export default function WorkBoardPage() {
                       className="flex items-center justify-center border-b border-line-subtle px-2.5 text-center type-caption font-semibold text-ink-secondary"
                       style={{ height: rowHeights[i] }}
                     >
-                      <span className="truncate">{f.label}</span>
+                      {/* the legend narrows with the board, so its own labels
+                          are the first thing the tightest widths cut */}
+                      <Tooltip content={f.label}>
+                        <span className="truncate">{f.label}</span>
+                      </Tooltip>
                     </div>
                   ))}
                 </div>
@@ -872,7 +991,10 @@ export default function WorkBoardPage() {
                 {/* virtualized track */}
                 <div className="relative" style={{ width: totalWidth }}>
                   {/* header band: day groups + event bands + per-task headers */}
-                  <div className="sticky top-0 z-20 bg-subtle" style={{ height: headerH }}>
+                  {/* bg-surface, not bg-subtle: the strip runs the whole track
+                      and a tinted one filled the gap between two days, so the
+                      header read as continuous over a body that is not */}
+                  <div className="sticky top-0 z-20 bg-surface" style={{ height: headerH }}>
                     {visibleBands.map((b) => {
                       const isToday = b.dayKey === today
                       const quiet = b.count === 0
@@ -888,28 +1010,17 @@ export default function WorkBoardPage() {
                           )}
                           style={{ insetInlineStart: b.start, width: b.width, height: DAY_HEAD_H }}
                         >
-                          <button
-                            onClick={() => !quiet && toggleDay(b.dayKey)}
-                            disabled={quiet}
-                            aria-expanded={quiet ? undefined : !b.collapsed}
-                            aria-label={quiet ? fmtDate(b.dayKey) : `${b.collapsed ? 'פריסת' : 'קיפול'} ${fmtDate(b.dayKey)}`}
-                            className="flex min-w-0 items-center gap-1 rounded transition-colors hover:text-ink focus-visible:outline-none focus-visible:focus-ring disabled:pointer-events-none"
-                          >
-                            {!quiet && (
-                              <ChevronDown
-                                size={ICON.xs}
-                                className={cx('shrink-0 transition-transform duration-200', b.collapsed && 'rotate-90 rtl:-rotate-90')}
-                              />
+                          {/* the date is a label. Folding a day from here was
+                              one careless click away from hiding a day's work,
+                              and the width menu now covers the same need */}
+                          <span
+                            className={cx(
+                              'truncate type-caption font-bold tabular',
+                              quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
                             )}
-                            <span
-                              className={cx(
-                                'truncate type-caption font-bold tabular',
-                                quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
-                              )}
-                            >
-                              {fmtDate(b.dayKey)}
-                            </span>
-                          </button>
+                          >
+                            {fmtDate(b.dayKey)}
+                          </span>
                           {isToday && (
                             <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
                               היום
@@ -974,6 +1085,7 @@ export default function WorkBoardPage() {
                             key={col.id}
                             dayKey={col.dayKey}
                             canCreate={has(PERM.TASKS_CREATE)}
+                            narrow={metrics.empty < 96}
                             onNewTask={newTaskOn}
                             style={{ insetInlineStart: vi.start, width, height: bodyHeight }}
                           />
@@ -984,6 +1096,7 @@ export default function WorkBoardPage() {
                           row={col.row}
                           canEditCell={canEditCell}
                           patch={patchCell}
+                          assign={assignCell}
                           lookups={lookups}
                           fields={fields}
                           heights={rowHeights}
@@ -1316,11 +1429,14 @@ function SpineHeader({ dayKey, count, onExpand }: { dayKey: string; count: numbe
 function EmptyDayColumn({
   dayKey,
   canCreate,
+  narrow,
   onNewTask,
   style,
 }: {
   dayKey: string
   canCreate: boolean
+  /** at the narrowest widths the words do not fit — the icon has to carry it */
+  narrow: boolean
   onNewTask: (dayKey: string) => void
   style: React.CSSProperties
 }) {
@@ -1329,58 +1445,31 @@ function EmptyDayColumn({
       className="absolute top-0 flex flex-col items-center justify-center gap-2 border-s border-line bg-subtle/40"
       style={style}
     >
-      <CalendarDays size={ICON.lg} className="text-ink-tertiary/60" strokeWidth={STROKE} />
-      <span className="type-caption text-ink-tertiary">אין משימות</span>
-      {canCreate && (
-        <Button size="sm" variant="ghost" onClick={() => onNewTask(dayKey)}>
-          <Plus size={ICON.sm} strokeWidth={STROKE} />
-          משימה
-        </Button>
-      )}
+      <CalendarDays size={narrow ? ICON.md : ICON.lg} className="text-ink-tertiary/60" strokeWidth={STROKE} />
+      {!narrow && <span className="type-caption text-ink-tertiary">אין משימות</span>}
+      {canCreate &&
+        (narrow ? (
+          <IconButton label={`משימה חדשה ל-${fmtDate(dayKey)}`} size="sm" onClick={() => onNewTask(dayKey)}>
+            <Plus size={ICON.sm} strokeWidth={STROKE} />
+          </IconButton>
+        ) : (
+          <Button size="sm" variant="ghost" onClick={() => onNewTask(dayKey)}>
+            <Plus size={ICON.sm} strokeWidth={STROKE} />
+            משימה
+          </Button>
+        ))}
     </div>
   )
 }
 
 /* ===== one task's column of field cells =================================== */
 
-/**
- * Hands a click anywhere in the cell to the editor inside it. `showPicker` is
- * what makes a single click enough on a `<select>` and on the time inputs —
- * focus alone would leave the reader with a focused control and no list — and
- * it is called straight out of the click, which is the user activation the
- * API requires. Browsers without it (and Safari's `<select>`) simply focus,
- * which is still one click better than before.
- */
-function focusCellEditor(e: React.MouseEvent<HTMLDivElement>) {
-  const target = e.target as HTMLElement
-  /* a click that already landed on the control, or on something else with its
-     own job, is that control's to handle */
-  if (target !== e.currentTarget && target.closest('input, select, textarea, button, a, [role="button"]')) return
-  const el = e.currentTarget.querySelector<HTMLInputElement | HTMLSelectElement>(
-    'input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
-  )
-  if (!el) return
-  el.focus()
-  const withPicker = el as { showPicker?: () => void }
-  if (typeof withPicker.showPicker !== 'function') return
-  if (el instanceof HTMLInputElement && el.type !== 'time' && el.type !== 'date') {
-    /* typing over a number or a note is the usual next move, so the click
-       leaves the old value selected rather than a caret somewhere in it */
-    el.select()
-    return
-  }
-  try {
-    withPicker.showPicker()
-  } catch {
-    /* not every browser allows it on every control — focus is the fallback */
-  }
-}
-
 const TaskColumn = memo(
   function TaskColumn({
     row,
     canEditCell,
     patch,
+    assign,
     lookups,
     fields,
     heights,
@@ -1393,6 +1482,7 @@ const TaskColumn = memo(
     row: WorkBoardRow
     canEditCell: (perm?: string) => boolean
     patch: (row: WorkBoardRow, patch: Record<string, unknown>) => void
+    assign: (row: WorkBoardRow, role: StaffRole, profileId: string, on: boolean) => void
     lookups: BoardLookups
     fields: typeof BOARD_FIELDS
     heights: number[]
@@ -1419,35 +1509,27 @@ const TaskColumn = memo(
           ...(tone ? { background: active ? tone.tintStrong : tone.tint } : null),
         }}
       >
-        {fields.map((f, i) => {
-          const canEdit = canEditCell(f.editPerm)
-          /* The whole cell is the control. Before this, the editor was an
-             input inset in a 208×38 box and a click a few pixels off its edge
-             did nothing at all — so the cell forwards the click to whatever
-             editor it holds, and opens the picker where the platform has one. */
-          const clickable = canEdit && !!f.editPerm && !f.selfEditing
-          return (
-            <div
-              key={f.key}
-              onClick={clickable ? focusCellEditor : undefined}
-              className={cx(
-                'flex items-center justify-center overflow-hidden border-b border-line-subtle transition-colors hover:bg-hover',
-                clickable && 'cursor-pointer',
-              )}
-              style={{ height: heights[i] }}
-            >
-              <div className="min-w-0 max-h-full flex-1 overflow-y-auto text-center">
-                {f.render({ row, canEdit, patch, lookups })}
-              </div>
+        {fields.map((f, i) => (
+          <div
+            key={f.key}
+            className="flex items-center justify-center overflow-hidden border-b border-line-subtle transition-colors hover:bg-hover"
+            style={{ height: heights[i] }}
+          >
+            {/* the cell scrolls inside itself: a name list longer than the row,
+                or a clipped string a reader has just opened, must not push the
+                grid out of alignment */}
+            <div className="min-w-0 max-h-full flex-1 overflow-y-auto text-center">
+              {f.render({ row, canEdit: canEditCell(f.editPerm), can: canEditCell, patch, assign, lookups })}
             </div>
-          )
-        })}
+          </div>
+        ))}
       </div>
     )
   },
   (a, b) =>
     a.row === b.row &&
     a.canEditCell === b.canEditCell &&
+    a.assign === b.assign &&
     a.fields === b.fields &&
     a.heights === b.heights &&
     a.lookups === b.lookups &&
