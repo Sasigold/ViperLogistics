@@ -631,5 +631,5 @@ revoke execute on function public.notification_pending(int) from anon, public;
 revoke execute on function public.notification_push_stats() from anon, public;
 revoke execute on function public.notification_forget_device(uuid) from anon, public;
 revoke execute on function public.notification_user_settings(uuid) from anon, public;
-revoke execute on function public.my_notification_settings() from anon;
-revoke execute on function public.set_notification_preference(text, text, boolean) from anon;
+revoke execute on function public.my_notification_settings() from anon, public;
+revoke execute on function public.set_notification_preference(text, text, boolean) from anon, public;

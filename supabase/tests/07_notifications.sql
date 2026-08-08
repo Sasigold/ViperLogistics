@@ -313,6 +313,22 @@ select t_expect_fail('עובד אינו מריץ את סטטיסטיקת המכ�
 select t_expect_fail('ואינו קורא הגדרות של אחר', $$
   select notification_user_settings('20000000-0000-0000-0000-000000000001')$$);
 
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+/*
+ * anon (מי שאינו מחובר בכלל) לא אמור להריץ אף אחת מהפונקציות האלה, גם לא
+ * את אלה שבטוחות "במקרה" (מחזירות [] או זורקות כשאין משתמש). ה-EXECUTE
+ * חייב להיחסם ב-grant, לא להישען על ההתנהגות הפנימית של הפונקציה —
+ * ראו את התיקון ב-0048 למה שקרה כשזה לא נאכף.
+ */
+set role anon;
+select t_expect_fail('anon אינו מריץ my_notification_settings', $$
+  select my_notification_settings()$$);
+select t_expect_fail('anon אינו מריץ set_notification_preference', $$
+  select set_notification_preference('task_assigned', 'email', true)$$);
+reset role;
+
 -- ===== 9. RLS =======================================================
 
 \echo '--- RLS ---'
