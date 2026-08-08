@@ -156,6 +156,10 @@ function EditBar({
         <GripVertical size={ICON.md} strokeWidth={STROKE} aria-hidden />
       </button>
 
+      {/* the bar sits over the widget's own header, so it has to say which
+          widget is being moved — otherwise you are arranging blank rectangles */}
+      <span className="min-w-0 flex-1 truncate type-caption font-semibold">{def.title}</span>
+
       {/* "אחורה" and "קדימה" describe intent; the glyph flips with the
           direction so the arrow always points where the widget will go */}
       <IconButton
@@ -180,7 +184,7 @@ function EditBar({
         />
       )}
 
-      <span className="ms-auto flex items-center gap-0.5">
+      <span className="flex shrink-0 items-center gap-0.5">
         <Popover
           align="end"
           trigger={(p) => (

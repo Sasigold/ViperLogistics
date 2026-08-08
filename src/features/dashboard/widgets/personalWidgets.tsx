@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { addDays } from 'date-fns'
 import {
   Card,
@@ -93,6 +93,7 @@ export function MyNextShiftWidget(_props: WidgetProps) {
    could drift out of. */
 
 export function MyClockWidget(_props: WidgetProps) {
+  const navigate = useNavigate()
   const { data, isLoading } = useMyClockStatus()
   if (isLoading && !data) return <SkeletonCard lines={0} />
 
@@ -104,7 +105,7 @@ export function MyClockWidget(_props: WidgetProps) {
       value={open ? fmtTime(String(open.clock_in_at).slice(11, 16)) : 'לא בעבודה'}
       tone={open ? '#22c55e' : '#64748b'}
       hint={open ? 'ליציאה — מסך השעון' : 'להחתמה — מסך השעון'}
-      onClick={() => window.location.assign('/my/attendance')}
+      onClick={() => navigate('/my/attendance')}
     />
   )
 }

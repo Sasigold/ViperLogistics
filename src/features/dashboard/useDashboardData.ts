@@ -83,20 +83,33 @@ export function useDashboardSections(
     queryFn: () => fetchSections(prevKeys, prev, opts),
   })
 
+  /* Depend on the payloads and flags, never on the query objects themselves:
+     react-query hands back a fresh object on every render, so a memo keyed on
+     those would never hold — and this value goes into the page context, which
+     would then re-render every widget on the grid on every keystroke in the
+     date field. */
+  const rangeData = rangeQ.data
+  const staticData = staticQ.data
+  const prevData = prevQ.data
+  const isLoading = (rangeQ.isLoading && rangeKeys.length > 0) || (staticQ.isLoading && staticKeys.length > 0)
+  const error = rangeQ.error ?? staticQ.error
+  const refetchRange = rangeQ.refetch
+  const refetchStatic = staticQ.refetch
+
   return useMemo(() => {
-    const merged: SectionMap = { ...(staticQ.data ?? {}), ...(rangeQ.data ?? {}) }
+    const merged: SectionMap = { ...(staticData ?? {}), ...(rangeData ?? {}) }
     return {
       section: (key: string) => merged[key],
-      prevSection: (key: string) => prevQ.data?.[key],
+      prevSection: (key: string) => prevData?.[key],
       /** true only while there is nothing at all to draw */
-      isLoading: (rangeQ.isLoading && rangeKeys.length > 0) || (staticQ.isLoading && staticKeys.length > 0),
-      error: rangeQ.error ?? staticQ.error,
+      isLoading,
+      error,
       refetch: () => {
-        void rangeQ.refetch()
-        void staticQ.refetch()
+        void refetchRange()
+        void refetchStatic()
       },
     }
-  }, [rangeQ, staticQ, prevQ, rangeKeys.length, staticKeys.length])
+  }, [rangeData, staticData, prevData, isLoading, error, refetchRange, refetchStatic])
 }
 
 export type DashboardSections = ReturnType<typeof useDashboardSections>
