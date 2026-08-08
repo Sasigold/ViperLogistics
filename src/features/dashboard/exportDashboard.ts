@@ -18,6 +18,7 @@
  * בניית התוכנית מופרדת מהכתיבה כדי שהכללים יהיו ניתנים לבדיקה בלי ExcelJS
  * ובלי DOM.
  */
+import { isCustomId, toUuid } from './builder/customRegistry'
 import type { LayoutItem, WidgetDef } from './dashboardTypes'
 import type { DateRange } from './dashboardRange'
 
@@ -98,11 +99,57 @@ function cell(v: unknown): string | number {
   return JSON.stringify(v)
 }
 
+/**
+ * A user-built widget's result → a sheet.
+ *
+ * It cannot go through `sectionToSheet`: a custom widget has no section key,
+ * and its payload is the uniform `{rows, meta}` the engine returns rather than
+ * a bespoke section shape. Both rules survive intact — a `denied` or
+ * `unsupported` result contributes no sheet, exactly as `null` does — and the
+ * meta disclosures are written as footer rows so the file carries the same
+ * caveats the card does. A number in a spreadsheet outlives the screen it was
+ * copied from, so it has to travel with what it excludes.
+ */
+export function customResultToSheet(title: string, value: unknown, taken: Set<string>): ExportSheet | null {
+  if (!isRecord(value)) return null
+  const meta = isRecord(value.meta) ? value.meta : {}
+  if (meta.denied || meta.unsupported) return null
+  const rows = value.rows
+  if (!Array.isArray(rows) || rows.length === 0) return null
+
+  const body: (string | number)[][] = rows.map((r) => {
+    const row = isRecord(r) ? r : {}
+    return [cell(row.label), cell(row.value)]
+  })
+
+  if (meta.total !== null && meta.total !== undefined) body.push(['סך הכול', cell(meta.total)])
+  for (const note of exportNotices(meta)) body.push([note, ''])
+
+  return { name: sheetName(title, taken), title, columns: ['פריט', 'ערך'], rows: body }
+}
+
+/** the same caveats the card prints, in the same order */
+function exportNotices(meta: Record<string, unknown>): string[] {
+  const out: string[] = []
+  if (meta.estimated) out.push(`משוער — לא משויך: ${cell(meta.unallocated)}`)
+  if (Number(meta.unrated_shifts ?? 0) > 0) out.push(`משמרות ללא תעריף שאינן נספרות: ${meta.unrated_shifts}`)
+  const presence = isRecord(meta.presence) ? meta.presence : null
+  if (presence && Number(presence.missing ?? 0) > 0) {
+    out.push(`רשומות ללא ערך שאינן נספרות: ${presence.missing}`)
+  }
+  if (meta.fans_out) out.push('שורה לכל משאית — סכום השורות גדול ממספר המשימות')
+  if (meta.truncated) out.push('מוצגות השורות המובילות בלבד')
+  if (meta.scope_note) out.push(String(meta.scope_note))
+  return out
+}
+
 export function buildDashboardExport(
   items: LayoutItem[],
   byId: Map<string, WidgetDef>,
   section: (key: string) => unknown,
   range: DateRange,
+  /** results of the user-built widgets, keyed by the row id the server knows */
+  customResult?: (rowId: string) => unknown,
 ): ExportPlan {
   const taken = new Set<string>()
   const sheets: ExportSheet[] = []
@@ -110,7 +157,19 @@ export function buildDashboardExport(
 
   for (const item of items) {
     const def = byId.get(item.id)
-    if (!def?.sections?.length) continue
+    if (!def) continue
+
+    // a built widget answers through dashboard_widgets_run, not a section —
+    // without this branch the export silently omits every one of them
+    if (isCustomId(item.id)) {
+      const uuid = toUuid(item.id)
+      if (!uuid || !customResult) continue
+      const sheet = customResultToSheet(def.title, customResult(uuid), taken)
+      if (sheet) sheets.push(sheet)
+      continue
+    }
+
+    if (!def.sections?.length) continue
     for (const key of def.sections) {
       // two widgets often share a section (the three contractor tiles all read
       // cost.contractor); the sheet is written once

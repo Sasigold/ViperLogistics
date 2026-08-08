@@ -16,7 +16,6 @@ import { CustomizeDrawer } from './CustomizeDrawer'
 import { SavedViewsMenu } from './SavedViewsMenu'
 import { useDashboardLayout } from './useDashboardLayout'
 import { useDashboardSections } from './useDashboardData'
-import { WIDGETS, WIDGETS_BY_ID } from './registry'
 import { hideWidget, moveByIds, moveByOffset, setSize, showWidget } from './layout'
 import { buildDashboardExport, writeDashboardExport } from './exportDashboard'
 import type { WidgetSize } from './dashboardTypes'
@@ -52,7 +51,7 @@ export default function DashboardPage() {
   /* The union of the visible widgets' sections has to be known before the
      first widget renders — the server is told what to compute — so the request
      is issued here and handed down rather than fetched per widget. */
-  const sections = useDashboardSections(layout.visible, WIDGETS_BY_ID, range, prev)
+  const sections = useDashboardSections(layout.visible, layout.byId, range, prev)
 
   const ctx = useMemo(
     () => ({
@@ -81,16 +80,22 @@ export default function DashboardPage() {
   const onRemove = (id: string) => layout.edit((s) => hideWidget(s.items, s.hidden, id))
   const onToggle = (id: string, on: boolean) =>
     layout.edit((s) => {
-      const meta = WIDGETS_BY_ID.get(id)
+      const meta = layout.byId.get(id)
       if (!meta) return s
-      return on ? showWidget(s.items, s.hidden, meta, WIDGETS_BY_ID) : hideWidget(s.items, s.hidden, id)
+      return on ? showWidget(s.items, s.hidden, meta, layout.byId) : hideWidget(s.items, s.hidden, id)
     })
 
   /* Exports exactly what is on screen, in the order it was arranged — the
      file is the view, not "all the data". Every number comes from the section
      as the server returned it; nothing is recomputed on the way out. */
   const exportXlsx = async () => {
-    const plan = buildDashboardExport(layout.visible, WIDGETS_BY_ID, sections.section, range)
+    const plan = buildDashboardExport(
+      layout.visible,
+      layout.byId,
+      sections.section,
+      range,
+      sections.customResult,
+    )
     const blob = await writeDashboardExport(plan)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -195,7 +200,7 @@ export default function DashboardPage() {
             <Suspense fallback={<Skeleton className="h-64 w-full" />}>
               <DashboardEditGrid
                 items={layout.visible}
-                byId={WIDGETS_BY_ID}
+                byId={layout.byId}
                 onMove={onMove}
                 onReorder={onReorder}
                 onSize={onSize}
@@ -203,7 +208,7 @@ export default function DashboardPage() {
               />
             </Suspense>
           ) : (
-            <DashboardGrid items={layout.visible} byId={WIDGETS_BY_ID} />
+            <DashboardGrid items={layout.visible} byId={layout.byId} />
           )}
         </DashboardProvider>
 
@@ -221,7 +226,7 @@ export default function DashboardPage() {
           onClose={() => setCatalogue(false)}
           items={layout.visible}
           hidden={layout.hidden}
-          widgets={WIDGETS}
+          widgets={layout.widgets}
           onToggle={onToggle}
           onMove={onMove}
         />

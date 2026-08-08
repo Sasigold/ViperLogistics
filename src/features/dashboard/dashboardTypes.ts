@@ -9,7 +9,10 @@ import type { UserKind } from '../../types/domain'
 export const SIZES = ['sm', 'md', 'lg', 'xl'] as const
 export type WidgetSize = (typeof SIZES)[number]
 
-export const GROUPS = ['finance', 'ops', 'customers', 'people', 'me'] as const
+/* `custom` sits last on purpose: `insertByGroup` places a newly-shown widget
+   after the groups that come before it, so a widget somebody built lands at
+   the end of the page rather than in the middle of the finance row. */
+export const GROUPS = ['finance', 'ops', 'customers', 'people', 'me', 'custom'] as const
 export type WidgetGroup = (typeof GROUPS)[number]
 
 export const GROUP_LABELS: Record<WidgetGroup, string> = {
@@ -18,6 +21,7 @@ export const GROUP_LABELS: Record<WidgetGroup, string> = {
   customers: 'לקוחות',
   people: 'כוח אדם',
   me: 'אישי',
+  custom: 'ווידג׳טים שנבנו',
 }
 
 /* ===== per-placement options ==============================================

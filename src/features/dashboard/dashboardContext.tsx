@@ -47,6 +47,19 @@ export function useDashboard(): DashboardCtxValue {
  * saying this section is not for this reader. The first draws a skeleton, the
  * second removes the widget from the page.
  */
+/**
+ * One user-built widget's result, by the row id the server knows.
+ *
+ * Symmetric with `useSection`, including the part that matters: `undefined`
+ * means the batch has not landed yet, `null` means the server returned nothing
+ * for this id — it was deleted, or this reader cannot see it. A skeleton for
+ * the first, no widget at all for the second.
+ */
+export function useCustomResult(rowId: string) {
+  const { sections } = useDashboard()
+  return sections.customResult(rowId)
+}
+
 export function useSection<T>(key: string): {
   data: T | null | undefined
   prev: T | null | undefined
