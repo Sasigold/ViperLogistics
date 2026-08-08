@@ -72,6 +72,7 @@ export {
   Undo2,
   MoreHorizontal,
   MoreVertical,
+  GripVertical,
   Eye,
   EyeOff,
   // status & feedback

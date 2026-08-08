@@ -66,6 +66,16 @@ OUT="$OUT
 $OUT3"
 
 echo
+echo "== dashboard suite =="
+# 05 runs last and reads what the earlier suites created: the payroll
+# neutrality check compares the report against the function it now sits on,
+# and needs attendance rows to exist for that comparison to mean anything.
+OUT4=$($PSQL -d vl -f "$HERE/05_dashboard.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT4"
+OUT="$OUT
+$OUT4"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
