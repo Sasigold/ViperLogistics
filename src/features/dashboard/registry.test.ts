@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PERM } from '../../lib/permissionKeys'
 import { GROUPS, SIZES } from './dashboardTypes'
+import { SECTIONS } from './sections'
 import { BUILT_IN_DEFAULT, WIDGETS, WIDGETS_BY_ID } from './registry'
 import { normalizeLayout, resolveLayout } from './layout'
 
@@ -33,6 +34,31 @@ describe('the widget registry', () => {
     for (const w of WIDGETS) {
       expect(w.title.length).toBeGreaterThan(0)
       expect(w.description.length).toBeGreaterThan(0)
+    }
+  })
+
+  /* An unknown section key is skipped by the server rather than raised — that
+     is what lets an old server serve a new client — so a typo here has no
+     symptom at all: the widget returns null forever and simply never appears. */
+  it('only requests sections the server knows how to compute', () => {
+    for (const w of WIDGETS) {
+      for (const s of w.sections ?? []) {
+        expect(SECTIONS, `${w.id} requests an unknown section: ${s}`).toContain(s)
+      }
+    }
+  })
+
+  it('asks for a section only when it needs one', () => {
+    for (const w of WIDGETS) {
+      if (w.sections) expect(w.sections.length, `${w.id} declares an empty sections array`).toBeGreaterThan(0)
+    }
+  })
+
+  /* `wantsDelta` costs a second round trip over the previous period. It is
+     only meaningful for a widget whose numbers move with the range. */
+  it('only wants a delta when it reacts to the range', () => {
+    for (const w of WIDGETS) {
+      if (w.wantsDelta) expect(w.usesRange, `${w.id} wants a delta but ignores the range`).toBe(true)
     }
   })
 

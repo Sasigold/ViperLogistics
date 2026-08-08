@@ -107,6 +107,81 @@ select t_expect_ok('ויכול למחוק את שלו',
   $$delete from dashboard_layouts
      where profile_id = '20000000-0000-0000-0000-0000000000f3' and name = 'כספים'$$);
 
+\echo '--- dashboard_sections: 0 אומר אין, null אומר לא בשבילך ---'
+
+-- כל התכנון של הדשבורד נשען על ההבחנה הזו: המסך מצייר 0 ומשמיט null. סקשן
+-- שיחזיר 0 או [] למי שאין לו מפתח היה אומר "אין נתונים בטווח", וזו טענה אחרת
+-- לגמרי — ושקרית.
+select t_eq('עובד ללא מפתחות: הכנסות',
+  (dashboard_sections(array['revenue.trend'], current_date - 30, current_date, '{}') -> 'revenue.trend'),
+  'null'::jsonb);
+select t_eq('עובד ללא מפתחות: עלות קבלנים',
+  (dashboard_sections(array['cost.contractor'], current_date - 30, current_date, '{}') -> 'cost.contractor'),
+  'null'::jsonb);
+select t_eq('עובד ללא מפתחות: עלות שכר',
+  (dashboard_sections(array['cost.payroll'], current_date - 30, current_date, '{}') -> 'cost.payroll'),
+  'null'::jsonb);
+select t_eq('עובד ללא מפתחות: רווח גולמי',
+  (dashboard_sections(array['margin.summary'], current_date - 30, current_date, '{}') -> 'margin.summary'),
+  'null'::jsonb);
+select t_eq('עובד ללא מפתחות: איכות תמחור',
+  (dashboard_sections(array['pricing.quality'], current_date - 30, current_date, '{}') -> 'pricing.quality'),
+  'null'::jsonb);
+select t_eq('עובד ללא מפתחות: שעות נוכחות',
+  (dashboard_sections(array['attendance.hours'], current_date - 30, current_date, '{}') -> 'attendance.hours'),
+  'null'::jsonb);
+
+-- ...אבל סקשן תפעולי שאינו מגודר כן מגיע, מצומצם ב-RLS לשורות שהקורא רואה.
+select t_eq('אבל סקשן תפעולי אינו null',
+  (dashboard_sections(array['tasks.by_type'], current_date - 180, current_date + 180, '{}')
+     -> 'tasks.by_type') is not null, true);
+
+-- שרת ישן מול לקוח חדש חייב להתדרדר לפחות כרטיסים ולא לשגיאה.
+select t_eq('מפתח סקשן לא מוכר חוזר null ולא זורק',
+  (dashboard_sections(array['no.such.section'], current_date - 30, current_date, '{}')
+     -> 'no.such.section'), 'null'::jsonb);
+
+select t_expect_fail('טווח הפוך נדחה',
+  $$select dashboard_sections(array['tasks.by_type'], current_date, current_date - 5, '{}')$$);
+select t_expect_fail('טווח גדול מדי נדחה',
+  $$select dashboard_sections(array['tasks.by_type'], current_date - 500, current_date, '{}')$$);
+select t_expect_fail('יותר מדי סקשנים בבקשה אחת נדחה',
+  $$select dashboard_sections(
+      (select array_agg('k' || g) from generate_series(1,41) g),
+      current_date - 5, current_date, '{}')$$);
+
+-- ================= as the owner admin =================
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+
+select t_eq('אדמין כן מקבל עלות שכר',
+  (dashboard_sections(array['cost.payroll'], current_date - 180, current_date + 180, '{}')
+     #>> '{cost.payroll,scope}'), 'approved_only');
+
+-- הרווח הוא חיסור של שלושה מספרים שהמסך מציג גם בנפרד, ולכן הוא חייב להסתדר
+-- מולם. אם זה לא מסתדר, אחד מהם מסונן אחרת מהאחרים.
+select t_eq('הרווח הגולמי הוא בדיוק הכנסות פחות קבלנים פחות שכר',
+  (select round((m ->> 'revenue')::numeric - (m ->> 'contractor')::numeric
+               - (m ->> 'payroll')::numeric, 2)
+     from (select dashboard_sections(array['margin.summary'],
+                    current_date - 180, current_date + 180, '{}') -> 'margin.summary' as m) s),
+  (select round((m ->> 'gross')::numeric, 2)
+     from (select dashboard_sections(array['margin.summary'],
+                    current_date - 180, current_date + 180, '{}') -> 'margin.summary' as m) s));
+
+-- משמרת בלי תעריף מחזירה total = null ונופלת מ-sum(). בלי המונה הזה עלות
+-- השכר הייתה מדווחת נמוך מדי בלי שאיש ידע.
+select t_eq('משמרת ללא תעריף נספרת בנפרד ואינה נחשבת אפס',
+  ((dashboard_sections(array['cost.payroll'], current_date - 180, current_date + 180, '{}')
+      #>> '{cost.payroll,unrated_shifts}')::int > 0), true);
+
+-- `price` הוא not null default 0, ולכן סכום לבדו אינו מבחין בין "לא סוכם
+-- מחיר" ל-"סוכם אפס".
+select t_eq('שורות קבלן בסכום אפס נספרות בנפרד',
+  ((dashboard_sections(array['cost.contractor'], current_date - 180, current_date + 180, '{}')
+      #>> '{cost.contractor,zero_rows}')::int >= 0), true);
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+
 \echo '--- מנוע השכר: נקודת כניסה אחת ---'
 
 -- אין כאן טענה על הרשאת ההרצה של app.attendance_pay_rows: 01_seed.sql מריצה

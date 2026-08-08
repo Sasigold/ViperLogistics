@@ -15,6 +15,7 @@ import { DashboardGrid } from './DashboardGrid'
 import { CustomizeDrawer } from './CustomizeDrawer'
 import { SavedViewsMenu } from './SavedViewsMenu'
 import { useDashboardLayout } from './useDashboardLayout'
+import { useDashboardSections } from './useDashboardData'
 import { WIDGETS, WIDGETS_BY_ID } from './registry'
 import { hideWidget, moveByIds, moveByOffset, setSize, showWidget } from './layout'
 import type { WidgetSize } from './dashboardTypes'
@@ -47,16 +48,22 @@ export default function DashboardPage() {
   const layout = useDashboardLayout()
   const canCustomize = has(PERM.DASHBOARD_CUSTOMIZE)
 
+  /* The union of the visible widgets' sections has to be known before the
+     first widget renders — the server is told what to compute — so the request
+     is issued here and handed down rather than fetched per widget. */
+  const sections = useDashboardSections(layout.visible, WIDGETS_BY_ID, range, prev)
+
   const ctx = useMemo(
     () => ({
       range,
       prev,
       today,
+      sections,
       openTask: (id: string) => setTaskDrawer({ open: true, id }),
       openNewTask: () => setTaskDrawer({ open: true, id: null }),
       openNewEvent: () => setEventModal(true),
     }),
-    [range, prev, today],
+    [range, prev, today, sections],
   )
 
   /* Every edit goes through `layout.edit`, and every one of them works in id
