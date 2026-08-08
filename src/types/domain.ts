@@ -83,6 +83,9 @@ export interface ExecutionMethod {
 export interface Status {
   id: string
   entity: 'task' | 'event'
+  /** זהות יציבה לסטטוסי מערכת — השם ניתן לשינוי בהגדרות, הקוד לא. סטטוס
+   *  שנוצר ידנית מחזיק null, ואין לו משמעות מיוחדת למסכים. */
+  code: string | null
   name: string
   color: string
   sort_order: number

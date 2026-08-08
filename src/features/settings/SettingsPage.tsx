@@ -445,7 +445,11 @@ function StatusesTab() {
                         {s.name}
                         {s.is_default && <Badge tone="primary">ברירת מחדל</Badge>}
                         {s.is_terminal && <Badge tone="success">סוגר</Badge>}
-                        {!s.is_default && (
+                        {/* סטטוס עם `code` הוא חלק ממחזור החיים שמסכים אחרים
+                            נשענים עליו — לוח השנה מסתיר לפי 'cancelled' — ולכן
+                            אפשר לשנות לו שם וצבע, אבל לא למחוק אותו */}
+                        {s.code && <Badge>מערכת</Badge>}
+                        {!s.is_default && !s.code && (
                           <IconButton
                             label={`מחיקת ${s.name}`}
                             size="sm"

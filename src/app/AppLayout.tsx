@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation } from 'react-router'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import {
+  ArrowRight,
   ChevronLeft,
   ICON,
   LogOut,
@@ -196,14 +197,16 @@ export default function AppLayout() {
         {/* ── main column ─────────────────────────────────────────────────── */}
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface/85 px-3 backdrop-blur-md sm:px-4">
+            <BackButton />
+
             {/* on mobile the sidebar is reached from the bottom bar's "עוד", so
-                the header wears the brand mark instead of a hamburger */}
+                the header wears the brand mark instead of a hamburger — the
+                mark alone, because the name is width the breadcrumb needs */}
             <Link
               to="/"
               aria-label="ViperLogistics — לדף הבית"
-              className="flex shrink-0 items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:focus-ring lg:hidden"
+              className="flex shrink-0 items-center rounded-lg focus-visible:outline-none focus-visible:focus-ring lg:hidden"
             >
-              <span className="type-title">ViperLogistics</span>
               <img src="/icons/icon-192.png" alt="" className="size-7 shrink-0 rounded-md" />
             </Link>
 
@@ -404,6 +407,33 @@ function BottomNavLink({ item, count }: { item: NavItem; count: number }) {
         </>
       )}
     </NavLink>
+  )
+}
+
+/* ===== BackButton =========================================================
+   Always in the bar, on every screen — a phone has no browser chrome to fall
+   back on, and "where was I" is the one question the breadcrumb can't answer.
+
+   A tab opened straight onto a deep link has nothing behind it: react-router
+   stamps that first entry with the key 'default', and there the button goes
+   home instead of walking out of the app.                                  */
+
+function BackButton() {
+  const navigate = useNavigate()
+  const { key, pathname } = useLocation()
+  const fresh = key === 'default'
+
+  return (
+    <IconButton
+      label={fresh ? 'לדף הבית' : 'חזרה'}
+      size="sm"
+      className="shrink-0"
+      disabled={fresh && pathname === '/'}
+      onClick={() => (fresh ? navigate('/') : navigate(-1))}
+    >
+      {/* the app is RTL, where "back" points at the start edge — to the right */}
+      <ArrowRight size={ICON.md} strokeWidth={STROKE} className="ltr:rotate-180" />
+    </IconButton>
   )
 }
 

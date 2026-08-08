@@ -35,6 +35,7 @@ import {
   PageHeader,
   Popover,
   Select,
+  Switch,
   Tooltip,
   cx,
   useContextMenu,
@@ -48,7 +49,7 @@ import { useCustomers, useStatuses } from '../../lib/queries'
 import { fmtDate } from '../../lib/dates'
 import { useIsMobile } from '../../lib/useMediaQuery'
 import { EventFormModal } from '../events/EventFormModal'
-import { chipPaint } from '../../lib/colors'
+import { NEUTRAL, chipPaint } from '../../lib/colors'
 import type { SavedFilter } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
@@ -70,29 +71,43 @@ interface CalEvent {
   customer_id: string
   status_id: string | null
   customers: { name: string; color: string } | null
-  statuses: { name: string; color: string } | null
+  statuses: { name: string; color: string; code: string | null } | null
 }
 
 interface Filters {
   customer: string
   status: string
   q: string
+  /** A cancelled event is still an event — it keeps its date and its history —
+   *  but it is not work anyone is doing, so it stays out of the grid until
+   *  asked for. The one filter that is on by *not* being set. */
+  showCancelled: boolean
 }
 
-const emptyFilters: Filters = { customer: '', status: '', q: '' }
+const emptyFilters: Filters = { customer: '', status: '', q: '', showCancelled: false }
 
 const FILTER_LABELS: Record<keyof Filters, string> = {
   q: 'חיפוש',
   customer: 'לקוח',
   status: 'סטטוס',
+  showCancelled: 'מבוטלים',
 }
 
 /** A saved filter may predate this screen (it once filtered tasks, by worker,
  *  contractor and task type). Keep only the keys that still mean something. */
 function readSavedFilters(raw: Record<string, unknown>): Filters {
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
-  return { customer: str(raw.customer), status: str(raw.status), q: str(raw.q) }
+  return {
+    customer: str(raw.customer),
+    status: str(raw.status),
+    q: str(raw.q),
+    showCancelled: raw.showCancelled === true,
+  }
 }
+
+/** The status whose events the grid hides by default. Matched on `code` and
+ *  not on the name, which the settings screen lets anyone rewrite. */
+const CANCELLED = 'cancelled'
 
 /* ── views ──────────────────────────────────────────────────────────────────
    The month grid is the calendar people mean when they say "לוח שנה", so it
@@ -143,7 +158,7 @@ export default function CalendarPage() {
       const { data, error } = await supabase
         .from('events')
         .select(
-          'id, event_date, end_client_name, event_number, location_text, volume_m, truck_count, notes, no_parking, porterage, supplier_pickup, customer_id, status_id, customers(name, color), statuses(name, color)',
+          'id, event_date, end_client_name, event_number, location_text, volume_m, truck_count, notes, no_parking, porterage, supplier_pickup, customer_id, status_id, customers(name, color), statuses(name, color, code)',
         )
         .gte('event_date', range!.from)
         .lte('event_date', range!.to)
@@ -154,9 +169,15 @@ export default function CalendarPage() {
   })
 
   const statusById = useMemo(() => new Map(statuses.map((s) => [s.id, s])), [statuses])
+  const cancelledStatus = useMemo(() => statuses.find((s) => s.code === CANCELLED), [statuses])
 
   const filtered = useMemo(() => {
     return events.filter((e) => {
+      // an explicit "status: בוטל" filter outranks the toggle — asking for the
+      // cancelled ones by name is asking to see them
+      if (!filters.showCancelled && filters.status !== cancelledStatus?.id) {
+        if (e.statuses?.code === CANCELLED) return false
+      }
       if (filters.customer && e.customer_id !== filters.customer) return false
       if (filters.status && e.status_id !== filters.status) return false
       if (filters.q) {
@@ -167,7 +188,7 @@ export default function CalendarPage() {
       }
       return true
     })
-  }, [events, filters])
+  }, [events, filters, cancelledStatus])
 
   const calEvents = useMemo(
     () =>
@@ -183,6 +204,15 @@ export default function CalendarPage() {
       }),
     [filtered],
   )
+
+  /** The key to the grid's colours: every status, whether or not the range
+   *  happens to hold one, because a legend that appears and disappears is not
+   *  a legend. The count next to each is what the range does hold. */
+  const statusLegend = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const e of filtered) if (e.status_id) counts.set(e.status_id, (counts.get(e.status_id) ?? 0) + 1)
+    return statuses.map((s) => ({ ...s, count: counts.get(s.id) ?? 0 }))
+  }, [filtered, statuses])
 
   /** Customers present in the current view — doubles as a colour legend. */
   const legend = useMemo(() => {
@@ -274,9 +304,11 @@ export default function CalendarPage() {
   }
 
   const activeFilters = (Object.keys(filters) as (keyof Filters)[]).filter((k) => filters[k])
-  const clearFilter = (k: keyof Filters) => setFilters((f) => ({ ...f, [k]: '' }))
+  const clearFilter = (k: keyof Filters) =>
+    setFilters((f) => ({ ...f, [k]: k === 'showCancelled' ? false : '' }))
 
   const filterValueLabel = (k: keyof Filters): string => {
+    if (k === 'showCancelled') return 'מוצגים'
     const v = filters[k]
     if (k === 'q') return v
     if (k === 'customer') return customers.find((c) => c.id === v)?.name ?? v
@@ -290,9 +322,16 @@ export default function CalendarPage() {
       const ev = arg.event.extendedProps.event as CalEvent | undefined
       if (!ev) return <span className="truncate px-1">{arg.event.title}</span>
       const label = arg.event.extendedProps.label as string
-      const paint = chipPaint(ev.customers?.color)
       const list = arg.view.type.startsWith('list')
       const status = ev.statuses
+      /* The chip is painted by *status*, not by customer. On a phone the chip
+         is nine pixels of text — a border or a dot at that size is decoration,
+         while the fill is the only thing that reads across a whole month. The
+         customer keeps a dot at the leading edge, and only where there is more
+         than one customer to tell apart. */
+      const paint = chipPaint(status?.color ?? ev.customers?.color)
+      const cancelled = status?.code === CANCELLED
+      const showCustomerDot = customers.length > 1 && !!ev.customers
 
       const contextItems = [
         {
@@ -337,8 +376,12 @@ export default function CalendarPage() {
             className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
             onContextMenu={(e) => openMenu(e, contextItems)}
           >
-            <span className="size-2 shrink-0 rounded-full" style={{ background: ev.customers?.color ?? '#64748b' }} />
-            <span className="truncate font-medium">{label}</span>
+            {/* same key as the grid: the dot is the status, not the customer */}
+            <span
+              className="size-2 shrink-0 rounded-full"
+              style={{ background: status?.color ?? ev.customers?.color ?? NEUTRAL }}
+            />
+            <span className={cx('truncate font-medium', cancelled && 'line-through opacity-70')}>{label}</span>
             {ev.customers && <span className="truncate type-caption text-ink-tertiary">{ev.customers.name}</span>}
             {ev.location_text && (
               <span className="inline-flex min-w-0 items-center gap-0.5 type-caption text-ink-tertiary">
@@ -374,6 +417,9 @@ export default function CalendarPage() {
               // every pixel of a phone's month cell belongs to the name: the
               // chip shrinks to a marker so two or three of them fit a cell
               isMobile ? 'px-1 py-0.5 max-sm:rounded-sm max-sm:px-0.5 max-sm:py-0' : 'px-1.5 py-1',
+              // a cancelled event is shown only when asked for, and when it is
+              // shown it must never be mistaken for live work
+              cancelled && 'opacity-60 saturate-50',
             )}
             style={{ background: paint.background, color: paint.color }}
           >
@@ -384,10 +430,19 @@ export default function CalendarPage() {
                 style={{ background: paint.railColor }}
               />
             )}
+            {showCustomerDot && (
+              <span
+                aria-hidden
+                className={cx('size-1.5 shrink-0 rounded-full ring-1 ring-white/40', !isMobile && 'ms-1')}
+                style={{ background: ev.customers!.color }}
+                title={ev.customers!.name}
+              />
+            )}
             <span
               className={cx(
                 'min-w-0 flex-1 truncate type-caption font-semibold',
-                isMobile ? 'max-sm:text-[0.5625rem] max-sm:leading-[0.9375rem]' : 'ps-1',
+                isMobile ? 'max-sm:text-[0.5625rem] max-sm:leading-[0.9375rem]' : !showCustomerDot && 'ps-1',
+                cancelled && 'line-through',
               )}
             >
               {label}
@@ -396,18 +451,12 @@ export default function CalendarPage() {
             {!isMobile && ev.truck_count != null && ev.truck_count > 0 && (
               <span className="shrink-0 type-caption font-bold tabular opacity-90">{ev.truck_count}🚚</span>
             )}
-            {!isMobile && status && (
-              <span
-                className="size-1.5 shrink-0 rounded-full ring-1 ring-white/40"
-                style={{ background: status.color }}
-                title={status.name}
-              />
-            )}
+            {/* no status dot: the chip itself is the status colour now */}
           </span>
         </Tooltip>
       )
     },
-    [openMenu, navigate, toast, isMobile],
+    [openMenu, navigate, toast, isMobile, customers.length],
   )
 
   /* ── filter controls, shared by the desktop panel and the mobile sheet ─── */
@@ -451,6 +500,15 @@ export default function CalendarPage() {
           </option>
         ))}
       </Select>
+      {cancelledStatus && (
+        <div className="flex items-center sm:col-span-2 lg:col-span-1">
+          <Switch
+            checked={filters.showCancelled}
+            onChange={(v) => setFilters((f) => ({ ...f, showCancelled: v }))}
+            label={`הצגת אירועים בסטטוס "${cancelledStatus.name}"`}
+          />
+        </div>
+      )}
       {savedFilters.length > 0 && (
         <Select
           selectSize="sm"
@@ -643,11 +701,53 @@ export default function CalendarPage() {
         />
       </div>
 
+      {/* the key to the grid's colours. Each entry is also the filter for its
+          own status, and the cancelled one carries the toggle that reveals it
+          — it is where you look when you wonder where a cancelled event went */}
+      {statusLegend.length > 0 && (
+        <div className="scroll-row gap-x-1 gap-y-1.5 px-1 sm:flex-wrap sm:gap-x-2">
+          <span className="scroll-row-item type-overline pe-1">סטטוס</span>
+          {statusLegend.map((s) => {
+            const isCancelled = s.code === CANCELLED
+            const hidden = isCancelled && !filters.showCancelled && filters.status !== s.id
+            const active = filters.status === s.id
+            return (
+              <button
+                key={s.id}
+                onClick={() => setFilters((f) => ({ ...f, status: f.status === s.id ? '' : s.id }))}
+                aria-pressed={active}
+                className={cx(
+                  'scroll-row-item inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 type-caption transition-colors',
+                  active ? 'bg-selected font-semibold text-ink' : 'text-ink-secondary hover:bg-hover',
+                  hidden && 'opacity-50',
+                )}
+              >
+                <span
+                  className="size-2.5 shrink-0 rounded-sm"
+                  style={{ background: s.color, opacity: hidden ? 0.5 : 1 }}
+                />
+                <span className={cx(hidden && 'line-through')}>{s.name}</span>
+                {!hidden && <span className="tabular text-ink-tertiary">{s.count}</span>}
+              </button>
+            )
+          })}
+          {cancelledStatus && (
+            <button
+              onClick={() => setFilters((f) => ({ ...f, showCancelled: !f.showCancelled }))}
+              className="scroll-row-item rounded-md px-2 py-0.5 type-caption text-primary-text transition-colors hover:bg-hover"
+            >
+              {filters.showCancelled ? 'הסתרת מבוטלים' : 'הצגת מבוטלים'}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* a legend of one is not a legend — it just names the company you are
           already inside, which is what a client sees once RLS has scoped the rows */}
       {legend.length > 1 && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1">
           <span className="type-overline">לקוחות בתצוגה</span>
+          {/* the customer's colour is the dot on the chip, not its fill */}
           {legend.map(([id, c]) => (
             <button
               key={id}
