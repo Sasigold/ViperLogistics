@@ -21,6 +21,8 @@ export function useOverdueCount(enabled = true) {
         .select('id', { count: 'exact', head: true })
         .lt('task_date', toISODate(new Date()))
         .eq('status_is_terminal', false)
+        /* the board does not show these, so the badge must not count them */
+        .eq('event_is_cancelled', false)
       if (error) throw error
       return count ?? 0
     },

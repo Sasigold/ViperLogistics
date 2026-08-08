@@ -135,29 +135,49 @@ function Editable({
   edit: (close: () => void) => ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  const armed = useArmed(() => setOpen(true))
   if (!canEdit) return <>{view}</>
   if (open) return <>{edit(() => setOpen(false))}</>
   return (
-    <button type="button" {...armed(() => setOpen(true))}>
+    <button type="button" {...armed}>
       {view}
     </button>
   )
 }
 
+/** two taps closer together than this are one gesture */
+const DOUBLE_TAP_MS = 400
+
 /**
- * The double click, and its keyboard equivalent. A pointer gesture cannot be
- * the only way into an editor, so Enter and Space on the focused cell open it
- * too — one press, because a keyboard has no "double" to give.
+ * The double press, and its keyboard equivalent.
+ *
+ * Counted from `click` rather than taken from `dblclick`, because a phone does
+ * not send `dblclick`: a mobile browser reads two quick taps as its own zoom
+ * gesture and the event never reaches the page. Two clicks inside the window
+ * below are the gesture, on every input the board can be driven with.
+ * `touch-manipulation` is the other half of it — it tells the browser there is
+ * no zoom to wait for here, which also drops the tap delay that came with it.
+ *
+ * Enter and Space open on a single press: a keyboard has no "double" to give.
  */
-function armed(open: () => void) {
+function useArmed(open: () => void) {
+  const last = useRef(0)
   return {
-    onDoubleClick: open,
+    onClick: () => {
+      const now = Date.now()
+      if (now - last.current < DOUBLE_TAP_MS) {
+        last.current = 0
+        open()
+      } else {
+        last.current = now
+      }
+    },
     onKeyDown: (e: React.KeyboardEvent) => {
       if (e.key !== 'Enter' && e.key !== ' ') return
       e.preventDefault()
       open()
     },
-    className: 'block w-full cursor-cell text-inherit',
+    className: 'block w-full cursor-cell touch-manipulation text-inherit',
   }
 }
 
@@ -269,6 +289,24 @@ function NumberCell({
    native `<select>`, which brought a disclosure arrow the board did not want
    and could only ever hold one value — and half of these cells are sets.   */
 
+/** its own component so the double-press hook is not called from a render prop */
+function PickTrigger({
+  toggle,
+  aria,
+  view,
+}: {
+  toggle: () => void
+  aria: Record<string, unknown>
+  view: ReactNode
+}) {
+  const armed = useArmed(toggle)
+  return (
+    <button type="button" {...aria} {...armed}>
+      {view}
+    </button>
+  )
+}
+
 interface PickOption {
   id: string
   label: string
@@ -291,16 +329,12 @@ function PickCell({
   onToggle: (groupKey: string, id: string, on: boolean) => void
   empty: string
 }) {
-  if (!canEdit) return <>{view}</>
   const total = groups.reduce((n, g) => n + g.options.length, 0)
+  if (!canEdit) return <>{view}</>
   return (
     <Popover
       className="block"
-      trigger={({ toggle, ...aria }) => (
-        <button type="button" {...aria} {...armed(toggle)}>
-          {view}
-        </button>
-      )}
+      trigger={({ toggle, ...aria }) => <PickTrigger toggle={toggle} aria={aria} view={view} />}
     >
       {(close) => (
         <div className="max-h-80 w-56 overflow-y-auto p-1">

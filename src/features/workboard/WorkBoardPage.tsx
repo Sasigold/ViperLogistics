@@ -332,6 +332,10 @@ export default function WorkBoardPage() {
         .select('*')
         .gte('task_date', from)
         .lte('task_date', to)
+        /* an event that was cancelled is work that will not happen, and a
+           schedule is a list of work that will — its tasks are not deleted
+           (the event page and the log still have them), only unlisted here */
+        .eq('event_is_cancelled', false)
         .order('task_date')
         .order('onsite_start_time', { nullsFirst: false })
         .limit(2000)

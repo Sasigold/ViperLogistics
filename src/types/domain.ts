@@ -262,6 +262,8 @@ export interface WorkBoardRow {
   /** כל המשאיות של המשימה, לפי סדר. הראשונה היא גם `truck_id`. */
   truck_ids: string[] | null
   truck_list: { id: string; name: string }[] | null
+  /** האירוע שהמשימה שייכת לו בוטל — הלוח משמיט אותה */
+  event_is_cancelled: boolean
   notes: string | null
   status_id: string
   status_name: string
