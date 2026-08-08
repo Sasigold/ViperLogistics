@@ -139,10 +139,27 @@ begin
   return v;
 end $$;
 
+-- app.margin_require() נחסמת מ-authenticated במכוון: היא נקראת רק מבפנים,
+-- מתוך גוף security definer (כלומר בהקשר postgres), ולעולם לא ישירות
+-- מהקשר invoker. שלושת האחרות **חייבות execute ל-authenticated**, בניגוד
+-- לתבנית של attendance_pay_rows (0039): שם הביטול נכון כי p_scope='all' הוא
+-- עקיפה בלתי מגודרת של קורא ישיר. margin_summary/trend/by_customer הן
+-- security definer עם app.margin_require() שמגדר בעצמו בפנים — אבל הן
+-- **נקראות ישירות** גם מ-dashboard_sections וגם מ-app.report_engine_measure,
+-- ששתיהן security invoker ורצות כ-authenticated. revoke מ-authenticated היה
+-- חוסם את נקודת הכניסה עצמה, לא רק עקיפה — וזה בדיוק מה שקרה בטעות בסבב
+-- הראשון של המיגרציה הזו, ותוקן ישירות בפרודקשן לפני שהובחן כאן.
 revoke execute on function app.margin_require()                        from anon, authenticated, public;
-revoke execute on function app.margin_summary(date, date)              from anon, authenticated, public;
-revoke execute on function app.margin_trend(date, date, text)          from anon, authenticated, public;
-revoke execute on function app.margin_by_customer(date, date, int)     from anon, authenticated, public;
+revoke execute on function app.margin_summary(date, date)              from anon, public;
+revoke execute on function app.margin_trend(date, date, text)          from anon, public;
+revoke execute on function app.margin_by_customer(date, date, int)     from anon, public;
+
+-- הביטול מ-public מסיר גם את הענקת ברירת המחדל המרומזת ש-authenticated נשען
+-- עליה (CREATE FUNCTION מעניק execute ל-PUBLIC כברירת מחדל; ביטול מ-public
+-- מוחק את זה לגמרי, לא רק את הגישה האנונימית). לכן הענקה מפורשת חוזרת כאן.
+grant execute on function app.margin_summary(date, date)               to authenticated;
+grant execute on function app.margin_trend(date, date, text)           to authenticated;
+grant execute on function app.margin_by_customer(date, date, int)      to authenticated;
 
 -- ===== 2. עוזרי הרכבה — ה-CASE-ים הסגורים ==================================
 --
@@ -739,8 +756,15 @@ end $$;
 
 -- RPC חדש אינו בטוח כברירת מחדל: 0008 ו-0012 מבטלים execute מ-anon ומ-public
 -- לפי רשימת חתימות מפורשת, ואלה מצטרפות אליה.
+--
+-- `app.report_run` נקראת ישירות מ-`dashboard_widget_preview` ומ-`dashboard_widgets_run`
+-- (0045), ששתיהן security invoker ורצות כ-authenticated — ולכן, בניגוד לכל
+-- שאר ה-revoke-ים בקובץ הזה, כאן צריך גם הענקה מפורשת חזרה ל-authenticated:
+-- הביטול מ-public מסיר את הענקת ברירת המחדל המרומזת (CREATE FUNCTION מעניק
+-- execute ל-PUBLIC), ו-authenticated לא היה מקבל אותה מחדש מעצמו.
 revoke execute on function public.dashboard_widget_preview(jsonb, date, date) from anon, public;
 revoke execute on function app.report_run(jsonb, date, date)                  from anon, public;
+grant  execute on function app.report_run(jsonb, date, date)                  to authenticated;
 
 -- ===== 7. dashboard_sections קוראת עכשיו את אותו מימוש =====================
 --
