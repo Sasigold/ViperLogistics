@@ -1,7 +1,7 @@
 /**
  * Every section key `dashboard_sections` knows how to compute.
  *
- * Mirrored from `supabase/migrations/0040_dashboard_sections.sql`, for the same
+ * Mirrored from `supabase/migrations/0041_dashboard_sections.sql`, for the same
  * reason `permissionKeys.ts` mirrors the permission registry: the server is the
  * authority either way, but a typo here has no symptom. An unknown key is
  * deliberately *skipped* rather than raised — that is what lets an older server
