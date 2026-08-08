@@ -1,5 +1,5 @@
 import { Suspense, lazy, useMemo, useState } from 'react'
-import { Button, Input, PageHeader, Skeleton, StickySaveBar, useToast } from '../../components/ui'
+import { Button, Input, PageHeader, Skeleton, StickySaveBar, useConfirm, useToast } from '../../components/ui'
 import { Download, ICON, LayoutGrid, STROKE, SlidersHorizontal } from '../../components/ui/icons'
 import { fmtDate, toISODate } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
@@ -16,15 +16,24 @@ import { CustomizeDrawer } from './CustomizeDrawer'
 import { SavedViewsMenu } from './SavedViewsMenu'
 import { useDashboardLayout } from './useDashboardLayout'
 import { useDashboardSections } from './useDashboardData'
-import { WIDGETS, WIDGETS_BY_ID } from './registry'
 import { hideWidget, moveByIds, moveByOffset, setSize, showWidget } from './layout'
 import { buildDashboardExport, writeDashboardExport } from './exportDashboard'
+import { useReportCatalog } from './builder/useReportCatalog'
+import { toUuid } from './builder/customRegistry'
+import type { BuilderTarget } from './builder/WidgetBuilderDrawer'
 import type { WidgetSize } from './dashboardTypes'
 
 /* dnd-kit only exists once someone opens edit mode. The dashboard is the most
    visited screen in the product; its ordinary render should not carry a drag
    library most sessions never activate. */
 const DashboardEditGrid = lazy(() => import('./DashboardEditGrid'))
+
+/* Same bargain for the builder: pickers, the filter editor and a live preview
+   are a screen most sessions never open, and the dashboard's ordinary render
+   should not carry them. */
+const WidgetBuilderDrawer = lazy(() =>
+  import('./builder/WidgetBuilderDrawer').then((m) => ({ default: m.WidgetBuilderDrawer })),
+)
 
 /**
  * The dashboard shell.
@@ -43,16 +52,49 @@ export default function DashboardPage() {
   const [eventModal, setEventModal] = useState(false)
   const [editing, setEditing] = useState(false)
   const [catalogue, setCatalogue] = useState(false)
+  const [builder, setBuilder] = useState<BuilderTarget | null>(null)
 
   const today = toISODate(new Date())
   const prev = useMemo(() => previousRange(range), [range])
   const layout = useDashboardLayout()
   const canCustomize = has(PERM.DASHBOARD_CUSTOMIZE)
+  const custom = layout.customWidgets
+  /* The catalogue is only needed by the builder, so it is fetched by the page
+     rather than the drawer: opening the editor should not wait a round trip
+     before it can draw its first picker. */
+  const reportCatalog = useReportCatalog()
+  const confirmDelete = useConfirm()
+
+  const ownIds = useMemo(
+    () => new Set(custom.rows.filter((r) => r.is_mine).map((r) => `custom.${r.id.replace(/-/g, '')}`)),
+    [custom.rows],
+  )
+
+  const editCustom = (widgetId: string) => {
+    const uuid = toUuid(widgetId)
+    const row = custom.rows.find((r) => r.id === uuid)
+    if (row) setBuilder({ row })
+  }
+
+  /* Soft-deleted, so every layout still holding the id degrades quietly:
+     `resolveLayout` drops an id it cannot resolve, which is the same path a
+     retired hand-written widget takes. */
+  const deleteCustom = async (widgetId: string) => {
+    const uuid = toUuid(widgetId)
+    if (!uuid) return
+    const def = layout.byId.get(widgetId)
+    const ok = await confirmDelete.confirm(
+      `למחוק את "${def?.title ?? 'הווידג׳ט'}"? הוא יוסר גם ממי שהוסיף אותו לדשבורד שלו.`,
+      { title: 'מחיקת ווידג׳ט', confirmLabel: 'מחיקה', tone: 'danger' },
+    )
+    if (!ok) return
+    await guard(() => custom.remove(uuid))
+  }
 
   /* The union of the visible widgets' sections has to be known before the
      first widget renders — the server is told what to compute — so the request
      is issued here and handed down rather than fetched per widget. */
-  const sections = useDashboardSections(layout.visible, WIDGETS_BY_ID, range, prev)
+  const sections = useDashboardSections(layout.visible, layout.byId, range, prev)
 
   const ctx = useMemo(
     () => ({
@@ -81,16 +123,22 @@ export default function DashboardPage() {
   const onRemove = (id: string) => layout.edit((s) => hideWidget(s.items, s.hidden, id))
   const onToggle = (id: string, on: boolean) =>
     layout.edit((s) => {
-      const meta = WIDGETS_BY_ID.get(id)
+      const meta = layout.byId.get(id)
       if (!meta) return s
-      return on ? showWidget(s.items, s.hidden, meta, WIDGETS_BY_ID) : hideWidget(s.items, s.hidden, id)
+      return on ? showWidget(s.items, s.hidden, meta, layout.byId) : hideWidget(s.items, s.hidden, id)
     })
 
   /* Exports exactly what is on screen, in the order it was arranged — the
      file is the view, not "all the data". Every number comes from the section
      as the server returned it; nothing is recomputed on the way out. */
   const exportXlsx = async () => {
-    const plan = buildDashboardExport(layout.visible, WIDGETS_BY_ID, sections.section, range)
+    const plan = buildDashboardExport(
+      layout.visible,
+      layout.byId,
+      sections.section,
+      range,
+      sections.customResult,
+    )
     const blob = await writeDashboardExport(plan)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -195,7 +243,7 @@ export default function DashboardPage() {
             <Suspense fallback={<Skeleton className="h-64 w-full" />}>
               <DashboardEditGrid
                 items={layout.visible}
-                byId={WIDGETS_BY_ID}
+                byId={layout.byId}
                 onMove={onMove}
                 onReorder={onReorder}
                 onSize={onSize}
@@ -203,7 +251,7 @@ export default function DashboardPage() {
               />
             </Suspense>
           ) : (
-            <DashboardGrid items={layout.visible} byId={WIDGETS_BY_ID} />
+            <DashboardGrid items={layout.visible} byId={layout.byId} />
           )}
         </DashboardProvider>
 
@@ -221,10 +269,40 @@ export default function DashboardPage() {
           onClose={() => setCatalogue(false)}
           items={layout.visible}
           hidden={layout.hidden}
-          widgets={WIDGETS}
+          widgets={layout.widgets}
           onToggle={onToggle}
           onMove={onMove}
+          canBuild={custom.canBuild}
+          ownIds={ownIds}
+          onNew={(variant) => setBuilder({ row: null, variant })}
+          onEdit={editCustom}
+          onDelete={(id) => void deleteCustom(id)}
         />
+
+        {/* mounted only once someone asks for it, so the lazy chunk is not
+            fetched on an ordinary dashboard load */}
+        {builder && (
+          <Suspense fallback={null}>
+            <WidgetBuilderDrawer
+              open
+              target={builder}
+              catalog={reportCatalog.catalog}
+              catalogLoading={reportCatalog.isLoading}
+              range={range}
+              saving={custom.saving}
+              onClose={() => setBuilder(null)}
+              onSave={async (input) => {
+                const id = await custom.save(input)
+                /* A brand-new widget is invisible until it is on the layout,
+                   and nobody builds one in order to hide it. An edit changes
+                   nothing about placement. */
+                if (!input.id) onToggle(`custom.${id.replace(/-/g, '')}`, true)
+              }}
+            />
+          </Suspense>
+        )}
+
+        {confirmDelete.dialog}
 
         <TaskDrawer
           open={taskDrawer.open}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildDashboardExport, sectionToSheet, sheetName } from './exportDashboard'
+import { buildDashboardExport, customResultToSheet, sectionToSheet, sheetName } from './exportDashboard'
 import type { LayoutItem, WidgetDef } from './dashboardTypes'
 
 const RANGE = { from: '2026-03-01', to: '2026-03-31' }
@@ -129,5 +129,102 @@ describe('buildDashboardExport', () => {
 
   it('carries the range so the file says what period it covers', () => {
     expect(buildDashboardExport(items, byId, (k) => data[k], RANGE).range).toEqual(RANGE)
+  })
+})
+
+/* ===== user-built widgets =================================================
+   The export reads sections by key, and a built widget has no key. Without an
+   explicit branch it contributes nothing and nobody notices — the file just
+   quietly omits the widget somebody made on purpose.                         */
+
+describe('customResultToSheet', () => {
+  const taken = () => new Set<string>()
+
+  it('writes the rows and a total', () => {
+    const sheet = customResultToSheet(
+      'הכנסות לפי לקוח',
+      { rows: [{ label: 'אקמי', value: 1200 }, { label: 'לקוח ב', value: 800 }], meta: { total: 2000 } },
+      taken(),
+    )
+    expect(sheet?.rows).toEqual([
+      ['אקמי', 1200],
+      ['לקוח ב', 800],
+      ['סך הכול', 2000],
+    ])
+  })
+
+  /* The null rule, unchanged: the server declining is not a zero, so it is
+     absent from the file rather than present as nothing. */
+  it('writes no sheet for a result the reader may not see', () => {
+    expect(customResultToSheet('רווח', { rows: null, meta: { denied: true } }, taken())).toBeNull()
+  })
+
+  it('writes no sheet for a spec the catalogue lost', () => {
+    expect(customResultToSheet('ישן', { rows: null, meta: { unsupported: 'revenue_v0' } }, taken())).toBeNull()
+  })
+
+  it('writes no sheet when there is nothing in range', () => {
+    expect(customResultToSheet('ריק', { rows: [], meta: { total: 0 } }, taken())).toBeNull()
+  })
+
+  /* A number in a spreadsheet outlives the card it was copied from, so the
+     caveats have to travel with it. */
+  it('carries the disclosures into the file', () => {
+    const sheet = customResultToSheet(
+      'שכר לפי לקוח',
+      {
+        rows: [{ label: 'אקמי', value: 500 }],
+        meta: {
+          total: 500,
+          estimated: true,
+          unallocated: 120,
+          unrated_shifts: 3,
+          presence: { present: 8, missing: 2, zero: 1 },
+          truncated: true,
+          scope_note: 'משמרות מאושרות בלבד',
+        },
+      },
+      taken(),
+    )
+    const notes = (sheet?.rows ?? []).map((r) => String(r[0]))
+    expect(notes.some((n) => n.includes('משוער'))).toBe(true)
+    expect(notes.some((n) => n.includes('ללא תעריף'))).toBe(true)
+    expect(notes.some((n) => n.includes('ללא ערך'))).toBe(true)
+    expect(notes.some((n) => n.includes('המובילות'))).toBe(true)
+    expect(notes).toContain('משמרות מאושרות בלבד')
+  })
+
+  it('ignores a payload that is not a run result', () => {
+    expect(customResultToSheet('x', null, taken())).toBeNull()
+    expect(customResultToSheet('x', [1, 2, 3], taken())).toBeNull()
+  })
+})
+
+describe('buildDashboardExport with a built widget', () => {
+  const def = {
+    id: 'custom.00000000000000000000000000000001',
+    group: 'custom' as const,
+    title: 'הכנסות לפי לקוח',
+    description: '',
+    sizes: ['md'] as const,
+    Component: (() => null) as never,
+  }
+  const byId = new Map([[def.id, def]])
+  const range = { from: '2026-01-01', to: '2026-01-31' }
+
+  it('turns the run result into a sheet', () => {
+    const plan = buildDashboardExport(
+      [{ id: def.id, size: 'md' }],
+      byId,
+      () => undefined,
+      range,
+      () => ({ rows: [{ label: 'אקמי', value: 10 }], meta: { total: 10 } }),
+    )
+    expect(plan.sheets.map((s) => s.title)).toEqual(['הכנסות לפי לקוח'])
+  })
+
+  it('omits it when nothing supplies custom results', () => {
+    const plan = buildDashboardExport([{ id: def.id, size: 'md' }], byId, () => undefined, range)
+    expect(plan.sheets).toEqual([])
   })
 })

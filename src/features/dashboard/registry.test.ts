@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PERM } from '../../lib/permissionKeys'
-import { GROUPS, SIZES } from './dashboardTypes'
+import { GROUPS, GROUP_LABELS, SIZES } from './dashboardTypes'
 import { SECTIONS } from './sections'
 import { BUILT_IN_DEFAULT, WIDGETS, WIDGETS_BY_ID } from './registry'
 import { normalizeLayout, resolveLayout } from './layout'
@@ -116,5 +116,21 @@ describe('the built-in default', () => {
   it('resolves to itself — a fresh user sees exactly the default', () => {
     const out = resolveLayout(WIDGETS, null, BUILT_IN_DEFAULT)
     expect(out.map((i) => i.id)).toEqual(BUILT_IN_DEFAULT.items.map((i) => i.id))
+  })
+})
+
+/* ===== the reserved namespace =============================================
+   User-built widgets are `custom.<uuid-hex>`, which does not match the id
+   convention above — a uuid has digits in it. That is fine because this suite
+   only walks `WIDGETS`, but it is only fine while the prefix stays reserved:
+   a hand-written `custom.something` would collide with a built one and the
+   two would fight over the same slot in every saved layout. */
+describe('the custom namespace', () => {
+  it('is not used by any hand-written widget', () => {
+    for (const w of WIDGETS) expect(w.id.startsWith('custom.')).toBe(false)
+  })
+
+  it('has a label, like every other group', () => {
+    for (const g of GROUPS) expect(GROUP_LABELS[g]).toBeTruthy()
   })
 })

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Drawer, EmptyState, IconButton, SearchInput, Switch, cx } from '../../components/ui'
-import { ChevronDown, ChevronUp, ICON, STROKE } from '../../components/ui/icons'
+import { Button, Drawer, EmptyState, IconButton, SearchInput, Switch, cx } from '../../components/ui'
+import { ChevronDown, ChevronUp, ICON, Pencil, PencilLine, Plus, STROKE, Trash2 } from '../../components/ui/icons'
 import { useAuth } from '../../state/auth'
 import { GROUPS, GROUP_LABELS } from './dashboardTypes'
 import type { LayoutItem, WidgetDef, WidgetGroup } from './dashboardTypes'
@@ -25,6 +25,11 @@ export function CustomizeDrawer({
   widgets,
   onToggle,
   onMove,
+  canBuild,
+  ownIds,
+  onNew,
+  onEdit,
+  onDelete,
 }: {
   open: boolean
   onClose: () => void
@@ -33,6 +38,17 @@ export function CustomizeDrawer({
   widgets: WidgetDef[]
   onToggle: (id: string, on: boolean) => void
   onMove: (id: string, offset: number) => void
+  /** `dashboard.build_widget` — absent for portal users and anyone denied it */
+  canBuild?: boolean
+  /* Widget ids this reader owns, from the server's `is_mine`. A shared widget
+     belongs to whoever built it, so the catalogue offers it to everyone but
+     hands the pencil to one person — and that answer comes from the row, not
+     from anything parsed out of a display string. */
+  ownIds?: ReadonlySet<string>
+  onNew?: (variant: 'query' | 'note') => void
+  /** only ever offered for a widget this reader owns */
+  onEdit?: (widgetId: string) => void
+  onDelete?: (widgetId: string) => void
 }) {
   const has = useAuth((s) => s.has)
   const kind = useAuth((s) => s.me?.profile.user_kind)
@@ -59,6 +75,22 @@ export function CustomizeDrawer({
       <div className="space-y-4">
         <SearchInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="חיפוש ווידג׳ט" />
 
+        {/* Building is its own permission, not a slice of `dashboard.customize`:
+            that one is on by default for the customer portal too, and the query
+            builder is not a portal screen. */}
+        {canBuild && (
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => onNew?.('query')}>
+              <Plus size={ICON.sm} strokeWidth={STROKE} />
+              ווידג׳ט חדש
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => onNew?.('note')}>
+              <PencilLine size={ICON.sm} strokeWidth={STROKE} />
+              פתק
+            </Button>
+          </div>
+        )}
+
         {byGroup.length === 0 && <EmptyState compact art="search" title="לא נמצא ווידג׳ט מתאים" />}
 
         {byGroup.map(({ group, list }) => (
@@ -80,6 +112,26 @@ export function CustomizeDrawer({
                       <span className="block truncate type-body font-medium">{w.title}</span>
                       <span className="block truncate type-caption text-ink-tertiary">{w.description}</span>
                     </span>
+
+                    {/* Editing and deleting are the owner's, not the reader's:
+                        a shared widget on your dashboard is someone else's
+                        object, and the toggle above is the whole of your say
+                        over it. */}
+                    {w.group === 'custom' && ownIds?.has(w.id) && (
+                      <span className="flex shrink-0 items-center">
+                        <IconButton size="sm" label={`עריכת ${w.title}`} onClick={() => onEdit?.(w.id)}>
+                          <Pencil size={ICON.sm} strokeWidth={STROKE} aria-hidden />
+                        </IconButton>
+                        <IconButton
+                          size="sm"
+                          variant="ghost"
+                          label={`מחיקת ${w.title}`}
+                          onClick={() => onDelete?.(w.id)}
+                        >
+                          <Trash2 size={ICON.sm} strokeWidth={STROKE} className="text-error" aria-hidden />
+                        </IconButton>
+                      </span>
+                    )}
 
                     {on && (
                       <span className="flex shrink-0 items-center">

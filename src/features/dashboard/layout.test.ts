@@ -319,3 +319,79 @@ describe('toStoredLayout', () => {
     expect(normalizeLayout(stored)).toEqual(stored)
   })
 })
+
+/* ===== user-built widgets in the merged registry ==========================
+   A widget somebody built is a `WidgetMeta` like any other, and the value of
+   that is that nothing in this file needed to change to accommodate it. What
+   did need locking down is the *wiring*: every layout call has to be handed
+   the merged registry, and `useDashboardLayout` has five of them.            */
+
+const CUSTOM: WidgetMeta = { id: 'custom.deadbeef', group: 'custom', sizes: ['md'] }
+const MERGED = [...META, CUSTOM]
+const mergedById = new Map(MERGED.map((m) => [m.id, m]))
+const mergedKnown = new Set(MERGED.map((m) => m.id))
+
+describe('a custom widget through the layout maths', () => {
+  const items: LayoutItem[] = [
+    { id: 'ops.a', size: 'sm' },
+    { id: 'custom.deadbeef', size: 'md' },
+  ]
+
+  it('keeps its slot when the registry knows it', () => {
+    const out = resolveLayout(MERGED, caughtUp(items), layout([]))
+    expect(out.map((i) => i.id)).toEqual(['ops.a', 'custom.deadbeef'])
+  })
+
+  /* Rule 1, and the reason the merge must not run early: against the static
+     registry alone a custom id looks like a widget that was retired. */
+  it('is dropped by the static-only registry, exactly like a retired widget', () => {
+    const out = resolveLayout(META, caughtUp(items), layout([]))
+    expect(out.map((i) => i.id)).toEqual(['ops.a'])
+  })
+
+  /**
+   * The asymmetry that makes the loading race dangerous, asserted precisely.
+   *
+   * `toStoredLayout` copies `items` unfiltered but prunes `hidden` and `seen`
+   * against `known`. So a save that runs before `dashboard_widgets` has landed
+   * keeps the id in `items` while dropping it from `seen` — and on the next
+   * load rule 1 discards it from `items` too. The widget is gone, and nothing
+   * anywhere raised.
+   *
+   * Both halves are asserted so the guard in `useDashboardLayout` cannot be
+   * removed as "probably unnecessary".
+   */
+  it('survives a save against the merged registry', () => {
+    const out = toStoredLayout(items, [], mergedKnown)
+    expect(out.items.map((i) => i.id)).toEqual(['ops.a', 'custom.deadbeef'])
+    expect(out.seen).toContain('custom.deadbeef')
+  })
+
+  it('but a save against a half-loaded registry silently forgets it', () => {
+    const out = toStoredLayout(items, [], known)
+    expect(out.items.map((i) => i.id)).toEqual(['ops.a', 'custom.deadbeef'])
+    expect(out.seen).not.toContain('custom.deadbeef')
+    // ...and that is what makes it disappear on the next load
+    const next = resolveLayout(META, normalizeLayout(out)!, layout([])).map((i) => i.id)
+    expect(next).not.toContain('custom.deadbeef')
+  })
+
+  it('is filtered at render by the perms the server handed down', () => {
+    const gated: WidgetMeta = { ...CUSTOM, perms: ['pricing.revenue'] }
+    const map = new Map([...mergedById, [gated.id, gated]])
+    const has = (k: string) => k !== 'pricing.revenue'
+    expect(visibleItems(items, map, has, 'staff').map((i) => i.id)).toEqual(['ops.a'])
+    // rule 4: filtered out of the drawing, still present in the saved payload
+    expect(toStoredLayout(items, [], mergedKnown).items).toHaveLength(2)
+  })
+
+  it('lands after every other group when shown for the first time', () => {
+    const start: LayoutItem[] = [
+      { id: 'finance.money', size: 'sm' },
+      { id: 'ops.a', size: 'sm' },
+      { id: 'me.optin', size: 'md' },
+    ]
+    const out = showWidget(start, ['custom.deadbeef'], CUSTOM, mergedById)
+    expect(out.items.map((i) => i.id).at(-1)).toBe('custom.deadbeef')
+  })
+})

@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { isCustomId, toUuid } from './builder/customRegistry'
+import type { RunResult } from './builder/widgetSpec'
 import type { DateRange } from './dashboardRange'
 import type { LayoutItem, WidgetDef, WidgetOpts } from './dashboardTypes'
 
@@ -39,13 +41,21 @@ export function useDashboardSections(
   range: DateRange,
   prev: DateRange,
 ) {
-  const { rangeKeys, staticKeys, prevKeys, opts } = useMemo(() => {
+  const { rangeKeys, staticKeys, prevKeys, opts, customIds } = useMemo(() => {
     const inRange = new Set<string>()
     const inStatic = new Set<string>()
     const inPrev = new Set<string>()
+    const custom: string[] = []
     const merged: WidgetOpts = {}
 
     for (const item of items) {
+      // a user-built widget is answered by dashboard_widgets_run, not by a
+      // section — it has no fixed key the server could know in advance
+      if (isCustomId(item.id)) {
+        const uuid = toUuid(item.id)
+        if (uuid) custom.push(uuid)
+        continue
+      }
       const def = byId.get(item.id)
       if (!def?.sections?.length) continue
       for (const s of def.sections) {
@@ -58,7 +68,13 @@ export function useDashboardSections(
     }
     // sorted so the query key is stable no matter how the grid is arranged
     const sorted = (s: Set<string>) => [...s].sort()
-    return { rangeKeys: sorted(inRange), staticKeys: sorted(inStatic), prevKeys: sorted(inPrev), opts: merged }
+    return {
+      rangeKeys: sorted(inRange),
+      staticKeys: sorted(inStatic),
+      prevKeys: sorted(inPrev),
+      opts: merged,
+      customIds: custom.sort(),
+    }
   }, [items, byId])
 
   const rangeQ = useQuery({
@@ -83,6 +99,26 @@ export function useDashboardSections(
     queryFn: () => fetchSections(prevKeys, prev, opts),
   })
 
+  /* One round trip for every user-built widget on the grid, the same bargain
+     `dashboard_sections` makes: twelve custom widgets are not twelve requests.
+     A widget whose spec pins its own window still goes through here — the
+     server reads `range_mode` off the spec, so the page range is only a
+     default. */
+  const customQ = useQuery({
+    queryKey: ['dashboard', 'custom', range.from, range.to, customIds.join(',')],
+    enabled: customIds.length > 0,
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('dashboard_widgets_run', {
+        p_ids: customIds,
+        p_from: range.from,
+        p_to: range.to,
+      })
+      if (error) throw error
+      return (data ?? {}) as Record<string, RunResult | null>
+    },
+  })
+
   /* Depend on the payloads and flags, never on the query objects themselves:
      react-query hands back a fresh object on every render, so a memo keyed on
      those would never hold — and this value goes into the page context, which
@@ -91,25 +127,32 @@ export function useDashboardSections(
   const rangeData = rangeQ.data
   const staticData = staticQ.data
   const prevData = prevQ.data
+  const customData = customQ.data
   const isLoading = (rangeQ.isLoading && rangeKeys.length > 0) || (staticQ.isLoading && staticKeys.length > 0)
   const error = rangeQ.error ?? staticQ.error
   const refetchRange = rangeQ.refetch
   const refetchStatic = staticQ.refetch
+  const refetchCustom = customQ.refetch
 
   return useMemo(() => {
     const merged: SectionMap = { ...(staticData ?? {}), ...(rangeData ?? {}) }
     return {
       section: (key: string) => merged[key],
       prevSection: (key: string) => prevData?.[key],
+      /* Same three-way distinction the sections use: `undefined` is "not
+         loaded", `null` is the server declining. The widget draws a skeleton
+         for the first and removes itself for the second. */
+      customResult: (uuid: string) => customData?.[uuid],
       /** true only while there is nothing at all to draw */
       isLoading,
       error,
       refetch: () => {
         void refetchRange()
         void refetchStatic()
+        void refetchCustom()
       },
     }
-  }, [rangeData, staticData, prevData, isLoading, error, refetchRange, refetchStatic])
+  }, [rangeData, staticData, prevData, customData, isLoading, error, refetchRange, refetchStatic, refetchCustom])
 }
 
 export type DashboardSections = ReturnType<typeof useDashboardSections>
