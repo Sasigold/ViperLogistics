@@ -1,6 +1,6 @@
 import { Suspense, lazy, useMemo, useState } from 'react'
 import { Button, Input, PageHeader, Skeleton, StickySaveBar, useToast } from '../../components/ui'
-import { ICON, LayoutGrid, STROKE, SlidersHorizontal } from '../../components/ui/icons'
+import { Download, ICON, LayoutGrid, STROKE, SlidersHorizontal } from '../../components/ui/icons'
 import { fmtDate, toISODate } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 import { PERM } from '../../lib/permissions'
@@ -18,6 +18,7 @@ import { useDashboardLayout } from './useDashboardLayout'
 import { useDashboardSections } from './useDashboardData'
 import { WIDGETS, WIDGETS_BY_ID } from './registry'
 import { hideWidget, moveByIds, moveByOffset, setSize, showWidget } from './layout'
+import { buildDashboardExport, writeDashboardExport } from './exportDashboard'
 import type { WidgetSize } from './dashboardTypes'
 
 /* dnd-kit only exists once someone opens edit mode. The dashboard is the most
@@ -85,6 +86,21 @@ export default function DashboardPage() {
       return on ? showWidget(s.items, s.hidden, meta, WIDGETS_BY_ID) : hideWidget(s.items, s.hidden, id)
     })
 
+  /* Exports exactly what is on screen, in the order it was arranged — the
+     file is the view, not "all the data". Every number comes from the section
+     as the server returned it; nothing is recomputed on the way out. */
+  const exportXlsx = async () => {
+    const plan = buildDashboardExport(layout.visible, WIDGETS_BY_ID, sections.section, range)
+    const blob = await writeDashboardExport(plan)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `dashboard-${range.from}-${range.to}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+    if (plan.sheets.length === 0) toast.info('אין נתונים לייצוא בווידג׳טים המוצגים')
+  }
+
   const guard = async (run: () => Promise<unknown>) => {
     try {
       await run()
@@ -133,23 +149,31 @@ export default function DashboardPage() {
                   aria-label="עד תאריך"
                 />
               </div>
-              {canCustomize && (
-                <div className="flex items-center gap-1.5">
-                  <SavedViewsMenu
-                    views={layout.namedViews}
-                    hasOwnLayout={layout.hasOwnLayout}
-                    onApply={layout.applyView}
-                    onSaveAs={(name) => guard(() => layout.save(name))}
-                    onDelete={(id) => guard(() => layout.deleteView(id))}
-                    onReset={() => guard(layout.reset)}
-                    onPublishDefault={(k) => guard(() => layout.saveOrgDefault(k))}
-                  />
-                  <Button size="sm" variant={editing ? 'primary' : 'ghost'} onClick={() => setEditing((v) => !v)}>
-                    <LayoutGrid size={ICON.sm} strokeWidth={STROKE} />
-                    {editing ? 'סיום עריכה' : 'התאמה אישית'}
+              <div className="flex items-center gap-1.5">
+                {has(PERM.DASHBOARD_EXPORT) && (
+                  <Button size="sm" variant="ghost" onClick={() => void guard(exportXlsx)}>
+                    <Download size={ICON.sm} strokeWidth={STROKE} />
+                    ייצוא
                   </Button>
-                </div>
-              )}
+                )}
+                {canCustomize && (
+                  <>
+                    <SavedViewsMenu
+                      views={layout.namedViews}
+                      hasOwnLayout={layout.hasOwnLayout}
+                      onApply={layout.applyView}
+                      onSaveAs={(name) => guard(() => layout.save(name))}
+                      onDelete={(id) => guard(() => layout.deleteView(id))}
+                      onReset={() => guard(layout.reset)}
+                      onPublishDefault={(k) => guard(() => layout.saveOrgDefault(k))}
+                    />
+                    <Button size="sm" variant={editing ? 'primary' : 'ghost'} onClick={() => setEditing((v) => !v)}>
+                      <LayoutGrid size={ICON.sm} strokeWidth={STROKE} />
+                      {editing ? 'סיום עריכה' : 'התאמה אישית'}
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
           }
         />

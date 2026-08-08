@@ -1,14 +1,17 @@
 import { Link } from 'react-router'
+import { useQuery } from '@tanstack/react-query'
 import { Bar, BarChart, Cell, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
-import { Card, CardBody, CardHeader } from '../../../components/ui'
-import { CalendarDays, ICON, STROKE } from '../../../components/ui/icons'
+import { Card, CardBody, CardHeader, EmptyState, ProgressBar, Skeleton } from '../../../components/ui'
+import { AlertTriangle, CalendarDays, ICON, STROKE } from '../../../components/ui/icons'
+import { supabase } from '../../../lib/supabase'
+import { TaskListCard } from '../parts/TaskListCard'
 import { fmtDate } from '../../../lib/dates'
 import { ChartTooltip } from '../parts/ChartTooltip'
 import { ChartFrame } from '../parts/ChartFrame'
 import { useDashboard } from '../dashboardContext'
 import { useDashboardStats } from '../dashboardQueries'
 import type { WidgetProps } from '../dashboardTypes'
-import type { DashboardStats } from '../../../types/domain'
+import type { DashboardStats, WorkBoardRow } from '../../../types/domain'
 
 /* Axis styling is identical everywhere, and a chart whose ticks are a shade
    off reads as a different chart. */
@@ -121,5 +124,84 @@ export function NextEventsWidget(_props: WidgetProps) {
         </ul>
       </CardBody>
     </Card>
+  )
+}
+
+/* ===== customer concentration =============================================
+   The same numbers as "הכנסות לפי לקוח", asked a different question: not who
+   pays the most, but how much of the business rests on one of them. */
+
+export function CustomerMixWidget({ height }: WidgetProps) {
+  const { range } = useDashboard()
+  const { data: stats, isLoading } = useDashboardStats(range.from, range.to)
+  const rows = stats?.revenue?.by_customer
+  if (stats && !rows) return null
+
+  const total = (rows ?? []).reduce((s, r) => s + Number(r.total), 0)
+  const top = (rows ?? [])[0]
+  const share = total > 0 && top ? Math.round((Number(top.total) / total) * 100) : 0
+
+  return (
+    <Card>
+      <CardHeader
+        title="תמהיל לקוחות"
+        subtitle={top ? `${top.name} — ${share}% מההכנסות` : undefined}
+      />
+      <CardBody>
+        {isLoading && !rows ? (
+          <Skeleton className="w-full" style={{ height }} />
+        ) : !rows?.length ? (
+          <EmptyState compact art="table" title="אין הכנסות בטווח" />
+        ) : (
+          <div className="space-y-2.5">
+            {rows.slice(0, 6).map((r) => (
+              <ProgressBar
+                key={r.name}
+                value={Number(r.total)}
+                max={total}
+                color={r.color}
+                label={r.name}
+                hint={`${Math.round((Number(r.total) / total) * 100)}%`}
+              />
+            ))}
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  )
+}
+
+/* ===== overdue list =======================================================
+   The overdue counter says how many; this says which. */
+
+export function OverdueListWidget(_props: WidgetProps) {
+  const { today, openTask } = useDashboard()
+  const { data = [], isLoading } = useQuery({
+    queryKey: ['dashboard', 'overdue', today],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('work_board_view')
+        .select('*')
+        .lt('task_date', today)
+        .eq('status_is_terminal', false)
+        .order('task_date')
+        .limit(8)
+      if (error) throw error
+      return data as WorkBoardRow[]
+    },
+  })
+
+  return (
+    <TaskListCard
+      title="רשימת האיחורים"
+      subtitle={`${data.length} משימות שתאריכן עבר`}
+      icon={<AlertTriangle size={ICON.md} strokeWidth={STROKE} />}
+      tasks={data}
+      loading={isLoading}
+      showDate
+      emptyTitle="אין משימות באיחור"
+      emptyDescription="כל מה שתאריכו עבר נסגר"
+      onOpen={openTask}
+    />
   )
 }

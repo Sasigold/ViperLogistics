@@ -514,3 +514,117 @@ export function RevenueByCustomerWidget({ height }: WidgetProps) {
     </ChartFrame>
   )
 }
+
+export const ContractorPaidWidget = sectionKpi<ContractorCost>({
+  section: 'cost.contractor',
+  label: 'שולם לקבלנים',
+  icon: Banknote,
+  tone: '#22c55e',
+  select: (c) => Number(c.paid),
+  format: shekel,
+  hint: (c) =>
+    Number(c.expected) > 0
+      ? `${Math.round((Number(c.paid) / Number(c.expected)) * 100)}% ממה שסוכם`
+      : 'לא סוכם סכום',
+})
+
+export const RevenueForecastWidget = sectionKpi<{ total: number; tasks: number }>({
+  section: 'revenue.forecast',
+  label: 'תחזית הכנסות',
+  icon: Banknote,
+  tone: '#1fa189',
+  select: (f) => Number(f.total),
+  format: shekel,
+  hint: (f) => `${f.tasks} משימות עתידיות מתומחרות`,
+})
+
+export function PayrollTrendWidget({ height }: WidgetProps) {
+  const { data, isLoading } = useSection<{ bucket: string; total: number; hours: number }[]>('cost.payroll_trend')
+  if (data === null) return null
+
+  return (
+    <ChartFrame title="מגמת עלות שכר" loading={isLoading && !data} empty={!data?.length} height={height}>
+      <BarChart data={data ?? []} margin={{ top: 8, right: 8, bottom: 4, left: -12 }}>
+        <XAxis dataKey="bucket" {...AXIS} tickFormatter={(v: string) => fmtDate(v)} />
+        <YAxis {...AXIS} width={64} tickFormatter={(v: number) => String(Math.round(v / 1000)) + 'k'} />
+        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
+        <Bar dataKey="total" name="שכר" fill="#8b5cf6" radius={[6, 6, 0, 0]} maxBarSize={40} />
+      </BarChart>
+    </ChartFrame>
+  )
+}
+
+/* Where the direct cost actually goes. Two bars rather than a donut: with two
+   slices a donut is a worse ratio chart than a pair of bars, and the absolute
+   numbers matter as much as the split. */
+export function CostStructureWidget(_props: WidgetProps) {
+  const { data, isLoading } = useSection<Margin>('margin.summary')
+  if (isLoading && data === undefined) return <SkeletonCard lines={2} />
+  if (data === null || data === undefined) return null
+
+  const contractor = Number(data.contractor)
+  const payroll = Number(data.payroll)
+  const total = contractor + payroll
+
+  return (
+    <Card>
+      <CardHeader title="הרכב עלות ישירה" subtitle={total > 0 ? fmtMoney(total) : undefined} />
+      <CardBody>
+        {total === 0 ? (
+          <EmptyState compact art="table" title="אין עלות רשומה בטווח" />
+        ) : (
+          <div className="space-y-2.5">
+            <ProgressBar value={contractor} max={total} color="#f59e0b" label="קבלנים" hint={fmtMoney(contractor)} />
+            <ProgressBar value={payroll} max={total} color="#8b5cf6" label="שכר" hint={fmtMoney(payroll)} />
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  )
+}
+
+/* Average revenue per event, derived rather than queried: both numbers are
+   already on the wire from dashboard_stats, and a third figure computed from
+   two of them is not worth a section of its own. */
+export function AvgPerEventWidget(_props: WidgetProps) {
+  const { range } = useDashboard()
+  const { data, isLoading } = useDashboardStats(range.from, range.to)
+  if (isLoading && !data) return <SkeletonCard lines={0} />
+  if (!data?.revenue) return null
+  const events = Number(data.events_count)
+  const total = Number(data.revenue.total)
+  return (
+    <StatCard
+      icon={<Banknote size={ICON.xl} strokeWidth={STROKE} />}
+      label="הכנסה ממוצעת לאירוע"
+      value={events > 0 ? fmtMoney(total / events) : '—'}
+      tone="#1fa189"
+      hint={events > 0 ? `${events} אירועים בטווח` : 'אין אירועים בטווח'}
+    />
+  )
+}
+
+/* How much of the pricing was decided by the engine and how much by hand. A
+   rising manual share is how a pricing rule quietly stops matching reality. */
+export function ManualPricingShareWidget(_props: WidgetProps) {
+  const { data, isLoading } = useSection<PricingQuality>('pricing.quality')
+  if (isLoading && data === undefined) return <SkeletonCard lines={2} />
+  if (data === null || data === undefined) return null
+
+  const priced = Number(data.manual) + Number(data.auto)
+  return (
+    <Card>
+      <CardHeader title="תמחור ידני מול אוטומטי" subtitle={`${priced} משימות מתומחרות`} />
+      <CardBody>
+        {priced === 0 ? (
+          <EmptyState compact art="table" title="אין משימות מתומחרות בטווח" />
+        ) : (
+          <div className="space-y-2.5">
+            <ProgressBar value={Number(data.auto)} max={priced} color="#1fa189" label="לפי מחשבון" hint={String(data.auto)} />
+            <ProgressBar value={Number(data.manual)} max={priced} color="#f59e0b" label="ידני" hint={String(data.manual)} />
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  )
+}

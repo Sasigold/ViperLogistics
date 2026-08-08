@@ -4,12 +4,15 @@ import {
   Card,
   CardBody,
   CardHeader,
+  DataTable,
   EmptyState,
   SkeletonCard,
   SkeletonList,
   StatCard,
   fmtHoursShort,
+  fmtMoney,
 } from '../../../components/ui'
+import type { Column } from '../../../components/ui'
 import { AlertTriangle, CheckCheck, ICON, STROKE, Truck, Users } from '../../../components/ui/icons'
 import { fmtDate } from '../../../lib/dates'
 import { ChartTooltip } from '../parts/ChartTooltip'
@@ -340,6 +343,108 @@ export function UnratedShiftsBadgeWidget(_props: WidgetProps) {
       value={total}
       tone="#f59e0b"
       hint={`${data.unrated_shifts} ללא תעריף · ${data.pending_shifts} ממתינות לאישור`}
+    />
+  )
+}
+
+/* ===== customer leaderboard =============================================== */
+
+interface LeaderRow {
+  name: string
+  color: string
+  events: number
+  tasks: number
+  revenue: number | null
+  last_event: string | null
+}
+
+export function CustomerLeaderboardWidget(_props: WidgetProps) {
+  const { data, isLoading } = useSection<LeaderRow[]>('customers.leaderboard')
+  if (data === null) return null
+
+  // `revenue` arrives null for a reader without pricing.revenue — the column
+  // disappears rather than showing a row of dashes
+  const showMoney = (data ?? []).some((r) => r.revenue !== null)
+
+  const columns: Column<LeaderRow>[] = [
+    {
+      key: 'name',
+      header: 'לקוח',
+      sticky: true,
+      render: (r) => (
+        <span className="flex items-center gap-2">
+          <span className="size-2 shrink-0 rounded-full" style={{ background: r.color }} aria-hidden />
+          <span className="truncate">{r.name}</span>
+        </span>
+      ),
+      sortValue: (r) => r.name,
+    },
+    { key: 'events', header: 'אירועים', align: 'end', render: (r) => r.events, sortValue: (r) => Number(r.events) },
+    { key: 'tasks', header: 'משימות', align: 'end', render: (r) => r.tasks, sortValue: (r) => Number(r.tasks) },
+    ...(showMoney
+      ? [
+          {
+            key: 'revenue',
+            header: 'הכנסות',
+            align: 'end' as const,
+            render: (r: LeaderRow) => (r.revenue === null ? '—' : fmtMoney(Number(r.revenue))),
+            sortValue: (r: LeaderRow) => Number(r.revenue ?? 0),
+          },
+        ]
+      : []),
+    {
+      key: 'last',
+      header: 'אירוע אחרון',
+      align: 'end',
+      render: (r) => (r.last_event ? fmtDate(r.last_event) : '—'),
+      sortValue: (r) => r.last_event ?? '',
+    },
+  ]
+
+  return (
+    <Card>
+      <CardHeader title="לקוחות מובילים" subtitle="בטווח שנבחר" />
+      <CardBody padded={false}>
+        <DataTable
+          rows={data ?? []}
+          columns={columns}
+          getRowId={(r) => r.name}
+          loading={isLoading && !data}
+          dense
+          defaultSort={{ key: 'events', dir: 'desc' }}
+          empty={<EmptyState compact art="table" title="אין פעילות בטווח" />}
+        />
+      </CardBody>
+    </Card>
+  )
+}
+
+export function HeadcountWidget(_props: WidgetProps) {
+  const { data, isLoading } = useSection<{ active: number; staff: number }>('hr.headcount')
+  if (isLoading && data === undefined) return <SkeletonCard lines={0} />
+  if (data === null || data === undefined) return null
+  return (
+    <StatCard
+      icon={<Users size={ICON.xl} strokeWidth={STROKE} />}
+      label="סגל פעיל"
+      value={data.staff}
+      tone="#22c55e"
+      hint={`${data.active} חשבונות פעילים בסך הכול`}
+    />
+  )
+}
+
+export function EventTrucksWidget(_props: WidgetProps) {
+  const { data, isLoading } = useSection<{ trucks: number; events: number }>('events.volume')
+  if (isLoading && data === undefined) return <SkeletonCard lines={0} />
+  if (data === null || data === undefined) return null
+  return (
+    <StatCard
+      icon={<Truck size={ICON.xl} strokeWidth={STROKE} />}
+      label="משאיות נדרשות"
+      value={data.trucks}
+      tone="#0ea5e9"
+      hint={`על פני ${data.events} אירועים`}
     />
   )
 }
