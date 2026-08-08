@@ -936,6 +936,30 @@
   display: none;
 }
 
+/* ── החלונית של "+2" ────────────────────────────────────────────────────────
+   תא מציג שלושה אירועים ואומר כמה עוד יש לו; הלחיצה על המספר פותחת את היום
+   כולו. בתוך החלונית הצ׳יפ הוא שורה שקוראים ולא סימון בתא של 50px, ולכן הוא
+   מקבל בחזרה את הריפוד והגודל שוויתר עליהם בלוח. החלונית עצמה נעצרת בחצי
+   מסך וגוללת בתוך עצמה, כדי שיום עמוס לא יגלוש מהמסך.                      */
+
+.vl-calendar .fc-more-popover .fc-popover-body {
+  max-width: min(20rem, calc(100vw - 1.5rem));
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.vl-calendar .fc-more-popover .vl-cal-chip {
+  padding: 0.375rem 0.5rem;
+  border-radius: var(--radius-md);
+}
+.vl-calendar .fc-more-popover .vl-cal-chip > span {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+.vl-calendar .fc-more-popover .fc-daygrid-event-harness {
+  margin-top: 0.25rem;
+}
+
 @media (max-width: 640px) {
   .fc .fc-toolbar.fc-header-toolbar {
     flex-direction: column;
@@ -1012,9 +1036,14 @@
     margin: 0.125rem;
     padding: 0.0625rem 0.25rem;
   }
+  /* "+2" הוא הדרך היחידה לשאר היום בטלפון — הוא צריך להיראות כמו כפתור
+     ולהיות גדול מספיק כדי לפגוע בו באצבע */
   .vl-calendar .fc-daygrid-more-link {
-    font-size: 0.5625rem;
-    padding: 0;
+    font-size: 0.625rem;
+    font-weight: 700;
+    padding: 0.0625rem 0.3125rem;
+    border-radius: var(--radius-sm);
+    background: var(--vl-subtle);
   }
 }
 

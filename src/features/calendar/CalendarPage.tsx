@@ -454,7 +454,9 @@ export default function CalendarPage() {
           <span
             onContextMenu={(e) => openMenu(e, contextItems)}
             className={cx(
-              'group/ev relative flex h-full min-w-0 items-center gap-1 overflow-hidden rounded-md shadow-xs',
+              // `vl-cal-chip` is the handle the day popover styles itself by:
+              // inside it the chip is a row you read, not a marker in a 50px cell
+              'vl-cal-chip group/ev relative flex h-full min-w-0 items-center gap-1 overflow-hidden rounded-md shadow-xs',
               'transition-[filter,box-shadow] duration-150 hover:shadow-md hover:brightness-105',
               // every pixel of a phone's month cell belongs to the name: the
               // chip shrinks to a marker so two or three of them fit a cell
@@ -725,8 +727,10 @@ export default function CalendarPage() {
         <div className="grid gap-3">{filterControls}</div>
       </Modal>
 
+      {/* not `overflow-hidden`: the day's popover ("+2") is portalled inside
+          this card and a day in the last row would have it clipped away */}
       <div
-        className="vl-calendar surface relative overflow-hidden p-2 sm:p-3"
+        className="vl-calendar surface relative p-2 sm:p-3"
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
         onTouchCancel={() => {
@@ -737,7 +741,7 @@ export default function CalendarPage() {
         <div
           aria-hidden
           className={cx(
-            'pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-primary transition-opacity duration-200',
+            'pointer-events-none absolute inset-x-3 top-0 h-0.5 rounded-b-full bg-primary transition-opacity duration-200',
             isFetching ? 'animate-shimmer opacity-100' : 'opacity-0',
           )}
         />
@@ -795,7 +799,17 @@ export default function CalendarPage() {
             })
           }}
           eventClick={(info) => navigate(`/events/${info.event.id}`)}
-          dayMaxEventRows={isMobile ? 3 : 4}
+          /* events, not rows: a cell shows three of them and says how many it
+             is holding back, rather than spending one of the three saying it */
+          dayMaxEvents={isMobile ? 3 : 4}
+          /* "+2" and nothing else — "עוד 2" costs half the width of a cell on
+             a phone, and the number is the whole message */
+          moreLinkContent={(arg) => `+${arg.num}`}
+          moreLinkHint={(n) => `עוד ${n} אירועים ביום הזה`}
+          /* the link opens the day itself: every event it has, in a panel over
+             the grid, each one still a tap away from its own screen */
+          moreLinkClick="popover"
+          dayPopoverFormat={{ weekday: 'long', day: 'numeric', month: 'long' }}
           noEventsContent={() => <EmptyState compact art="calendar" title="אין אירועים בטווח הזה" />}
         />
       </div>
