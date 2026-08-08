@@ -75,19 +75,15 @@ interface CalEvent {
 
 interface Filters {
   customer: string
-  /** `events.end_client_name` — the client the event is *for*, which on a
-   *  single-tenant install is the only "customer" the grid actually varies by. */
-  endClient: string
   status: string
   q: string
 }
 
-const emptyFilters: Filters = { customer: '', endClient: '', status: '', q: '' }
+const emptyFilters: Filters = { customer: '', status: '', q: '' }
 
 const FILTER_LABELS: Record<keyof Filters, string> = {
   q: 'חיפוש',
   customer: 'לקוח',
-  endClient: 'לקוח האירוע',
   status: 'סטטוס',
 }
 
@@ -95,7 +91,7 @@ const FILTER_LABELS: Record<keyof Filters, string> = {
  *  contractor and task type). Keep only the keys that still mean something. */
 function readSavedFilters(raw: Record<string, unknown>): Filters {
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
-  return { customer: str(raw.customer), endClient: str(raw.endClient), status: str(raw.status), q: str(raw.q) }
+  return { customer: str(raw.customer), status: str(raw.status), q: str(raw.q) }
 }
 
 /* ── views ──────────────────────────────────────────────────────────────────
@@ -162,7 +158,6 @@ export default function CalendarPage() {
   const filtered = useMemo(() => {
     return events.filter((e) => {
       if (filters.customer && e.customer_id !== filters.customer) return false
-      if (filters.endClient && (e.end_client_name ?? '').trim() !== filters.endClient) return false
       if (filters.status && e.status_id !== filters.status) return false
       if (filters.q) {
         const hay = [e.end_client_name, e.event_number, e.location_text, e.customers?.name, e.notes]
@@ -188,19 +183,6 @@ export default function CalendarPage() {
       }),
     [filtered],
   )
-
-  /** The end clients the visible range actually holds — a free-text column has
-   *  no lookup table to offer, so the range is the list. A value chosen in one
-   *  month stays selectable after paging to a month that doesn't hold it. */
-  const endClients = useMemo(() => {
-    const seen = new Set<string>()
-    for (const e of events) {
-      const name = e.end_client_name?.trim()
-      if (name) seen.add(name)
-    }
-    if (filters.endClient) seen.add(filters.endClient)
-    return [...seen].sort((a, b) => a.localeCompare(b, 'he'))
-  }, [events, filters.endClient])
 
   /** Customers present in the current view — doubles as a colour legend. */
   const legend = useMemo(() => {
@@ -296,7 +278,7 @@ export default function CalendarPage() {
 
   const filterValueLabel = (k: keyof Filters): string => {
     const v = filters[k]
-    if (k === 'q' || k === 'endClient') return v
+    if (k === 'q') return v
     if (k === 'customer') return customers.find((c) => c.id === v)?.name ?? v
     return statusById.get(v)?.name ?? v
   }
@@ -325,13 +307,6 @@ export default function CalendarPage() {
           icon: <Filter size={ICON.sm} />,
           disabled: !ev.customer_id,
           onClick: () => setFilters((f) => ({ ...f, customer: ev.customer_id ?? '' })),
-        },
-        {
-          key: 'filter-end-client',
-          label: `סינון לפי ${ev.end_client_name?.trim() || 'לקוח האירוע'}`,
-          icon: <Filter size={ICON.sm} />,
-          disabled: !ev.end_client_name?.trim(),
-          onClick: () => setFilters((f) => ({ ...f, endClient: ev.end_client_name?.trim() ?? '' })),
         },
         {
           key: 'copy',
@@ -463,22 +438,6 @@ export default function CalendarPage() {
           ))}
         </Select>
       )}
-      {/* the client the event is *for*: free text on the event, so the options
-          are whatever the loaded range holds */}
-      <Select
-        selectSize="sm"
-        value={filters.endClient}
-        onChange={(e) => setFilters((f) => ({ ...f, endClient: e.target.value }))}
-        aria-label="לקוח האירוע"
-        disabled={endClients.length === 0}
-      >
-        <option value="">כל לקוחות האירועים</option>
-        {endClients.map((name) => (
-          <option key={name} value={name}>
-            {name}
-          </option>
-        ))}
-      </Select>
       <Select
         selectSize="sm"
         value={filters.status}
