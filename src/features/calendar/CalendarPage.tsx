@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
+import type { TouchEvent as ReactTouchEvent } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import listPlugin from '@fullcalendar/list'
@@ -137,11 +138,52 @@ export default function CalendarPage() {
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [eventModal, setEventModal] = useState(false)
   const [view, setView] = useState<ViewKey>('dayGridMonth')
+  /** What the toolbar would have said — the phone draws it itself now. */
+  const [nav, setNav] = useState<{ title: string; showsToday: boolean }>({ title: '', showsToday: true })
   const calRef = useRef<FullCalendar>(null)
 
   const changeView = useCallback((next: ViewKey) => {
     calRef.current?.getApi().changeView(next)
     setView(next)
+  }, [])
+
+  /* ── swiping the grid ───────────────────────────────────────────────────
+     A phone has no room for a row of navigation buttons over a month that is
+     already fighting for every pixel, so the grid itself is the control: drag
+     it right for the next period, left for the previous one — the direction
+     the page reads in. A drag that starts on an event belongs to the event
+     (that is how it is moved to another day), and a drag that is mostly
+     vertical belongs to the page's scroll.                                  */
+
+  const swipe = useRef<{ x: number; y: number; own: boolean } | null>(null)
+
+  const onTouchStart = useCallback(
+    (e: ReactTouchEvent) => {
+      if (!isMobile || e.touches.length !== 1) {
+        swipe.current = null
+        return
+      }
+      const t = e.touches[0]
+      const target = e.target as HTMLElement | null
+      const own = !target?.closest('.fc-event, .fc-popover, button, a, input, select')
+      swipe.current = { x: t.clientX, y: t.clientY, own }
+    },
+    [isMobile],
+  )
+
+  const onTouchEnd = useCallback((e: ReactTouchEvent) => {
+    const start = swipe.current
+    swipe.current = null
+    if (!start?.own || e.changedTouches.length !== 1) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - start.x
+    const dy = t.clientY - start.y
+    // a swipe is horizontal and deliberate, or it is not a swipe
+    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.4) return
+    const api = calRef.current?.getApi()
+    if (!api) return
+    if (dx > 0) api.next()
+    else api.prev()
   }, [])
 
   // dragging an event rewrites events.event_date, which the column trigger
@@ -530,6 +572,117 @@ export default function CalendarPage() {
     </>
   )
 
+  /* ── the header, minus its title on a phone ─────────────────────────────
+     The bottom bar already says "לוח שנה" and the screen is unmistakably a
+     calendar, so on a phone the title and its event count are two rows of
+     glass between the toolbar and the grid. The actions and the active-filter
+     chips stay — those are controls, not labels. */
+
+  const headerActions = (
+    <>
+      {/* on a phone the three view buttons would take a toolbar row of
+          their own — they fold into a menu next to "סינון" instead */}
+      {isMobile && (
+        <Popover
+          trigger={({ toggle, ...aria }) => (
+            <Button size="sm" variant="secondary" onClick={toggle} {...aria}>
+              <CalendarDays size={ICON.sm} strokeWidth={STROKE} />
+              {VIEWS.find((v) => v.key === view)?.label ?? 'תצוגה'}
+              <ChevronDown size={ICON.sm} strokeWidth={STROKE} />
+            </Button>
+          )}
+        >
+          {(close) => (
+            <>
+              <MenuLabel>תצוגה</MenuLabel>
+              {VIEWS.map((v) => (
+                <MenuItem
+                  key={v.key}
+                  icon={<v.icon size={ICON.sm} />}
+                  shortcut={view === v.key ? <Check size={ICON.sm} /> : undefined}
+                  onClick={() => {
+                    changeView(v.key)
+                    close()
+                  }}
+                >
+                  {v.label}
+                </MenuItem>
+              ))}
+            </>
+          )}
+        </Popover>
+      )}
+      <Button
+        size="sm"
+        variant={activeFilters.length > 0 ? 'outlined' : 'secondary'}
+        onClick={() => setFiltersOpen((v) => !v)}
+        aria-expanded={filtersOpen}
+      >
+        <Filter size={ICON.sm} strokeWidth={STROKE} />
+        סינון
+        {activeFilters.length > 0 && (
+          <span className="inline-flex size-4 items-center justify-center rounded-full bg-primary type-caption font-bold tabular text-on-primary">
+            {activeFilters.length}
+          </span>
+        )}
+      </Button>
+      {has(PERM.CALENDAR_SAVE_FILTERS) && (
+        <IconButton
+          label="שמירת הסינון הנוכחי"
+          size="sm"
+          onClick={() => void saveFilter()}
+          disabled={activeFilters.length === 0}
+        >
+          <Save size={ICON.md} strokeWidth={STROKE} />
+        </IconButton>
+      )}
+      {canCreateEvent() && (
+        <Button size="sm" variant="primary" onClick={() => setEventModal(true)}>
+          <Plus size={ICON.sm} strokeWidth={STROKE} />
+          אירוע חדש
+        </Button>
+      )}
+    </>
+  )
+
+  const headerExtras = (
+    <>
+      {/* active-filter chips stay visible even when the panel is folded */}
+      {activeFilters.length > 0 && (
+        <div className="scroll-row gap-1.5 sm:flex-wrap">
+          {activeFilters.map((k) => (
+            <span
+              key={k}
+              className="scroll-row-item inline-flex items-center gap-1 rounded-full border border-primary-border bg-primary-subtle py-0.5 pe-1 ps-2 type-caption font-medium text-primary-text"
+            >
+              <span className="opacity-70">{FILTER_LABELS[k]}:</span>
+              <span className="max-w-40 truncate">{filterValueLabel(k)}</span>
+              <button
+                onClick={() => clearFilter(k)}
+                aria-label={`הסרת סינון ${FILTER_LABELS[k]}`}
+                className="rounded-full p-0.5 opacity-60 transition-opacity hover:opacity-100"
+              >
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+          <button
+            onClick={() => setFilters(emptyFilters)}
+            className="scroll-row-item rounded-md px-2 py-0.5 type-caption text-ink-tertiary transition-colors hover:bg-hover hover:text-ink"
+          >
+            ניקוי הכל
+          </button>
+        </div>
+      )}
+
+      {/* on desktop the panel unfolds in place; on mobile it becomes a dialog
+          so it can never push the calendar off the bottom of the screen */}
+      {filtersOpen && !isMobile && (
+        <div className="surface grid animate-slide-up gap-2 p-3 sm:grid-cols-2 lg:grid-cols-4">{filterControls}</div>
+      )}
+    </>
+  )
+
   return (
     /* the month grid is the tallest thing this app scrolls, and the bottom bar
        floats over it — the page keeps its own clearance so the last week row
@@ -538,110 +691,20 @@ export default function CalendarPage() {
       {promptDialog}
       {menu}
 
-      <PageHeader
-        title="לוח שנה"
-        subtitle={range ? `${filtered.length} אירועים בטווח המוצג` : 'טוען...'}
-        actions={
-          <>
-            {/* on a phone the three view buttons would take a toolbar row of
-                their own — they fold into a menu next to "סינון" instead */}
-            {isMobile && (
-              <Popover
-                trigger={({ toggle, ...aria }) => (
-                  <Button size="sm" variant="secondary" onClick={toggle} {...aria}>
-                    <CalendarDays size={ICON.sm} strokeWidth={STROKE} />
-                    {VIEWS.find((v) => v.key === view)?.label ?? 'תצוגה'}
-                    <ChevronDown size={ICON.sm} strokeWidth={STROKE} />
-                  </Button>
-                )}
-              >
-                {(close) => (
-                  <>
-                    <MenuLabel>תצוגה</MenuLabel>
-                    {VIEWS.map((v) => (
-                      <MenuItem
-                        key={v.key}
-                        icon={<v.icon size={ICON.sm} />}
-                        shortcut={view === v.key ? <Check size={ICON.sm} /> : undefined}
-                        onClick={() => {
-                          changeView(v.key)
-                          close()
-                        }}
-                      >
-                        {v.label}
-                      </MenuItem>
-                    ))}
-                  </>
-                )}
-              </Popover>
-            )}
-            <Button
-              size="sm"
-              variant={activeFilters.length > 0 ? 'outlined' : 'secondary'}
-              onClick={() => setFiltersOpen((v) => !v)}
-              aria-expanded={filtersOpen}
-            >
-              <Filter size={ICON.sm} strokeWidth={STROKE} />
-              סינון
-              {activeFilters.length > 0 && (
-                <span className="inline-flex size-4 items-center justify-center rounded-full bg-primary type-caption font-bold tabular text-on-primary">
-                  {activeFilters.length}
-                </span>
-              )}
-            </Button>
-            {has(PERM.CALENDAR_SAVE_FILTERS) && (
-              <IconButton
-                label="שמירת הסינון הנוכחי"
-                size="sm"
-                onClick={() => void saveFilter()}
-                disabled={activeFilters.length === 0}
-              >
-                <Save size={ICON.md} strokeWidth={STROKE} />
-              </IconButton>
-            )}
-            {canCreateEvent() && (
-              <Button size="sm" variant="primary" onClick={() => setEventModal(true)}>
-                <Plus size={ICON.sm} strokeWidth={STROKE} />
-                אירוע חדש
-              </Button>
-            )}
-          </>
-        }
-      >
-        {/* active-filter chips stay visible even when the panel is folded */}
-        {activeFilters.length > 0 && (
-          <div className="scroll-row gap-1.5 sm:flex-wrap">
-            {activeFilters.map((k) => (
-              <span
-                key={k}
-                className="scroll-row-item inline-flex items-center gap-1 rounded-full border border-primary-border bg-primary-subtle py-0.5 pe-1 ps-2 type-caption font-medium text-primary-text"
-              >
-                <span className="opacity-70">{FILTER_LABELS[k]}:</span>
-                <span className="max-w-40 truncate">{filterValueLabel(k)}</span>
-                <button
-                  onClick={() => clearFilter(k)}
-                  aria-label={`הסרת סינון ${FILTER_LABELS[k]}`}
-                  className="rounded-full p-0.5 opacity-60 transition-opacity hover:opacity-100"
-                >
-                  <X size={11} />
-                </button>
-              </span>
-            ))}
-            <button
-              onClick={() => setFilters(emptyFilters)}
-              className="scroll-row-item rounded-md px-2 py-0.5 type-caption text-ink-tertiary transition-colors hover:bg-hover hover:text-ink"
-            >
-              ניקוי הכל
-            </button>
-          </div>
-        )}
-
-        {/* on desktop the panel unfolds in place; on mobile it becomes a dialog
-            so it can never push the calendar off the bottom of the screen */}
-        {filtersOpen && !isMobile && (
-          <div className="surface grid animate-slide-up gap-2 p-3 sm:grid-cols-2 lg:grid-cols-4">{filterControls}</div>
-        )}
-      </PageHeader>
+      {isMobile ? (
+        <div className="space-y-3">
+          <div className="flex w-full flex-wrap items-center gap-2">{headerActions}</div>
+          {headerExtras}
+        </div>
+      ) : (
+        <PageHeader
+          title="לוח שנה"
+          subtitle={range ? `${filtered.length} אירועים בטווח המוצג` : 'טוען...'}
+          actions={headerActions}
+        >
+          {headerExtras}
+        </PageHeader>
+      )}
 
       <Modal
         open={filtersOpen && isMobile}
@@ -662,7 +725,14 @@ export default function CalendarPage() {
         <div className="grid gap-3">{filterControls}</div>
       </Modal>
 
-      <div className="vl-calendar surface relative overflow-hidden p-2 sm:p-3">
+      <div
+        className="vl-calendar surface relative overflow-hidden p-2 sm:p-3"
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={() => {
+          swipe.current = null
+        }}
+      >
         {/* thin top progress line instead of a spinner that blanks the grid */}
         <div
           aria-hidden
@@ -671,16 +741,38 @@ export default function CalendarPage() {
             isFetching ? 'animate-shimmer opacity-100' : 'opacity-0',
           )}
         />
+        {/* the phone's toolbar: the period's name, and nothing else — moving
+            between periods is the swipe. "היום" is the one jump a swipe cannot
+            make in one gesture, so it appears only once you have swiped away
+            from the period today is in, and leaves again when you are back. */}
+        {isMobile && (
+          <div className="mb-2 flex items-center justify-center gap-2 px-1">
+            <h2 className="truncate type-title font-bold">{nav.title}</h2>
+            {!nav.showsToday && (
+              <button
+                onClick={() => calRef.current?.getApi().today()}
+                className="shrink-0 rounded-full border border-line px-2.5 py-0.5 type-caption font-medium text-primary-text transition-colors hover:bg-hover"
+              >
+                היום
+              </button>
+            )}
+          </div>
+        )}
         <FullCalendar
           ref={calRef}
           plugins={[dayGridPlugin, listPlugin, interactionPlugin]}
           initialView="dayGridMonth"
-          headerToolbar={{
-            start: 'prev,next today',
-            center: 'title',
-            // the phone's switcher is the "תצוגה" menu in the page header
-            end: isMobile ? '' : 'dayGridMonth,dayGridWeek,listMonth',
-          }}
+          // on a phone the grid carries its own title above, and the swipe
+          // replaces prev/next — the toolbar is a row the month can have back
+          headerToolbar={
+            isMobile
+              ? false
+              : {
+                  start: 'prev,next today',
+                  center: 'title',
+                  end: 'dayGridMonth,dayGridWeek,listMonth',
+                }
+          }
           buttonText={{ month: 'חודש', week: 'שבוע', day: 'יום', list: 'סדר יום', today: 'היום' }}
           locale={heLocale}
           direction="rtl"
@@ -694,6 +786,13 @@ export default function CalendarPage() {
           datesSet={(info) => {
             setRange({ from: info.startStr.slice(0, 10), to: info.endStr.slice(0, 10) })
             setView(info.view.type as ViewKey)
+            const now = new Date()
+            // the *period* the view is on (the month, the week), not the grid's
+            // visible days — a month grid also shows a few of its neighbours'
+            setNav({
+              title: info.view.title,
+              showsToday: now >= info.view.currentStart && now < info.view.currentEnd,
+            })
           }}
           eventClick={(info) => navigate(`/events/${info.event.id}`)}
           dayMaxEventRows={isMobile ? 3 : 4}
