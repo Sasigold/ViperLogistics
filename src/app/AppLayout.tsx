@@ -300,8 +300,13 @@ export default function AppLayout() {
             id="main"
             className={cx(
               'min-h-0 flex-1 flex flex-col',
+              /* The board owns its own scrolling, so `main` does not scroll —
+                 which also meant nothing here left room for the bottom bar,
+                 and the last field rows sat underneath it with no way to
+                 reach them. The padding gives the board's own scroller an end
+                 that is on the screen. */
               location.pathname.startsWith('/board')
-                ? 'p-2 sm:p-2.5 lg:p-3 overflow-hidden'
+                ? 'p-2 pb-shell sm:p-2.5 sm:pb-shell lg:p-3 lg:pb-3 overflow-hidden'
                 : 'overflow-y-auto overscroll-contain p-3 pb-shell sm:p-4 sm:pb-shell lg:p-6 lg:pb-6',
             )}
           >

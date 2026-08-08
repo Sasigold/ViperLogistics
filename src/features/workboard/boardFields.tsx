@@ -90,12 +90,16 @@ function Clip({
   className,
   dir,
   title,
+  tight,
 }: {
   children: ReactNode
   className?: string
   dir?: 'ltr' | 'rtl'
   /** what the bubble says, when it isn't simply the text itself */
   title?: ReactNode
+  /** no vertical padding — for the team list, whose row height is counted in
+   *  whole lines and cannot afford four stray pixels per name */
+  tight?: boolean
 }) {
   const ref = useRef<HTMLSpanElement>(null)
   const [clipped, setClipped] = useState(false)
@@ -110,7 +114,13 @@ function Clip({
       <span
         ref={ref}
         dir={dir}
-        className={cx('block w-full truncate px-1.5 py-0.5 text-center', clipped && 'cursor-help', FS, className)}
+        className={cx(
+          'block w-full truncate text-center',
+          tight ? 'px-1' : 'px-1.5 py-0.5',
+          clipped && 'cursor-help',
+          FS,
+          className,
+        )}
       >
         {children}
       </span>
@@ -548,13 +558,22 @@ function TeamCell({ row, canEdit, can, assign, lookups }: CellContext) {
     people.length === 0 ? (
       <Muted>לא שובץ</Muted>
     ) : (
-      <span className="flex w-full flex-col items-stretch gap-px px-1 py-0.5">
+      <span className="flex w-full flex-col items-stretch">
         {people.map((p) => (
-          <span key={p.key} className={cx('flex items-center gap-1 text-start', FS)}>
-            {p.mark && <span className="shrink-0 text-[10px]">{p.mark}</span>}
+          /* exactly one `--vl-board-line` per person, which is the unit the
+             row's height was computed in — the whole crew is on screen and
+             nothing here scrolls */
+          <span
+            key={p.key}
+            className={cx('flex items-center gap-0.5 overflow-hidden text-start leading-none', FS)}
+            style={{ height: 'var(--vl-board-line, 1rem)' }}
+          >
+            {p.mark && <span className="shrink-0 text-[9px]">{p.mark}</span>}
             {/* מי שיוצא מהמחסן מתחיל בשעה אחרת מכולם, ולכן הסימון נשאר לצד השם */}
-            {p.site === 'warehouse' && <span className="shrink-0 text-[10px]">🏭</span>}
-            <Clip className="text-start">{p.name}</Clip>
+            {p.site === 'warehouse' && <span className="shrink-0 text-[9px]">🏭</span>}
+            <Clip tight className="text-start">
+              {p.name}
+            </Clip>
           </span>
         ))}
       </span>

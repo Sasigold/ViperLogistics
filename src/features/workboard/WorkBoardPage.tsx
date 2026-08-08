@@ -74,8 +74,8 @@ const DAY_GAP = 10
  *  their width somewhere around a quarter */
 const MAX_EMPTY_DAY_SPAN = 120
 
-/** the team row grows with the crew, up to this many names before it scrolls */
-const MAX_TEAM_LINES = 10
+/** the crumb of air above and below the team cell's list of names */
+const TEAM_ROW_PAD = 4
 
 /**
  * Every dimension the board is drawn from, in one table. `minimal` squeezes the
@@ -84,16 +84,20 @@ const MAX_TEAM_LINES = 10
  * removing it. `empty` is the width of a day with nothing on it: an empty
  * Tuesday is information, and a board that hides it reads as a board with no
  * gaps — but it must not end up wider than the real columns beside it.
+ *
+ * `line` is the height of one name in the team cell, and the number the row's
+ * own height is computed from — see `teamRowHeight`.
  */
 const DENSITY = {
-  comfortable: { col: 208, row: 38, tall: 46, legend: 150, head: 34, empty: 132, fs: '0.8125rem' },
-  compact: { col: 168, row: 30, tall: 36, legend: 132, head: 30, empty: 120, fs: '0.78125rem' },
-  minimal: { col: 112, row: 26, tall: 32, legend: 104, head: 26, empty: 96, fs: '0.75rem' },
-  /* A whole month of days at once is a different job from reading one of them:
-     at this width a cell holds a time or a first name and little else, and the
-     board answers "which days are heavy" rather than "what is on this task".
-     Anything it cuts is still one hover — or one tap — away. */
-  micro: { col: 74, row: 22, tall: 28, legend: 84, head: 22, empty: 58, fs: '0.6875rem' },
+  comfortable: { col: 208, row: 38, tall: 46, legend: 150, head: 34, empty: 132, fs: '0.8125rem', line: 17 },
+  compact: { col: 168, row: 30, tall: 36, legend: 132, head: 30, empty: 120, fs: '0.78125rem', line: 16 },
+  minimal: { col: 112, row: 26, tall: 32, legend: 104, head: 26, empty: 96, fs: '0.75rem', line: 15 },
+  /* A whole month of days at once is a different job from reading one of them.
+     This one narrows the *column* and the type inside it and nothing else: the
+     rows keep the heights of `minimal`, because a shorter row would cut what a
+     narrower one only wraps, and the reason to want a month on one screen is
+     never "show me less of each day". */
+  micro: { col: 74, row: 26, tall: 32, legend: 84, head: 26, empty: 58, fs: '0.6875rem', line: 14 },
 } as const
 type Density = keyof typeof DENSITY
 
@@ -394,7 +398,6 @@ export default function WorkBoardPage() {
    * the screen (that crew scrolls inside its own cell).
    */
   const teamRowHeight = useMemo(() => {
-    const line = Math.round(metrics.row * 0.5)
     const most = rows.reduce(
       (m, r) =>
         Math.max(
@@ -403,7 +406,7 @@ export default function WorkBoardPage() {
         ),
       0,
     )
-    return Math.max(metrics.tall, Math.min(most, MAX_TEAM_LINES) * line + 6)
+    return Math.max(metrics.tall, most * metrics.line + TEAM_ROW_PAD)
   }, [rows, metrics])
 
   /** one height array drives both the legend and every task column, so the
@@ -963,7 +966,12 @@ export default function WorkBoardPage() {
             <div
               ref={scrollRef}
               className="h-full overflow-auto"
-              style={{ '--vl-board-fs': boardFontSize } as React.CSSProperties}
+              style={
+                {
+                  '--vl-board-fs': boardFontSize,
+                  '--vl-board-line': `${metrics.line}px`,
+                } as React.CSSProperties
+              }
             >
               <div className="relative flex" style={{ width: metrics.legend + totalWidth, minHeight: '100%' }}>
                 {/* sticky field legend */}
@@ -1519,10 +1527,10 @@ const TaskColumn = memo(
             className="flex items-center justify-center overflow-hidden border-b border-line-subtle transition-colors hover:bg-hover"
             style={{ height: heights[i] }}
           >
-            {/* the cell scrolls inside itself: a name list longer than the row,
-                or a clipped string a reader has just opened, must not push the
-                grid out of alignment */}
-            <div className="min-w-0 max-h-full flex-1 overflow-y-auto text-center">
+            {/* no scroller inside the cell: the row that needs the room — the
+                team list — is measured to fit its longest crew, so everyone is
+                on screen at once and the board grows instead of hiding them */}
+            <div className="min-w-0 flex-1 text-center">
               {f.render({ row, canEdit: canEditCell(f.editPerm), can: canEditCell, patch, assign, lookups })}
             </div>
           </div>
