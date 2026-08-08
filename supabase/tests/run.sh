@@ -76,6 +76,18 @@ OUT="$OUT
 $OUT4"
 
 echo
+echo "== report builder suite =="
+# 06 runs after 05 and reads everything the earlier suites created: the margin
+# neutrality check compares the engine against dashboard_sections, and needs
+# priced tasks and approved attendance for that comparison to mean anything.
+# It also grants and revokes keys on f1, so nothing after it may assume f1's
+# permissions are untouched.
+OUT5=$($PSQL -d vl -f "$HERE/06_report_builder.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT5"
+OUT="$OUT
+$OUT5"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
