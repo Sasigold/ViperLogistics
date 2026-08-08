@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
-import { Input, PageHeader } from '../../components/ui'
+import { Suspense, lazy, useMemo, useState } from 'react'
+import { Button, Input, PageHeader, Skeleton, StickySaveBar, useToast } from '../../components/ui'
+import { ICON, LayoutGrid, STROKE, SlidersHorizontal } from '../../components/ui/icons'
 import { fmtDate, toISODate } from '../../lib/dates'
+import { errorMessage } from '../../lib/errors'
 import { PERM } from '../../lib/permissions'
 import { useAuth } from '../../state/auth'
 import { RequirePermission } from '../auth/guards'
@@ -10,32 +12,40 @@ import { DashboardProvider } from './dashboardContext'
 import { RANGE_PRESETS, defaultRange, previousRange } from './dashboardRange'
 import type { DateRange } from './dashboardRange'
 import { DashboardGrid } from './DashboardGrid'
-import { BUILT_IN_DEFAULT, WIDGETS, WIDGETS_BY_ID } from './registry'
-import { resolveLayout, visibleItems } from './layout'
+import { CustomizeDrawer } from './CustomizeDrawer'
+import { SavedViewsMenu } from './SavedViewsMenu'
+import { useDashboardLayout } from './useDashboardLayout'
+import { WIDGETS, WIDGETS_BY_ID } from './registry'
+import { hideWidget, moveByIds, moveByOffset, setSize, showWidget } from './layout'
+import type { WidgetSize } from './dashboardTypes'
+
+/* dnd-kit only exists once someone opens edit mode. The dashboard is the most
+   visited screen in the product; its ordinary render should not carry a drag
+   library most sessions never activate. */
+const DashboardEditGrid = lazy(() => import('./DashboardEditGrid'))
 
 /**
  * The dashboard shell.
  *
- * Everything that used to be written out here is a widget now: the page owns
- * the date range, the two overlays that have to be hosted once, and the grid.
- * Which widgets appear, how wide they are and in what order is data — see
- * `registry.tsx` for the catalogue and `layout.ts` for the maths.
+ * It owns three things and nothing else: the date range, the two overlays that
+ * have to be hosted once for the whole page, and the grid. What appears in the
+ * grid, how wide each thing is and in what order, is data — `registry.tsx` for
+ * the catalogue, `layout.ts` for the maths, `useDashboardLayout` for where it
+ * is stored.
  */
 export default function DashboardPage() {
-  const { has, me } = useAuth()
+  const has = useAuth((s) => s.has)
+  const toast = useToast()
   const [range, setRange] = useState<DateRange>(defaultRange)
   const [taskDrawer, setTaskDrawer] = useState<{ open: boolean; id: string | null }>({ open: false, id: null })
   const [eventModal, setEventModal] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [catalogue, setCatalogue] = useState(false)
 
   const today = toISODate(new Date())
   const prev = useMemo(() => previousRange(range), [range])
-
-  // no persistence yet — the built-in default is the layout
-  const items = useMemo(() => resolveLayout(WIDGETS, null, BUILT_IN_DEFAULT), [])
-  const visible = useMemo(
-    () => visibleItems(items, WIDGETS_BY_ID, has, me?.profile.user_kind),
-    [items, has, me?.profile.user_kind],
-  )
+  const layout = useDashboardLayout()
+  const canCustomize = has(PERM.DASHBOARD_CUSTOMIZE)
 
   const ctx = useMemo(
     () => ({
@@ -48,6 +58,33 @@ export default function DashboardPage() {
     }),
     [range, prev, today],
   )
+
+  /* Every edit goes through `layout.edit`, and every one of them works in id
+     space. The rendered list is a permission-filtered subset of the stored
+     one, so an index from the grid does not address the same element as an
+     index into storage. */
+  const visibleIds = layout.visible.map((i) => i.id)
+  const onMove = (id: string, offset: number) =>
+    layout.edit((s) => ({ ...s, items: moveByOffset(s.items, id, offset, visibleIds) }))
+  const onReorder = (activeId: string, overId: string) =>
+    layout.edit((s) => ({ ...s, items: moveByIds(s.items, activeId, overId) }))
+  const onSize = (id: string, size: WidgetSize) =>
+    layout.edit((s) => ({ ...s, items: setSize(s.items, id, size) }))
+  const onRemove = (id: string) => layout.edit((s) => hideWidget(s.items, s.hidden, id))
+  const onToggle = (id: string, on: boolean) =>
+    layout.edit((s) => {
+      const meta = WIDGETS_BY_ID.get(id)
+      if (!meta) return s
+      return on ? showWidget(s.items, s.hidden, meta, WIDGETS_BY_ID) : hideWidget(s.items, s.hidden, id)
+    })
+
+  const guard = async (run: () => Promise<unknown>) => {
+    try {
+      await run()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
 
   return (
     <RequirePermission perm={PERM.DASHBOARD_VIEW}>
@@ -89,13 +126,74 @@ export default function DashboardPage() {
                   aria-label="עד תאריך"
                 />
               </div>
+              {canCustomize && (
+                <div className="flex items-center gap-1.5">
+                  <SavedViewsMenu
+                    views={layout.namedViews}
+                    hasOwnLayout={layout.hasOwnLayout}
+                    onApply={layout.applyView}
+                    onSaveAs={(name) => guard(() => layout.save(name))}
+                    onDelete={(id) => guard(() => layout.deleteView(id))}
+                    onReset={() => guard(layout.reset)}
+                    onPublishDefault={(k) => guard(() => layout.saveOrgDefault(k))}
+                  />
+                  <Button size="sm" variant={editing ? 'primary' : 'ghost'} onClick={() => setEditing((v) => !v)}>
+                    <LayoutGrid size={ICON.sm} strokeWidth={STROKE} />
+                    {editing ? 'סיום עריכה' : 'התאמה אישית'}
+                  </Button>
+                </div>
+              )}
             </div>
           }
         />
 
+        {editing && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={() => setCatalogue(true)}>
+              <SlidersHorizontal size={ICON.sm} strokeWidth={STROKE} />
+              הוספת ווידג׳טים
+            </Button>
+            <span className="type-caption text-ink-tertiary">
+              גררו מהידית, או השתמשו בחצים — הסדר והגודל נשמרים לחשבון שלכם
+            </span>
+          </div>
+        )}
+
         <DashboardProvider value={ctx}>
-          <DashboardGrid items={visible} byId={WIDGETS_BY_ID} />
+          {editing ? (
+            <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+              <DashboardEditGrid
+                items={layout.visible}
+                byId={WIDGETS_BY_ID}
+                onMove={onMove}
+                onReorder={onReorder}
+                onSize={onSize}
+                onRemove={onRemove}
+              />
+            </Suspense>
+          ) : (
+            <DashboardGrid items={layout.visible} byId={WIDGETS_BY_ID} />
+          )}
         </DashboardProvider>
+
+        {editing && (
+          <StickySaveBar
+            dirty={layout.dirty}
+            saving={layout.saving}
+            onSave={() => void guard(() => layout.save())}
+            onReset={layout.discard}
+          />
+        )}
+
+        <CustomizeDrawer
+          open={catalogue}
+          onClose={() => setCatalogue(false)}
+          items={layout.visible}
+          hidden={layout.hidden}
+          widgets={WIDGETS}
+          onToggle={onToggle}
+          onMove={onMove}
+        />
 
         <TaskDrawer
           open={taskDrawer.open}
