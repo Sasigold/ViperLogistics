@@ -111,6 +111,30 @@ export function IconButton({
 
 type Placement = 'top' | 'bottom' | 'start' | 'end'
 
+/**
+ * Where the thing being described actually is on the screen.
+ *
+ * The anchor below is a `display: contents` span so that wrapping a control in
+ * a tooltip cannot change its layout — but an element with no box of its own
+ * has no rect either, and Chromium answers `getBoundingClientRect` on one with
+ * zeroes at the document origin. Every bubble was therefore placed against the
+ * top-left corner of the window instead of against the control it belongs to.
+ *
+ * A range over the span's contents measures what the browser actually painted —
+ * one child, several, or bare text alike — and only that is worth positioning
+ * from. The element's own rect is still preferred when it has one, so a future
+ * anchor that is a real box costs nothing here.
+ */
+function anchorRect(el: HTMLElement): DOMRect {
+  const own = el.getBoundingClientRect()
+  if (own.width || own.height) return own
+  const range = document.createRange()
+  range.selectNodeContents(el)
+  const measured = range.getBoundingClientRect()
+  range.detach()
+  return measured.width || measured.height ? measured : own
+}
+
 export function Tooltip({
   content,
   placement = 'top',
@@ -130,7 +154,7 @@ export function Tooltip({
   children: ReactNode
 }) {
   const [open, setOpen] = useState(false)
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const [pos, setPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null)
   const anchor = useRef<HTMLSpanElement>(null)
   const bubble = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -151,30 +175,65 @@ export function Tooltip({
   useEffect(() => {
     if (!open || !openOnClick) return
     const onDown = (e: Event) => {
-      if (e.target instanceof Node && anchor.current?.contains(e.target)) return
+      if (!(e.target instanceof Node)) return hide()
+      /* a press inside the bubble is someone scrolling a long one, not a
+         press elsewhere */
+      if (anchor.current?.contains(e.target) || bubble.current?.contains(e.target)) return
+      hide()
+    }
+    /* it is placed against an edge of the anchor once; scrolling moves the
+       anchor out from under it, so the bubble goes rather than drifts */
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Node && bubble.current?.contains(e.target)) return
       hide()
     }
     document.addEventListener('pointerdown', onDown)
-    return () => document.removeEventListener('pointerdown', onDown)
+    window.addEventListener('scroll', onScroll, true)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('scroll', onScroll, true)
+    }
   })
 
+  /**
+   * The bubble belongs to the thing it describes, so it is placed against one
+   * of that thing's edges and never anywhere else. A bubble too tall for the
+   * side it wants takes the roomier side, and if neither side can hold it, it
+   * is *capped* to the room there is and scrolls inside itself — the previous
+   * version pushed it to the top of the window instead, where it read as a
+   * message about the page rather than about the cell you pressed.
+   */
   useLayoutEffect(() => {
     if (!open || !anchor.current || !bubble.current) return
-    const a = anchor.current.getBoundingClientRect()
+    const a = anchorRect(anchor.current)
     const b = bubble.current.getBoundingClientRect()
     const gap = 8
-    let top = a.top - b.height - gap
-    let left = a.left + a.width / 2 - b.width / 2
-    if (placement === 'bottom') top = a.bottom + gap
+    const edge = 8
+    const clampX = (x: number) => Math.max(edge, Math.min(x, window.innerWidth - b.width - edge))
+
     if (placement === 'start' || placement === 'end') {
-      top = a.top + a.height / 2 - b.height / 2
-      left = placement === 'start' ? a.left - b.width - gap : a.right + gap
+      const room = window.innerHeight - 2 * edge
+      const top = Math.max(edge, Math.min(a.top + a.height / 2 - b.height / 2, window.innerHeight - Math.min(b.height, room) - edge))
+      setPos({ top, left: clampX(placement === 'start' ? a.left - b.width - gap : a.right + gap), maxHeight: room })
+      return
     }
-    // keep the bubble inside the viewport
-    left = Math.max(8, Math.min(left, window.innerWidth - b.width - 8))
-    if (top < 8) top = a.bottom + gap
-    if (top + b.height > window.innerHeight - 8) top = Math.max(8, a.top - b.height - gap)
-    setPos({ top, left })
+
+    const above = a.top - gap - edge
+    const belowRoom = window.innerHeight - a.bottom - gap - edge
+    const wanted = placement === 'bottom' ? belowRoom : above
+    const other = placement === 'bottom' ? above : belowRoom
+    /* stay on the requested side while it holds the bubble; otherwise go to
+       whichever side has more of it */
+    const useWanted = b.height <= wanted || wanted >= other
+    const below = placement === 'bottom' ? useWanted : !useWanted
+    const room = Math.max(48, below ? belowRoom : above)
+    const height = Math.min(b.height, room)
+
+    setPos({
+      top: below ? a.bottom + gap : a.top - gap - height,
+      left: clampX(a.left + a.width / 2 - b.width / 2),
+      maxHeight: room,
+    })
   }, [open, placement])
 
   if (!content) return <>{children}</>
@@ -199,8 +258,18 @@ export function Tooltip({
             ref={bubble}
             id={id}
             role="tooltip"
-            className="pointer-events-none fixed z-[100] max-w-xs animate-fade-in rounded-md bg-ink px-2 py-1 type-caption font-medium text-ink-inverse shadow-lg"
-            style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, visibility: pos ? 'visible' : 'hidden' }}
+            className={cx(
+              'fixed z-[100] max-w-xs animate-fade-in overflow-y-auto rounded-md bg-ink px-2 py-1 type-caption font-medium text-ink-inverse shadow-lg',
+              /* a bubble opened by a press may be scrolled; one that follows
+                 the pointer must never get in its way */
+              openOnClick ? 'overscroll-contain' : 'pointer-events-none',
+            )}
+            style={{
+              top: pos?.top ?? -9999,
+              left: pos?.left ?? -9999,
+              maxHeight: pos?.maxHeight,
+              visibility: pos ? 'visible' : 'hidden',
+            }}
           >
             {content}
           </div>,
