@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Banknote,
   Briefcase,
   Calendar,
+  Check,
+  ChevronDown,
   Clock,
   Copy,
   HardHat,
@@ -26,11 +28,15 @@ import {
   CardHeader,
   DataTable,
   EmptyState,
+  MenuItem,
+  MenuLabel,
   PageHeader,
+  Popover,
   SkeletonCard,
   ErrorState,
   SkeletonTable,
   StatusPill,
+  cx,
   fmtMoney,
   useConfirm,
   useToast,
@@ -39,6 +45,8 @@ import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
+import { useStatuses } from '../../lib/queries'
+import { errorMessage } from '../../lib/errors'
 import { fmtDate, fmtDateLong, fmtHours, fmtTime } from '../../lib/dates'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { EventFormModal } from './EventFormModal'
@@ -361,7 +369,7 @@ export default function EventDetailPage() {
         title={
           <span className="flex flex-wrap items-center gap-2.5">
             {event.end_client_name || 'אירוע'}
-            {event.statuses && <StatusPill color={event.statuses.color}>{event.statuses.name}</StatusPill>}
+            <StatusPicker event={event} />
           </span>
         }
         subtitle={
@@ -784,5 +792,95 @@ export default function EventDetailPage() {
         initial={{ event_id: event.id, customer_id: event.customer_id, task_date: event.event_date }}
       />
     </div>
+  )
+}
+
+/* ===== StatusPicker =======================================================
+   The status pill next to the title, which is also how the status is changed.
+   Moving an event along its lifecycle is the one edit that happens over and
+   over — opening the whole form for it, stepping through it and saving is
+   four interactions for a value with four options.
+
+   The write goes through `update_event` and not straight at the table: the
+   RPC is the only path that runs the customer's form config, and it takes the
+   keys it is given, so a one-key patch moves nothing else on the event. The
+   `events.change_status` column trigger still has the last word — this only
+   decides whether to offer the control.                                     */
+
+function StatusPicker({ event }: { event: EventRow }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const { has } = useAuth()
+  const { data: statuses = [] } = useStatuses('event')
+  const canChange = has(PERM.EVENTS_CHANGE_STATUS)
+
+  const current = event.statuses
+  const pill = <StatusPill color={current?.color}>{current?.name ?? 'ללא סטטוס'}</StatusPill>
+
+  const change = useMutation({
+    mutationFn: async (statusId: string) => {
+      const { error } = await supabase.rpc('update_event', {
+        p_event_id: event.id,
+        payload: { status_id: statusId },
+      })
+      if (error) throw error
+    },
+    onSuccess: (_d, statusId) => {
+      const next = statuses.find((s) => s.id === statusId)
+      toast.success(next ? `הסטטוס שונה ל"${next.name}"` : 'הסטטוס עודכן', {
+        undo: event.status_id
+          ? () => change.mutate(event.status_id!)
+          : undefined,
+      })
+      void qc.invalidateQueries({ queryKey: ['events'] })
+      void qc.invalidateQueries({ queryKey: ['calendar'] })
+      void qc.invalidateQueries({ queryKey: ['event_activity', event.id] })
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  // nothing to pick from, or no key for it: the pill stays a pill
+  if (!canChange || statuses.length === 0) return current ? pill : null
+
+  return (
+    <Popover
+      align="start"
+      trigger={({ toggle, ...aria }) => (
+        <button
+          type="button"
+          onClick={toggle}
+          {...aria}
+          disabled={change.isPending}
+          title="שינוי סטטוס"
+          className={cx(
+            'inline-flex items-center gap-1 rounded-md transition-opacity',
+            'hover:opacity-80 focus-visible:outline-none focus-visible:focus-ring',
+            change.isPending && 'opacity-60',
+          )}
+        >
+          {pill}
+          <ChevronDown size={ICON.sm} strokeWidth={STROKE} className="text-ink-tertiary" aria-hidden />
+        </button>
+      )}
+    >
+      {(close) => (
+        <>
+          <MenuLabel>סטטוס האירוע</MenuLabel>
+          {statuses.map((s) => (
+            <MenuItem
+              key={s.id}
+              icon={<span className="size-2.5 rounded-full" style={{ background: s.color }} />}
+              shortcut={s.id === event.status_id ? <Check size={ICON.sm} /> : undefined}
+              onClick={() => {
+                if (s.id !== event.status_id) change.mutate(s.id)
+                close()
+              }}
+            >
+              {s.name}
+            </MenuItem>
+          ))}
+        </>
+      )}
+    </Popover>
   )
 }
