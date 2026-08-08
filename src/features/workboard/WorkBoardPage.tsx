@@ -78,6 +78,14 @@ const MAX_EMPTY_DAY_SPAN = 120
 const TEAM_ROW_PAD = 4
 
 /**
+ * How long a press on a column's name waits to see whether a second one is
+ * coming. Shorter than the cells' own window: here the wait is spent *before*
+ * the single-press action rather than after it, and a navigation that hesitates
+ * is felt.
+ */
+const HEADER_CLICK_MS = 280
+
+/**
  * Every dimension the board is drawn from, in one table. `minimal` squeezes the
  * whole frame — legend, header and type as well as the columns — because a
  * narrow column under a comfortable header just moves the crowding rather than
@@ -412,7 +420,16 @@ export default function WorkBoardPage() {
   /** one height array drives both the legend and every task column, so the
    *  grid can never drift out of alignment */
   const rowHeights = useMemo(
-    () => fields.map((f) => (f.key === 'team' ? teamRowHeight : f.tall ? metrics.tall : metrics.row)),
+    () =>
+      fields.map((f) =>
+        f.key === 'team'
+          ? teamRowHeight
+          : f.grow
+            ? metrics.row * f.grow
+            : f.tall
+              ? metrics.tall
+              : metrics.row,
+      ),
     [fields, metrics, teamRowHeight],
   )
   const bodyHeight = rowHeights.reduce((a, b) => a + b, 0)
@@ -1063,7 +1080,6 @@ export default function WorkBoardPage() {
                           ) : (
                             <TaskHeader
                               row={col.row}
-                              today={today}
                               groupKey={col.groupKey}
                               showCustomer={canSeeCustomers}
                               canOpenEvent={canOpenEvent}
@@ -1352,7 +1368,6 @@ const MobileTaskCard = memo(function MobileTaskCard({
 
 const TaskHeader = memo(function TaskHeader({
   row,
-  today,
   groupKey,
   showCustomer,
   canOpenEvent,
@@ -1361,7 +1376,6 @@ const TaskHeader = memo(function TaskHeader({
   onHover,
 }: {
   row: WorkBoardRow
-  today: string
   groupKey: string
   /** the customer's identity is a permission; without it the header falls back */
   showCustomer: boolean
@@ -1370,7 +1384,6 @@ const TaskHeader = memo(function TaskHeader({
   onOpenEvent: (eventId: string) => void
   onHover: (key: string | null) => void
 }) {
-  const overdue = row.task_date < today && !row.status_is_terminal
   const label = showCustomer
     ? (row.customer_name ?? 'ללא לקוח')
     : row.end_client_name || row.title || row.task_type_name
@@ -1379,10 +1392,27 @@ const TaskHeader = memo(function TaskHeader({
      label flips between near-black and white by the fill's luminance —
      `color-mix(…, black N%)` only holds over a tint, never over a solid. */
   const fill = (showCustomer && row.customer_color) || NEUTRAL
-  /* A task with no event, or a reader who may not open one, gets plain text
-     rather than a control that goes nowhere. */
+  /* A task with no event, or a reader who may not open one, opens no event —
+     the second press still opens the task, which is the point of the name. */
   const eventId = canOpenEvent ? row.event_id : null
-  const name = 'min-w-0 flex-1 truncate text-center type-caption font-bold'
+
+  /* One press goes to the event, two open the task. The first press has to
+     wait out the window before it navigates: leaving for the event page on
+     press one would unmount the board before press two ever arrived. */
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => void (pending.current && clearTimeout(pending.current)), [])
+  const onName = () => {
+    if (pending.current) {
+      clearTimeout(pending.current)
+      pending.current = null
+      onOpen(row.id)
+      return
+    }
+    pending.current = setTimeout(() => {
+      pending.current = null
+      if (eventId) onOpenEvent(eventId)
+    }, HEADER_CLICK_MS)
+  }
 
   return (
     <div
@@ -1391,21 +1421,19 @@ const TaskHeader = memo(function TaskHeader({
       className="group relative flex h-full items-center gap-1 border-b border-line px-1.5"
       style={{ background: fill, color: readableOn(fill) }}
     >
-      <Tooltip content={eventId ? `${label} — פתיחת האירוע` : label}>
-        {eventId ? (
-          <button onClick={() => onOpenEvent(eventId)} className={cx(name, 'hover:underline')}>
-            {label}
-          </button>
-        ) : (
-          <span className={name}>{label}</span>
-        )}
+      <Tooltip content={eventId ? `${label} — לחיצה לאירוע, לחיצה כפולה למשימה` : `${label} — לחיצה כפולה למשימה`}>
+        <button
+          onClick={onName}
+          className={cx(
+            'min-w-0 flex-1 touch-manipulation truncate text-center type-caption font-bold',
+            /* the underline promises the event page — without one to go to,
+               the name is still pressable but promises nothing */
+            eventId && 'hover:underline',
+          )}
+        >
+          {label}
+        </button>
       </Tooltip>
-      {overdue && (
-        <Tooltip content="משימה פתוחה שעברה את מועדה">
-          {/* currentColor, not text-error: red is unreadable on half the palette */}
-          <AlertTriangle size={11} className="shrink-0" />
-        </Tooltip>
-      )}
       <IconButton
         label="פתיחת המשימה"
         size="sm"

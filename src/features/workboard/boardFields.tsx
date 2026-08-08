@@ -52,6 +52,8 @@ export interface BoardField {
   viewPerm?: string
   /** taller row — for the team list */
   tall?: boolean
+  /** this many ordinary rows tall, for a cell that holds prose */
+  grow?: number
 }
 
 /**
@@ -91,22 +93,28 @@ function Clip({
   dir,
   title,
   tight,
+  lines = 1,
 }: {
   children: ReactNode
   className?: string
   dir?: 'ltr' | 'rtl'
   /** what the bubble says, when it isn't simply the text itself */
   title?: ReactNode
-  /** no vertical padding — for the team list, whose row height is counted in
-   *  whole lines and cannot afford four stray pixels per name */
+  /** no vertical padding, and no claim on the full width — for the team list,
+   *  whose row height is counted in whole lines and cannot afford four stray
+   *  pixels per name, and whose names are centred as a line */
   tight?: boolean
+  /** wrap to this many lines before clipping. 1 (the default) is one line */
+  lines?: number
 }) {
   const ref = useRef<HTMLSpanElement>(null)
   const [clipped, setClipped] = useState(false)
 
   useLayoutEffect(() => {
     const el = ref.current
-    if (el) setClipped(el.scrollWidth > el.clientWidth + 1)
+    if (!el) return
+    /* one line runs out of width, several run out of height */
+    setClipped(lines > 1 ? el.scrollHeight > el.clientHeight + 1 : el.scrollWidth > el.clientWidth + 1)
   })
 
   return (
@@ -115,8 +123,9 @@ function Clip({
         ref={ref}
         dir={dir}
         className={cx(
-          'block w-full truncate text-center',
-          tight ? 'px-1' : 'px-1.5 py-0.5',
+          'block text-center',
+          lines > 1 ? 'line-clamp-2 whitespace-normal break-words' : 'truncate',
+          tight ? 'min-w-0 max-w-full px-1' : 'w-full px-1.5 py-0.5',
           clipped && 'cursor-help',
           FS,
           className,
@@ -565,15 +574,13 @@ function TeamCell({ row, canEdit, can, assign, lookups }: CellContext) {
              nothing here scrolls */
           <span
             key={p.key}
-            className={cx('flex items-center gap-0.5 overflow-hidden text-start leading-none', FS)}
+            className={cx('flex items-center justify-center gap-0.5 overflow-hidden leading-none', FS)}
             style={{ height: 'var(--vl-board-line, 1rem)' }}
           >
             {p.mark && <span className="shrink-0 text-[9px]">{p.mark}</span>}
             {/* מי שיוצא מהמחסן מתחיל בשעה אחרת מכולם, ולכן הסימון נשאר לצד השם */}
             {p.site === 'warehouse' && <span className="shrink-0 text-[9px]">🏭</span>}
-            <Clip tight className="text-start">
-              {p.name}
-            </Clip>
+            <Clip tight>{p.name}</Clip>
           </span>
         ))}
       </span>
@@ -630,7 +637,7 @@ export const BOARD_FIELDS: BoardField[] = [
      spent saying the same thing twice. */
   {
     key: 'end_client',
-    label: 'לקוח האירוע',
+    label: 'לקוח',
     render: ({ row }) => <Clip>{row.end_client_name ?? row.title ?? '—'}</Clip>,
   },
   {
@@ -783,10 +790,13 @@ export const BOARD_FIELDS: BoardField[] = [
     key: 'notes',
     editPerm: PERM.TASKS_EDIT_NOTES,
     label: 'הערות',
+    /* a note is the one field on the board that is prose, and a single line of
+       a 74px column is not enough of it to be worth reading */
+    grow: 2,
     render: ({ row, canEdit, patch }) => (
       <Editable
         canEdit={canEdit}
-        view={row.notes ? <Clip>{row.notes}</Clip> : <Muted>{canEdit ? 'הוספת הערה' : undefined}</Muted>}
+        view={row.notes ? <Clip lines={2}>{row.notes}</Clip> : <Muted>{canEdit ? 'הוספת הערה' : undefined}</Muted>}
         edit={(close) => (
           <input
             ref={openEditor}
