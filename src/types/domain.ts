@@ -159,7 +159,14 @@ export interface EventRow {
   statuses?: { name: string; color: string } | null
 }
 
-export type EventActivityKind = 'created' | 'changed' | 'note' | 'deleted' | 'restored'
+export type EventActivityKind =
+  | 'created'
+  | 'changed'
+  | 'note'
+  | 'deleted'
+  | 'restored'
+  | 'task_added'
+  | 'task_removed'
 
 /**
  * A line of an event's activity log, as `event_activity_feed` returns it: a
@@ -176,7 +183,7 @@ export interface EventActivity {
   field_label: string | null
   old_value: string | null
   new_value: string | null
-  /** 'note' rows only */
+  /** free text: 'note' rows, and the description of a task that came or went */
   note: string | null
   created_at: string
 }
@@ -329,7 +336,14 @@ export interface PricingHourComponent {
 export interface PricingWorkerAdjustment {
   id: string
   label: string
+  /** ברירת מחדל fixed — כך נקראת גם תוספת ישנה שנשמרה בלי השדה */
+  kind?: 'fixed' | 'per_unit'
+  /** fixed — כמות העובדים; per_unit — כמות העובדים לכל יחידה */
   add: number
+  /** per_unit — נתון הכמות, למשל truck_count */
+  input?: string
+  /** per_unit — חצי עובד אינו אדם, וכאן נקבע לאן מעגלים */
+  rounding?: 'none' | 'up' | 'down' | 'nearest'
   when?: PriceCond
 }
 

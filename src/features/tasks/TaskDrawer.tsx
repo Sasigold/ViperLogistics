@@ -287,6 +287,8 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       void qc.invalidateQueries({ queryKey: ['calendar'] })
       void qc.invalidateQueries({ queryKey: ['dashboard'] })
       void qc.invalidateQueries({ queryKey: ['task_pricing'] })
+      // יצירת משימה נרשמת ביומן של האירוע, ולכן היומן הפתוח מאחור מתיישן
+      void qc.invalidateQueries({ queryKey: ['event_activity'] })
       onClose()
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -325,6 +327,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       void qc.invalidateQueries({ queryKey: ['tasks'] })
       void qc.invalidateQueries({ queryKey: ['workboard'] })
       void qc.invalidateQueries({ queryKey: ['calendar'] })
+      void qc.invalidateQueries({ queryKey: ['event_activity'] })
       onClose()
     }
   }

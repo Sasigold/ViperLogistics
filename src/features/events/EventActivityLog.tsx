@@ -1,10 +1,11 @@
 /**
  * The event's activity log.
  *
- * Two kinds of entry share one timeline, on purpose. The database writes a row
- * whenever a tracked field on the event moves — כמות משאיות from 1 to 4 — and a
- * person writes a row when the reason for it is worth keeping. Read together
- * they answer "what happened to this event", which neither half answers alone.
+ * Three kinds of entry share one timeline, on purpose. The database writes a row
+ * whenever a tracked field on the event moves — כמות משאיות from 1 to 4 — and one
+ * whenever a task joins the event or leaves it; a person writes a row when the
+ * reason for any of it is worth keeping. Read together they answer "what
+ * happened to this event", which no one of them answers alone.
  *
  * Everything a save touched carries the same transaction timestamp, so changes
  * made in one save are folded into a single entry rather than listed as four
@@ -39,6 +40,8 @@ const KIND_COLORS: Record<EventActivityKind, string> = {
   note: '#1fa189',
   deleted: '#dc2626',
   restored: '#16a34a',
+  task_added: '#7c3aed',
+  task_removed: '#b45309',
 }
 
 const KIND_LABELS: Record<EventActivityKind, string> = {
@@ -47,6 +50,8 @@ const KIND_LABELS: Record<EventActivityKind, string> = {
   note: 'תיעוד',
   deleted: 'האירוע נמחק',
   restored: 'האירוע שוחזר',
+  task_added: 'משימה נוספה',
+  task_removed: 'משימה הוסרה',
 }
 
 /** One timeline entry: a note, a lifecycle event, or every field one save moved. */
@@ -220,12 +225,15 @@ export function EventActivityLog({ eventId, className }: { eventId: string; clas
                     ) : (
                       <span className="type-caption text-ink-tertiary">המערכת</span>
                     )}
-                    <Tooltip content={fmtDateTime(e.at)}>
-                      <span className="ms-auto type-caption tabular text-ink-tertiary">{fmtRelative(e.at)}</span>
+                    {/* התאריך והשעה הם מה שמצטטים אחר כך ("נוסף ב-12:40"),
+                        ולכן הם הכתוב; "לפני שעתיים" יושב ב-tooltip */}
+                    <Tooltip content={fmtRelative(e.at)}>
+                      <span className="ms-auto type-caption tabular text-ink-tertiary">{fmtDateTime(e.at)}</span>
                     </Tooltip>
                   </div>
 
-                  {e.kind === 'note' && (
+                  {/* גם הערה חופשית וגם משימה שנוספה או ירדה הן משפט אחד */}
+                  {e.note && (
                     <p className="mt-2 whitespace-pre-wrap type-body text-ink-primary bg-subtle/30 p-2.5 rounded border border-line-subtle/50">{e.note}</p>
                   )}
 

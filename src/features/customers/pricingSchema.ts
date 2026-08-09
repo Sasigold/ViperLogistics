@@ -109,6 +109,29 @@ export const COMPONENT_KINDS: KindDef<PricingComponent['kind']>[] = [
   { kind: 'var', label: 'לפי נתון', hint: 'סכום שמגיע מהנתונים', fields: ['input', 'multiplier'] },
 ]
 
+/**
+ * שתי הצורות של תוספת עובדים. 'fixed' היא הוותיקה — מספר קבוע כשהתנאי
+ * מתקיים. 'per_unit' סופרת לפי נתון, וזו התשובה ל"אין חניה ⇒ עובד לכל
+ * משאית": המאמץ גדל עם כמות המשאיות ולא עם עצם היעדר החניה.
+ */
+export const WORKER_ADJUST_KINDS: KindDef<'fixed' | 'per_unit'>[] = [
+  { kind: 'fixed', label: 'כמות קבועה', hint: 'מספר עובדים אחד, כשהתנאי מתקיים', fields: [] },
+  {
+    kind: 'per_unit',
+    label: 'לפי כמות',
+    hint: 'עובדים לכל יחידה — למשל עובד לכל משאית כשאין חניה',
+    fields: ['input'],
+  },
+]
+
+/** עיגול תוצאת per_unit, כי חצי עובד אינו אדם. */
+export const ADJUST_ROUNDING_LABEL: Record<string, string> = {
+  none: 'בלי עיגול',
+  up: 'כלפי מעלה',
+  down: 'כלפי מטה',
+  nearest: 'לקרוב ביותר',
+}
+
 export const WORKERS_BASIS_LABEL: Record<string, string> = {
   base: 'העובדים שהוזמנו',
   effective: 'העובדים בפועל (כולל תוספות)',

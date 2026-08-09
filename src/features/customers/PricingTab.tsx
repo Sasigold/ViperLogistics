@@ -48,6 +48,7 @@ import { useCustomerPricingRules, useTaskTypes } from '../../lib/queries'
 import { PricingZonesEditor } from '../pricing/PricingZonesEditor'
 import { errorMessage } from '../../lib/errors'
 import {
+  ADJUST_ROUNDING_LABEL,
   AFTER_KINDS,
   BOOLEAN_VARS,
   COMPONENT_KINDS,
@@ -59,6 +60,7 @@ import {
   PRICING_VARS,
   ROUNDING_LABEL,
   WORKERS_BASIS_LABEL,
+  WORKER_ADJUST_KINDS,
   moveItem,
   newId,
   normalizeConfig,
@@ -787,6 +789,7 @@ function WorkerHoursEditor({
         />
         <ul className="space-y-2">
           {adjustments.map((a, i) => {
+            const adjDef = WORKER_ADJUST_KINDS.find((k) => k.kind === (a.kind ?? 'fixed')) ?? WORKER_ADJUST_KINDS[0]
             const patch = (p: Partial<PricingWorkerAdjustment>) =>
               onChange({
                 workers: {
@@ -817,7 +820,62 @@ function WorkerHoursEditor({
                   <Input value={a.label} disabled={!canEdit} placeholder="שם התוספת" onChange={(e) => patch({ label: e.target.value })} />
                 }
               >
-                <NumField label="עובדים להוספה" value={a.add} disabled={!canEdit} onChange={(v) => patch({ add: v ?? 0 })} />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="סוג התוספת" hint={adjDef.hint}>
+                    <Select
+                      value={a.kind ?? 'fixed'}
+                      disabled={!canEdit}
+                      onChange={(e) => {
+                        const kind = e.target.value as PricingWorkerAdjustment['kind']
+                        // מעבר ל"לפי כמות" בלי נתון היה מייצר תוספת שמוסיפה
+                        // אפס בשקט, ולכן משאיות הן ברירת המחדל — זה הנתון
+                        // שבגללו הצורה הזו קיימת
+                        patch(
+                          kind === 'per_unit'
+                            ? { kind, input: a.input ?? 'truck_count', rounding: a.rounding ?? 'up' }
+                            : { kind },
+                        )
+                      }}
+                    >
+                      {WORKER_ADJUST_KINDS.map((k) => (
+                        <option key={k.kind} value={k.kind}>
+                          {k.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <NumField
+                    label={a.kind === 'per_unit' ? 'עובדים לכל יחידה' : 'עובדים להוספה'}
+                    value={a.add}
+                    disabled={!canEdit}
+                    onChange={(v) => patch({ add: v ?? 0 })}
+                  />
+                  {a.kind === 'per_unit' && (
+                    <>
+                      <VarSelect
+                        label="נתון הכמות"
+                        value={a.input ?? 'truck_count'}
+                        disabled={!canEdit}
+                        onChange={(v) => patch({ input: v })}
+                      />
+                      <Field label="עיגול" hint="חצי עובד אינו אדם">
+                        <Select
+                          value={a.rounding ?? 'none'}
+                          disabled={!canEdit}
+                          onChange={(e) =>
+                            patch({ rounding: e.target.value as PricingWorkerAdjustment['rounding'] })
+                          }
+                        >
+                          {Object.entries(ADJUST_ROUNDING_LABEL).map(([k, label]) => (
+                            <option key={k} value={k}>
+                              {label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                    </>
+                  )}
+                </div>
                 <div className="mt-3">
                   <Field label="רק כאשר">
                     <CondEditor when={a.when} disabled={!canEdit} onChange={(c) => patch({ when: c })} />
