@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import type { TouchEvent as ReactTouchEvent } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import listPlugin from '@fullcalendar/list'
@@ -49,6 +48,7 @@ import { PERM } from '../../lib/permissions'
 import { useCustomers, useStatuses } from '../../lib/queries'
 import { fmtDate } from '../../lib/dates'
 import { useIsMobile } from '../../lib/useMediaQuery'
+import { useSwipeNav } from '../../lib/useSwipeNav'
 import { EventFormModal } from '../events/EventFormModal'
 import { NEUTRAL, chipPaint } from '../../lib/colors'
 import type { SavedFilter } from '../../types/domain'
@@ -151,40 +151,23 @@ export default function CalendarPage() {
      A phone has no room for a row of navigation buttons over a month that is
      already fighting for every pixel, so the grid itself is the control: drag
      it right for the next period, left for the previous one — the direction
-     the page reads in. A drag that starts on an event belongs to the event
-     (that is how it is moved to another day), and a drag that is mostly
-     vertical belongs to the page's scroll.                                  */
+     the page reads in, with the grid following the finger the whole way. A
+     drag that starts on an event belongs to the event (that is how it is
+     moved to another day), and a drag that is mostly vertical belongs to the
+     page's scroll.                                                          */
 
-  const swipe = useRef<{ x: number; y: number; own: boolean } | null>(null)
-
-  const onTouchStart = useCallback(
-    (e: ReactTouchEvent) => {
-      if (!isMobile || e.touches.length !== 1) {
-        swipe.current = null
-        return
-      }
-      const t = e.touches[0]
-      const target = e.target as HTMLElement | null
-      const own = !target?.closest('.fc-event, .fc-popover, button, a, input, select')
-      swipe.current = { x: t.clientX, y: t.clientY, own }
-    },
-    [isMobile],
-  )
-
-  const onTouchEnd = useCallback((e: ReactTouchEvent) => {
-    const start = swipe.current
-    swipe.current = null
-    if (!start?.own || e.changedTouches.length !== 1) return
-    const t = e.changedTouches[0]
-    const dx = t.clientX - start.x
-    const dy = t.clientY - start.y
-    // a swipe is horizontal and deliberate, or it is not a swipe
-    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.4) return
-    const api = calRef.current?.getApi()
-    if (!api) return
-    if (dx > 0) api.next()
-    else api.prev()
-  }, [])
+  const {
+    surfaceRef: swipeRef,
+    trackStyle,
+    active: swiping,
+    swipeHandlers,
+  } = useSwipeNav({
+    onNext: useCallback(() => calRef.current?.getApi().next(), []),
+    onPrev: useCallback(() => calRef.current?.getApi().prev(), []),
+    enabled: isMobile,
+    pointers: 'touch',
+    ignore: '.fc-event, .fc-popover, button, a, input, select',
+  })
 
   // dragging an event rewrites events.event_date, which the column trigger
   // judges against events.change_date — gate the UI by the same key
@@ -729,14 +712,7 @@ export default function CalendarPage() {
 
       {/* not `overflow-hidden`: the day's popover ("+2") is portalled inside
           this card and a day in the last row would have it clipped away */}
-      <div
-        className="vl-calendar surface relative p-2 sm:p-3"
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        onTouchCancel={() => {
-          swipe.current = null
-        }}
-      >
+      <div ref={swipeRef} className="vl-calendar surface relative p-2 sm:p-3 touch-pan-y" {...swipeHandlers}>
         {/* thin top progress line instead of a spinner that blanks the grid */}
         <div
           aria-hidden
@@ -762,56 +738,62 @@ export default function CalendarPage() {
             )}
           </div>
         )}
-        <FullCalendar
-          ref={calRef}
-          plugins={[dayGridPlugin, listPlugin, interactionPlugin]}
-          initialView="dayGridMonth"
-          // on a phone the grid carries its own title above, and the swipe
-          // replaces prev/next — the toolbar is a row the month can have back
-          headerToolbar={
-            isMobile
-              ? false
-              : {
-                  start: 'prev,next today',
-                  center: 'title',
-                  end: 'dayGridMonth,dayGridWeek,listMonth',
-                }
-          }
-          buttonText={{ month: 'חודש', week: 'שבוע', day: 'יום', list: 'סדר יום', today: 'היום' }}
-          locale={heLocale}
-          direction="rtl"
-          height="auto"
-          editable={canEdit}
-          eventStartEditable={canEdit}
-          eventDurationEditable={false}
-          events={calEvents}
-          eventContent={renderEvent}
-          eventDrop={onDrop}
-          datesSet={(info) => {
-            setRange({ from: info.startStr.slice(0, 10), to: info.endStr.slice(0, 10) })
-            setView(info.view.type as ViewKey)
-            const now = new Date()
-            // the *period* the view is on (the month, the week), not the grid's
-            // visible days — a month grid also shows a few of its neighbours'
-            setNav({
-              title: info.view.title,
-              showsToday: now >= info.view.currentStart && now < info.view.currentEnd,
-            })
-          }}
-          eventClick={(info) => navigate(`/events/${info.event.id}`)}
-          /* events, not rows: a cell shows three of them and says how many it
-             is holding back, rather than spending one of the three saying it */
-          dayMaxEvents={isMobile ? 3 : 4}
-          /* "+2" and nothing else — "עוד 2" costs half the width of a cell on
-             a phone, and the number is the whole message */
-          moreLinkContent={(arg) => `+${arg.num}`}
-          moreLinkHint={(n) => `עוד ${n} אירועים ביום הזה`}
-          /* the link opens the day itself: every event it has, in a panel over
-             the grid, each one still a tap away from its own screen */
-          moreLinkClick="popover"
-          dayPopoverFormat={{ weekday: 'long', day: 'numeric', month: 'long' }}
-          noEventsContent={() => <EmptyState compact art="calendar" title="אין אירועים בטווח הזה" />}
-        />
+        {/* the clip is only on while the grid is off its mark: with it on for
+            good, a day's "+2" popover in the last row would be cut away */}
+        <div className={cx(swiping && 'overflow-hidden')}>
+          <div style={trackStyle}>
+            <FullCalendar
+              ref={calRef}
+              plugins={[dayGridPlugin, listPlugin, interactionPlugin]}
+              initialView="dayGridMonth"
+              // on a phone the grid carries its own title above, and the swipe
+              // replaces prev/next — the toolbar is a row the month can have back
+              headerToolbar={
+                isMobile
+                  ? false
+                  : {
+                      start: 'prev,next today',
+                      center: 'title',
+                      end: 'dayGridMonth,dayGridWeek,listMonth',
+                    }
+              }
+              buttonText={{ month: 'חודש', week: 'שבוע', day: 'יום', list: 'סדר יום', today: 'היום' }}
+              locale={heLocale}
+              direction="rtl"
+              height="auto"
+              editable={canEdit}
+              eventStartEditable={canEdit}
+              eventDurationEditable={false}
+              events={calEvents}
+              eventContent={renderEvent}
+              eventDrop={onDrop}
+              datesSet={(info) => {
+                setRange({ from: info.startStr.slice(0, 10), to: info.endStr.slice(0, 10) })
+                setView(info.view.type as ViewKey)
+                const now = new Date()
+                // the *period* the view is on (the month, the week), not the grid's
+                // visible days — a month grid also shows a few of its neighbours'
+                setNav({
+                  title: info.view.title,
+                  showsToday: now >= info.view.currentStart && now < info.view.currentEnd,
+                })
+              }}
+              eventClick={(info) => navigate(`/events/${info.event.id}`)}
+              /* events, not rows: a cell shows three of them and says how many it
+                 is holding back, rather than spending one of the three saying it */
+              dayMaxEvents={isMobile ? 3 : 4}
+              /* "+2" and nothing else — "עוד 2" costs half the width of a cell on
+                 a phone, and the number is the whole message */
+              moreLinkContent={(arg) => `+${arg.num}`}
+              moreLinkHint={(n) => `עוד ${n} אירועים ביום הזה`}
+              /* the link opens the day itself: every event it has, in a panel over
+                 the grid, each one still a tap away from its own screen */
+              moreLinkClick="popover"
+              dayPopoverFormat={{ weekday: 'long', day: 'numeric', month: 'long' }}
+              noEventsContent={() => <EmptyState compact art="calendar" title="אין אירועים בטווח הזה" />}
+            />
+          </div>
+        </div>
       </div>
 
       {/* the key to the grid's colours. Each entry is also the filter for its
