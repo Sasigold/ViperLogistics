@@ -98,6 +98,15 @@ OUT="$OUT
 $OUT6"
 
 echo
+echo "== events import suite =="
+# 08 מקימה לקוח ואנשי צוות משלה ומייבאת אירועים חדשים, ולכן היא רצה אחרי כל
+# מי שסופר שורות. היא אינה נשענת על ההרשאות של f1, ש-06 מזיזה.
+OUT7=$($PSQL -d vl -f "$HERE/08_import_tasks.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT7"
+OUT="$OUT
+$OUT7"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

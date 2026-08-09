@@ -1,32 +1,90 @@
 import { useRef, useState } from 'react'
 import ExcelJS from 'exceljs'
 import { useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CircleCheck, Download, FileSpreadsheet, ICON, STROKE, Upload } from '../../components/ui/icons'
+import {
+  AlertTriangle,
+  CircleCheck,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  ICON,
+  STROKE,
+  Upload,
+} from '../../components/ui/icons'
 import { supabase } from '../../lib/supabase'
 import { Button, Modal, Spinner, useToast } from '../../components/ui'
-import { useCustomers } from '../../lib/queries'
+import { useCustomers, useExecutionMethods, useTaskTypes } from '../../lib/queries'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { errorMessage } from '../../lib/errors'
+import {
+  EVENTS_SHEET,
+  EVENT_COLUMNS,
+  TASKS_SHEET,
+  TASK_COLUMNS,
+  buildImportPayload,
+  buildSamplePlan,
+  buildTemplatePlan,
+  groupTasks,
+  normalizeCell,
+  parseEventSheet,
+  parseSheet,
+} from './eventsWorkbook'
+import type { Matrix, SheetPlan, SheetRow } from './eventsWorkbook'
 
-const headers = [
-  ['customer_name', 'שם לקוח במערכת'],
-  ['end_client_name', 'שם לקוח האירוע'],
-  ['event_number', 'מספר אירוע'],
-  ['event_date', 'תאריך אירוע (YYYY-MM-DD)'],
-  ['location_text', 'מיקום'],
-  ['location_notes', 'הערות למיקום'],
-  ['volume_m', 'נפח במטר'],
-  ['truck_count', 'כמות משאיות'],
-  ['contact_name', 'איש קשר'],
-  ['contact_phone', 'טלפון איש קשר'],
-  ['notes', 'הערות'],
-] as const
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+/** כותב תוכנית גיליונות לחוברת ExcelJS ומוריד אותה. */
+async function downloadWorkbook(plans: SheetPlan[], filename: string) {
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'ViperLogistics'
+  for (const plan of plans) {
+    const ws = wb.addWorksheet(plan.name, { views: [{ rightToLeft: true, state: 'frozen', ySplit: 1 }] })
+    if (plan.intro?.length) {
+      // הכותרות יורדות מתחת לטקסט, ולכן אין כאן הקפאת שורה — היא הייתה מקפיאה
+      // את שורת ההסבר הראשונה במקום את הכותרות.
+      ws.views = [{ rightToLeft: true }]
+      for (const line of plan.intro) {
+        const row = ws.addRow([line])
+        if (line && !line.startsWith(' ')) row.font = { bold: !/^\d/.test(line) }
+      }
+      ws.addRow([])
+    }
+    const header = ws.addRow(plan.columns.map((c) => c.header))
+    header.font = { bold: true }
+    plan.columns.forEach((c, i) => {
+      ws.getColumn(i + 1).width = c.width
+    })
+    for (const r of plan.rows) ws.addRow(plan.columns.map((c) => r[c.key] ?? ''))
+  }
+
+  const buf = await wb.xlsx.writeBuffer()
+  const url = URL.createObjectURL(new Blob([buf], { type: XLSX_MIME }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+/** גיליון ExcelJS → מטריצת מחרוזות. שורה 0 היא הכותרות. */
+function sheetToMatrix(ws: ExcelJS.Worksheet | undefined): Matrix {
+  if (!ws) return []
+  const matrix: Matrix = []
+  ws.eachRow((row) => {
+    const values = row.values as ExcelJS.CellValue[]
+    // ExcelJS מחזיר מערך 1-בסיסי: התא הראשון הוא values[1].
+    matrix.push(values.slice(1).map(normalizeCell))
+  })
+  return matrix
+}
 
 export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast()
   const qc = useQueryClient()
   const { data: customers = [] } = useCustomers()
+  const { data: taskTypes = [] } = useTaskTypes()
+  const { data: executionMethods = [] } = useExecutionMethods()
   const has = useAuth((s) => s.has)
   /**
    * Export and import were both reachable by anyone who could open the events
@@ -38,7 +96,11 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
   const canSeeContacts = has(PERM.EVENTS_VIEW_CONTACTS)
   const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<{ imported: number; errors: { row: number; error: string }[] } | null>(null)
+  const [result, setResult] = useState<{
+    imported: number
+    tasks_imported?: number
+    errors: { row: number; error: string }[]
+  } | null>(null)
 
   const exportEvents = async () => {
     setBusy(true)
@@ -54,34 +116,70 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
         .limit(5000)
       if (error) throw error
 
-      const wb = new ExcelJS.Workbook()
-      const ws = wb.addWorksheet('אירועים', { views: [{ rightToLeft: true }] })
-      ws.columns = headers.map(([key, label]) => ({ header: label, key, width: 20 }))
-      ws.getRow(1).font = { bold: true }
-      for (const e of data as Record<string, unknown>[]) {
+      const rows = data as Record<string, unknown>[]
+      // מזהה השורה מיוצר כאן ולא נשמר במסד — הוא קיים כדי שגיליון המשימות
+      // יוכל להצביע על שורת האירוע, וכדי שקובץ שיצא יוכל לחזור פנימה.
+      const keyById = new Map(rows.map((e, i) => [e.id as string, String(i + 1)]))
+
+      const eventRows: SheetRow[] = rows.map((e) => {
         const contact = e.event_contacts as { contact_name?: string; contact_phone?: string } | null
-        ws.addRow({
+        return {
+          row_key: keyById.get(e.id as string) ?? '',
           customer_name: (e.customers as { name: string } | null)?.name ?? '',
-          end_client_name: e.end_client_name ?? '',
-          event_number: e.event_number ?? '',
-          event_date: e.event_date ?? '',
-          location_text: e.location_text ?? '',
-          location_notes: e.location_notes ?? '',
-          volume_m: e.volume_m ?? '',
-          truck_count: e.truck_count ?? '',
+          end_client_name: String(e.end_client_name ?? ''),
+          event_number: String(e.event_number ?? ''),
+          event_date: String(e.event_date ?? ''),
+          location_text: String(e.location_text ?? ''),
+          location_notes: String(e.location_notes ?? ''),
+          volume_m: String(e.volume_m ?? ''),
+          truck_count: String(e.truck_count ?? ''),
           contact_name: contact?.contact_name ?? '',
           contact_phone: contact?.contact_phone ?? '',
-          notes: e.notes ?? '',
-        })
+          notes: String(e.notes ?? ''),
+        }
+      })
+
+      // הסינון מפוצל למנות: רשימת מזהים באורך אלפים נכנסת ל-query string של
+      // PostgREST ומפוצצת את אורך ה-URL.
+      const ids = [...keyById.keys()]
+      const tasks: Record<string, unknown>[] = []
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data: chunk, error: taskError } = await supabase
+          .from('tasks')
+          .select(
+            'event_id, title, task_date, warehouse_start_time, onsite_start_time, hours_count, ' +
+              'worker_count, truck_free_text, location_text, notes, ' +
+              'task_types(name), execution_methods(name)',
+          )
+          .in('event_id', ids.slice(i, i + 200))
+          .is('deleted_at', null)
+          .order('task_date')
+        if (taskError) throw taskError
+        tasks.push(...(chunk as unknown as Record<string, unknown>[]))
       }
-      const buf = await wb.xlsx.writeBuffer()
-      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `events-${new Date().toISOString().slice(0, 10)}.xlsx`
-      a.click()
-      URL.revokeObjectURL(url)
+
+      const taskRows: SheetRow[] = tasks.map((t) => ({
+        row_key: keyById.get(t.event_id as string) ?? '',
+        task_type: (t.task_types as { name: string } | null)?.name ?? '',
+        title: String(t.title ?? ''),
+        task_date: String(t.task_date ?? ''),
+        warehouse_start_time: String(t.warehouse_start_time ?? '').slice(0, 5),
+        onsite_start_time: String(t.onsite_start_time ?? '').slice(0, 5),
+        hours_count: String(t.hours_count ?? ''),
+        worker_count: String(t.worker_count ?? ''),
+        execution_method: (t.execution_methods as { name: string } | null)?.name ?? '',
+        truck_free_text: String(t.truck_free_text ?? ''),
+        location_text: String(t.location_text ?? ''),
+        notes: String(t.notes ?? ''),
+      }))
+
+      await downloadWorkbook(
+        [
+          { name: EVENTS_SHEET, columns: EVENT_COLUMNS, rows: eventRows },
+          { name: TASKS_SHEET, columns: TASK_COLUMNS, rows: taskRows },
+        ],
+        `events-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      )
     } catch (e) {
       toast.error(errorMessage(e))
     } finally {
@@ -95,37 +193,27 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
     try {
       const wb = new ExcelJS.Workbook()
       await wb.xlsx.load(await file.arrayBuffer())
-      const ws = wb.worksheets[0]
-      if (!ws) throw new Error('הקובץ ריק')
+      // איתור לפי שם, ובקובץ שנכתב ידנית — לפי מיקום. קובץ בן גיליון אחד
+      // נשאר ייבוא אירועים בלבד, בדיוק כמו לפני שהמשימות נוספו.
+      const eventsWs = wb.getWorksheet(EVENTS_SHEET) ?? wb.worksheets[0]
+      const tasksWs = wb.getWorksheet(TASKS_SHEET) ?? (wb.worksheets.length > 1 ? wb.worksheets[1] : undefined)
+      if (!eventsWs) throw new Error('הקובץ ריק')
 
-      const rows: Record<string, unknown>[] = []
-      ws.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return
-        const values = row.values as ExcelJS.CellValue[]
-        const rec: Record<string, unknown> = {}
-        headers.forEach(([key], i) => {
-          let v = values[i + 1]
-          if (v && typeof v === 'object' && 'text' in v) v = (v as { text: string }).text
-          if (v instanceof Date) v = v.toISOString().slice(0, 10)
-          rec[key] = v == null ? '' : String(v).trim()
-        })
-        if (Object.values(rec).some((v) => v !== '')) rows.push(rec)
-      })
-      if (rows.length === 0) throw new Error('לא נמצאו שורות לייבוא')
+      const events = parseEventSheet(sheetToMatrix(eventsWs))
+      if (events.length === 0) throw new Error('לא נמצאו שורות לייבוא')
+      const taskRows = tasksWs === eventsWs ? [] : parseSheet(sheetToMatrix(tasksWs), TASK_COLUMNS)
 
-      // resolve customer names -> ids
-      const payloads = rows.map((r) => {
-        const customer = customers.find((c) => c.name === r.customer_name)
-        return { ...r, customer_id: customer?.id ?? null, customer_name: undefined }
-      })
-      const missing = payloads.filter((p) => !p.customer_id)
-      if (missing.length) {
-        throw new Error(`לקוחות לא מוכרים בקובץ: ${[...new Set(missing.map((m) => m.customer_name ?? rows[payloads.indexOf(m)]?.customer_name))].join(', ') || 'שם לקוח חסר'}`)
+      const { tasksByKey, errors } = groupTasks(events, taskRows)
+      if (errors.length) throw new Error(errors.join(' · '))
+
+      const { payloads, unknownCustomers } = buildImportPayload(events, tasksByKey, customers)
+      if (unknownCustomers.length) {
+        throw new Error(`לקוחות לא מוכרים בקובץ: ${unknownCustomers.join(', ')}`)
       }
 
       const { data, error } = await supabase.rpc('bulk_import_events', { p_rows: payloads })
       if (error) throw error
-      setResult(data as { imported: number; errors: { row: number; error: string }[] })
+      setResult(data as { imported: number; tasks_imported?: number; errors: { row: number; error: string }[] })
       void qc.invalidateQueries({ queryKey: ['events'] })
       void qc.invalidateQueries({ queryKey: ['calendar'] })
       void qc.invalidateQueries({ queryKey: ['workboard'] })
@@ -137,27 +225,24 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
     }
   }
 
-  const downloadTemplate = async () => {
-    const wb = new ExcelJS.Workbook()
-    const ws = wb.addWorksheet('אירועים', { views: [{ rightToLeft: true }] })
-    ws.columns = headers.map(([key, label]) => ({ header: label, key, width: 20 }))
-    ws.getRow(1).font = { bold: true }
-    const buf = await wb.xlsx.writeBuffer()
-    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'events-template.xlsx'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
+  const downloadTemplate = () => downloadWorkbook(buildTemplatePlan(), 'events-template.xlsx')
+
+  const downloadSample = () =>
+    downloadWorkbook(
+      buildSamplePlan({
+        customers: customers.map((c) => c.name),
+        taskTypes: taskTypes.filter((t) => t.is_active).map((t) => t.name),
+        executionMethods: executionMethods.filter((m) => m.is_active).map((m) => m.name),
+      }),
+      'events-sample.xlsx',
+    )
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title="ייבוא / ייצוא אירועים"
-      description="קובצי Excel בפורמט xlsx, עם כותרות בעברית"
+      description="קובץ Excel עם גיליון אירועים וגיליון משימות"
       footer={<Button onClick={onClose}>סגירה</Button>}
     >
       {busy ? (
@@ -167,17 +252,23 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             {canExport && (
               <ActionTile
                 icon={<Download size={ICON.xl} strokeWidth={STROKE} />}
                 title="ייצוא אירועים"
-                description={canSeeContacts ? 'כל האירועים הפעילים לקובץ' : 'ללא פרטי אנשי קשר'}
+                description={canSeeContacts ? 'כל האירועים הפעילים והמשימות שלהם' : 'ללא פרטי אנשי קשר'}
                 onClick={() => void exportEvents()}
               />
             )}
             {canImport && (
               <>
+                <ActionTile
+                  icon={<FileText size={ICON.xl} strokeWidth={STROKE} />}
+                  title="הורדת קובץ לדוגמה"
+                  description="אירועים ומשימות מלאים, עם גיליון הסבר"
+                  onClick={() => void downloadSample()}
+                />
                 <ActionTile
                   icon={<FileSpreadsheet size={ICON.xl} strokeWidth={STROKE} />}
                   title="הורדת תבנית"
@@ -186,7 +277,7 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
                 />
                 <ActionTile
                   icon={<Upload size={ICON.xl} strokeWidth={STROKE} />}
-                  title="ייבוא מקובץ"
+                  title="ייבוא אירועים ומשימות"
                   description="בחירת xlsx להעלאה"
                   primary
                   onClick={() => fileRef.current?.click()}
@@ -207,8 +298,10 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
 
           <div className="rounded-lg border border-info-border bg-info-subtle px-3 py-2.5">
             <p className="type-caption text-info-text">
-              הייבוא מזהה לקוח לפי "שם לקוח במערכת" ומחיל את שדות החובה שהוגדרו לכל לקוח.
-              כל אירוע שנוצר מקבל אוטומטית משימות הקמה ופירוק.
+              גיליון "אירועים" — שורה לכל אירוע. גיליון "משימות" — שורה לכל משימה, מקושרת לאירוע
+              דרך עמודת "מזהה שורה". הייבוא מזהה לקוח לפי "שם לקוח במערכת" ומחיל את שדות החובה
+              שהוגדרו לכל לקוח. משימות ההקמה והפירוק נוצרות לכל אירוע ממילא, ושורה בגיליון המשימות
+              ממלאת אותן במקום להכפיל. אפשר להעלות גם קובץ בן גיליון אחד.
             </p>
           </div>
 
@@ -217,7 +310,8 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
               <div className="flex items-center gap-2 rounded-lg border border-success-border bg-success-subtle px-3 py-2.5">
                 <CircleCheck size={ICON.md} className="shrink-0 text-success-text" strokeWidth={STROKE} />
                 <p className="type-body font-medium text-success-text">
-                  {result.imported} אירועים יובאו בהצלחה
+                  {result.imported} אירועים
+                  {result.tasks_imported ? ` ו-${result.tasks_imported} משימות` : ''} יובאו בהצלחה
                 </p>
               </div>
               {result.errors.length > 0 && (
