@@ -83,17 +83,25 @@ export function buildTones(rows: WorkBoardRow[], colorBy: ColorBy): Map<string, 
 }
 
 export interface Cluster {
+  /** unique within the day — one event can appear as more than one run when
+   *  another event's task falls between two of its own */
   key: string
+  /** the identity every run of the same group shares, for colour and hover */
+  groupKey: string
   label: string
   tone: GroupTone | null
   rows: WorkBoardRow[]
 }
 
 /**
- * Orders one day's tasks so that everything from the same event sits together:
- * rows are clustered first, then the clusters are placed by their leading row.
- * Without this the colours would be right but scattered, which is exactly the
- * scanning problem they exist to solve.
+ * Lays one day's tasks out in the order the reader asked for — by start time on
+ * site unless they chose otherwise — and then gathers *consecutive* rows of the
+ * same event into a run.
+ *
+ * The order comes first on purpose: a schedule is read down the clock, and
+ * grouping the whole event together used to move a 18:00 teardown up beside its
+ * own 06:00 setup, ahead of everything that actually happens in between. The
+ * hue still ties the event together wherever its tasks land.
  */
 export function clusterDay(
   rows: WorkBoardRow[],
@@ -101,22 +109,21 @@ export function clusterDay(
   tones: Map<string, GroupTone>,
   cmp: (a: WorkBoardRow, b: WorkBoardRow) => number,
 ): Cluster[] {
-  const byKey = new Map<string, WorkBoardRow[]>()
-  for (const row of rows) {
-    const key = clusterKeyOf(row, colorBy)
-    const list = byKey.get(key)
-    if (list) list.push(row)
-    else byKey.set(key, [row])
-  }
-  return [...byKey.entries()]
-    .map(([key, list]) => {
-      const sorted = [...list].sort(cmp)
-      return {
-        key,
-        label: groupLabelOf(sorted[0], colorBy),
-        tone: tones.get(key) ?? null,
-        rows: sorted,
-      }
+  const runs: Cluster[] = []
+  for (const row of [...rows].sort(cmp)) {
+    const groupKey = clusterKeyOf(row, colorBy)
+    const last = runs[runs.length - 1]
+    if (last && last.groupKey === groupKey) {
+      last.rows.push(row)
+      continue
+    }
+    runs.push({
+      key: `${groupKey}#${runs.length}`,
+      groupKey,
+      label: groupLabelOf(row, colorBy),
+      tone: tones.get(groupKey) ?? null,
+      rows: [row],
     })
-    .sort((a, b) => cmp(a.rows[0], b.rows[0]))
+  }
+  return runs
 }

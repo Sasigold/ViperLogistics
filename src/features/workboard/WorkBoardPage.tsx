@@ -15,7 +15,6 @@ import {
   Filter,
   ICON,
   MapPin,
-  Pencil,
   Plus,
   STROKE,
   Search,
@@ -469,9 +468,18 @@ export default function WorkBoardPage() {
       if (sortBy === 'customer') return (a.customer_name ?? '').localeCompare(b.customer_name ?? '', 'he')
       if (sortBy === 'status') return a.status_name.localeCompare(b.status_name, 'he')
       if (sortBy === 'type') return a.task_type_name.localeCompare(b.task_type_name, 'he')
-      const at = a.onsite_start_time ?? a.warehouse_start_time ?? '99:99'
-      const bt = b.onsite_start_time ?? b.warehouse_start_time ?? '99:99'
-      return at.localeCompare(bt)
+      /* the hour the crew is due on site, and only that one: a warehouse
+         call at 05:00 is not what the day is read by, and letting it stand
+         in for a missing on-site time put those tasks first */
+      const at = a.onsite_start_time ?? '99:99'
+      const bt = b.onsite_start_time ?? '99:99'
+      if (at !== bt) return at.localeCompare(bt)
+      /* same on-site hour (or none at all) — leaving is the next thing that
+         separates them, then the name, so the order never wobbles */
+      const aw = a.warehouse_start_time ?? '99:99'
+      const bw = b.warehouse_start_time ?? '99:99'
+      if (aw !== bw) return aw.localeCompare(bw)
+      return (a.customer_name ?? '').localeCompare(b.customer_name ?? '', 'he')
     }
 
     const cols: BoardColumn[] = []
@@ -501,7 +509,7 @@ export default function WorkBoardPage() {
               id: row.id,
               row,
               dayKey,
-              groupKey: cluster.key,
+              groupKey: cluster.groupKey,
               tone: cluster.tone,
             })
             offset += metrics.col
@@ -1294,7 +1302,6 @@ const MobileTaskCard = memo(function MobileTaskCard({
     ...(row.drivers ?? []).map((d) => d.name),
     ...(row.contractor_worker_list ?? []).map((w) => w.name),
   ]
-  const short = row.worker_count > 0 && team.length < row.worker_count
 
   return (
     <div
@@ -1348,14 +1355,11 @@ const MobileTaskCard = memo(function MobileTaskCard({
           ) : (
             <span className="type-caption text-ink-tertiary">לא שובץ</span>
           )}
+          {/* how many the job calls for — not how many of them are seated yet:
+              the names right beside it are the answer to that */}
           {row.worker_count > 0 && (
-            <span
-              className={cx(
-                'rounded px-1 type-caption font-bold tabular',
-                short ? 'bg-warning-subtle text-warning-text' : 'bg-success-subtle text-success-text',
-              )}
-            >
-              {team.length}/{row.worker_count}
+            <span className="rounded bg-subtle px-1 type-caption font-bold tabular text-ink-secondary">
+              {row.worker_count} עובדים
             </span>
           )}
         </span>
@@ -1418,14 +1422,18 @@ const TaskHeader = memo(function TaskHeader({
     <div
       onMouseEnter={() => onHover(groupKey)}
       onMouseLeave={() => onHover(null)}
-      className="group relative flex h-full items-center gap-1 border-b border-line px-1.5"
+      className="group relative flex h-full items-center justify-center border-b border-line px-1.5"
       style={{ background: fill, color: readableOn(fill) }}
     >
+      {/* nothing sits beside the name. The pencil that used to live here was a
+          five-pixel target against the edge of a column the reader is dragging
+          past, and every graze of it opened the task for editing — the name
+          itself still opens it on a double press. */}
       <Tooltip content={eventId ? `${label} — לחיצה לאירוע, לחיצה כפולה למשימה` : `${label} — לחיצה כפולה למשימה`}>
         <button
           onClick={onName}
           className={cx(
-            'min-w-0 flex-1 touch-manipulation truncate text-center type-caption font-bold',
+            'min-w-0 max-w-full touch-manipulation truncate text-center type-caption font-bold',
             /* the underline promises the event page — without one to go to,
                the name is still pressable but promises nothing */
             eventId && 'hover:underline',
@@ -1434,18 +1442,6 @@ const TaskHeader = memo(function TaskHeader({
           {label}
         </button>
       </Tooltip>
-      <IconButton
-        label="פתיחת המשימה"
-        size="sm"
-        bare
-        className="size-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-        /* inline so it beats the ghost variant's own colour, which would go
-           dark-on-dark the moment a customer picks a deep hue */
-        style={{ color: 'inherit' }}
-        onClick={() => onOpen(row.id)}
-      >
-        <Pencil size={12} />
-      </IconButton>
     </div>
   )
 })

@@ -710,30 +710,18 @@ export const BOARD_FIELDS: BoardField[] = [
     key: 'worker_count',
     editPerm: PERM.TASKS_CHANGE_WORKER_COUNT,
     label: 'כמות עובדים',
-    render: ({ row, canEdit, patch }) => {
-      const assigned = (row.workers?.length ?? 0) + (row.contractor_worker_list?.length ?? 0)
-      const short = row.worker_count > 0 && assigned < row.worker_count
-      return (
-        <NumberCell
-          canEdit={canEdit}
-          value={row.worker_count}
-          label="כמות עובדים נדרשת"
-          view={
-            <span className="flex items-center justify-center gap-1">
-              <span className={cx('tabular', FS)}>{row.worker_count}</span>
-              {short && (
-                <Tooltip content={`משובצים ${assigned} מתוך ${row.worker_count}`}>
-                  <span className="shrink-0 rounded bg-warning-subtle px-1 text-[10px] font-bold tabular text-warning-text">
-                    {assigned}/{row.worker_count}
-                  </span>
-                </Tooltip>
-              )}
-            </span>
-          }
-          onCommit={(v) => patch(row, { worker_count: v ?? 0 })}
-        />
-      )
-    },
+    /* the number required, on its own. The "3/5 משובצים" badge that used to
+       ride alongside it answered a question the צוות row below already answers
+       by name, and it turned a one-figure cell into two competing figures. */
+    render: ({ row, canEdit, patch }) => (
+      <NumberCell
+        canEdit={canEdit}
+        value={row.worker_count}
+        label="כמות עובדים נדרשת"
+        view={<span className={cx('tabular', FS)}>{row.worker_count}</span>}
+        onCommit={(v) => patch(row, { worker_count: v ?? 0 })}
+      />
+    ),
   },
   {
     key: 'event_truck_count',
