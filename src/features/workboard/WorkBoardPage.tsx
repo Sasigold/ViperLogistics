@@ -138,6 +138,21 @@ type SortKey = (typeof SORTS)[number]['key']
 
 const PREFS_KEY = 'vl-board-prefs'
 
+/**
+ * מערך ריק *אחד* לכל ברירות המחדל של השאילתות בעמוד הזה.
+ *
+ * ‏`const { data: rows = [] }` נראה תמים, אבל כל עוד השאילתה לא החזירה — כלומר
+ * בדיוק בזמן הכניסה למסך ובזמן החלפת חודש — הוא מייצר מערך *חדש* בכל render.
+ * המערך הזה הוא התלות של `tones`, של `dayKeys` ושל `columns`, ולכן כל השרשרת
+ * מחושבת מחדש, `columns` מקבל זהות חדשה, ה-layout effect שמודד את הווירטואלייזר
+ * רץ שוב, `measure()` מבקש render — וחוזר חלילה. אחרי חמישים סיבובים React
+ * עוצר את הלולאה עם שגיאה #185 ("Maximum update depth exceeded"), וזה מה
+ * שהמשתמש ראה ככרטיס "משהו נשבר במסך הזה".
+ *
+ * קבוע יחיד שומר על זהות יציבה, והשרשרת נחה עד שיש נתונים אמיתיים.
+ */
+const EMPTY: never[] = []
+
 interface Prefs {
   hidden?: string[]
   density?: Density
@@ -325,17 +340,17 @@ export default function WorkBoardPage() {
   }, [hidden, density, sortBy, colorBy, showEmptyDays, viewMode])
 
   const { data: customers = [] } = useCustomers()
-  const { data: statuses = [] } = useStatuses('task')
-  const { data: taskTypes = [] } = useTaskTypes()
-  const { data: contractors = [] } = useContractors()
-  const { data: methods = [] } = useExecutionMethods()
-  const { data: trucks = [] } = useTrucks()
+  const { data: statuses = EMPTY } = useStatuses('task')
+  const { data: taskTypes = EMPTY } = useTaskTypes()
+  const { data: contractors = EMPTY } = useContractors()
+  const { data: methods = EMPTY } = useExecutionMethods()
+  const { data: trucks = EMPTY } = useTrucks()
   /* only fetched for the staffing cells, and those are gated by the same key */
-  const { data: staff = [] } = useStaff(has(PERM.BOARD_VIEW_STAFFING))
+  const { data: staff = EMPTY } = useStaff(has(PERM.BOARD_VIEW_STAFFING))
   const inline = useInlineUpdate()
   const staffing = useAssignmentUpdate()
 
-  const { data: rows = [], isLoading } = useQuery({
+  const { data: rows = EMPTY, isLoading } = useQuery({
     queryKey: ['workboard', 'range', from, to, filters],
     queryFn: async () => {
       let q = supabase
@@ -456,7 +471,7 @@ export default function WorkBoardPage() {
 
   /* ── group by day, then lay the columns out in reading order ───────────── */
 
-  const { columns, bands, totalWidth, daysForList } = useMemo(() => {
+  const { columns, bands, totalWidth, daysForList, sizeKey } = useMemo(() => {
     const byDay = new Map<string, WorkBoardRow[]>()
     for (const r of rows) {
       const list = byDay.get(r.task_date)
@@ -528,7 +543,13 @@ export default function WorkBoardPage() {
       }
     }
 
-    return { columns: cols, bands: bandList, totalWidth: offset, daysForList: dayList }
+    /* חתימה סקלרית של כל מה שרוחב עמודה נגזר ממנו — סוג העמודה והאם היא
+       נושאת את הרווח של סוף היום. היא, ולא זהות המערך, מה שמפעיל את המדידה
+       מחדש: כך רענון של `columns` שאינו משנה דבר ברוחבים אינו יכול לגרור
+       render נוסף, וגם לא לולאה. */
+    const sizeKey = `${metrics.col}/${metrics.empty}/${cols.map((c) => (c.gapAfter ? c.kind[0].toUpperCase() : c.kind[0])).join('')}`
+
+    return { columns: cols, bands: bandList, totalWidth: offset, daysForList: dayList, sizeKey }
   }, [rows, dayKeys, sortBy, collapsedDays, metrics.col, metrics.empty, colorBy, tones])
 
   /* ── horizontal virtualization (RTL-aware) ───────────────────────────── */
@@ -559,10 +580,15 @@ export default function WorkBoardPage() {
      ours and updates immediately, so a frame with the new track and the old
      columns would be a visible jump. Keyed on `columns` rather than on the
      metrics: which column carries a day's trailing gap can move without the
-     count changing, and that is exactly the case react-virtual cannot see. */
+     count changing, and that is exactly the case react-virtual cannot see.
+
+     התלות היא `sizeKey` ולא `columns` עצמו — מחרוזת שנגזרת מאותם נתונים בדיוק,
+     אבל שנשארת שווה לעצמה כשהמערך נבנה מחדש בלי שרוחב כלשהו זז. ‏`measure()`
+     מבקש render, ו-render שמייצר `columns` חדש היה מחזיר אותנו לכאן: זו הלולאה
+     שהפילה את המסך בשגיאה #185. */
   useLayoutEffect(() => {
     virtualizer.measure()
-  }, [virtualizer, columns])
+  }, [virtualizer, sizeKey])
 
   /* Day bands aren't virtualized — they're absolutely placed over the same
      track — so they're clipped to what the viewport can actually reach. */
