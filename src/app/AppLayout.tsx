@@ -313,7 +313,7 @@ export default function AppLayout() {
                  and the last field rows sat underneath it with no way to
                  reach them. The padding gives the board's own scroller an end
                  that is on the screen. */
-              location.pathname.startsWith('/board')
+              location.pathname.startsWith('/board') || location.pathname === '/my/schedule'
                 ? 'p-2 pb-shell sm:p-2.5 sm:pb-shell lg:p-3 lg:pb-3 overflow-hidden'
                 : 'overflow-y-auto overscroll-contain p-3 pb-shell sm:p-4 sm:pb-shell lg:p-6 lg:pb-6',
             )}
@@ -459,9 +459,13 @@ function Breadcrumbs() {
   const detailTitle = useCurrentPageTitle()
 
   const segments = pathname.split('/').filter(Boolean)
-  const rootPath = segments.length === 0 ? '/' : `/${segments[0]}`
-  const rootLabel = ROUTE_LABELS[rootPath] ?? rootPath
-  const isDetail = segments.length > 1
+  /* מסך שיש לו שם משלו בטבלה — גם אם הנתיב שלו מקונן, כמו /my/schedule — הוא
+     יעד ולא פירוט של יעד אחר: השם שלו הוא כל השובל, בלי קטע-אב שאין מאחוריו
+     מסך להוביל אליו. */
+  const exact = ROUTE_LABELS[pathname]
+  const rootPath = exact ? pathname : segments.length === 0 ? '/' : `/${segments[0]}`
+  const rootLabel = exact ?? ROUTE_LABELS[rootPath] ?? rootPath
+  const isDetail = !exact && segments.length > 1
 
   return (
     <nav aria-label="מיקום נוכחי" className="min-w-0 flex-1">

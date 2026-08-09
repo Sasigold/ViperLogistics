@@ -1079,3 +1079,60 @@
     font-size: 0.875rem;
   }
 }
+
+/* ── 9א. "משמרות" (המסך האישי) ─────────────────────────────────────────────
+   כאן הלוח הוא המסך כולו: שבעה ימים על פני 24 שעות חייבים להיכנס לגובה
+   ולרוחב שיש, בלי גלילה לשום כיוון. לכן העמודות מתחלקות ברוחב הפנוי (ולא
+   נשענות על min-width שגורר גלילה אופקית), ציר השעות מצטמצם לרוחב של
+   "00:00", והשורות מוותרות על גובה מינימלי — expandRows מותח אותן בדיוק
+   לגובה הפנוי.                                                             */
+.vl-myshifts .fc {
+  min-width: 0;
+  font-size: 0.6875rem;
+}
+.vl-myshifts .fc-timegrid-slot {
+  height: auto;
+}
+.vl-myshifts .fc-timegrid-slot-label-cushion,
+.vl-myshifts .fc-col-header-cell-cushion {
+  padding: 0.125rem 0.25rem;
+  font-size: 0.625rem;
+}
+/* ציר השעות: מספיק בשביל "00:00" ולא יותר — כל פיקסל נוסף בא על חשבון יום */
+.vl-myshifts .fc-timegrid-axis,
+.vl-myshifts .fc-timegrid-slot-label {
+  width: 2.6rem;
+}
+/* הצ׳יפ הוא כל האירוע, בלי מסגרת וריפוד של FullCalendar מסביבו */
+.vl-myshifts .fc-timegrid-event,
+.vl-myshifts .fc-event-main {
+  padding: 0;
+  box-shadow: none;
+}
+.vl-myshifts .fc-timegrid-event .fc-event-main {
+  overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .vl-myshifts {
+    --vl-shift-fs: 0.5625rem;
+  }
+  .vl-myshifts .fc {
+    font-size: 0.625rem;
+  }
+  .vl-myshifts .fc-timegrid-slot-label-cushion,
+  .vl-myshifts .fc-col-header-cell-cushion {
+    padding: 0.0625rem 0.125rem;
+    font-size: 0.5625rem;
+  }
+  .vl-myshifts .fc-timegrid-axis,
+  .vl-myshifts .fc-timegrid-slot-label {
+    width: 2.1rem;
+  }
+  /* מה שנשאר מהצ׳יפ ברוחב עמודה של טלפון הוא השם והשעה — בלי ריפוד שגונב
+     מהם את השורה */
+  .vl-myshifts .fc-timegrid-event .fc-event-main > * {
+    padding: 0.0625rem 0.1875rem;
+    gap: 0;
+  }
+}

@@ -60,7 +60,7 @@ export const NAV_SECTIONS: NavSection[] = [
     // רואה בכלל, ולכן הוא יושב לפני הנתונים ולא אחריהם.
     title: 'הנוכחות שלי',
     items: [
-      { to: '/my/schedule', label: 'לוח המשמרות שלי', shortLabel: 'משמרות', icon: CalendarClock, perm: PERM.ATTENDANCE_VIEW_SCHEDULE },
+      { to: '/my/schedule', label: 'משמרות', shortLabel: 'משמרות', icon: CalendarClock, perm: PERM.ATTENDANCE_VIEW_SCHEDULE },
       { to: '/my/attendance', label: 'שעון נוכחות', shortLabel: 'שעון', icon: Clock, perm: PERM.ATTENDANCE_VIEW_OWN },
       /* אותו מסך של "דוח נוכחות" שלמטה, מצומצם לשורות של המשתמש עצמו — השרת
          כבר מחזיר רק אותן. מי שמחזיק view_all מגיע אליו דרך הרשומה בסקשן
@@ -85,8 +85,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/users', label: 'עובדים', icon: Users, perm: PERM.USERS_VIEW },
       { to: '/contractors', label: 'קבלנים', icon: HardHat, perm: PERM.CONTRACTORS_VIEW },
       /* shortLabel 'שיבוץ' ולא 'משמרות': מי שרואה את הרשומה הזאת רואה במקביל
-         גם את "לוח המשמרות שלי" שלמעלה, ושתי רשומות באותו שם הן שתי רשומות
-         שאי אפשר לבחור ביניהן. */
+         גם את "משמרות" שלמעלה, ושתי רשומות באותו שם הן שתי רשומות שאי אפשר
+         לבחור ביניהן. */
       { to: '/shifts', label: 'לוח משמרות צוות', shortLabel: 'שיבוץ', icon: CalendarDays, perm: PERM.ATTENDANCE_VIEW_ALL },
       { to: '/attendance', label: 'דוח נוכחות', shortLabel: 'נוכחות', icon: Clock, perm: PERM.ATTENDANCE_VIEW_ALL },
     ],
@@ -141,7 +141,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/contractors': 'קבלנים',
   '/attendance': 'דוח נוכחות',
   '/shifts': 'לוח משמרות צוות',
-  '/my/schedule': 'לוח המשמרות שלי',
+  '/my/schedule': 'משמרות',
   '/my/attendance': 'שעון נוכחות',
   '/my/notifications': 'התראות',
   '/settings': 'הגדרות',
