@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react'
+import { Suspense } from 'react'
 import type { ReactNode } from 'react'
 import { Navigate, createBrowserRouter, useParams } from 'react-router'
 import AppLayout from './AppLayout'
@@ -6,6 +6,7 @@ import HomeRoute from './HomeRoute'
 import LoginPage from '../features/auth/LoginPage'
 import { RequireAuth } from '../features/auth/guards'
 import { PERM } from '../lib/permissions'
+import { lazyPage } from '../lib/lazyPage'
 import { ErrorBoundary, Skeleton } from '../components/ui'
 
 /**
@@ -16,22 +17,22 @@ import { ErrorBoundary, Skeleton } from '../components/ui'
  * The shell (layout, auth guard, login) stays eager: it is needed on the very
  * first paint, so splitting it would only add a round trip.
  */
-const CalendarPage = lazy(() => import('../features/calendar/CalendarPage'))
-const WorkBoardPage = lazy(() => import('../features/workboard/WorkBoardPage'))
-const EventsPage = lazy(() => import('../features/events/EventsPage'))
-const EventDetailPage = lazy(() => import('../features/events/EventDetailPage'))
-const CustomersPage = lazy(() => import('../features/customers/CustomersPage'))
-const CustomerDetailPage = lazy(() => import('../features/customers/CustomerDetailPage'))
-const UsersPage = lazy(() => import('../features/users/UsersPage'))
-const ContractorsPage = lazy(() => import('../features/contractors/ContractorsPage'))
-const ContractorDetailPage = lazy(() => import('../features/contractors/ContractorDetailPage'))
-const PortalPage = lazy(() => import('../features/portal/PortalPage'))
-const SettingsPage = lazy(() => import('../features/settings/SettingsPage'))
-const TimeClockPage = lazy(() => import('../features/attendance/TimeClockPage'))
-const MySchedulePage = lazy(() => import('../features/attendance/MySchedulePage'))
-const AttendanceReportPage = lazy(() => import('../features/attendance/AttendanceReportPage'))
-const ShiftBoardPage = lazy(() => import('../features/attendance/ShiftBoardPage'))
-const NotificationPreferencesPage = lazy(() => import('../features/notifications/NotificationPreferencesPage'))
+const CalendarPage = lazyPage(() => import('../features/calendar/CalendarPage'))
+const WorkBoardPage = lazyPage(() => import('../features/workboard/WorkBoardPage'))
+const EventsPage = lazyPage(() => import('../features/events/EventsPage'))
+const EventDetailPage = lazyPage(() => import('../features/events/EventDetailPage'))
+const CustomersPage = lazyPage(() => import('../features/customers/CustomersPage'))
+const CustomerDetailPage = lazyPage(() => import('../features/customers/CustomerDetailPage'))
+const UsersPage = lazyPage(() => import('../features/users/UsersPage'))
+const ContractorsPage = lazyPage(() => import('../features/contractors/ContractorsPage'))
+const ContractorDetailPage = lazyPage(() => import('../features/contractors/ContractorDetailPage'))
+const PortalPage = lazyPage(() => import('../features/portal/PortalPage'))
+const SettingsPage = lazyPage(() => import('../features/settings/SettingsPage'))
+const TimeClockPage = lazyPage(() => import('../features/attendance/TimeClockPage'))
+const MySchedulePage = lazyPage(() => import('../features/attendance/MySchedulePage'))
+const AttendanceReportPage = lazyPage(() => import('../features/attendance/AttendanceReportPage'))
+const ShiftBoardPage = lazyPage(() => import('../features/attendance/ShiftBoardPage'))
+const NotificationPreferencesPage = lazyPage(() => import('../features/notifications/NotificationPreferencesPage'))
 
 /** Shaped like a real screen so the chunk swap doesn't flash an empty page. */
 function PageFallback() {

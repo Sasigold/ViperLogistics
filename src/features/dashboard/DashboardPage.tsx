@@ -1,9 +1,10 @@
-import { Suspense, lazy, useMemo, useState } from 'react'
+import { Suspense, useMemo, useState } from 'react'
 import { Button, Input, PageHeader, Skeleton, StickySaveBar, useConfirm, useToast } from '../../components/ui'
 import { Download, ICON, LayoutGrid, STROKE, SlidersHorizontal } from '../../components/ui/icons'
 import { fmtDate, toISODate } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 import { PERM } from '../../lib/permissions'
+import { lazyPage } from '../../lib/lazyPage'
 import { useAuth } from '../../state/auth'
 import { RequirePermission } from '../auth/guards'
 import { TaskDrawer } from '../tasks/TaskDrawer'
@@ -26,12 +27,12 @@ import type { WidgetSize } from './dashboardTypes'
 /* dnd-kit only exists once someone opens edit mode. The dashboard is the most
    visited screen in the product; its ordinary render should not carry a drag
    library most sessions never activate. */
-const DashboardEditGrid = lazy(() => import('./DashboardEditGrid'))
+const DashboardEditGrid = lazyPage(() => import('./DashboardEditGrid'))
 
 /* Same bargain for the builder: pickers, the filter editor and a live preview
    are a screen most sessions never open, and the dashboard's ordinary render
    should not carry them. */
-const WidgetBuilderDrawer = lazy(() =>
+const WidgetBuilderDrawer = lazyPage(() =>
   import('./builder/WidgetBuilderDrawer').then((m) => ({ default: m.WidgetBuilderDrawer })),
 )
 

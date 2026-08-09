@@ -1,4 +1,4 @@
-import { Suspense, lazy, useMemo, useState } from 'react'
+import { Suspense, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { FileSpreadsheet, ICON, Plus, STROKE } from '../../components/ui/icons'
@@ -22,11 +22,12 @@ import { fmtDate } from '../../lib/dates'
 import { EventFormModal } from './EventFormModal'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
+import { lazyPage } from '../../lib/lazyPage'
 import type { EventRow } from '../../types/domain'
 
 /* ExcelJS is ~1MB — keep it out of the initial bundle and load it only when
    the import/export dialog is actually opened. */
-const ExcelDialog = lazy(() => import('../importExport/ExcelDialog').then((m) => ({ default: m.ExcelDialog })))
+const ExcelDialog = lazyPage(() => import('../importExport/ExcelDialog').then((m) => ({ default: m.ExcelDialog })))
 
 export default function EventsPage() {
   const { has, canCreateEvent, showsEventField } = useAuth()

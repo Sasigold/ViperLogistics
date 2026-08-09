@@ -1,11 +1,12 @@
-import { Suspense, lazy } from 'react'
+import { Suspense } from 'react'
 import { Navigate } from 'react-router'
 import { Card, EmptyState, Skeleton } from '../components/ui'
 import { useAuth } from '../state/auth'
 import { PERM } from '../lib/permissions'
+import { lazyPage } from '../lib/lazyPage'
 import { NAV_SECTIONS, navItemVisible } from './nav'
 
-const DashboardPage = lazy(() => import('../features/dashboard/DashboardPage'))
+const DashboardPage = lazyPage(() => import('../features/dashboard/DashboardPage'))
 
 /**
  * What `/` means depends on what you can open.
