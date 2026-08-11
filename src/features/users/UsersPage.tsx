@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clock, ICON, KeyRound, Plus, STROKE, Shield, User, UserCheck } from '../../components/ui/icons'
 import {
@@ -48,6 +49,15 @@ export default function UsersPage() {
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState<Profile | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+
+  /* חיפוש גלובלי מגיע לכאן עם ?q=<שם> — אין דף פרטים לעובד, אז הסינון הוא
+     הנחיתה. effect ולא initializer, מאותה סיבה שמוסברת ב-deepLink.ts:
+     בחירה שנייה בפלטה בזמן שהמסך כבר פתוח צריכה לעבוד גם היא. */
+  const [params] = useSearchParams()
+  const qParam = params.get('q')
+  useEffect(() => {
+    if (qParam) setQ(qParam)
+  }, [qParam])
 
   const { data: profiles = [], isLoading, error, refetch } = useQuery({
     queryKey: ['profiles', 'all'],
@@ -491,7 +501,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
               />
             </Field>
             <Field label="טלפון">
-              <Input dir="ltr" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+              <Input type="tel" autoComplete="tel" dir="ltr" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
             </Field>
           </div>
 

@@ -75,8 +75,13 @@ export function useMyClockStatus() {
     enabled: has(PERM.ATTENDANCE_VIEW_OWN),
     // המשמרת "הנוכחית" זזה עם השעון, ולכן הנתון מתיישן מעצמו
     refetchInterval: 60_000,
+    // עובד שטח בלי קליטה: ברירת המחדל ('online') משהה את ה-fetch כשהדפדפן
+    // מדווח offline, וה-cache של ה-service worker לא היה נשאל בכלל.
+    // offlineFirst נותן לבקשה לצאת — וה-SW עונה מהעותק השמור.
+    networkMode: 'offlineFirst',
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('attendance_my_status')
+      // GET ולא POST: הפונקציה stable, ורק בקשת GET נתפסת במטמון ה-SW
+      const { data, error } = await supabase.rpc('attendance_my_status', undefined, { get: true })
       if (error) throw error
       return data as ClockStatus
     },
@@ -88,8 +93,10 @@ export function useMyShifts(from: string, to: string) {
   return useQuery({
     queryKey: ['attendance', 'shifts', from, to],
     enabled: has(PERM.ATTENDANCE_VIEW_SCHEDULE) && !!from && !!to,
+    // ראו useMyClockStatus: offlineFirst + GET כדי שהלוח יעלה גם בלי קליטה
+    networkMode: 'offlineFirst',
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('my_shifts', { p_from: from, p_to: to })
+      const { data, error } = await supabase.rpc('my_shifts', { p_from: from, p_to: to }, { get: true })
       if (error) throw error
       return (data ?? []) as PlannedShift[]
     },

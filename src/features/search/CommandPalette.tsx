@@ -36,11 +36,20 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const has = useAuth((s) => s.has)
   const listRef = useRef<HTMLDivElement>(null)
 
+  /* ה-RPC רץ על הערך המושהה ולא על כל הקשה — "אולם" הוא חיפוש אחד ולא
+     שלושה. האינפוט וה"הקלד לפחות 2 תווים" נשארים על q החי. אותו דפוס
+     כמו ה-PreviewPanel של התמחור. */
+  const [debouncedQ, setDebouncedQ] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 250)
+    return () => clearTimeout(t)
+  }, [q])
+
   const { data: results = [], isFetching } = useQuery({
-    queryKey: ['global_search', q],
-    enabled: open && q.trim().length >= 2,
+    queryKey: ['global_search', debouncedQ],
+    enabled: open && debouncedQ.length >= 2,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('global_search', { p_q: q.trim(), p_limit: 8 })
+      const { data, error } = await supabase.rpc('global_search', { p_q: debouncedQ, p_limit: 8 })
       if (error) throw error
       return data as SearchResult[]
     },
@@ -82,7 +91,9 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     setQ('')
     if (r.kind === 'event') navigate(`/events/${r.id}`)
     else if (r.kind === 'customer') navigate(`/customers/${r.id}`)
-    else if (r.kind === 'profile') navigate('/users')
+    /* למסך העובדים אין דף פרטים — החיפוש שלו נזרע מה-URL, כך שהבחירה
+       נוחתת על האדם שחיפשת ולא על הרשימה המלאה. */
+    else if (r.kind === 'profile') navigate(`/users?q=${encodeURIComponent(r.title)}`)
     else if (r.kind === 'task') navigate(`/board?task=${r.id}&date=${r.extra ?? ''}`)
   }
 
@@ -143,7 +154,9 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
               description="החיפוש סורק אירועים, לקוחות, עובדים ומשימות בבת אחת"
             />
           )}
-          {!short && !isFetching && results.length === 0 && (
+          {/* debouncedQ ולא q: בחלון שבין ההקלדה לשאילתה אין עדיין תשובה,
+              ו"אין תוצאות" רגע לפני שהחיפוש בכלל רץ הוא שקר */}
+          {!short && debouncedQ.length >= 2 && !isFetching && results.length === 0 && (
             <EmptyState compact art="search" title="אין תוצאות" description={`לא נמצאה התאמה עבור "${q.trim()}"`} />
           )}
 

@@ -124,5 +124,6 @@ export {
   PlusCircle,
   FileText,
   PencilLine,
+  WifiOff,
 } from 'lucide-react'
 

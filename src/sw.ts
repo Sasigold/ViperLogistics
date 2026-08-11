@@ -14,9 +14,20 @@
 import { clientsClaim } from 'workbox-core'
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching'
 import { NavigationRoute, registerRoute } from 'workbox-routing'
+import { NetworkFirst } from 'workbox-strategies'
+import { ExpirationPlugin } from 'workbox-expiration'
 
 declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: (string | { url: string; revision: string | null })[]
+}
+
+/* tsconfig.worker.json מגדיר `types: []` במכוון (ראו ההערה שם), ולכן
+   ImportMeta.env של vite/client לא קיים כאן ומוצהר מקומית. Vite עדיין
+   מטמיע את הערך בזמן build — ה-worker נבנה באותו pipeline. */
+declare global {
+  interface ImportMeta {
+    readonly env: { readonly VITE_SUPABASE_URL?: string }
+  }
 }
 
 interface PushPayload {
@@ -42,6 +53,45 @@ precacheAndRoute(self.__WB_MANIFEST)
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL('index.html'), {
     denylist: [/^\/functions\//, /^\/rest\//, /^\/auth\//, /^\/storage\//],
+  }),
+)
+
+/*
+ * קריאות נתונים ממשיכות לעבוד בלי קליטה — עובד מחסן שפותח את האפליקציה
+ * בשטח מקבל את הלו"ז והשעון מהעותק האחרון שנטען, לא מסך ריק.
+ *
+ *   • ‏GET בלבד, ורק ‏/rest/v1/: קריאה. כתיבות (החתמות, שמירות) לעולם אינן
+ *     נענות מהמטמון ולא נכנסות אליו.
+ *   • ‏NetworkFirst עם timeout קצר: ברשת חיה התשובה תמיד טרייה מהשרת;
+ *     המטמון עונה רק כשאין רשת או שהיא איטית מאוד.
+ *   • ‏ignoreVary: התשובה נשמרת פר-URL. רענון טוקן לא מפסיל את העותק.
+ *   • במכוון אין כאן תור כתיבות (Background Sync) להחתמות שעון:
+ *     ‏attendance_clock_in/out חותמים ‎now()‎ בצד השרת, ושידור חוזר מאוחר
+ *     היה רושם שעת כניסה שגויה ומזין את השכר. כשל גלוי + "דיווח משמרת
+ *     שלא הוחתמה" (אישור מנהל, שעות מפורשות) הוא הנתיב הנכון.
+ *
+ * העותקים יושבים ב-CacheStorage של המכשיר — אותה רמת אמון כמו הסשן
+ * שכבר נשמר בו — ופגים אחרי שבוע.
+ */
+const SUPABASE_ORIGIN = (() => {
+  try {
+    return new URL(import.meta.env.VITE_SUPABASE_URL ?? '').origin
+  } catch {
+    return null
+  }
+})()
+
+registerRoute(
+  ({ url, request }) =>
+    SUPABASE_ORIGIN != null &&
+    url.origin === SUPABASE_ORIGIN &&
+    url.pathname.startsWith('/rest/v1/') &&
+    request.method === 'GET',
+  new NetworkFirst({
+    cacheName: 'supabase-reads',
+    networkTimeoutSeconds: 4,
+    matchOptions: { ignoreVary: true },
+    plugins: [new ExpirationPlugin({ maxEntries: 64, maxAgeSeconds: 7 * 24 * 3600 })],
   }),
 )
 

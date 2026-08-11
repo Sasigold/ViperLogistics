@@ -13,6 +13,7 @@ import {
   Search,
   Sun,
   User,
+  WifiOff,
   X,
 } from '../components/ui/icons'
 import { Avatar, Divider, IconButton, Kbd, MenuItem, MenuSeparator, Popover, Tooltip, cx } from '../components/ui'
@@ -26,6 +27,7 @@ import { useOverdueCount } from '../features/tasks/useOverdueCount'
 import { ROUTE_LABELS, bottomNavItems, visibleNavSections } from './nav'
 import type { NavItem, NavSection } from './nav'
 import { PageTitleProvider, useCurrentPageTitle } from './breadcrumbs'
+import { useOnline } from '../lib/useOnline'
 
 const COLLAPSE_KEY = 'vl-nav-collapsed'
 
@@ -45,6 +47,7 @@ export default function AppLayout() {
 
   const canSeeTasks = has(PERM.TASKS_VIEW)
   const { data: overdue = 0 } = useOverdueCount(canSeeTasks)
+  const online = useOnline()
 
   // מיישר את מנוי הדחיפה של הדפדפן מול המסד בכל עלייה. ראו את ההסבר
   // ב-pushQueries: זה מה שממלא את מקומו של pushsubscriptionchange, שאין
@@ -303,6 +306,18 @@ export default function AppLayout() {
               </Popover>
             </div>
           </header>
+
+          {/* מוצג רק כשאין רשת: המסכים ממשיכים לצייר מהמטמון (ראו sw.ts),
+              והפס אומר למה הנתונים עלולים להיות לא עדכניים ולמה כתיבה תיכשל */}
+          {!online && (
+            <div
+              role="status"
+              className="flex items-center justify-center gap-2 border-b border-warning-border bg-warning-subtle px-3 py-1.5 type-caption text-warning-text"
+            >
+              <WifiOff size={ICON.sm} strokeWidth={STROKE} className="shrink-0" />
+              אין חיבור לרשת — מוצגים נתונים שנשמרו במכשיר
+            </div>
+          )}
 
           <main
             id="main"
