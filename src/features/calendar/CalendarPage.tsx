@@ -4,7 +4,7 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 import listPlugin from '@fullcalendar/list'
 import interactionPlugin from '@fullcalendar/interaction'
 import heLocale from '@fullcalendar/core/locales/he'
-import type { EventContentArg, EventDropArg } from '@fullcalendar/core'
+import type { DayCellContentArg, EventContentArg, EventDropArg } from '@fullcalendar/core'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router'
 import {
@@ -267,8 +267,36 @@ export default function CalendarPage() {
     [holidays],
   )
 
-  /** החג ראשון בכל יום — הוא ההקשר שכל השאר נקרא בתוכו */
-  const calEvents = useMemo(() => [...holidayChips, ...eventChips], [holidayChips, eventChips])
+  /**
+   * החג ראשון בכל יום — הוא ההקשר שכל השאר נקרא בתוכו.
+   *
+   * בטלפון לא בגריד: תא של יום הוא שם שלושה אירועים ברוחב אצבע, וצ׳יפ של
+   * "חול המועד סוכות" בלע אחד מהם על כל אחד משבעת הימים. שם החג יורד לנקודה
+   * ליד מספר היום, ולחיצה על היום אומרת מה הוא. ב"סדר יום" הוא נשאר צ׳יפ —
+   * שם ליום יש שורה משלו ואין במה להתחרות.
+   */
+  const holidaysAsChips = !isMobile || view === 'listMonth'
+  const calEvents = useMemo(
+    () => (holidaysAsChips ? [...holidayChips, ...eventChips] : eventChips),
+    [holidaysAsChips, holidayChips, eventChips],
+  )
+
+  /** מספר היום, ולידו נקודה כשיש בו חג — המסלול של הטלפון בלבד */
+  const renderDayCell = useCallback(
+    (arg: DayCellContentArg) => {
+      const h = holidays.get(toISODate(arg.date))
+      if (!h) return arg.dayNumberText
+      return (
+        <span className="inline-flex items-center gap-1">
+          {arg.dayNumberText}
+          <span aria-hidden className={cx('vl-holiday-mark', isDayOff(h) && 'vl-holiday-mark-off')} />
+          {/* מה שהנקודה אומרת, למי שקורא את המסך ולא רואה אותה */}
+          <span className="sr-only">{`${h.name} — ${KIND_LABEL[h.kind]}`}</span>
+        </span>
+      )
+    },
+    [holidays],
+  )
 
   /** The key to the grid's colours: every status, whether or not the range
    *  happens to hold one, because a legend that appears and disappears is not
@@ -855,6 +883,16 @@ export default function CalendarPage() {
                 if (!h) return []
                 return isDayOff(h) ? ['vl-holiday-day', 'vl-holiday-day-off'] : ['vl-holiday-day']
               }}
+              /* בטלפון החג מצטמצם לנקודה ליד מספר היום — ראה למעלה */
+              dayCellContent={isMobile ? renderDayCell : undefined}
+              dateClick={
+                isMobile
+                  ? (info) => {
+                      const h = holidays.get(info.dateStr.slice(0, 10))
+                      if (h) toast.info(`${h.name} — ${KIND_LABEL[h.kind]}`)
+                    }
+                  : undefined
+              }
               /* events, not rows: a cell shows three of them and says how many it
                  is holding back, rather than spending one of the three saying it */
               dayMaxEvents={isMobile ? 3 : 4}

@@ -878,6 +878,18 @@
   color: var(--vl-warning-text);
   border: 1px solid var(--vl-warning-border);
 }
+/* הסימון של הטלפון: נקודה ליד מספר היום במקום צ׳יפ שאוכל שורה בתא.
+   שבתון מלא, מועד רגיל טבעת — אותה הבחנה שהצבע עושה במסך הגדול. */
+.vl-holiday-mark {
+  width: 0.3125rem;
+  height: 0.3125rem;
+  flex: none;
+  border-radius: 999px;
+  border: 1px solid var(--vl-warning);
+}
+.vl-holiday-mark-off {
+  background: var(--vl-warning);
+}
 .vl-holiday-dot {
   width: 0.375rem;
   height: 0.375rem;
