@@ -413,3 +413,72 @@ select t_eq('ואזור חי כן נראה לו',
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+-- ===== 0057: רשומת תשלום לקבלן חוסמת הסרה והחלפה ============================
+--
+-- ההאצלה מהסעיף הקודם עדיין עומדת: משימת ההקמה של האירוע d1 מואצלת לקבלן
+-- e1. מסמנים את השורה כמשולמת ומוודאים ששני נתיבי הסנכרון — הסרה (delete)
+-- והחלפה (on conflict do update שמאפס את התשלום) — נחסמים עד ביטול הסימון.
+\echo '--- תשלום לקבלן מגן על שורת התנאים (0057) ---'
+
+update task_contractor_terms
+   set paid_at = now(), paid_amount = 500
+ where task_id = (select id from tasks
+                   where event_id = '30000000-0000-0000-0000-0000000000d1'
+                     and contractor_id = '40000000-0000-0000-0000-0000000000e1');
+
+select t_eq('הסימון אכן נרשם',
+  (select count(*) from task_contractor_terms tct
+    join tasks t on t.id = tct.task_id
+   where t.event_id = '30000000-0000-0000-0000-0000000000d1'
+     and tct.paid_at is not null), 1::bigint);
+
+select t_expect_fail('אי אפשר להסיר קבלן ממשימה ששולם עליה',
+  $$update tasks set contractor_id = null
+     where event_id = '30000000-0000-0000-0000-0000000000d1'
+       and contractor_id = '40000000-0000-0000-0000-0000000000e1'$$);
+
+insert into contractors (id, name) values
+  ('40000000-0000-0000-0000-0000000000e2', 'קבלן מחליף');
+
+select t_expect_fail('ואי אפשר להחליף אותו בקבלן אחר',
+  $$update tasks set contractor_id = '40000000-0000-0000-0000-0000000000e2'
+     where event_id = '30000000-0000-0000-0000-0000000000d1'
+       and contractor_id = '40000000-0000-0000-0000-0000000000e1'$$);
+
+update task_contractor_terms
+   set paid_at = null, paid_amount = null
+ where task_id = (select id from tasks
+                   where event_id = '30000000-0000-0000-0000-0000000000d1'
+                     and contractor_id = '40000000-0000-0000-0000-0000000000e1');
+
+select t_expect_ok('אחרי ביטול הסימון ההסרה עוברת',
+  $$update tasks set contractor_id = null
+     where event_id = '30000000-0000-0000-0000-0000000000d1'
+       and contractor_id = '40000000-0000-0000-0000-0000000000e1'$$);
+
+select t_eq('ושורת התנאים נמחקה כרגיל',
+  (select count(*) from task_contractor_terms tct
+    join tasks t on t.id = tct.task_id
+   where t.event_id = '30000000-0000-0000-0000-0000000000d1'), 0::bigint);
+
+-- ===== 0056: שינוי ב-app_settings מותיר עקבה ================================
+--
+-- מפתח זמני נכנס ונמחק, כדי לא להשאיר שאריות לחבילות הבאות. no-op update
+-- לא נבדק בכוונה: app.audit() מדלג על עדכון בלי עמודות שהשתנו.
+\echo '--- audit על app_settings (0056) ---'
+
+insert into app_settings (key, value) values ('test.audit_probe', '{"v": 1}'::jsonb);
+update app_settings set value = '{"v": 2}'::jsonb where key = 'test.audit_probe';
+delete from app_settings where key = 'test.audit_probe';
+
+select t_eq('שלוש הפעולות על המפתח הזמני נרשמו ביומן',
+  (select count(*) from audit_log
+    where table_name = 'app_settings'
+      and row_id = md5('app_settings:test.audit_probe')::uuid), 3::bigint);
+
+select t_eq('והערך הקודם נשמר בעדכון',
+  (select old_data -> 'value' ->> 'v' from audit_log
+    where table_name = 'app_settings'
+      and row_id = md5('app_settings:test.audit_probe')::uuid
+      and action = 'UPDATE'), '1');

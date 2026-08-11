@@ -486,11 +486,18 @@ select t_expect_fail('אין משמרת להיום ⇒ אין החתמה',
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
--- משמרת שמתחילה בעוד שעתיים: מוקדם מדי
-update tasks set task_date = (now() at time zone 'Asia/Jerusalem')::date,
-                 warehouse_start_time = (now() at time zone 'Asia/Jerusalem' + interval '2 hours')::time,
-                 onsite_start_time = (now() at time zone 'Asia/Jerusalem' + interval '3 hours')::time
- where id = '60000000-0000-0000-0000-00000000a001';
+-- משמרת שמתחילה בעוד שעתיים: מוקדם מדי. התאריך נגזר מאותו עוגן של השעות —
+-- עם current_date, הרצה אחרי 22:00 מקומית הייתה עוטפת את חצות: ‎+2h הופך
+-- לשעת בוקר מוקדמת של *היום*, המשמרת נמצאת בעבר, וההחתמה המוקדמת עוברת
+-- במקום להיחסם. אותו הטיפול שכבר קיבל העוגן של סעיף 3.
+do $$
+declare start_il timestamp := now() at time zone 'Asia/Jerusalem' + interval '2 hours';
+begin
+  update tasks set task_date = start_il::date,
+                   warehouse_start_time = start_il::time,
+                   onsite_start_time = (start_il + interval '1 hour')::time
+   where id = '60000000-0000-0000-0000-00000000a001';
+end $$;
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
