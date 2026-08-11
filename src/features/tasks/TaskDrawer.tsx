@@ -321,7 +321,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
     )
       return
     const { error } = await supabase.rpc('soft_delete', { p_table: 'tasks', p_id: taskId })
-    if (error) toast.error(error.message)
+    if (error) toast.error(errorMessage(error))
     else {
       toast.success('המשימה נמחקה')
       void qc.invalidateQueries({ queryKey: ['tasks'] })

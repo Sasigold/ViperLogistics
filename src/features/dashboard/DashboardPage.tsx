@@ -1,5 +1,5 @@
 import { Suspense, useMemo, useState } from 'react'
-import { Button, Input, PageHeader, Skeleton, StickySaveBar, useConfirm, useToast } from '../../components/ui'
+import { Button, ErrorState, Input, PageHeader, Skeleton, StickySaveBar, useConfirm, useToast } from '../../components/ui'
 import { Download, ICON, LayoutGrid, STROKE, SlidersHorizontal } from '../../components/ui/icons'
 import { fmtDate, toISODate } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
@@ -240,7 +240,9 @@ export default function DashboardPage() {
         )}
 
         <DashboardProvider value={ctx}>
-          {editing ? (
+          {sections.error != null && !editing ? (
+            <ErrorState error={sections.error} onRetry={sections.refetch} />
+          ) : editing ? (
             <Suspense fallback={<Skeleton className="h-64 w-full" />}>
               <DashboardEditGrid
                 items={layout.visible}

@@ -24,6 +24,7 @@ import {
   Button,
   Checkbox,
   EmptyState,
+  ErrorState,
   IconButton,
   Input,
   MenuLabel,
@@ -353,7 +354,7 @@ export default function WorkBoardPage() {
   const inline = useInlineUpdate()
   const staffing = useAssignmentUpdate()
 
-  const { data: rows = EMPTY, isLoading } = useQuery({
+  const { data: rows = EMPTY, isLoading, error: rowsError, refetch: refetchRows } = useQuery({
     queryKey: ['workboard', 'range', from, to, filters],
     queryFn: async () => {
       let q = supabase
@@ -1018,6 +1019,8 @@ export default function WorkBoardPage() {
         <div className="surface min-h-0 flex-1 overflow-hidden">
           {isLoading ? (
             <SkeletonTable rows={8} cols={6} />
+          ) : rowsError != null ? (
+            <ErrorState error={rowsError} onRetry={() => void refetchRows()} />
           ) : rows.length === 0 ? (
             <EmptyState
               art="calendar"

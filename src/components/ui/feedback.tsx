@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Loader2 } from 'lucide-react'
 import { cx } from './primitives'
+import { errorMessage } from '../../lib/errors'
 
 /* ===== Spinner ============================================================ */
 
@@ -203,7 +204,7 @@ export function EmptyState({
 /* ===== Inline states ====================================================== */
 
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
-  const msg = error instanceof Error ? error.message : String(error ?? 'שגיאה לא ידועה')
+  const msg = errorMessage(error)
   return (
     <EmptyState
       art="alert"

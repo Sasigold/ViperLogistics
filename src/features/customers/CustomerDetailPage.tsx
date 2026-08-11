@@ -189,7 +189,7 @@ function DetailsTab({ customer }: { customer: Customer }) {
     )
       return
     const { error } = await supabase.rpc('soft_delete', { p_table: 'customers', p_id: customer.id })
-    if (error) return toast.error(error.message)
+    if (error) return toast.error(errorMessage(error))
     toast.success('הלקוח נמחק')
     void qc.invalidateQueries({ queryKey: ['customers'] })
     navigate('/customers')
@@ -685,7 +685,7 @@ function SuppliersTab({ customerId }: { customerId: string }) {
   const remove = async (s: Supplier) => {
     if (!(await confirm(`למחוק את הספק "${s.name}"?`, { title: 'מחיקת ספק', confirmLabel: 'מחיקה' }))) return
     const { error } = await supabase.rpc('soft_delete', { p_table: 'suppliers', p_id: s.id })
-    if (error) toast.error(error.message)
+    if (error) toast.error(errorMessage(error))
     else {
       toast.success('הספק נמחק')
       void qc.invalidateQueries({ queryKey: ['suppliers', 'byCustomer', customerId] })
@@ -713,7 +713,7 @@ function SuppliersTab({ customerId }: { customerId: string }) {
               <Input inputSize="sm" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
             </Field>
             <Field label="טלפון" className="w-32">
-              <Input inputSize="sm" dir="ltr" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+              <Input type="tel" autoComplete="tel" inputSize="sm" dir="ltr" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
             </Field>
             <Field label="כתובת" className="min-w-36 flex-1">
               <Input inputSize="sm" value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} />

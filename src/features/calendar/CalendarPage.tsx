@@ -27,6 +27,7 @@ import {
   Badge,
   Button,
   EmptyState,
+  ErrorState,
   IconButton,
   Input,
   MenuItem,
@@ -184,7 +185,7 @@ export default function CalendarPage() {
   const { data: customers = [] } = useCustomers()
   const { data: statuses = [] } = useStatuses('event')
 
-  const { data: events = [], isFetching } = useQuery({
+  const { data: events = [], isFetching, error: eventsError, refetch: refetchEvents } = useQuery({
     queryKey: ['calendar', 'events', period],
     enabled: !!period,
     queryFn: async () => {
@@ -389,7 +390,7 @@ export default function CalendarPage() {
     })
     if (!name || !me) return
     const { error } = await supabase.from('saved_filters').insert({ profile_id: me.profile.id, screen: 'calendar', name, filters })
-    if (error) toast.error(error.message)
+    if (error) toast.error(errorMessage(error))
     else {
       toast.success('הסינון נשמר')
       void qc.invalidateQueries({ queryKey: ['saved_filters'] })
@@ -826,6 +827,9 @@ export default function CalendarPage() {
         )}
         {/* the clip is only on while the grid is off its mark: with it on for
             good, a day's "+2" popover in the last row would be cut away */}
+        {eventsError != null ? (
+          <ErrorState error={eventsError} onRetry={() => void refetchEvents()} />
+        ) : (
         <div className={cx(swiping && 'overflow-hidden')}>
           <div style={trackStyle}>
             <FullCalendar
@@ -908,6 +912,7 @@ export default function CalendarPage() {
             />
           </div>
         </div>
+        )}
       </div>
 
       {/* the key to the grid's colours. Each entry is also the filter for its

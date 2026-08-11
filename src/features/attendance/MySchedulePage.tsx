@@ -4,7 +4,7 @@ import timeGridPlugin from '@fullcalendar/timegrid'
 import heLocale from '@fullcalendar/core/locales/he'
 import type { DatesSetArg, DayHeaderContentArg, EventContentArg } from '@fullcalendar/core'
 import { addDays, startOfWeek } from 'date-fns'
-import { Card, Spinner } from '../../components/ui'
+import { Card, ErrorState, Spinner } from '../../components/ui'
 import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
 import { toISODate } from '../../lib/dates'
@@ -32,7 +32,7 @@ function MySchedule() {
     return { from: toISODate(from), to: toISODate(addDays(from, 6)) }
   })
 
-  const { data: shifts = [], isLoading } = useMyShifts(range.from, range.to)
+  const { data: shifts = [], isLoading, error, refetch } = useMyShifts(range.from, range.to)
 
   const events = useMemo(
     () =>
@@ -69,6 +69,11 @@ function MySchedule() {
           <span className="pointer-events-none absolute end-2 top-2 z-10 opacity-70">
             <Spinner size={16} />
           </span>
+        )}
+        {error != null && shifts.length === 0 && (
+          <div className="absolute inset-0 z-10 grid place-items-center bg-surface/90">
+            <ErrorState error={error} onRetry={() => void refetch()} />
+          </div>
         )}
         <div
           ref={surfaceRef}

@@ -168,7 +168,7 @@ function DetailsTab({ contractor }: { contractor: Contractor }) {
             />
           </Field>
           <Field label="טלפון">
-            <Input dir="ltr" value={form.phone ?? ''} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} disabled={!canEdit} />
+            <Input type="tel" autoComplete="tel" dir="ltr" value={form.phone ?? ''} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} disabled={!canEdit} />
           </Field>
           <Field label="אימייל">
             <Input
@@ -265,7 +265,7 @@ export function WorkersTab({
   const remove = async (w: ContractorWorker) => {
     if (!(await confirm(`להסיר את ${w.full_name} מהסגל?`, { title: 'הסרת עובד', confirmLabel: 'הסרה' }))) return
     const { error } = await supabase.from('contractor_workers').update({ deleted_at: new Date().toISOString() }).eq('id', w.id)
-    if (error) toast.error(error.message)
+    if (error) toast.error(errorMessage(error))
     else {
       toast.success('העובד הוסר')
       void qc.invalidateQueries({ queryKey: ['contractor_workers'] })
@@ -297,7 +297,7 @@ export function WorkersTab({
               />
             </Field>
             <Field label="טלפון" className="w-36">
-              <Input inputSize="sm" dir="ltr" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+              <Input type="tel" autoComplete="tel" inputSize="sm" dir="ltr" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
             </Field>
             <Field label="ת.ז." className="w-36">
               <Input inputSize="sm" dir="ltr" value={form.id_number} onChange={(e) => setForm((f) => ({ ...f, id_number: e.target.value }))} />
@@ -481,7 +481,7 @@ function TasksTab({ contractorId }: { contractorId: string }) {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
 
-  const { data: rows = [], isLoading } = useQuery({
+  const { data: rows = [], isLoading, error, refetch } = useQuery({
     queryKey: ['contractor_terms', contractorId, from, to],
     queryFn: async () => {
       let q = supabase
@@ -626,6 +626,8 @@ function TasksTab({ contractorId }: { contractorId: string }) {
         columns={columns}
         getRowId={(r) => r.task_id}
         loading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
         storageKey="contractor-terms"
         pageSize={20}
         defaultSort={{ key: 'date', dir: 'desc' }}

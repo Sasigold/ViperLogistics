@@ -78,7 +78,7 @@ export function WarehousesCard() {
       .from('warehouses')
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', w.id)
-    if (error) toast.error(error.message)
+    if (error) toast.error(errorMessage(error))
     else {
       toast.success('המחסן נמחק')
       invalidate()

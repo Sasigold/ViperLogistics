@@ -87,7 +87,7 @@ export default function EventDetailPage() {
     },
   })
 
-  const { data: tasks = [], isLoading: loadingTasks } = useQuery({
+  const { data: tasks = [], isLoading: loadingTasks, error: tasksError, refetch: refetchTasks } = useQuery({
     queryKey: ['workboard', 'byEvent', id],
     queryFn: async () => {
       const { data, error } = await supabase.from('work_board_view').select('*').eq('event_id', id).order('task_date')
@@ -283,7 +283,7 @@ export default function EventDetailPage() {
     )
       return
     const { error } = await supabase.rpc('soft_delete', { p_table: 'events', p_id: event.id })
-    if (error) return toast.error(error.message)
+    if (error) return toast.error(errorMessage(error))
     toast.success('האירוע נמחק')
     void qc.invalidateQueries({ queryKey: ['events'] })
     navigate('/events')
@@ -291,7 +291,7 @@ export default function EventDetailPage() {
 
   const duplicate = async () => {
     const { data: newId, error } = await supabase.rpc('duplicate_event', { p_event_id: event.id })
-    if (error) return toast.error(error.message)
+    if (error) return toast.error(errorMessage(error))
     toast.success('האירוע שוכפל')
     void qc.invalidateQueries({ queryKey: ['events'] })
     navigate(`/events/${newId}`)
@@ -761,6 +761,8 @@ export default function EventDetailPage() {
                     columns={columns}
                     getRowId={(t) => t.id}
                     loading={loadingTasks}
+                    error={tasksError}
+                    onRetry={() => void refetchTasks()}
                     dense
                     storageKey="event-tasks"
                     onRowClick={(t) => setTaskDrawer({ open: true, taskId: t.id })}

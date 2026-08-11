@@ -23,6 +23,7 @@ import {
   CardBody,
   CardHeader,
   EmptyState,
+  ErrorState,
   Field,
   IconButton,
   Input,
@@ -40,6 +41,7 @@ import {
   useToast,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
+import { errorMessage } from '../../lib/errors'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { useContractorWorkers } from '../../lib/queries'
@@ -89,7 +91,7 @@ export default function PortalPage() {
     if (taskParam) setTab('tasks')
   }, [taskParam])
 
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading, error: statsError, refetch: refetchStats } = useQuery({
     queryKey: ['portal', 'stats', from, to],
     enabled: !!contractorId,
     queryFn: async () => {
@@ -148,6 +150,8 @@ export default function PortalPage() {
               <SkeletonCard key={i} lines={0} />
             ))}
           </div>
+        ) : statsError != null ? (
+          <ErrorState error={statsError} onRetry={() => void refetchStats()} />
         ) : (
           stats && (
             <>
@@ -329,16 +333,12 @@ function PortalTaskCard({
         .delete()
         .eq('task_id', task.id)
         .eq('contractor_worker_id', workerId)
-      if (error) return toast.error(error.message)
+      if (error) return toast.error(errorMessage(error))
     } else {
       const { error } = await supabase
         .from('task_contractor_workers')
         .insert({ task_id: task.id, contractor_worker_id: workerId })
-      if (error) {
-        return toast.error(
-          error.message.includes('חריגה') ? error.message : 'לא ניתן להוסיף עובד — ייתכן שחרגת מכמות העובדים למשימה',
-        )
-      }
+      if (error) return toast.error(errorMessage(error))
     }
     void qc.invalidateQueries({ queryKey: ['portal', 'tasks'] })
   }
