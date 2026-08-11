@@ -3,6 +3,7 @@ import { Navigate } from 'react-router'
 import { AlertCircle, ICON, STROKE } from '../../components/ui/icons'
 import { Button, Field, Input } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
+import { errorMessage } from '../../lib/errors'
 import { useAuth } from '../../state/auth'
 
 export default function LoginPage() {
@@ -10,7 +11,9 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(false)
+  const [sendingReset, setSendingReset] = useState(false)
 
   if (booted && session) return <Navigate to="/" replace />
 
@@ -18,9 +21,30 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    setNotice('')
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     setLoading(false)
-    if (error) setError('פרטי התחברות שגויים')
+    // errorMessage ממפה לפי קוד: סיסמה שגויה, rate-limit וניתוק רשת הם
+    // שלושה מצבים שונים, ו"פרטי התחברות שגויים" על כולם שלח אנשים לאפס
+    // סיסמה כשהבעיה הייתה הקליטה.
+    if (error) setError(errorMessage(error))
+  }
+
+  const sendReset = async () => {
+    setError('')
+    setNotice('')
+    if (!email.trim()) {
+      setError('יש למלא אימייל כדי לשלוח קישור לאיפוס')
+      return
+    }
+    setSendingReset(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    setSendingReset(false)
+    if (error) setError(errorMessage(error))
+    // ניסוח ניטרלי במכוון: הטופס אינו מגלה אילו כתובות קיימות במערכת
+    else setNotice('אם הכתובת קיימת במערכת, נשלח אליה קישור לאיפוס הסיסמה.')
   }
 
   return (
@@ -84,9 +108,26 @@ export default function LoginPage() {
               </div>
             )}
 
+            {notice && (
+              <p role="status" className="animate-slide-up rounded-lg border border-line-subtle bg-subtle px-3 py-2 type-caption text-ink-secondary">
+                {notice}
+              </p>
+            )}
+
             <Button type="submit" variant="primary" size="lg" block loading={loading}>
               התחברות
             </Button>
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => void sendReset()}
+                disabled={sendingReset}
+                className="type-caption text-primary-text transition-colors hover:underline disabled:opacity-60"
+              >
+                {sendingReset ? 'שולח קישור…' : 'שכחתי סיסמה'}
+              </button>
+            </div>
           </form>
         </div>
 

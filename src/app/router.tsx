@@ -4,6 +4,7 @@ import { Navigate, createBrowserRouter, useParams } from 'react-router'
 import AppLayout from './AppLayout'
 import HomeRoute from './HomeRoute'
 import LoginPage from '../features/auth/LoginPage'
+import ResetPasswordPage from '../features/auth/ResetPasswordPage'
 import { RequireAuth } from '../features/auth/guards'
 import { PERM } from '../lib/permissions'
 import { lazyPage } from '../lib/lazyPage'
@@ -72,6 +73,10 @@ function ClientEventRedirect() {
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
+  /* היעד של קישור האיפוס מהמייל. מחוץ ל-RequireAuth בכוונה: הקישור נושא
+     סשן recovery, והדף הוא שמכריע אם הוא תקף. eager כמו LoginPage —
+     מי שמגיע לכאן עוד אין לו כלום בקאש. */
+  { path: '/reset-password', handle: { open: true }, element: <ResetPasswordPage /> },
   {
     element: <RequireAuth />,
     children: [
