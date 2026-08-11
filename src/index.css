@@ -174,6 +174,10 @@
   --vl-board-today: color-mix(in srgb, var(--vl-primary) 15%, var(--vl-surface));
   --vl-board-overdue: color-mix(in srgb, var(--vl-error) 13%, var(--vl-surface));
   --vl-board-band: color-mix(in srgb, var(--vl-text) 8%, var(--vl-surface));
+  /* חג. שבתון נצבע כמו יום היום נצבע — הוא משנה את מה שאפשר לתכנן עליו —
+     ומועד שאין בו שבתון מקבל רק רמז, כדי שחנוכה לא ייראה כמו שמונה ימי חופש. */
+  --vl-board-holiday: color-mix(in srgb, var(--vl-warning) 22%, var(--vl-surface));
+  --vl-board-holiday-soft: color-mix(in srgb, var(--vl-warning) 10%, var(--vl-surface));
 
   /* elevation */
   --vl-shadow-xs: 0 1px 2px 0 rgb(16 24 40 / 0.05);
@@ -275,6 +279,8 @@
   --vl-board-today: color-mix(in srgb, var(--vl-primary) 22%, var(--vl-surface));
   --vl-board-overdue: color-mix(in srgb, var(--vl-error) 20%, var(--vl-surface));
   --vl-board-band: color-mix(in srgb, var(--vl-text) 9%, var(--vl-surface));
+  --vl-board-holiday: color-mix(in srgb, var(--vl-warning) 26%, var(--vl-surface));
+  --vl-board-holiday-soft: color-mix(in srgb, var(--vl-warning) 12%, var(--vl-surface));
 
   --vl-shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.4);
   --vl-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.45), 0 1px 2px -1px rgb(0 0 0 / 0.35);
@@ -855,6 +861,29 @@
 }
 .fc .fc-daygrid-day:hover {
   background: var(--vl-hover);
+}
+
+/* ── חגים ומועדים ─────────────────────────────────────────────────────────
+   הצ׳יפ נושא את השם, והתא נצבע כדי שהיום ייקרא כחג גם כשהצ׳יפ נבלע ב-"+3".
+   שבתון בלבד נצבע: חנוכה או ל״ג בעומר הם ימי עבודה, וצביעת שמונת ימי חנוכה
+   הייתה הופכת חודש שלם לצהוב. הריחוף גובר, אחרת התא נראה מת. */
+.fc .fc-day.vl-holiday-day-off {
+  background: var(--vl-board-holiday-soft);
+}
+.fc .fc-day.vl-holiday-day-off:hover {
+  background: var(--vl-hover);
+}
+.vl-holiday-chip {
+  background: var(--vl-warning-subtle);
+  color: var(--vl-warning-text);
+  border: 1px solid var(--vl-warning-border);
+}
+.vl-holiday-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--vl-warning);
 }
 
 /* Events are rendered by eventContent; strip FullCalendar's own chrome. */

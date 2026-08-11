@@ -51,6 +51,8 @@ import { fmtDate, fmtMonth, fmtTime, toISODate } from '../../lib/dates'
 import { NEUTRAL, readableOn } from '../../lib/colors'
 import { useIsMobile } from '../../lib/useMediaQuery'
 import { useDragScroll } from '../../lib/useDragScroll'
+import { KIND_LABEL, holidaysInRange, isDayOff } from '../../lib/hebrewHolidays'
+import type { Holiday } from '../../lib/hebrewHolidays'
 import { TaskDrawer } from '../tasks/TaskDrawer'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
@@ -469,6 +471,13 @@ export default function WorkBoardPage() {
     for (const d of withRows) all.add(d)
     return [...all].sort()
   }, [rows, showEmptyDays, from, to])
+
+  /* חגים ומועדים לימים שעל הלוח. ‏`dayKeys` ולא הטווח המבוקש: יום שנשר
+     מהלוח (בלי משימות, כשהימים הריקים מוסתרים) גם לא צריך חג. */
+  const holidays = useMemo(
+    () => (dayKeys.length ? holidaysInRange(dayKeys[0], dayKeys[dayKeys.length - 1]) : new Map<string, Holiday>()),
+    [dayKeys],
+  )
 
   /* ── group by day, then lay the columns out in reading order ───────────── */
 
@@ -1032,6 +1041,7 @@ export default function WorkBoardPage() {
               containerRef={cardsRef}
               days={daysForList}
               today={today}
+              holidays={holidays}
               canCreate={has(PERM.TASKS_CREATE)}
               onOpen={openTask}
               onToggleDay={toggleDay}
@@ -1085,6 +1095,7 @@ export default function WorkBoardPage() {
                     {visibleBands.map((b) => {
                       const isToday = b.dayKey === today
                       const quiet = b.count === 0
+                      const holiday = holidays.get(b.dayKey)
                       return (
                         <div
                           key={b.dayKey}
@@ -1093,7 +1104,15 @@ export default function WorkBoardPage() {
                             /* a past day is a past day — the tasks on it carry
                                their own overdue mark, and painting the whole
                                band red turned every old week into a wall */
-                            isToday ? 'bg-[var(--vl-board-today)]' : 'bg-[var(--vl-board-band)]',
+                            isToday
+                              ? 'bg-[var(--vl-board-today)]'
+                              : /* שבתון נצבע, מועד שאין בו שבתון מקבל רמז, ושאר
+                                   הימים נשארים כפי שהיו */
+                                isDayOff(holiday)
+                                ? 'bg-[var(--vl-board-holiday)]'
+                                : holiday
+                                  ? 'bg-[var(--vl-board-holiday-soft)]'
+                                  : 'bg-[var(--vl-board-band)]',
                           )}
                           style={{ insetInlineStart: b.start, width: b.width, height: DAY_HEAD_H }}
                         >
@@ -1112,6 +1131,18 @@ export default function WorkBoardPage() {
                             <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
                               היום
                             </span>
+                          )}
+                          {holiday && (
+                            <Tooltip content={`${holiday.name} — ${KIND_LABEL[holiday.kind]}`}>
+                              <span
+                                className={cx(
+                                  'truncate type-caption',
+                                  isDayOff(holiday) ? 'font-bold text-warning-text' : 'text-ink-secondary',
+                                )}
+                              >
+                                {holiday.name}
+                              </span>
+                            </Tooltip>
                           )}
                         </div>
                       )
@@ -1230,6 +1261,7 @@ function MobileBoard({
   containerRef,
   days,
   today,
+  holidays,
   canCreate,
   onOpen,
   onToggleDay,
@@ -1239,6 +1271,7 @@ function MobileBoard({
   containerRef: React.Ref<HTMLDivElement>
   days: DayLayout[]
   today: string
+  holidays: Map<string, Holiday>
   canCreate: boolean
   onOpen: (id: string) => void
   onToggleDay: (dayKey: string) => void
@@ -1249,12 +1282,19 @@ function MobileBoard({
       {days.map((day) => {
         const isToday = day.dayKey === today
         const quiet = day.count === 0
+        const holiday = holidays.get(day.dayKey)
         return (
           <section key={day.dayKey} data-day={day.dayKey}>
             <h3
               className={cx(
                 'sticky top-0 z-10 flex items-center gap-1.5 border-b border-line px-2.5 py-1.5 backdrop-blur-sm',
-                isToday ? 'bg-[var(--vl-board-today)]' : 'bg-[var(--vl-board-band)]',
+                isToday
+                  ? 'bg-[var(--vl-board-today)]'
+                  : isDayOff(holiday)
+                    ? 'bg-[var(--vl-board-holiday)]'
+                    : holiday
+                      ? 'bg-[var(--vl-board-holiday-soft)]'
+                      : 'bg-[var(--vl-board-band)]',
               )}
             >
               <button
@@ -1280,6 +1320,16 @@ function MobileBoard({
                 {isToday && (
                   <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
                     היום
+                  </span>
+                )}
+                {holiday && (
+                  <span
+                    className={cx(
+                      'truncate type-caption',
+                      isDayOff(holiday) ? 'font-bold text-warning-text' : 'text-ink-secondary',
+                    )}
+                  >
+                    {holiday.name}
                   </span>
                 )}
               </button>

@@ -46,7 +46,9 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { useCustomers, useStatuses } from '../../lib/queries'
-import { fmtDate } from '../../lib/dates'
+import { fmtDate, toISODate } from '../../lib/dates'
+import { KIND_LABEL, holidaysInRange, isDayOff } from '../../lib/hebrewHolidays'
+import type { Holiday } from '../../lib/hebrewHolidays'
 import { useIsMobile } from '../../lib/useMediaQuery'
 import { useSwipeNav } from '../../lib/useSwipeNav'
 import { EventFormModal } from '../events/EventFormModal'
@@ -215,7 +217,7 @@ export default function CalendarPage() {
     })
   }, [events, filters, cancelledStatus])
 
-  const calEvents = useMemo(
+  const eventChips = useMemo(
     () =>
       filtered.map((e) => {
         const label = e.end_client_name || e.customers?.name || 'אירוע'
@@ -224,11 +226,40 @@ export default function CalendarPage() {
           title: label,
           start: e.event_date,
           allDay: true,
-          extendedProps: { event: e, label },
+          extendedProps: { event: e, label, holidayRank: 1 },
         }
       }),
     [filtered],
   )
+
+  /* ── חגים ומועדים ────────────────────────────────────────────────────────
+     מחושבים מקומית לטווח שהתצוגה ביקשה, ולכן הם שם עוד לפני שהאירועים
+     חוזרים מהשרת. כצ׳יפים ולא כרקע של התא: כך אותו מועד נראה גם בחודש, גם
+     בשבוע וגם בסדר היום, ובלי הנחות על ה-DOM הפנימי של FullCalendar.      */
+
+  const holidays = useMemo(
+    () => (range ? holidaysInRange(range.from, range.to) : new Map<string, Holiday>()),
+    [range],
+  )
+
+  const holidayChips = useMemo(
+    () =>
+      [...holidays.values()].map((h) => ({
+        id: `holiday:${h.date}`,
+        title: h.name,
+        start: h.date,
+        allDay: true,
+        // חג אינו אירוע שאפשר לגרור ליום אחר
+        editable: false,
+        startEditable: false,
+        durationEditable: false,
+        extendedProps: { holiday: h, holidayRank: 0 },
+      })),
+    [holidays],
+  )
+
+  /** החג ראשון בכל יום — הוא ההקשר שכל השאר נקרא בתוכו */
+  const calEvents = useMemo(() => [...holidayChips, ...eventChips], [holidayChips, eventChips])
 
   /** The key to the grid's colours: every status, whether or not the range
    *  happens to hold one, because a legend that appears and disappears is not
@@ -344,6 +375,24 @@ export default function CalendarPage() {
 
   const renderEvent = useCallback(
     (arg: EventContentArg) => {
+      const holiday = arg.event.extendedProps.holiday as Holiday | undefined
+      if (holiday) {
+        /* בלי מילוי מלא גם כשזה שבתון: הצבע של הצ׳יפים שייך לסטטוסים, וחג
+           שנצבע כמותם היה נקרא כאירוע. הרקע של היום עצמו נושא את המשקל. */
+        return (
+          <span
+            className={cx(
+              'flex min-w-0 items-center gap-1 rounded px-1 py-px type-caption',
+              'vl-holiday-chip',
+              isDayOff(holiday) && 'font-bold',
+            )}
+            title={`${holiday.name} — ${KIND_LABEL[holiday.kind]}`}
+          >
+            <span aria-hidden className="vl-holiday-dot" />
+            <span className="truncate">{holiday.name}</span>
+          </span>
+        )
+      }
       const ev = arg.event.extendedProps.event as CalEvent | undefined
       if (!ev) return <span className="truncate px-1">{arg.event.title}</span>
       const label = arg.event.extendedProps.label as string
@@ -778,7 +827,20 @@ export default function CalendarPage() {
                   showsToday: now >= info.view.currentStart && now < info.view.currentEnd,
                 })
               }}
-              eventClick={(info) => navigate(`/events/${info.event.id}`)}
+              eventClick={(info) => {
+                // חג הוא תווית, לא יעד
+                if (info.event.extendedProps.holiday) return
+                navigate(`/events/${info.event.id}`)
+              }}
+              /* החג פותח את היום; אחריו האירועים בסדר הרגיל */
+              eventOrder="holidayRank,start,-duration,allDay,title"
+              /* היום עצמו נצבע, כדי שגם כשהצ׳יפ נבלע ב-"+3" עדיין רואים
+                 שזה יום שאי אפשר לתכנן עליו עבודה */
+              dayCellClassNames={(arg) => {
+                const h = holidays.get(toISODate(arg.date))
+                if (!h) return []
+                return isDayOff(h) ? ['vl-holiday-day', 'vl-holiday-day-off'] : ['vl-holiday-day']
+              }}
               /* events, not rows: a cell shows three of them and says how many it
                  is holding back, rather than spending one of the three saying it */
               dayMaxEvents={isMobile ? 3 : 4}
