@@ -25,6 +25,7 @@ import {
   Card,
   CardBody,
   CardHeader,
+  ErrorState,
   Field,
   IconButton,
   Input,
@@ -117,7 +118,7 @@ function TimeClock() {
   const has = useAuth((s) => s.has)
   const getPosition = useGeolocation()
   const invalidate = useAttendanceInvalidate()
-  const { data: status, isLoading } = useMyClockStatus()
+  const { data: status, isLoading, error: statusError, refetch: refetchStatus } = useMyClockStatus()
   const [note, setNote] = useState('')
   const [showNoteInput, setShowNoteInput] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
@@ -169,7 +170,7 @@ function TimeClock() {
       ? fmtDuration(totalCompletedHours)
       : '--:--'
 
-  const firstName = me?.profile?.full_name ? me.profile.full_name.split(' ')[0] : 'שמחה'
+  const firstName = me?.profile?.full_name?.split(' ')[0] ?? null
 
   const punch = useMutation({
     mutationFn: async (kind: 'in' | 'out') => {
@@ -201,7 +202,18 @@ function TimeClock() {
         data?.distance_m != null ? { description: `${fmtDistance(data.distance_m)} מנקודת הייחוס` } : undefined,
       )
     },
-    onError: (e) => toast.error(errorMessage(e)),
+    onError: (e) => {
+      // בלי קליטה ההחתמה פשוט לא קרתה — אין תור והשליחה לא תחזור מעצמה,
+      // כי השרת חותם now() ושידור מאוחר היה רושם שעה שגויה. הנתיב הנכון
+      // הוא דיווח משמרת שלא הוחתמה, לאישור מנהל.
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        toast.error('אין חיבור לרשת — ההחתמה לא נקלטה', {
+          description: 'כשהקליטה תחזור אפשר להחתים שוב, או להשתמש ב"דיווח משמרת שלא הוחתמה".',
+        })
+        return
+      }
+      toast.error(errorMessage(e))
+    },
   })
 
   if (isLoading) {
@@ -215,27 +227,35 @@ function TimeClock() {
     )
   }
 
+  if (statusError != null && !status) {
+    return (
+      <div className="mx-auto max-w-md py-8">
+        <ErrorState error={statusError} onRetry={() => void refetchStatus()} />
+      </div>
+    )
+  }
+
   return (
-    <div className="mx-auto max-w-md space-y-5 py-4 px-2 sm:px-4 text-slate-800 dir-rtl">
+    <div className="mx-auto max-w-md space-y-5 py-4 px-2 sm:px-4 text-ink">
       {/* כותרת ברכה עליונה */}
       <div className="text-center space-y-1">
-        <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center justify-center gap-1.5">
-          {getGreeting()}, {firstName} <span className="inline-block animate-bounce">👋</span>
+        <h1 className="text-2xl font-black text-ink tracking-tight flex items-center justify-center gap-1.5">
+          {getGreeting()}{firstName ? `, ${firstName}` : ''} <span className="inline-block animate-bounce">👋</span>
         </h1>
-        <p className="text-sm font-medium text-slate-500">
+        <p className="text-sm font-medium text-ink-secondary">
           אנחנו שמחים לראות אותך!
         </p>
       </div>
 
       {/* כרטיס סטטוס עליון */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 shadow-sm border border-slate-100 grid grid-cols-2 divide-x divide-x-reverse divide-slate-100 items-center">
+      <div className="bg-surface rounded-3xl p-4 sm:p-5 shadow-sm border border-line-subtle grid grid-cols-2 divide-x divide-x-reverse divide-line-subtle items-center">
         {/* כניסה אחרונה (ימין ב-RTL) */}
         <div className="flex flex-col items-center justify-center text-center px-2">
-          <span className="text-xs text-slate-400 font-medium mb-1">כניסה אחרונה</span>
-          <span className="text-2xl font-black text-slate-800 tracking-tight tabular-nums" dir="ltr">
+          <span className="text-xs text-ink-tertiary font-medium mb-1">כניסה אחרונה</span>
+          <span className="text-2xl font-black text-ink tracking-tight tabular-nums" dir="ltr">
             {lastClockInTime}
           </span>
-          <span className="text-xs text-slate-400 font-medium mt-1">
+          <span className="text-xs text-ink-tertiary font-medium mt-1">
             {lastClockInDate} היום
           </span>
         </div>
@@ -243,10 +263,10 @@ function TimeClock() {
         {/* סטטוס נוכחי (שמאל ב-RTL) */}
         <div className="flex flex-col items-center justify-center text-center px-2">
           <div className="flex items-center gap-1.5 mb-1.5">
-            <span className={`w-2 h-2 rounded-full ${open ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
-            <span className="text-xs text-slate-400 font-medium">סטטוס נוכחי</span>
+            <span className={`w-2 h-2 rounded-full ${open ? 'bg-success-subtle0 animate-pulse' : 'bg-ink-tertiary'}`} />
+            <span className="text-xs text-ink-tertiary font-medium">סטטוס נוכחי</span>
           </div>
-          <span className={`text-lg font-bold ${open ? 'text-emerald-600' : 'text-slate-600'}`}>
+          <span className={`text-lg font-bold ${open ? 'text-success-text' : 'text-ink-secondary'}`}>
             {open ? 'נוכח בעבודה' : 'מחוץ לעבודה'}
           </span>
         </div>
@@ -257,13 +277,13 @@ function TimeClock() {
         {/* טבעת חיצונית זוהרת */}
         <div
           className={`w-72 h-72 rounded-full border flex items-center justify-center p-3 transition-all duration-300 shadow-xs ${
-            open ? 'border-rose-200/70 bg-rose-50/20' : 'border-emerald-200/70 bg-emerald-50/20'
+            open ? 'border-error-border/70 bg-error-subtle/20' : 'border-success-border/70 bg-success-subtle/20'
           }`}
         >
           {/* טבעת פנימית אמצעית */}
           <div
             className={`w-64 h-64 rounded-full border flex items-center justify-center p-2 ${
-              open ? 'border-rose-300/40' : 'border-emerald-300/40'
+              open ? 'border-error-border/40' : 'border-success-border/40'
             }`}
           >
             {/* כפתור מעגלי ראשי */}
@@ -272,9 +292,7 @@ function TimeClock() {
               disabled={punch.isPending || !has(PERM.ATTENDANCE_CLOCK)}
               onClick={() => punch.mutate(open ? 'out' : 'in')}
               className={`w-56 h-56 rounded-full transition-all duration-200 active:scale-95 flex flex-col items-center justify-center text-white cursor-pointer select-none shadow-xl ${
-                open
-                  ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-500/30'
-                  : 'bg-[#10b981] hover:bg-[#059669] shadow-emerald-500/25'
+                open ? 'bg-error hover:brightness-110' : 'bg-success hover:brightness-110'
               } ${punch.isPending ? 'opacity-85 cursor-wait' : ''}`}
             >
               {punch.isPending ? (
@@ -287,7 +305,7 @@ function TimeClock() {
               <span className="text-3xl font-black text-white tracking-wide mb-0.5">
                 {open ? 'יציאה' : 'כניסה'}
               </span>
-              <span className={`text-xs font-medium ${open ? 'text-rose-100' : 'text-emerald-100'}`}>
+              <span className="text-xs font-medium text-white/80">
                 {open ? 'לחץ לסיום יום העבודה' : 'לחץ לתחילת יום העבודה'}
               </span>
             </button>
@@ -295,34 +313,34 @@ function TimeClock() {
         </div>
 
         {/* פיל תג תחתון מתחת לכפתור */}
-        <div className="mt-4 inline-flex items-center gap-2 bg-white px-5 py-2 rounded-full border border-slate-200/80 shadow-xs">
-          <span className={`w-2.5 h-2.5 rounded-full ${open ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-          <span className={`text-sm font-bold ${open ? 'text-emerald-600' : 'text-slate-600'}`}>
+        <div className="mt-4 inline-flex items-center gap-2 bg-surface px-5 py-2 rounded-full border border-line shadow-xs">
+          <span className={`w-2.5 h-2.5 rounded-full ${open ? 'bg-success-subtle0 animate-pulse' : 'bg-ink-tertiary'}`} />
+          <span className={`text-sm font-bold ${open ? 'text-success-text' : 'text-ink-secondary'}`}>
             {open ? 'נמצא בעבודה' : 'מחוץ לעבודה'}
           </span>
         </div>
       </div>
 
       {/* כרטיס סיכום היום */}
-      <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 space-y-4">
+      <div className="bg-surface rounded-3xl p-5 shadow-sm border border-line-subtle space-y-4">
         {/* כותרת כרטיס */}
         <div className="flex items-center justify-start gap-2">
-          <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-xl bg-primary-subtle text-primary-text flex items-center justify-center shrink-0">
             <Calendar className="w-4 h-4" />
           </div>
-          <h2 className="text-base font-bold text-slate-800">סיכום היום</h2>
+          <h2 className="text-base font-bold text-ink">סיכום היום</h2>
         </div>
 
         {/* 3 עמודות */}
-        <div className="grid grid-cols-3 divide-x divide-x-reverse divide-slate-100 text-center items-center pt-1">
+        <div className="grid grid-cols-3 divide-x divide-x-reverse divide-line-subtle text-center items-center pt-1">
           {/* שעת כניסה */}
           <div className="flex flex-col items-center justify-center px-1">
-            <span className="text-xs text-slate-400 font-medium mb-2">שעת כניסה</span>
+            <span className="text-xs text-ink-tertiary font-medium mb-2">שעת כניסה</span>
             <div className="flex items-center justify-center gap-1.5">
-              <span className="text-base sm:text-lg font-bold text-emerald-600 tabular-nums" dir="ltr">
+              <span className="text-base sm:text-lg font-bold text-success-text tabular-nums" dir="ltr">
                 {todayClockInTime}
               </span>
-              <div className="w-6 h-6 rounded-md bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <div className="w-6 h-6 rounded-md bg-success-subtle text-success-text flex items-center justify-center shrink-0">
                 <LogIn className="w-3.5 h-3.5" />
               </div>
             </div>
@@ -330,20 +348,20 @@ function TimeClock() {
 
           {/* משך עבודה */}
           <div className="flex flex-col items-center justify-center px-1">
-            <span className="text-xs text-slate-400 font-medium mb-2">משך עבודה</span>
-            <span className="text-base sm:text-lg font-bold text-slate-800 tabular-nums" dir="ltr">
+            <span className="text-xs text-ink-tertiary font-medium mb-2">משך עבודה</span>
+            <span className="text-base sm:text-lg font-bold text-ink tabular-nums" dir="ltr">
               {todayWorkDuration}
             </span>
           </div>
 
           {/* שעת יציאה */}
           <div className="flex flex-col items-center justify-center px-1">
-            <span className="text-xs text-slate-400 font-medium mb-2">שעת יציאה</span>
+            <span className="text-xs text-ink-tertiary font-medium mb-2">שעת יציאה</span>
             <div className="flex items-center justify-center gap-1.5">
-              <div className="w-6 h-6 rounded-md bg-rose-50 text-rose-500 flex items-center justify-center shrink-0">
+              <div className="w-6 h-6 rounded-md bg-error-subtle text-error-text flex items-center justify-center shrink-0">
                 <LogOut className="w-3.5 h-3.5" />
               </div>
-              <span className="text-base sm:text-lg font-bold text-slate-400 tabular-nums" dir="ltr">
+              <span className="text-base sm:text-lg font-bold text-ink-tertiary tabular-nums" dir="ltr">
                 {todayClockOutTime}
               </span>
             </div>
@@ -355,8 +373,8 @@ function TimeClock() {
       <div className="space-y-3 pt-1">
         {/* דרישת מיקום במידה וקיים */}
         {needsLocation && (
-          <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500 bg-slate-50 py-2 px-3 rounded-xl border border-slate-100 text-center">
-            <MapPin size={ICON.sm} strokeWidth={STROKE} className="text-slate-400 shrink-0" />
+          <div className="flex items-center justify-center gap-1.5 text-xs text-ink-secondary bg-subtle py-2 px-3 rounded-xl border border-line-subtle text-center">
+            <MapPin size={ICON.sm} strokeWidth={STROKE} className="text-ink-tertiary shrink-0" />
             <span>
               נדרש שיתוף מיקום להחתמה ({fmtDistance(rules?.location_radius_m)} מהאתר)
             </span>
@@ -365,10 +383,10 @@ function TimeClock() {
 
         {/* משמרת מתוכננת במידה וקיימת */}
         {shift && (
-          <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3.5 text-xs text-slate-600">
+          <div className="rounded-2xl border border-line-subtle bg-subtle/70 p-3.5 text-xs text-ink-secondary">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 font-medium">
-                <CalendarClock size={ICON.md} strokeWidth={STROKE} className="text-slate-400" />
+                <CalendarClock size={ICON.md} strokeWidth={STROKE} className="text-ink-tertiary" />
                 <span>משמרת מתוכננת: {fmtShiftRange(shift.shift_start, shift.shift_end)}</span>
               </div>
               <Badge tone={shift.work_site === 'warehouse' ? 'info' : 'neutral'}>
@@ -386,7 +404,7 @@ function TimeClock() {
             <button
               type="button"
               onClick={() => setShowNoteInput(true)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors py-1"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink-secondary hover:text-ink transition-colors py-1"
             >
               <MessageSquarePlus size={14} />
               {note ? `הערה: ${note}` : 'הוסף הערה להחתמה (אופציונלי)'}
@@ -398,7 +416,6 @@ function TimeClock() {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="הערה להחתמה..."
-                className="bg-white"
                 autoFocus
               />
               <div className="flex justify-end gap-2">
@@ -414,7 +431,7 @@ function TimeClock() {
         {canSubmit && !open && (
           <Button
             variant="secondary"
-            className="w-full justify-center rounded-2xl bg-white border border-slate-200/80 text-slate-700 hover:bg-slate-50 text-xs py-2.5 font-semibold"
+            className="w-full justify-center rounded-2xl bg-surface border border-line text-ink-secondary hover:bg-hover text-xs py-2.5 font-semibold"
             onClick={() => setReporting(true)}
           >
             <Plus size={ICON.sm} strokeWidth={STROKE} />
@@ -429,18 +446,18 @@ function TimeClock() {
             בדוח, ומכאן הוא במרחק לחיצה גם כשהתפריט התחתון מלא. */}
         <Link
           to="/attendance"
-          className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white py-2.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-line bg-surface py-2.5 text-xs font-semibold text-ink-secondary transition-colors hover:bg-hover"
         >
           <FileText size={ICON.sm} strokeWidth={STROKE} />
           דוח הנוכחות החודשי שלי
         </Link>
 
         {/* היסטוריית החתמות מתקפלת של היום */}
-        <div className="border-t border-slate-100 pt-2 text-center">
+        <div className="border-t border-line-subtle pt-2 text-center">
           <button
             type="button"
             onClick={() => setShowHistory(!showHistory)}
-            className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 transition-colors py-1"
+            className="inline-flex items-center gap-1 text-xs text-ink-tertiary hover:text-ink-secondary transition-colors py-1"
           >
             <Clock size={13} />
             <span>ההחתמות של היום ({today.length})</span>
@@ -448,17 +465,17 @@ function TimeClock() {
           </button>
 
           {showHistory && (
-            <div className="mt-2 text-right bg-white rounded-2xl p-3 border border-slate-100 shadow-xs">
+            <div className="mt-2 text-right bg-surface rounded-2xl p-3 border border-line-subtle shadow-xs">
               {today.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-2">טרם הוחתם היום</p>
+                <p className="text-xs text-ink-tertiary text-center py-2">טרם הוחתם היום</p>
               ) : (
-                <ul className="divide-y divide-slate-100">
+                <ul className="divide-y divide-line-subtle">
                   {today.map((e) => (
                     <li key={e.id} className="flex items-center justify-between py-2 text-xs">
-                      <span className="font-mono tabular-nums text-slate-700" dir="ltr">
+                      <span className="font-mono tabular-nums text-ink-secondary" dir="ltr">
                         {fmtShiftRange(e.clock_in_at, e.clock_out_at) || '—'}
                       </span>
-                      <span className={cx(e.clock_out_at ? 'text-slate-500' : 'text-emerald-600 font-semibold')}>
+                      <span className={cx(e.clock_out_at ? 'text-ink-secondary' : 'text-success-text font-semibold')}>
                         {e.clock_out_at ? `${fmtDuration(e.actual_hours)} ש׳` : 'משמרת פתוחה'}
                       </span>
                       {e.flags.map((f) => (
@@ -505,14 +522,14 @@ function MyReportsCard({ reports }: { reports: AttendanceEntry[] }) {
 
   return (
     <>
-      <Card className="rounded-2xl border-slate-100">
+      <Card className="rounded-2xl border-line-subtle">
         <CardHeader
           title="הדיווחים שלי"
           subtitle="משמרות שדיווחת ידנית"
           icon={<CalendarClock size={ICON.md} strokeWidth={STROKE} />}
         />
         <CardBody className="p-3">
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-line-subtle">
             {reports.map((e) => (
               <li
                 key={e.id}
@@ -522,14 +539,14 @@ function MyReportsCard({ reports }: { reports: AttendanceEntry[] }) {
                   e.id === entryParam && HIGHLIGHT_CLASS,
                 )}
               >
-                <span className="text-slate-700 font-medium">{fmtDate(e.work_date)}</span>
-                <span className="font-mono tabular-nums text-slate-600" dir="ltr">
+                <span className="text-ink-secondary font-medium">{fmtDate(e.work_date)}</span>
+                <span className="font-mono tabular-nums text-ink-secondary" dir="ltr">
                   {fmtShiftRange(e.clock_in_at, e.clock_out_at)}
                 </span>
-                <span className="text-slate-500">{fmtDuration(e.actual_hours)} ש׳</span>
+                <span className="text-ink-secondary">{fmtDuration(e.actual_hours)} ש׳</span>
                 <Badge tone={STATUS_TONES[e.status]}>{STATUS_LABELS[e.status]}</Badge>
                 {e.status === 'rejected' && e.manager_note && (
-                  <span className="text-slate-400">{e.manager_note}</span>
+                  <span className="text-ink-tertiary">{e.manager_note}</span>
                 )}
                 <span className="flex-1" />
                 {e.status === 'pending' && (
