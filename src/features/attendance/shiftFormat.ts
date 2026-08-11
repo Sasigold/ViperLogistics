@@ -68,7 +68,10 @@ export const ATTENTION_FLAGS = new Set(['no_site_coords', 'no_shift', 'auto_clos
 export const needsAttention = (flags: string[] | null | undefined) =>
   (flags ?? []).some((f) => ATTENTION_FLAGS.has(f))
 
-const hhmm = (iso: string) => format(parseISO(iso), 'HH:mm')
+/** '07:00'. שעה בודדת, כשהטווח כבר מוצג במקום אחר בשורה. */
+export const fmtTime = (iso: string) => format(parseISO(iso), 'HH:mm')
+
+const hhmm = fmtTime
 
 /** '07:00–14:00'. משמרת שחוצה חצות מקבלת את התאריך בצד הסיום. */
 export function fmtShiftRange(start?: string | null, end?: string | null): string {

@@ -32,6 +32,7 @@ import {
   fmtDuration,
   fmtShiftRange,
 } from './shiftFormat'
+import type { ShiftGroupMember } from './shiftBoard'
 import type { PlannedShift, ShiftTaskRow } from '../../types/domain'
 
 const NEUTRAL = '#64748b'
@@ -42,11 +43,18 @@ const hhmm = (iso: string | null | undefined) =>
 export function ShiftDetailDrawer({
   shift,
   employeeName,
+  team,
   onClose,
 }: {
   shift: PlannedShift | null
   /** שם העובד. נשאר ריק בלוח האישי, שבו "המשמרת שלי" מדויק יותר. */
   employeeName?: string | null
+  /**
+   * כל מי שעובד במשמרת, כשהיא נפתחה מצ׳יפ מקובץ בציר השעות. הרצף שמתחתיו
+   * זהה לכולם — אותן משימות — ולכן ההבדל היחיד ששווה להראות כאן הוא מי מהם
+   * מתחיל במחסן.
+   */
+  team?: ShiftGroupMember[]
   onClose: () => void
 }) {
   const { data, isLoading, error } = useShiftTasks(shift?.profile_id ?? null, shift?.task_ids ?? null)
@@ -91,6 +99,33 @@ export function ShiftDetailDrawer({
             </Badge>
           )}
         </div>
+
+        {team && team.length > 1 && (
+          <div className="space-y-1.5">
+            <div className="type-overline">מי במשמרת</div>
+            <div className="flex flex-wrap gap-1.5">
+              {team.map((m) => (
+                <span
+                  key={m.shift.profile_id}
+                  className={cx(
+                    'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 type-caption',
+                    m.fromWarehouse
+                      ? 'border-warning-border bg-warning-subtle text-warning-text'
+                      : 'border-line bg-subtle',
+                  )}
+                >
+                  {m.fromWarehouse && <Package size={ICON.xs} strokeWidth={STROKE} />}
+                  {m.name}
+                  {m.fromWarehouse && (
+                    <span className="tabular opacity-80" dir="ltr">
+                      {hhmm(m.shift.shift_start)}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {error ? (
           <ErrorState error={errorMessage(error)} />

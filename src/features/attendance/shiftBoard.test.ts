@@ -6,9 +6,12 @@ import {
   boardStep,
   cellKey,
   emptyBoardFilters,
+  groupShifts,
   indexShifts,
   rangeTotals,
   activeBoardFilters,
+  warehouseLeadPct,
+  MAX_LEAD_PCT,
   STAFF_ONLY,
 } from './shiftBoard'
 import type { PlannedShift, ShiftRosterEntry, WorkSite } from '../../types/domain'
@@ -195,6 +198,182 @@ describe('rangeTotals', () => {
       shift({ profile_id: 'p1', work_date: '2026-08-13', planned_hours: 3 }),
     ])
     expect(t.get('p1')).toEqual({ hours: 3, count: 2 })
+  })
+})
+
+describe('groupShifts', () => {
+  const names = new Map([
+    ['p1', 'דני כהן'],
+    ['p2', 'יוסי לוי'],
+    ['p3', 'מאיה בר'],
+  ])
+
+  /** אותה משמרת בדיוק לשלושה אנשים: אותן משימות, אותן שעות. */
+  const sameShift = ['p1', 'p2', 'p3'].map((profile_id) =>
+    shift({ profile_id, work_date: '2026-08-12', task_ids: ['t1', 't2'] }),
+  )
+
+  it('שלושה עובדים על אותה משמרת הם צ׳יפ אחד עם שלושה שמות', () => {
+    const groups = groupShifts(sameShift, names)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].members.map((m) => m.name)).toEqual(['דני כהן', 'יוסי לוי', 'מאיה בר'])
+  })
+
+  it('וסדר המשימות במערך אינו מפצל אותם לשתי קבוצות', () => {
+    const groups = groupShifts(
+      [
+        shift({ profile_id: 'p1', work_date: '2026-08-12', task_ids: ['t1', 't2'] }),
+        shift({ profile_id: 'p2', work_date: '2026-08-12', task_ids: ['t2', 't1'] }),
+      ],
+      names,
+    )
+    expect(groups).toHaveLength(1)
+  })
+
+  it('משמרת עם קבוצת משימות אחרת נשארת בנפרד', () => {
+    const groups = groupShifts(
+      [
+        shift({ profile_id: 'p1', work_date: '2026-08-12', task_ids: ['t1', 't2'] }),
+        shift({ profile_id: 'p2', work_date: '2026-08-12', task_ids: ['t1'] }),
+      ],
+      names,
+    )
+    expect(groups).toHaveLength(2)
+  })
+
+  it("מצב 'לכל עובד' מחזיר קבוצה של אחד לכל משמרת", () => {
+    const groups = groupShifts(sameShift, names, 'each')
+    expect(groups).toHaveLength(3)
+    expect(groups.every((g) => g.members.length === 1)).toBe(true)
+  })
+
+  it('מי שיוצא מהמחסן פותח את הרשימה, והחלון נמתח אחורה עד היציאה', () => {
+    const groups = groupShifts(
+      [
+        shift({ profile_id: 'p2', work_date: '2026-08-12', task_ids: ['t1'] }),
+        shift({
+          profile_id: 'p1',
+          work_date: '2026-08-12',
+          task_ids: ['t1'],
+          work_site: 'warehouse',
+          warehouse_name: 'מחסן רמלה',
+          shift_start: '2026-08-12T05:30:00+03:00',
+        }),
+      ],
+      names,
+    )
+    const g = groups[0]
+    expect(g.members.map((m) => m.name)).toEqual(['דני כהן', 'יוסי לוי'])
+    expect(g.lead.profile_id).toBe('p1')
+    expect(g.start).toBe('2026-08-12T05:30:00+03:00')
+    expect(g.end).toBe('2026-08-12T15:00:00+03:00')
+    expect(g.warehouseStart).toBe('2026-08-12T05:30:00+03:00')
+    expect(g.warehouseName).toBe('מחסן רמלה')
+    // מי שמגיע ישר לשטח הוא זה שמגדיר מתי העבודה עצמה מתחילה
+    expect(g.onsiteStart).toBe('2026-08-12T07:00:00+03:00')
+  })
+
+  it('וכשכולם יוצאים מהמחסן אין התחלה בשטח להשוות מולה', () => {
+    const groups = groupShifts(
+      ['p1', 'p2'].map((profile_id) =>
+        shift({
+          profile_id,
+          work_date: '2026-08-12',
+          task_ids: ['t1'],
+          work_site: 'warehouse',
+          shift_start: '2026-08-12T05:30:00+03:00',
+        }),
+      ),
+      names,
+    )
+    expect(groups[0].onsiteStart).toBeNull()
+    expect(groups[0].warehouseStart).toBe('2026-08-12T05:30:00+03:00')
+    expect(warehouseLeadPct(groups[0])).toBe(0)
+  })
+
+  it('הסיום הוא המאוחר מבין החברים, גם כשהוא לא של הראשון', () => {
+    const groups = groupShifts(
+      [
+        shift({ profile_id: 'p1', work_date: '2026-08-12', task_ids: ['t1'] }),
+        shift({
+          profile_id: 'p2',
+          work_date: '2026-08-12',
+          task_ids: ['t1'],
+          shift_end: '2026-08-12T16:30:00+03:00',
+        }),
+      ],
+      names,
+    )
+    expect(groups[0].end).toBe('2026-08-12T16:30:00+03:00')
+  })
+
+  it('הקבוצות חוזרות ממוינות לפי שעת ההתחלה', () => {
+    const groups = groupShifts(
+      [
+        shift({
+          profile_id: 'p1',
+          work_date: '2026-08-12',
+          task_ids: ['t2'],
+          shift_start: '2026-08-12T12:00:00+03:00',
+        }),
+        shift({ profile_id: 'p2', work_date: '2026-08-12', task_ids: ['t1'] }),
+      ],
+      names,
+    )
+    expect(groups.map((g) => g.members[0].name)).toEqual(['יוסי לוי', 'דני כהן'])
+  })
+
+  it('משמרת בלי משימות נופלת לאחור לשעות ואינה מתמזגת עם משמרת אחרת', () => {
+    const groups = groupShifts(
+      [
+        shift({ profile_id: 'p1', work_date: '2026-08-12', task_ids: [] }),
+        shift({
+          profile_id: 'p2',
+          work_date: '2026-08-12',
+          task_ids: [],
+          shift_start: '2026-08-12T09:00:00+03:00',
+        }),
+      ],
+      names,
+    )
+    expect(groups).toHaveLength(2)
+  })
+})
+
+describe('warehouseLeadPct', () => {
+  const names = new Map([
+    ['p1', 'דני כהן'],
+    ['p2', 'יוסי לוי'],
+  ])
+
+  const mixed = (warehouseStart: string) =>
+    groupShifts(
+      [
+        shift({ profile_id: 'p2', work_date: '2026-08-12', task_ids: ['t1'] }),
+        shift({
+          profile_id: 'p1',
+          work_date: '2026-08-12',
+          task_ids: ['t1'],
+          work_site: 'warehouse',
+          shift_start: warehouseStart,
+        }),
+      ],
+      names,
+    )[0]
+
+  it('שעה של נסיעה מתוך חלון של תשע היא כאחד עשר אחוז', () => {
+    // 06:00 → 15:00 = 9 שעות, מתוכן שעה עד תחילת העבודה ב-07:00
+    expect(warehouseLeadPct(mixed('2026-08-12T06:00:00+03:00'))).toBeCloseTo(100 / 9, 5)
+  })
+
+  it('ונסיעה ארוכה בטירוף נחסמת, כדי שהפס לא יבלע את השמות', () => {
+    // 13 שעות "נסיעה" מתוך חלון של 21 — 62%, שנחתכות ל-60
+    expect(warehouseLeadPct(mixed('2026-08-11T18:00:00+03:00'))).toBe(MAX_LEAD_PCT)
+  })
+
+  it('בלי יוצא מחסן אין פס בכלל', () => {
+    const g = groupShifts([shift({ profile_id: 'p1', work_date: '2026-08-12' })], names)[0]
+    expect(warehouseLeadPct(g)).toBe(0)
   })
 })
 
