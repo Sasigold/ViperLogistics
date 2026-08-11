@@ -50,6 +50,7 @@ import {
 import { fmtDate, fmtMonth, fmtTime, toISODate } from '../../lib/dates'
 import { NEUTRAL, readableOn } from '../../lib/colors'
 import { useIsMobile } from '../../lib/useMediaQuery'
+import { useDragScroll } from '../../lib/useDragScroll'
 import { TaskDrawer } from '../tasks/TaskDrawer'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
@@ -556,6 +557,11 @@ export default function WorkBoardPage() {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const cardsRef = useRef<HTMLDivElement>(null)
+
+  /* בעכבר אפשר גם לתפוס את הלוח ולמשוך אותו. התנאי הוא גם המפתח שמפעיל את
+     ההאזנה מחדש: המיכל עצמו קיים רק בתצוגת הטבלה, ורק אחרי שהנתונים הגיעו. */
+  useDragScroll(scrollRef, !asCards && !isLoading && rows.length > 0)
+
   const virtualizer = useVirtualizer({
     horizontal: true,
     isRtl: true,
