@@ -77,6 +77,7 @@
   --animate-slide-in: vl-slide-in var(--vl-dur-slow) var(--vl-ease-out);
   --animate-slide-up: vl-slide-up var(--vl-dur) var(--vl-ease-out);
   --animate-shimmer: vl-shimmer 1.4s ease-in-out infinite;
+  --animate-highlight: vl-highlight 2s var(--vl-ease-out);
 }
 
 /* ── 2. semantic runtime tokens — LIGHT ───────────────────────────────────── */
@@ -728,6 +729,18 @@
   }
   100% {
     opacity: 1;
+  }
+}
+/* מי שהגיע לכאן מהתראה כבר יודע מה הוא מחפש — ההבזק רק אומר לעין איפה זה.
+   ‏box-shadow ולא border, כדי שהשורה לא תזוז בפיקסל בזמן ההדגשה. */
+@keyframes vl-highlight {
+  0% {
+    background-color: var(--vl-primary-subtle);
+    box-shadow: 0 0 0 2px var(--vl-primary);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 2px transparent;
   }
 }
 

@@ -290,7 +290,7 @@ export default function WorkBoardPage() {
     (perm?: string) => canInline && (!perm || has(perm)),
     [canInline, has],
   )
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const prefs = useRef(loadPrefs())
   const isMobile = useIsMobile()
 
@@ -599,6 +599,24 @@ export default function WorkBoardPage() {
   }, [virtualItems])
   const overlaps = (start: number, width: number) => start < viewport.end && start + width > viewport.start
   const visibleBands = bands.filter((b) => overlaps(b.start, b.width))
+
+  /**
+   * ‏?task= ו-?date= נקראו עד כה רק ב-useState initializer שלמעלה, כלומר רק
+   * בטעינת המסך. לחיצה על התראה שנייה בזמן שהלוח כבר פתוח החליפה את ה-URL ולא
+   * עשתה דבר — וזה בדיוק המצב שאחרי שהפעמון הפך ללחיץ. הקריאה כאן היא על
+   * שינוי הפרמטרים, ולכן היא מכסה גם את הנחיתה הראשונה וגם את כל הבאות.
+   *
+   * ‏TaskDrawer שולף את המשימה לפי המזהה בעצמו, ולכן היא נפתחת גם כשהחודש
+   * שמאחוריה עוד נטען.
+   */
+  const taskParam = params.get('task')
+  const dateParam = params.get('date')
+  useEffect(() => {
+    if (dateParam) setMonth(startOfMonth(parseISO(dateParam)))
+  }, [dateParam])
+  useEffect(() => {
+    if (taskParam) setDrawer({ open: true, taskId: taskParam })
+  }, [taskParam])
 
   const openTask = useCallback((id: string) => setDrawer({ open: true, taskId: id }), [])
   /** stable, because TaskHeader is memoised on a shallow prop compare */
@@ -1179,7 +1197,16 @@ export default function WorkBoardPage() {
 
         <TaskDrawer
           open={drawer.open}
-          onClose={() => setDrawer({ open: false, taskId: null })}
+          onClose={() => {
+            setDrawer({ open: false, taskId: null })
+            /* ‏?task= יורד עם המגירה. אחרת לחיצה חוזרת על אותה התראה לא הייתה
+               משנה את הפרמטר, והאפקט שלמעלה לא היה נורה שנית. */
+            if (params.has('task')) {
+              const next = new URLSearchParams(params)
+              next.delete('task')
+              setParams(next, { replace: true })
+            }
+          }}
           taskId={drawer.taskId}
           initial={drawer.date ? ({ task_date: drawer.date } as Partial<TaskRow>) : undefined}
         />

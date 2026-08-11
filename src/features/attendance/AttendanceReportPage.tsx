@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { useMutation } from '@tanstack/react-query'
 import {
   Banknote,
@@ -46,7 +47,7 @@ import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
 import { useContractors, useStaff } from '../../lib/queries'
 import { fmtDate, fmtMoney, fmtTime, toISODate } from '../../lib/dates'
-import { addMonths, eachDayOfInterval, endOfMonth, format, startOfMonth, subMonths } from 'date-fns'
+import { addMonths, eachDayOfInterval, endOfMonth, format, parseISO, startOfMonth, subMonths } from 'date-fns'
 import { useAttendanceInvalidate, useAttendanceReport, useContractorStaff } from './attendanceQueries'
 import { AttendanceEntryDrawer } from './AttendanceEntryDrawer'
 import {
@@ -250,6 +251,33 @@ export function AttendanceReport({
   const rows = data?.rows ?? []
   const totals = data?.totals
   const showMoney = !!data?.can_see_pay
+
+  /**
+   * נחיתה מהתראת "דיווח נוכחות ממתין".
+   *
+   * ‏app.notification_link (0054) שולח את שני הפרמטרים יחד: ?date= קובע את
+   * החודש, ובלעדיו הדוח היה נפתח על החודש הנוכחי ושורה מלפני חודשיים לא הייתה
+   * בין הנטענות כלל. ?entry= פותח את המגירה — היא מקבלת שורה מלאה ולא מזהה,
+   * ולכן זה קורה רק אחרי שהשורות חזרו מהשרת.
+   *
+   * המשובץ בפורטל הקבלן חולק את הרכיב הזה אך לא את ה-URL שלו, ולכן הוא מוחרג.
+   */
+  const [params] = useSearchParams()
+  const entryParam = embedded ? null : params.get('entry')
+  const dateParam = embedded ? null : params.get('date')
+  const openedEntry = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (dateParam) setMonthDate(startOfMonth(parseISO(dateParam)))
+  }, [dateParam])
+
+  useEffect(() => {
+    if (!entryParam || openedEntry.current === entryParam) return
+    const row = data?.rows.find((r) => r.id === entryParam)
+    if (!row) return
+    openedEntry.current = entryParam
+    setSelected(row)
+  }, [entryParam, data])
 
   /**
    * שעות נוספות הן הגדרה פר-עובד (worker_pay_settings.overtime_enabled), והשרת

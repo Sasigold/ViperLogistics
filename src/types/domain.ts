@@ -673,6 +673,11 @@ export interface Notification {
   body: string | null
   entity_type: string | null
   entity_id: string | null
+  /**
+   * לאן הלחיצה מובילה, כפי ש-`app.notification_link` (0054) חישב ברגע היצירה.
+   * אותו ערך בדיוק נשלח כ-`url` בהתראת הדחיפה, כדי ששני המסלולים ינחתו יחד.
+   */
+  link: string | null
   read_at: string | null
   created_at: string
   /** הסוג הושתק לנמען הזה: השורה נשמרה כיומן אך אינה מוצגת בפעמון. */

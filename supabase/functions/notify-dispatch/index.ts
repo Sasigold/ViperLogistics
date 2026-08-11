@@ -18,6 +18,12 @@
  *   RESEND_API_KEY          — בלעדיו משלוח מייל מסומן skipped ולא נכשל
  *   VAPID_KEYS              — JSON של זוג מפתחות VAPID (ראו README)
  *   VAPID_SUBJECT           — 'mailto:...' שמזהה את השולח מול שירות הדחיפה
+ *
+ * ⚠ הקובץ הזה אינו מסונכרן עם מה שפרוס בפועל. הפונקציה החיה נשענת על
+ * npm:web-push ועל rpc('get_notify_dispatch_secret') במקום על jsr:@negrel/webpush
+ * ועל NOTIFY_DISPATCH_SECRET שכאן. שינוי לוגי (כמו מעבר ל-notifications.link
+ * ב-0054) חייב להיכתב בשני המקומות; פריסה של הקובץ הזה כמות שהוא הייתה מחליפה
+ * גם את ספריית הדחיפה וגם את מנגנון הסוד של מערכת שעובדת.
  */
 import { createClient } from 'npm:@supabase/supabase-js@2'
 /**
@@ -53,26 +59,9 @@ interface Delivery {
     type: string
     entity_type: string | null
     entity_id: string | null
+    link: string | null
   } | null
   push_subscriptions: { endpoint: string; p256dh: string; auth: string } | null
-}
-
-/**
- * לאן ההתראה מובילה כשלוחצים עליה.
- *
- * המפה יושבת כאן ולא ב-Service Worker במכוון: ה-SW צריך להישאר טיפש ולהציג
- * מה שקיבל, אחרת כל שינוי בניתוב היה מחייב פריסה של worker חדש והמתנה עד
- * שכל מכשיר יחליף אותו.
- *
- * שימו לב שאין מסך למשימה בודדת (‏router.tsx) — 'task' מוביל ללוח העבודה.
- */
-function linkFor(type: string, entityType: string | null, entityId: string | null): string {
-  if (entityType === 'event' && entityId) return `/events/${entityId}`
-  if (entityType === 'task') return '/board'
-  if (entityType === 'attendance_entry') {
-    return type === 'attendance_submitted' ? '/attendance' : '/my/attendance'
-  }
-  return '/'
 }
 
 Deno.serve(async (req) => {
@@ -95,7 +84,7 @@ Deno.serve(async (req) => {
     .from('notification_deliveries')
     .select(
       'id, channel, address, attempts, subscription_id, ' +
-        'notifications(title, body, type, entity_type, entity_id), ' +
+        'notifications(title, body, type, entity_type, entity_id, link), ' +
         'push_subscriptions(endpoint, p256dh, auth)',
     )
     .eq('status', 'pending')
@@ -234,7 +223,10 @@ Deno.serve(async (req) => {
     const payload = JSON.stringify({
       title: n?.title ?? 'ViperLogistics',
       body: (n?.body ?? '').slice(0, 300),
-      url: linkFor(n?.type ?? '', n?.entity_type ?? null, n?.entity_id ?? null),
+      // ‏notifications.link נכתב בזמן היצירה על ידי app.notification_link (0054).
+      // המפה יושבת שם ולא כאן כדי שהפעמון והפוש יובילו לאותו מקום בדיוק, ולא
+      // בשתי מפות שנפרדות זו מזו בשינוי הראשון.
+      url: n?.link ?? '/',
       tag: d.id,
       type: n?.type ?? '',
     })

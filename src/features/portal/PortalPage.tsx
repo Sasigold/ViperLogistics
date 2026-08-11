@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Banknote,
@@ -42,6 +43,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { useContractorWorkers } from '../../lib/queries'
+import { HIGHLIGHT_CLASS, useDeepLinkHighlight } from '../../lib/deepLink'
 import { fmtDate, fmtMoney, fmtTime } from '../../lib/dates'
 import { WorkersTab } from '../contractors/ContractorDetailPage'
 import { AttendanceReport } from '../attendance/AttendanceReportPage'
@@ -77,6 +79,15 @@ export default function PortalPage() {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [tab, setTab] = useState<'tasks' | 'workers' | 'attendance'>('tasks')
+
+  /* התראת משימה של קבלן מובילה לכאן ולא ללוח העבודה — /board מגודר ב-board.view
+     שהיא הרשאת staff, ולקבלן אין אותה. app.notification_link (0054) מפצל לפי
+     user_kind, והפרמטר הוא מה שאומר איזו משימה מבין החמישים ברשימה. */
+  const [params] = useSearchParams()
+  const taskParam = params.get('task')
+  useEffect(() => {
+    if (taskParam) setTab('tasks')
+  }, [taskParam])
 
   const { data: stats, isLoading } = useQuery({
     queryKey: ['portal', 'stats', from, to],
@@ -208,7 +219,13 @@ export default function PortalPage() {
         {visibleTabs.length > 1 && <Tabs items={visibleTabs} value={tab} onChange={setTab} />}
 
         {tab === 'tasks' ? (
-          <PortalTasks contractorId={contractorId!} from={from} to={to} canAssign={canAssign} />
+          <PortalTasks
+            contractorId={contractorId!}
+            from={from}
+            to={to}
+            canAssign={canAssign}
+            highlightId={taskParam}
+          />
         ) : tab === 'attendance' ? (
           /* אותו רכיב דוח של המנהל. התחימה לסגל של הקבלן נעשית בשרת, ולכן
              הפרופ כאן הוא נוחות ולא הגנה. */
@@ -226,11 +243,14 @@ function PortalTasks({
   from,
   to,
   canAssign,
+  highlightId,
 }: {
   contractorId: string
   from: string
   to: string
   canAssign: boolean
+  /** המשימה שהגיעו אליה מהתראה — נגללת ומובזקת פעם אחת */
+  highlightId?: string | null
 }) {
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ['portal', 'tasks', from, to],
@@ -274,6 +294,7 @@ function PortalTasks({
           term={terms.find((x) => x.task_id === t.id)}
           contractorId={contractorId}
           canAssign={canAssign}
+          highlighted={t.id === highlightId}
         />
       ))}
     </div>
@@ -285,12 +306,15 @@ function PortalTaskCard({
   term,
   contractorId,
   canAssign,
+  highlighted,
 }: {
   task: WorkBoardRow
   term?: { price: number; paid_at: string | null; paid_amount: number | null }
   contractorId: string
   canAssign: boolean
+  highlighted?: boolean
 }) {
+  const ref = useDeepLinkHighlight(highlighted ? task.id : null)
   const qc = useQueryClient()
   const toast = useToast()
   const { data: roster = [] } = useContractorWorkers(contractorId)
@@ -320,6 +344,10 @@ function PortalTaskCard({
   }
 
   return (
+    /* ה-ref יושב על עטיפה ולא על Card: Card מפזר את ה-rest שלו על אלמנט DOM
+       אבל אינו מצהיר על ref בטיפוסים, ותיקון ה-UI kit בשביל גלילה אחת הוא
+       שינוי גדול מהצורך. */
+    <div ref={ref as React.Ref<HTMLDivElement>} className={highlighted ? HIGHLIGHT_CLASS : undefined}>
     <Card>
       <CardHeader
         title={
@@ -380,6 +408,7 @@ function PortalTaskCard({
         </div>
       </CardBody>
     </Card>
+    </div>
   )
 }
 

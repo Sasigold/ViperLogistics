@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { useMutation } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import {
@@ -40,6 +40,7 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
 import { fmtDate } from '../../lib/dates'
+import { HIGHLIGHT_CLASS, useDeepLinkHighlight } from '../../lib/deepLink'
 import {
   useAttendanceInvalidate,
   useMyClockStatus,
@@ -484,6 +485,11 @@ function MyReportsCard({ reports }: { reports: AttendanceEntry[] }) {
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
   const invalidate = useAttendanceInvalidate()
+  /* התראת "הדיווח שלך אושר/נדחה" מובילה לכאן עם ?entry=. אין מגירה לפתוח
+     במסך הזה — הרשימה היא כל מה שיש — ולכן הסימון הוא גלילה והבזק. */
+  const [params] = useSearchParams()
+  const entryParam = params.get('entry')
+  const highlightRef = useDeepLinkHighlight(entryParam, reports.length > 0)
 
   const withdraw = useMutation({
     mutationFn: async (id: string) => {
@@ -508,7 +514,14 @@ function MyReportsCard({ reports }: { reports: AttendanceEntry[] }) {
         <CardBody className="p-3">
           <ul className="divide-y divide-slate-100">
             {reports.map((e) => (
-              <li key={e.id} className="flex flex-wrap items-center gap-2 py-2 text-xs">
+              <li
+                key={e.id}
+                ref={e.id === entryParam ? (highlightRef as React.Ref<HTMLLIElement>) : undefined}
+                className={cx(
+                  'flex flex-wrap items-center gap-2 py-2 text-xs',
+                  e.id === entryParam && HIGHLIGHT_CLASS,
+                )}
+              >
                 <span className="text-slate-700 font-medium">{fmtDate(e.work_date)}</span>
                 <span className="font-mono tabular-nums text-slate-600" dir="ltr">
                   {fmtShiftRange(e.clock_in_at, e.clock_out_at)}
