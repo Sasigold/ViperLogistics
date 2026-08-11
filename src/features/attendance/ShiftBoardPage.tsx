@@ -19,6 +19,8 @@ import {
   ICON,
   LayoutGrid,
   STROKE,
+  User,
+  Users,
   X,
 } from '../../components/ui/icons'
 import {
@@ -49,6 +51,7 @@ import {
   BOARD_LAYOUTS,
   BOARD_MODES,
   STAFF_ONLY,
+  TIMELINE_GROUPINGS,
   activeBoardFilters,
   applyBoardFilters,
   boardDays,
@@ -58,7 +61,13 @@ import {
   indexShifts,
   rangeTotals,
 } from './shiftBoard'
-import type { BoardFilters, BoardLayout, BoardMode } from './shiftBoard'
+import type {
+  BoardFilters,
+  BoardLayout,
+  BoardMode,
+  ShiftGroupMember,
+  TimelineGrouping,
+} from './shiftBoard'
 import type { PlannedShift, WorkSite } from '../../types/domain'
 
 const PREFS_KEY = 'vl-shiftboard-prefs'
@@ -66,6 +75,7 @@ const PREFS_KEY = 'vl-shiftboard-prefs'
 interface Prefs {
   mode?: BoardMode
   layout?: BoardLayout
+  grouping?: TimelineGrouping
 }
 
 function loadPrefs(): Prefs {
@@ -91,14 +101,19 @@ function ShiftBoard() {
 
   const [mode, setMode] = useState<BoardMode>(prefs.current.mode ?? 'week')
   const [layout, setLayout] = useState<BoardLayout>(prefs.current.layout ?? 'roster')
+  const [grouping, setGrouping] = useState<TimelineGrouping>(prefs.current.grouping ?? 'grouped')
   const [anchor, setAnchor] = useState(() => new Date())
   const [filters, setFilters] = useState<BoardFilters>(emptyBoardFilters)
   const [filtersOpen, setFiltersOpen] = useState(false)
-  const [selected, setSelected] = useState<{ shift: PlannedShift; name: string } | null>(null)
+  const [selected, setSelected] = useState<{
+    shift: PlannedShift
+    name: string
+    team?: ShiftGroupMember[]
+  } | null>(null)
 
   useEffect(() => {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ mode, layout }))
-  }, [mode, layout])
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ mode, layout, grouping }))
+  }, [mode, layout, grouping])
 
   const { from, to } = useMemo(() => boardRange(anchor, mode), [anchor, mode])
   const days = useMemo(() => boardDays(from, to), [from, to])
@@ -215,6 +230,24 @@ function ShiftBoard() {
         onChange={setLayout}
         block={isPhone}
       />
+      {/* הקיבוץ נוגע רק לציר השעות — בטבלת השיבוץ ממילא יש שורה לעובד */}
+      {layout === 'timeline' && (
+        <SegmentedControl
+          items={TIMELINE_GROUPINGS.map((g) => ({
+            key: g.key,
+            label: g.label,
+            icon:
+              g.key === 'grouped' ? (
+                <Users size={ICON.sm} strokeWidth={STROKE} />
+              ) : (
+                <User size={ICON.sm} strokeWidth={STROKE} />
+              ),
+          }))}
+          value={grouping}
+          onChange={setGrouping}
+          block={isPhone}
+        />
+      )}
     </>
   )
 
@@ -351,7 +384,15 @@ function ShiftBoard() {
             roster={roster}
             from={from}
             to={to}
-            onOpen={(shift, name) => setSelected({ shift, name })}
+            grouping={grouping}
+            onOpen={(g) =>
+              setSelected({
+                // הנציג הוא מי שמתחיל ראשון, ולכן המגירה מציגה את החלון המלא
+                shift: g.lead,
+                name: g.members.length === 1 ? g.members[0].name : `${g.members.length} עובדים`,
+                team: g.members.length > 1 ? g.members : undefined,
+              })
+            }
           />
         )}
       </div>
@@ -359,6 +400,7 @@ function ShiftBoard() {
       <ShiftDetailDrawer
         shift={selected?.shift ?? null}
         employeeName={selected?.name}
+        team={selected?.team}
         onClose={() => setSelected(null)}
       />
     </div>

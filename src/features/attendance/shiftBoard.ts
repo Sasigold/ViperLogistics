@@ -28,6 +28,21 @@ export const BOARD_LAYOUTS = [
 
 export type BoardLayout = (typeof BOARD_LAYOUTS)[number]['key']
 
+/**
+ * שתי דרכים לקרוא את ציר השעות.
+ *
+ * "מקובץ" הוא ברירת המחדל: כשחמישה אנשים עובדים באותה משמרת, חמישה צ׳יפים
+ * זהים זה לצד זה הם קיר שאי אפשר לקרוא ממנו כמה משמרות באמת רצות באותה
+ * שעה. "לכל עובד" נשאר כי לפעמים רוצים לראות שורה לכל אדם — למשל כשבודקים
+ * מי בדיוק חופף למי.
+ */
+export const TIMELINE_GROUPINGS = [
+  { key: 'grouped', label: 'מקובץ' },
+  { key: 'each', label: 'לכל עובד' },
+] as const
+
+export type TimelineGrouping = (typeof TIMELINE_GROUPINGS)[number]['key']
+
 export function boardRange(anchor: Date, mode: BoardMode): { from: string; to: string } {
   if (mode === 'week') {
     const from = startOfWeek(anchor, { weekStartsOn: 0 })
@@ -146,6 +161,116 @@ export function rangeTotals(shifts: PlannedShift[]): Map<string, { hours: number
     out.set(s.profile_id, hit)
   }
   return out
+}
+
+const ms = (iso: string) => parseISO(iso).getTime()
+
+export interface ShiftGroupMember {
+  shift: PlannedShift
+  name: string
+  /** יוצא מהמחסן, ולכן המשמרת שלו מתחילה מוקדם משל מי שמגיע ישר לשטח */
+  fromWarehouse: boolean
+}
+
+/** משמרת אחת בציר השעות, עם כל מי שעובד בה. */
+export interface ShiftGroup {
+  key: string
+  /** המשמרת שמייצגת את הקבוצה במגירת הפירוט — של החבר שמתחיל ראשון */
+  lead: PlannedShift
+  /** ממוינים לפי שעת ההתחלה, ואז לפי שם: יוצאי המחסן פותחים את הרשימה */
+  members: ShiftGroupMember[]
+  /** החלון שהקבוצה תופסת בציר: מההתחלה המוקדמת ועד הסיום המאוחר */
+  start: string
+  end: string
+  /** תחילת העבודה בשטח — של מי שאינו יוצא מהמחסן. null כשכולם יוצאים ממנו */
+  onsiteStart: string | null
+  /** היציאה המוקדמת מהמחסן. null כשאיש בקבוצה אינו מתחיל שם */
+  warehouseStart: string | null
+  warehouseName: string | null
+}
+
+/**
+ * מה הופך שתי משמרות לאותה משמרת: אותה קבוצת משימות בדיוק.
+ *
+ * ולא השעות — דווקא הן מה שמפריד בין מי שיוצא מהמחסן למי שמגיע ישר לשטח,
+ * ושניהם עובדים באותה משמרת. app.planned_shifts גוזר את החלון מהמשימות
+ * עצמן, ולכן זהות ב-task_ids גוררת גם אותו לקוח, אותה תווית ואותו סיום.
+ * משמרת בלי משימות אינה אמורה להתקיים, ובכל זאת יש לה נפילה לאחור לשעות.
+ */
+const shiftGroupKey = (s: PlannedShift) =>
+  s.task_ids?.length
+    ? [...s.task_ids].sort().join(',')
+    : `${s.shift_start}|${s.shift_end}|${s.label ?? ''}`
+
+const soloKey = (s: PlannedShift) => `${s.profile_id}|${s.work_date}|${s.seq}`
+
+/**
+ * המשמרות של כולם, מקובצות לפי מי עובד באותה משמרת.
+ *
+ * במצב 'each' כל משמרת היא קבוצה של אחד — אותו מבנה נתונים בדיוק, כדי
+ * שהמסך יצייר ויפתח מגירה בענף אחד ולא בשניים.
+ */
+export function groupShifts(
+  shifts: PlannedShift[],
+  nameById: Map<string, string>,
+  grouping: TimelineGrouping = 'grouped',
+): ShiftGroup[] {
+  const buckets = new Map<string, ShiftGroupMember[]>()
+  for (const s of shifts) {
+    const key = grouping === 'each' ? soloKey(s) : shiftGroupKey(s)
+    const member: ShiftGroupMember = {
+      shift: s,
+      name: nameById.get(s.profile_id) ?? '',
+      fromWarehouse: s.work_site === 'warehouse',
+    }
+    const hit = buckets.get(key)
+    if (hit) hit.push(member)
+    else buckets.set(key, [member])
+  }
+
+  const groups: ShiftGroup[] = []
+  for (const [key, members] of buckets) {
+    members.sort(
+      (a, b) =>
+        ms(a.shift.shift_start) - ms(b.shift.shift_start) || a.name.localeCompare(b.name, 'he'),
+    )
+    // אחרי המיון הראשון בכל תת-רשימה הוא המוקדם שבה
+    const wh = members.filter((m) => m.fromWarehouse)
+    const field = members.filter((m) => !m.fromWarehouse)
+    groups.push({
+      key,
+      lead: members[0].shift,
+      members,
+      start: members[0].shift.shift_start,
+      end: members.reduce(
+        (max, m) => (ms(m.shift.shift_end) > ms(max) ? m.shift.shift_end : max),
+        members[0].shift.shift_end,
+      ),
+      onsiteStart: field[0]?.shift.shift_start ?? null,
+      warehouseStart: wh[0]?.shift.shift_start ?? null,
+      warehouseName: wh.find((m) => m.shift.warehouse_name)?.shift.warehouse_name ?? null,
+    })
+  }
+  groups.sort((a, b) => ms(a.start) - ms(b.start) || a.key.localeCompare(b.key))
+  return groups
+}
+
+/**
+ * הפס המקווקו בראש הצ׳יפ נגמר בדיוק בשעה שבה מתחילה העבודה בשטח, ולכן
+ * גובהו הוא חלקה של הנסיעה מהמחסן מתוך כל החלון.
+ *
+ * 0 כשאין בקבוצה גם יוצא-מחסן וגם מי שמגיע ישר לשטח: בלי שניהם אין מול מה
+ * למדוד את הנסיעה, ומשמרת שכולה יוצאת מהמחסן מסומנת בתג ולא בפס. חסום
+ * ב-60% כי מעבר לזה הפס בולע את שמות העובדים שמתחתיו.
+ */
+export const MAX_LEAD_PCT = 60
+
+export function warehouseLeadPct(g: ShiftGroup): number {
+  if (!g.onsiteStart || !g.warehouseStart) return 0
+  const span = ms(g.end) - ms(g.start)
+  const lead = ms(g.onsiteStart) - ms(g.start)
+  if (span <= 0 || lead <= 0) return 0
+  return Math.min(MAX_LEAD_PCT, (lead / span) * 100)
 }
 
 /** כמה מסננים פעילים — למונה שעל כפתור הסינון. */

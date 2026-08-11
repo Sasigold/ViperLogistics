@@ -3,8 +3,12 @@
  *
  * תוסף ה-resource של FullCalendar אינו מותקן (ואינו חינמי), ולכן "כולם זה
  * לצד זה" אינו שורה לעובד אלא עמודת יום אחת שבה פריסת החפיפה של FullCalendar
- * מסדרת את כולם. מה שהופך את זה לקריא הוא ששם העובד הוא השורה הראשונה בכל
- * צ׳יפ — בלעדיו זה סתם קיר של צבעים.
+ * מסדרת את כולם. מה שהופך את זה לקריא הוא ששמות העובדים הם חלק מכל צ׳יפ —
+ * בלעדיהם זה סתם קיר של צבעים.
+ *
+ * האירוע כאן אינו משמרת של אדם אלא *קבוצה* (ראו groupShifts): במצב 'grouped'
+ * כל מי שעובד באותה משמרת נכנס לצ׳יפ אחד, ובמצב 'each' כל אחד מקבל קבוצה של
+ * אחד. אותו מבנה בשני המצבים, ולכן גם הציור וגם הקליק הם ענף אחד.
  *
  * הניווט שייך לעמוד ולא ללוח: headerToolbar כבוי, והטווח מוזרק מבחוץ. אין
  * לחבר כאן datesSet בחזרה למצב של העמוד, אחרת שתי התצוגות יוכלו להראות
@@ -17,7 +21,9 @@ import heLocale from '@fullcalendar/core/locales/he'
 import type { EventContentArg } from '@fullcalendar/core'
 import { parseISO } from 'date-fns'
 import { EmptyState } from '../../components/ui'
-import { ShiftChip } from './ShiftChip'
+import { ShiftGroupChip } from './ShiftGroupChip'
+import { groupShifts } from './shiftBoard'
+import type { ShiftGroup, TimelineGrouping } from './shiftBoard'
 import type { PlannedShift, ShiftRosterEntry } from '../../types/domain'
 
 const VIEW = 'timeGridBoard'
@@ -27,13 +33,15 @@ export function ShiftTimeline({
   roster,
   from,
   to,
+  grouping,
   onOpen,
 }: {
   shifts: PlannedShift[]
   roster: ShiftRosterEntry[]
   from: string
   to: string
-  onOpen: (shift: PlannedShift, employeeName: string) => void
+  grouping: TimelineGrouping
+  onOpen: (group: ShiftGroup) => void
 }) {
   const calRef = useRef<FullCalendar>(null)
   const nameById = useMemo(() => new Map(roster.map((r) => [r.id, r.full_name])), [roster])
@@ -42,18 +50,23 @@ export function ShiftTimeline({
     return Math.max(1, diff + 1)
   }, [from, to])
 
+  const groups = useMemo(
+    () => groupShifts(shifts, nameById, grouping),
+    [shifts, nameById, grouping],
+  )
+
   const events = useMemo(
     () =>
-      shifts.map((s) => ({
-        id: `${s.profile_id}-${s.work_date}-${s.seq}`,
-        title: nameById.get(s.profile_id) ?? '',
-        start: s.shift_start,
-        end: s.shift_end,
+      groups.map((g) => ({
+        id: g.key,
+        title: g.members.map((m) => m.name).join(', '),
+        start: g.start,
+        end: g.end,
         backgroundColor: 'transparent',
         borderColor: 'transparent',
-        extendedProps: { shift: s, name: nameById.get(s.profile_id) ?? '' },
+        extendedProps: { group: g },
       })),
-    [shifts, nameById],
+    [groups],
   )
 
   // הטווח נשלט מבחוץ. changeView עם תאריך פתיחה הוא הדרך היציבה להזיז view
@@ -85,10 +98,7 @@ export function ShiftTimeline({
         slotEventOverlap={false}
         events={events}
         eventContent={renderShift}
-        eventClick={(info) => {
-          const s = info.event.extendedProps.shift as PlannedShift
-          onOpen(s, info.event.extendedProps.name as string)
-        }}
+        eventClick={(info) => onOpen(info.event.extendedProps.group as ShiftGroup)}
         noEventsContent={() => <EmptyState compact art="calendar" title="אין משמרות בטווח הזה" />}
       />
     </div>
@@ -96,7 +106,5 @@ export function ShiftTimeline({
 }
 
 function renderShift(arg: EventContentArg) {
-  const shift = arg.event.extendedProps.shift as PlannedShift
-  const name = arg.event.extendedProps.name as string
-  return <ShiftChip shift={shift} name={name} className="h-full" />
+  return <ShiftGroupChip group={arg.event.extendedProps.group as ShiftGroup} className="h-full" />
 }
