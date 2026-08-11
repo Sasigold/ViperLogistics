@@ -135,7 +135,13 @@ export default function CalendarPage() {
   const { prompt, dialog: promptDialog } = usePrompt()
   const isMobile = useIsMobile()
 
-  const [range, setRange] = useState<{ from: string; to: string } | null>(null)
+  /**
+   * התקופה שהתצוגה עומדת עליה — החודש, לא רשת הימים שמציגה אותו. גריד של
+   * חודש פורש שש שורות מלאות, ולכן הוא גולש כמעט תמיד לימים של החודש שלפני
+   * ושל זה שאחרי. הימים האלה נשארים במקומם כדי שהשבוע יהיה שלם, אבל מה
+   * שנמצא עליהם — אירועים וחגים כאחד — שייך לחודש אחר ואינו מוצג כאן.
+   */
+  const [period, setPeriod] = useState<{ from: string; to: string } | null>(null)
   const [filters, setFilters] = useState<Filters>(emptyFilters)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [eventModal, setEventModal] = useState(false)
@@ -179,16 +185,16 @@ export default function CalendarPage() {
   const { data: statuses = [] } = useStatuses('event')
 
   const { data: events = [], isFetching } = useQuery({
-    queryKey: ['calendar', 'events', range],
-    enabled: !!range,
+    queryKey: ['calendar', 'events', period],
+    enabled: !!period,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('events')
         .select(
           'id, event_date, end_client_name, event_number, location_text, volume_m, truck_count, notes, no_parking, porterage, supplier_pickup, customer_id, status_id, customers(name, color), statuses(name, color, code)',
         )
-        .gte('event_date', range!.from)
-        .lte('event_date', range!.to)
+        .gte('event_date', period!.from)
+        .lte('event_date', period!.to)
         .is('deleted_at', null)
       if (error) throw error
       return data as unknown as CalEvent[]
@@ -200,6 +206,9 @@ export default function CalendarPage() {
 
   const filtered = useMemo(() => {
     return events.filter((e) => {
+      /* השאילתה כבר תחומה לתקופה. הבדיקה הזאת היא על נתונים שהגיעו מטווח
+         אחר — תשובה מ-cache של חודש שכן, או ריענון שקדם למעבר החודש */
+      if (period && (e.event_date < period.from || e.event_date > period.to)) return false
       // an explicit "status: בוטל" filter outranks the toggle — asking for the
       // cancelled ones by name is asking to see them
       if (!filters.showCancelled && filters.status !== cancelledStatus?.id) {
@@ -215,7 +224,7 @@ export default function CalendarPage() {
       }
       return true
     })
-  }, [events, filters, cancelledStatus])
+  }, [events, filters, cancelledStatus, period])
 
   const eventChips = useMemo(
     () =>
@@ -238,8 +247,8 @@ export default function CalendarPage() {
      בשבוע וגם בסדר היום, ובלי הנחות על ה-DOM הפנימי של FullCalendar.      */
 
   const holidays = useMemo(
-    () => (range ? holidaysInRange(range.from, range.to) : new Map<string, Holiday>()),
-    [range],
+    () => (period ? holidaysInRange(period.from, period.to) : new Map<string, Holiday>()),
+    [period],
   )
 
   const holidayChips = useMemo(
@@ -733,7 +742,7 @@ export default function CalendarPage() {
       ) : (
         <PageHeader
           title="לוח שנה"
-          subtitle={range ? `${filtered.length} אירועים בטווח המוצג` : 'טוען...'}
+          subtitle={period ? `${filtered.length} אירועים בתקופה המוצגת` : 'טוען...'}
           actions={headerActions}
         >
           {headerExtras}
@@ -817,7 +826,12 @@ export default function CalendarPage() {
               eventContent={renderEvent}
               eventDrop={onDrop}
               datesSet={(info) => {
-                setRange({ from: info.startStr.slice(0, 10), to: info.endStr.slice(0, 10) })
+                /* ‏`currentEnd` הוא הבוקר שאחרי התקופה — יום אחורה, וזה
+                   התאריך האחרון ששייך לה. השאילתה נשענת על אותם גבולות:
+                   מה שלא מוצג גם לא נשלף. */
+                const lastDay = new Date(info.view.currentEnd)
+                lastDay.setDate(lastDay.getDate() - 1)
+                setPeriod({ from: toISODate(info.view.currentStart), to: toISODate(lastDay) })
                 setView(info.view.type as ViewKey)
                 const now = new Date()
                 // the *period* the view is on (the month, the week), not the grid's
