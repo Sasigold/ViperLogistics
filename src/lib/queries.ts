@@ -57,11 +57,50 @@ export function useTrucks() {
   return useQuery({ queryKey: ['trucks', 'list'], queryFn: () => fetchList<Truck>('trucks') })
 }
 
-export function useFormFields() {
+/**
+ * The event-form catalog: the fixed system fields, plus the custom fields one
+ * customer defined. Without a customer only the system fields come back —
+ * another company's custom fields are neither useful here nor readable, since
+ * `form_fields_read` (0053) scopes them.
+ */
+export function useFormFields(customerId?: string | null) {
   return useQuery({
-    queryKey: ['form_fields', 'list'],
+    queryKey: ['form_fields', 'list', customerId ?? 'system'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('form_fields').select('*').order('sort_order')
+      let q = supabase.from('form_fields').select('*').is('deleted_at', null)
+      q = customerId ? q.or(`customer_id.is.null,customer_id.eq.${customerId}`) : q.is('customer_id', null)
+      const { data, error } = await q.order('sort_order')
+      if (error) throw error
+      return data as FormField[]
+    },
+  })
+}
+
+/** Only the fields this customer defined — what the form draws dynamically. */
+export function useCustomFormFields(customerId?: string | null) {
+  const q = useFormFields(customerId)
+  const fields = q.data
+  return {
+    ...q,
+    data: useMemo(() => (fields ?? []).filter((f) => f.customer_id !== null), [fields]),
+  }
+}
+
+/**
+ * Every customer's custom fields at once — the Excel workbook needs the whole
+ * set, because one file may carry rows for several customers.
+ */
+export function useAllCustomFormFields(enabled = true) {
+  return useQuery({
+    queryKey: ['form_fields', 'custom', 'all'],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('form_fields')
+        .select('*')
+        .is('deleted_at', null)
+        .not('customer_id', 'is', null)
+        .order('sort_order')
       if (error) throw error
       return data as FormField[]
     },

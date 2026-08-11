@@ -33,7 +33,8 @@ const INHERITED_LABEL: Record<FieldState, string> = {
 export function UserFormFieldsCard({ profile }: { profile: Profile }) {
   const qc = useQueryClient()
   const toast = useToast()
-  const { data: fields = [], isLoading } = useFormFields()
+  // scoped to the company, so this person's own custom fields are listed too
+  const { data: fields = [], isLoading } = useFormFields(profile.customer_id)
   const { data: companyConfig = [] } = useCustomerFormConfig(profile.customer_id)
   const { data: overrides = [] } = useUserFormFields(profile.id)
 

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import ExcelJS from 'exceljs'
 import { useQueryClient } from '@tanstack/react-query'
 import {
@@ -13,24 +13,26 @@ import {
 } from '../../components/ui/icons'
 import { supabase } from '../../lib/supabase'
 import { Button, Modal, Spinner, useToast } from '../../components/ui'
-import { useCustomers, useExecutionMethods, useTaskTypes } from '../../lib/queries'
+import { useAllCustomFormFields, useCustomers, useExecutionMethods, useTaskTypes } from '../../lib/queries'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { errorMessage } from '../../lib/errors'
 import {
   EVENTS_SHEET,
-  EVENT_COLUMNS,
   TASKS_SHEET,
   TASK_COLUMNS,
   buildImportPayload,
   buildSamplePlan,
   buildTemplatePlan,
+  eventColumns,
   groupTasks,
   normalizeCell,
   parseEventSheet,
   parseSheet,
 } from './eventsWorkbook'
 import type { Matrix, SheetPlan, SheetRow } from './eventsWorkbook'
+import { formatCustomValue } from '../events/CustomFieldInput'
+import type { CustomFieldValue } from '../../types/domain'
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
@@ -85,6 +87,11 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
   const { data: customers = [] } = useCustomers()
   const { data: taskTypes = [] } = useTaskTypes()
   const { data: executionMethods = [] } = useExecutionMethods()
+  /* Custom fields become extra columns. One file can carry rows for several
+     customers, so the whole set is loaded, not one customer's. */
+  const { data: customFields = [] } = useAllCustomFormFields(open)
+  const customerNames = useMemo(() => new Map(customers.map((c) => [c.id, c.name])), [customers])
+  const eventCols = useMemo(() => eventColumns(customFields, customerNames), [customFields, customerNames])
   const has = useAuth((s) => s.has)
   /**
    * Export and import were both reachable by anyone who could open the events
@@ -123,7 +130,16 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
 
       const eventRows: SheetRow[] = rows.map((e) => {
         const contact = e.event_contacts as { contact_name?: string; contact_phone?: string } | null
+        // a custom field belongs to one customer, so only that customer's rows
+        // carry a value in its column — everyone else's cell stays empty
+        const stored = (e.custom_fields ?? {}) as Record<string, CustomFieldValue>
+        const custom: SheetRow = {}
+        for (const f of customFields) {
+          if (f.customer_id !== e.customer_id) continue
+          custom[f.field_key] = formatCustomValue(f, stored[f.field_key])
+        }
         return {
+          ...custom,
           row_key: keyById.get(e.id as string) ?? '',
           customer_name: (e.customers as { name: string } | null)?.name ?? '',
           end_client_name: String(e.end_client_name ?? ''),
@@ -175,7 +191,7 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
 
       await downloadWorkbook(
         [
-          { name: EVENTS_SHEET, columns: EVENT_COLUMNS, rows: eventRows },
+          { name: EVENTS_SHEET, columns: eventCols, rows: eventRows },
           { name: TASKS_SHEET, columns: TASK_COLUMNS, rows: taskRows },
         ],
         `events-${new Date().toISOString().slice(0, 10)}.xlsx`,
@@ -199,14 +215,14 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
       const tasksWs = wb.getWorksheet(TASKS_SHEET) ?? (wb.worksheets.length > 1 ? wb.worksheets[1] : undefined)
       if (!eventsWs) throw new Error('הקובץ ריק')
 
-      const events = parseEventSheet(sheetToMatrix(eventsWs))
+      const events = parseEventSheet(sheetToMatrix(eventsWs), eventCols)
       if (events.length === 0) throw new Error('לא נמצאו שורות לייבוא')
       const taskRows = tasksWs === eventsWs ? [] : parseSheet(sheetToMatrix(tasksWs), TASK_COLUMNS)
 
       const { tasksByKey, errors } = groupTasks(events, taskRows)
       if (errors.length) throw new Error(errors.join(' · '))
 
-      const { payloads, unknownCustomers } = buildImportPayload(events, tasksByKey, customers)
+      const { payloads, unknownCustomers } = buildImportPayload(events, tasksByKey, customers, customFields)
       if (unknownCustomers.length) {
         throw new Error(`לקוחות לא מוכרים בקובץ: ${unknownCustomers.join(', ')}`)
       }
@@ -225,7 +241,7 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
     }
   }
 
-  const downloadTemplate = () => downloadWorkbook(buildTemplatePlan(), 'events-template.xlsx')
+  const downloadTemplate = () => downloadWorkbook(buildTemplatePlan(eventCols), 'events-template.xlsx')
 
   const downloadSample = () =>
     downloadWorkbook(
@@ -233,7 +249,7 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
         customers: customers.map((c) => c.name),
         taskTypes: taskTypes.filter((t) => t.is_active).map((t) => t.name),
         executionMethods: executionMethods.filter((m) => m.is_active).map((m) => m.name),
-      }),
+      }, eventCols),
       'events-sample.xlsx',
     )
 

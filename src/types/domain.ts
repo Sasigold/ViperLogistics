@@ -115,10 +115,29 @@ export interface Supplier {
   deleted_at: string | null
 }
 
+/** The shape a custom field takes in the event form. */
+export type CustomFieldType =
+  | 'text'
+  | 'textarea'
+  | 'number'
+  | 'date'
+  | 'time'
+  | 'select'
+  | 'checkbox'
+
+/** A value a custom field can hold — see `app.event_custom_patch`. */
+export type CustomFieldValue = string | number | boolean | null
+
 export interface FormField {
   field_key: string
   label_he: string
   sort_order: number
+  /** null for the fixed system fields; a customer id for one they defined */
+  customer_id: string | null
+  field_type: CustomFieldType
+  /** 'select' only — the values the field offers */
+  options: string[]
+  deleted_at: string | null
 }
 
 export interface CustomerFormField {
@@ -153,6 +172,8 @@ export interface EventRow {
   no_parking: boolean
   porterage: boolean
   supplier_pickup: boolean
+  /** values of this customer's custom form fields, keyed by field_key */
+  custom_fields: Record<string, CustomFieldValue>
   created_by: string | null
   deleted_at: string | null
   customers?: { name: string; color: string }

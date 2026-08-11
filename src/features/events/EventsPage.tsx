@@ -17,9 +17,10 @@ import {
 import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { useCustomers } from '../../lib/queries'
+import { useCustomFormFields, useCustomers } from '../../lib/queries'
 import { fmtDate } from '../../lib/dates'
 import { EventFormModal } from './EventFormModal'
+import { formatCustomValue } from './CustomFieldInput'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { lazyPage } from '../../lib/lazyPage'
@@ -30,7 +31,7 @@ import type { EventRow } from '../../types/domain'
 const ExcelDialog = lazyPage(() => import('../importExport/ExcelDialog').then((m) => ({ default: m.ExcelDialog })))
 
 export default function EventsPage() {
-  const { has, canCreateEvent, showsEventField } = useAuth()
+  const { me, has, canCreateEvent, showsEventField } = useAuth()
   const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [customer, setCustomer] = useState('')
@@ -65,6 +66,13 @@ export default function EventsPage() {
   const showLocation = showsEventField('location')
   const showVolume = showsEventField('volume_m')
   const showTrucks = showsEventField('truck_count')
+
+  /* Custom fields belong to one customer, so they only become columns once
+     the table is narrowed to one — either by the filter, or because the
+     reader is bound to a company. Across all customers they would be a wall
+     of empty cells, one group per company. */
+  const scopedCustomer = me?.profile.customer_id ?? customer ?? null
+  const { data: customFields } = useCustomFormFields(scopedCustomer || null)
 
   const columns = useMemo<Column<EventRow>[]>(() => {
     const hidden = new Set<string>()
@@ -157,9 +165,21 @@ export default function EventsPage() {
         sortValue: (e) => e.statuses?.name,
         render: (e) => (e.statuses ? <StatusPill color={e.statuses.color}>{e.statuses.name}</StatusPill> : null),
       },
+      ...customFields
+        .filter((f) => showsEventField(f.field_key))
+        .map<Column<EventRow>>((f) => ({
+          key: f.field_key,
+          header: f.label_he,
+          width: 140,
+          sortValue: (e) => formatCustomValue(f, e.custom_fields?.[f.field_key]) || undefined,
+          render: (e) => {
+            const v = formatCustomValue(f, e.custom_fields?.[f.field_key])
+            return v ? <span className="block truncate">{v}</span> : <span className="text-ink-tertiary">—</span>
+          },
+        })),
     ]
     return all.filter((c) => !hidden.has(c.key))
-  }, [showCustomer, showNumber, showLocation, showVolume, showTrucks])
+  }, [showCustomer, showNumber, showLocation, showVolume, showTrucks, customFields, showsEventField])
 
   const filtered = !!q || !!customer
 

@@ -45,11 +45,12 @@ import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
-import { useStatuses } from '../../lib/queries'
+import { useCustomFormFields, useStatuses } from '../../lib/queries'
 import { errorMessage } from '../../lib/errors'
 import { fmtDate, fmtDateLong, fmtHours, fmtTime } from '../../lib/dates'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { EventFormModal } from './EventFormModal'
+import { formatCustomValue } from './CustomFieldInput'
 import { TaskDrawer } from '../tasks/TaskDrawer'
 import { EventActivityLog } from './EventActivityLog'
 import type { EventRow, WorkBoardRow } from '../../types/domain'
@@ -94,6 +95,8 @@ export default function EventDetailPage() {
       return data as WorkBoardRow[]
     },
   })
+
+  const { data: customFields } = useCustomFormFields(data?.event.customer_id ?? null)
 
   usePageTitle(data?.event.end_client_name ?? null)
 
@@ -351,6 +354,13 @@ export default function EventDetailPage() {
     ['הקמה', sectionLine('setup')],
     ['פירוק', sectionLine('teardown')],
     ...(show('notes') ? ([['הערות', event.notes]] as [string, React.ReactNode][]) : []),
+    /* the customer's own fields, under the same rule as everything above */
+    ...(customFields
+      .filter((f) => show(f.field_key))
+      .map((f) => [f.label_he, formatCustomValue(f, event.custom_fields?.[f.field_key])]) as [
+      string,
+      React.ReactNode,
+    ][]),
   ]
 
   const addons = show('addons')

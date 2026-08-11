@@ -57,7 +57,7 @@ import { usePageTitle } from '../../app/breadcrumbs'
 import PricingTab from './PricingTab'
 import { useWarehouses } from '../attendance/attendanceQueries'
 import { RequirePermission } from '../auth/guards'
-import type { Customer, FieldState, Supplier } from '../../types/domain'
+import type { Customer, CustomFieldType, FieldState, Supplier } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
 const TABS = [
@@ -342,14 +342,40 @@ const FIELD_STATES = [
   { key: 'required' as const, label: 'חובה', icon: <span className="text-error">*</span> },
 ]
 
+/** The shapes a custom field can take, in the order the picker offers them. */
+const CUSTOM_FIELD_TYPES: { key: CustomFieldType; label: string }[] = [
+  { key: 'text', label: 'טקסט' },
+  { key: 'textarea', label: 'טקסט ארוך' },
+  { key: 'number', label: 'מספר' },
+  { key: 'date', label: 'תאריך' },
+  { key: 'time', label: 'שעה' },
+  { key: 'select', label: 'בחירה מרשימה' },
+  { key: 'checkbox', label: 'כן / לא' },
+]
+
+const typeLabel = (t: CustomFieldType) => CUSTOM_FIELD_TYPES.find((x) => x.key === t)?.label ?? t
+
 function FieldsTab({ customerId }: { customerId: string }) {
   const qc = useQueryClient()
   const toast = useToast()
   const { has } = useAuth()
+  const { confirm, dialog } = useConfirm()
   const canEdit = has(PERM.CUSTOMERS_MANAGE_FORM_FIELDS)
-  const { data: fields = [], isLoading } = useFormFields()
+  const { data: fields = [], isLoading } = useFormFields(customerId)
   const { data: config = [] } = useCustomerFormConfig(customerId)
   const stateOf = (key: string): FieldState => config.find((c) => c.field_key === key)?.state ?? 'visible'
+
+  const systemFields = fields.filter((f) => f.customer_id === null)
+  const customFields = fields.filter((f) => f.customer_id !== null)
+
+  const [newLabel, setNewLabel] = useState('')
+  const [newType, setNewType] = useState<CustomFieldType>('text')
+  const [newOptions, setNewOptions] = useState('')
+
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ['form_fields'] })
+    void qc.invalidateQueries({ queryKey: ['customer_form_fields', customerId] })
+  }
 
   const update = useMutation({
     mutationFn: async ({ key, state }: { key: string; state: FieldState }) => {
@@ -360,6 +386,55 @@ function FieldsTab({ customerId }: { customerId: string }) {
     onError: (e) => toast.error(errorMessage(e)),
   })
 
+  /* The key is minted server-side: one chosen here could collide with a real
+     column name ('notes', 'event_date') and be read twice out of the payload. */
+  const create = useMutation({
+    mutationFn: async () => {
+      const options = newOptions
+        .split('\n')
+        .map((o) => o.trim())
+        .filter(Boolean)
+      const { error } = await supabase.rpc('create_custom_form_field', {
+        p_customer_id: customerId,
+        p_label: newLabel.trim(),
+        p_type: newType,
+        p_options: options,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('השדה נוסף')
+      setNewLabel('')
+      setNewOptions('')
+      setNewType('text')
+      invalidate()
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  const remove = useMutation({
+    mutationFn: async (key: string) => {
+      const { error } = await supabase.rpc('delete_custom_form_field', { p_field_key: key })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('השדה נמחק')
+      invalidate()
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  const askRemove = async (key: string, label: string) => {
+    if (
+      !(await confirm('השדה יירד מהטופס. ערכים שכבר נשמרו באירועים קיימים נשמרים ואינם מוצגים עוד.', {
+        title: `מחיקת השדה "${label}"`,
+        confirmLabel: 'מחיקה',
+      }))
+    )
+      return
+    remove.mutate(key)
+  }
+
   const counts = fields.reduce(
     (acc, f) => {
       acc[stateOf(f.field_key)]++
@@ -368,44 +443,124 @@ function FieldsTab({ customerId }: { customerId: string }) {
     { visible: 0, hidden: 0, required: 0 } as Record<FieldState, number>,
   )
 
-  return (
-    <Card className="max-w-2xl">
-      <CardHeader
-        title="שדות טופס יצירת אירוע"
-        subtitle={`${counts.visible} מוצגים · ${counts.required} חובה · ${counts.hidden} מוסתרים`}
-        icon={<SlidersHorizontal size={ICON.md} strokeWidth={STROKE} />}
-      />
-      <CardBody padded={false}>
-        <p className="border-b border-line-subtle bg-subtle/40 px-4 py-2.5 type-caption text-ink-secondary">
-          ההגדרה חלה על הטופס שרואים משתמשי הלקוח. אנשי הצוות רואים תמיד את כל השדות.
-        </p>
-        {isLoading ? (
-          <div className="p-4">
-            <Skeleton className="h-40 w-full" />
-          </div>
-        ) : (
-          <ul>
-            {fields.map((f) => {
-              const locked = f.field_key === 'event_date'
-              return (
-                <li key={f.field_key} className="flex items-center gap-3 border-b border-line-subtle px-4 py-2.5 last:border-0">
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate type-body font-medium">{f.label_he}</span>
-                    {locked && <span className="type-caption text-ink-tertiary">שדה חובה קבוע</span>}
-                  </span>
-                  <SegmentedControl
-                    items={FIELD_STATES}
-                    value={locked ? 'required' : stateOf(f.field_key)}
-                    onChange={(state) => !locked && canEdit && update.mutate({ key: f.field_key, state })}
-                    className={!canEdit || locked ? 'pointer-events-none opacity-55' : undefined}
-                  />
-                </li>
-              )
-            })}
-          </ul>
+  const stateRow = (f: (typeof fields)[number], locked: boolean, extra?: React.ReactNode) => (
+    <li key={f.field_key} className="flex items-center gap-3 border-b border-line-subtle px-4 py-2.5 last:border-0">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate type-body font-medium">{f.label_he}</span>
+        {locked && <span className="type-caption text-ink-tertiary">שדה חובה קבוע</span>}
+        {f.customer_id !== null && (
+          <span className="type-caption text-ink-tertiary">
+            {typeLabel(f.field_type)}
+            {f.field_type === 'select' && f.options.length > 0 ? ` · ${f.options.join(' / ')}` : ''}
+          </span>
         )}
-      </CardBody>
-    </Card>
+      </span>
+      <SegmentedControl
+        items={FIELD_STATES}
+        value={locked ? 'required' : stateOf(f.field_key)}
+        onChange={(state) => !locked && canEdit && update.mutate({ key: f.field_key, state })}
+        className={!canEdit || locked ? 'pointer-events-none opacity-55' : undefined}
+      />
+      {extra}
+    </li>
+  )
+
+  return (
+    <div className="max-w-2xl space-y-5">
+      {dialog}
+
+      <Card>
+        <CardHeader
+          title="שדות טופס יצירת אירוע"
+          subtitle={`${counts.visible} מוצגים · ${counts.required} חובה · ${counts.hidden} מוסתרים`}
+          icon={<SlidersHorizontal size={ICON.md} strokeWidth={STROKE} />}
+        />
+        <CardBody padded={false}>
+          <p className="border-b border-line-subtle bg-subtle/40 px-4 py-2.5 type-caption text-ink-secondary">
+            ההגדרה חלה על הטופס שרואים משתמשי הלקוח. אנשי הצוות רואים תמיד את כל השדות.
+          </p>
+          {isLoading ? (
+            <div className="p-4">
+              <Skeleton className="h-40 w-full" />
+            </div>
+          ) : (
+            <ul>{systemFields.map((f) => stateRow(f, f.field_key === 'event_date'))}</ul>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* ── the customer's own fields ─────────────────────────────────────
+          A field defined here is a row in form_fields carrying this
+          customer's id, so it flows through the very same visible/hidden/
+          required config as everything in the card above.                */}
+      <Card>
+        <CardHeader
+          title="שדות מותאמים אישית"
+          subtitle="שדות שנוספו ללקוח זה בלבד — הם אינם מופיעים אצל לקוחות אחרים"
+          icon={<Plus size={ICON.md} strokeWidth={STROKE} />}
+        />
+        <CardBody padded={false}>
+          {customFields.length > 0 ? (
+            <ul>
+              {customFields.map((f) =>
+                stateRow(
+                  f,
+                  false,
+                  canEdit ? (
+                    <IconButton
+                      label={`מחיקת ${f.label_he}`}
+                      variant="danger"
+                      size="sm"
+                      onClick={() => void askRemove(f.field_key, f.label_he)}
+                    >
+                      <Trash2 size={ICON.sm} strokeWidth={STROKE} />
+                    </IconButton>
+                  ) : undefined,
+                ),
+              )}
+            </ul>
+          ) : (
+            <p className="border-b border-line-subtle px-4 py-3 type-caption text-ink-tertiary">
+              אין עדיין שדות מותאמים אישית ללקוח זה.
+            </p>
+          )}
+
+          {canEdit && (
+            <div className="space-y-3 p-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="שם השדה" required>
+                  <Input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="לדוגמה: מספר הזמנת רכש" />
+                </Field>
+                <Field label="סוג השדה">
+                  <Select value={newType} onChange={(e) => setNewType(e.target.value as CustomFieldType)}>
+                    {CUSTOM_FIELD_TYPES.map((t) => (
+                      <option key={t.key} value={t.key}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+              {newType === 'select' && (
+                <Field label="ערכי הרשימה" hint="ערך בכל שורה">
+                  <Textarea rows={3} value={newOptions} onChange={(e) => setNewOptions(e.target.value)} />
+                </Field>
+              )}
+              <Button
+                size="sm"
+                variant="primary"
+                loading={create.isPending}
+                disabled={!newLabel.trim() || (newType === 'select' && !newOptions.trim())}
+                onClick={() => create.mutate()}
+              >
+                <Plus size={ICON.sm} strokeWidth={STROKE} />
+                הוספת שדה
+              </Button>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+    </div>
   )
 }
 

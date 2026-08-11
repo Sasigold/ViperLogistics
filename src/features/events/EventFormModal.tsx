@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Clock, ICON, MapPin, Package, PartyPopper, Phone, STROKE, User } from '../../components/ui/icons'
+import { Check, Clock, ICON, MapPin, Package, PartyPopper, Phone, SlidersHorizontal, STROKE, User } from '../../components/ui/icons'
 import {
   Button,
   Card,
@@ -21,6 +21,7 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import {
   useAllowedExecutionMethods,
+  useCustomFormFields,
   useEffectiveFormConfig,
   useCustomers,
   useEventAutoTasks,
@@ -30,6 +31,8 @@ import {
   useTaskTypes,
 } from '../../lib/queries'
 import { AddressAutocomplete } from './AddressAutocomplete'
+import { CustomFieldInput, isBlank, toFormValues, toPayloadValue } from './CustomFieldInput'
+import type { CustomFormValue } from './CustomFieldInput'
 import type { EventRow, ExecutionMethod } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
@@ -66,6 +69,8 @@ type EventForm = {
   teardown_hours_count: string
   teardown_price: string
   teardown_execution_method: string
+  /** values of the customer's custom fields, keyed by field_key */
+  custom: Record<string, CustomFormValue>
 }
 
 const empty: EventForm = {
@@ -77,6 +82,7 @@ const empty: EventForm = {
   setup_price: '',
   teardown_date: '', teardown_time: '', teardown_worker_count: '', teardown_hours_count: '', teardown_execution_method: '',
   teardown_price: '',
+  custom: {},
 }
 
 /**
@@ -136,13 +142,20 @@ const PAYLOAD_KEYS: Record<string, string[]> = {
   contact_phone: ['contact_phone'],
 }
 
+type StepDef = {
+  key: string
+  label: string
+  icon: typeof PartyPopper
+  fields: readonly string[]
+}
+
 /** Which configurable field keys belong to which step. */
-const STEPS = [
+const STEPS: StepDef[] = [
   { key: 'basics', label: 'פרטי האירוע', icon: PartyPopper, fields: ['end_client_name', 'event_number', 'event_date'] },
   { key: 'location', label: 'מיקום ואיש קשר', icon: MapPin, fields: ['location', 'location_notes', 'contact_name', 'contact_phone'] },
   { key: 'logistics', label: 'לוגיסטיקה ותוספות', icon: Package, fields: ['volume_m', 'truck_count', 'addons', 'notes'] },
   { key: 'sections', label: 'הקמה ופירוק', icon: Clock, fields: [...sectionFields('setup'), ...sectionFields('teardown')] },
-] as const
+]
 
 export function EventFormModal({
   open,
@@ -178,6 +191,9 @@ export function EventFormModal({
   const autoPriced = customers.find((c) => c.id === effectiveCustomerId)?.pricing_mode === 'auto'
   const config = useEffectiveFormConfig(effectiveCustomerId)
   const { data: suppliers = [] } = useSuppliers(effectiveCustomerId)
+  /* The fields this customer defined for themselves. They travel through the
+     very same config — show/req/ro below need no special case for them. */
+  const { data: customFields } = useCustomFormFields(effectiveCustomerId)
 
   const { data: taskTypes = [] } = useTaskTypes()
   const { data: allMethods = [] } = useExecutionMethods()
@@ -215,6 +231,7 @@ export function EventFormModal({
         porterage: event.porterage,
         supplier_pickup: event.supplier_pickup,
         supplier_ids: supplierIds ?? [],
+        custom: toFormValues(event.custom_fields),
         // placeholders until the two auto tasks load below
         setup_date: event.event_date,
         teardown_date: event.event_date,
@@ -281,9 +298,22 @@ export function EventFormModal({
   )
 
   const set = (patch: Partial<EventForm>) => setForm((f) => ({ ...f, ...patch }))
+  const setCustom = (key: string, v: CustomFormValue) =>
+    setForm((f) => ({ ...f, custom: { ...f.custom, [key]: v } }))
 
   /** Steps with no visible field are dropped entirely rather than shown empty. */
-  const steps = useMemo(() => STEPS.filter((s) => s.fields.some((f) => show(f))), [show])
+  const steps = useMemo(() => {
+    const all: StepDef[] = [...STEPS]
+    if (customFields.length > 0) {
+      all.push({
+        key: 'custom',
+        label: 'שדות נוספים',
+        icon: SlidersHorizontal,
+        fields: customFields.map((f) => f.field_key),
+      })
+    }
+    return all.filter((s) => s.fields.some((f) => show(f)))
+  }, [show, customFields])
 
   /** A step is incomplete when a field the customer marked "required" is empty. */
   const missingIn = (stepKey: string): string[] => {
@@ -314,6 +344,11 @@ export function EventFormModal({
           const k = `${code}_${key}` as keyof EventForm
           if (show(k) && req(k) && !String(form[k] ?? '').trim()) out.push(`${title} — ${label}`)
         }
+      }
+    }
+    if (stepKey === 'custom') {
+      for (const f of customFields) {
+        if (show(f.field_key) && req(f.field_key) && isBlank(form.custom[f.field_key])) out.push(f.label_he)
       }
     }
     return out
@@ -369,6 +404,12 @@ export function EventFormModal({
           if (key.endsWith('_date') && !form[key]) continue
           payload[key] = form[key]
         }
+      }
+      // custom fields ride the payload flat, keyed by field_key; the RPC casts
+      // them by type and collects them into events.custom_fields
+      for (const f of customFields) {
+        if (!show(f.field_key) || ro(f.field_key)) continue
+        payload[f.field_key] = toPayloadValue(f, form.custom[f.field_key])
       }
       if (event) {
         const { error } = await supabase.rpc('update_event', { p_event_id: event.id, payload })
@@ -699,6 +740,30 @@ export function EventFormModal({
               />
             ) : null,
           )}
+        </div>
+      )}
+
+      {/* ── step 5: the customer's own fields ──────────────────────────────
+          Nothing here is known at build time — the whole step is a row per
+          form_fields entry that carries a customer_id.                    */}
+      {current?.key === 'custom' && (
+        <div className="grid animate-fade-in gap-4 sm:grid-cols-2">
+          {customFields
+            .filter((f) => show(f.field_key))
+            .map((f) => (
+              <div key={f.field_key} className={f.field_type === 'textarea' ? 'sm:col-span-2' : undefined}>
+                <CustomFieldInput
+                  field={f}
+                  value={form.custom[f.field_key]}
+                  onChange={(v) => setCustom(f.field_key, v)}
+                  required={req(f.field_key)}
+                  readOnly={ro(f.field_key)}
+                  error={
+                    touched && req(f.field_key) && isBlank(form.custom[f.field_key]) ? 'שדה חובה' : undefined
+                  }
+                />
+              </div>
+            ))}
         </div>
       )}
     </Modal>

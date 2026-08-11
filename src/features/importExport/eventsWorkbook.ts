@@ -17,11 +17,14 @@
  * 2. **בניית הגיליונות מופרדת מהכתיבה שלהם**, כמו ב-exportAttendance ו-
  *    exportDashboard, כדי שהחוזה יהיה ניתן לבדיקה בלי ExcelJS.
  */
+import type { FormField } from '../../types/domain'
 
 export interface SheetColumn {
   key: string
   header: string
   width: number
+  /** נרמול הערך בקריאה. בעמודות הקבועות הוא נגזר מהמפתח, ובשדה מותאם — מהטיפוס */
+  coerce?: 'date' | 'time'
 }
 
 export const EVENTS_SHEET = 'אירועים'
@@ -58,8 +61,37 @@ export const TASK_COLUMNS: SheetColumn[] = [
   { key: 'notes', header: 'הערות', width: 30 },
 ]
 
+/**
+ * עמודות גיליון האירועים כולל שדות מותאמים אישית.
+ *
+ * הכותרת של שדה מותאם היא שמו, אבל שם אינו ייחודי: שני לקוחות יכולים להגדיר
+ * "מספר הזמנה", ואפילו להתנגש בכותרת קבועה כמו "הערות". כותרת כפולה שוברת את
+ * מיפוי הכותרות בייבוא, ולכן התנגשות מקבלת סיומת — שם הלקוח, ואם גם הוא חוזר,
+ * מפתח השדה שהוא ייחודי מעצם הגדרתו.
+ */
+export function eventColumns(custom: FormField[], customerNames?: Map<string, string>): SheetColumn[] {
+  const used = new Set(EVENT_COLUMNS.map((c) => c.header))
+  const out = [...EVENT_COLUMNS]
+  for (const f of custom) {
+    let header = f.label_he
+    if (used.has(header)) {
+      const name = f.customer_id ? customerNames?.get(f.customer_id) : undefined
+      header = name ? `${f.label_he} (${name})` : `${f.label_he} [${f.field_key}]`
+    }
+    if (used.has(header)) header = `${f.label_he} [${f.field_key}]`
+    used.add(header)
+    out.push({
+      key: f.field_key,
+      header,
+      width: 18,
+      coerce: f.field_type === 'date' ? 'date' : f.field_type === 'time' ? 'time' : undefined,
+    })
+  }
+  return out
+}
+
 /** עמודות הייצוא הישן, בלי מזהה השורה — קובץ שיצא כך חייב להמשיך להיקלט. */
-const LEGACY_EVENT_COLUMNS = EVENT_COLUMNS.filter((c) => c.key !== 'row_key')
+const legacyColumns = (columns: SheetColumn[]) => columns.filter((c) => c.key !== 'row_key')
 
 const DATE_KEYS = new Set(['event_date', 'task_date'])
 const TIME_KEYS = new Set(['onsite_start_time', 'warehouse_start_time'])
@@ -129,17 +161,17 @@ export function normalizeCell(v: unknown): string {
 }
 
 /** נרמול ערך לפי העמודה שאליה הוא שייך — תאריך, שעה, או טקסט. */
-export function coerceValue(key: string, raw: string): string {
+export function coerceValue(key: string, raw: string, kind?: 'date' | 'time'): string {
   const s = raw.trim()
   if (!s) return ''
-  if (DATE_KEYS.has(key)) {
+  if (kind === 'date' || (!kind && DATE_KEYS.has(key))) {
     const iso = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/)
     if (iso) return `${iso[1]}-${pad2(+iso[2])}-${pad2(+iso[3])}`
     const dmy = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})/)
     if (dmy) return `${dmy[3]}-${pad2(+dmy[2])}-${pad2(+dmy[1])}`
     return s
   }
-  if (TIME_KEYS.has(key)) {
+  if (kind === 'time' || (!kind && TIME_KEYS.has(key))) {
     const t = s.match(/(\d{1,2}):(\d{2})/)
     return t ? `${pad2(+t[1])}:${t[2]}` : s
   }
@@ -169,13 +201,14 @@ export function parseSheet(matrix: Matrix, columns: SheetColumn[]): SheetRow[] {
   if (matrix.length < 2) return []
   const mapped = mapHeaderRow(matrix[0] ?? [], columns)
   const keys = mapped ?? columns.map((c) => c.key)
+  const coerceOf = new Map(columns.filter((c) => c.coerce).map((c) => [c.key, c.coerce]))
   const out: SheetRow[] = []
   for (const cells of matrix.slice(1)) {
     const row: SheetRow = {}
     let any = false
     keys.forEach((key, i) => {
       if (!key) return
-      const v = coerceValue(key, cells[i] ?? '')
+      const v = coerceValue(key, cells[i] ?? '', coerceOf.get(key))
       row[key] = v
       if (v !== '') any = true
     })
@@ -185,9 +218,9 @@ export function parseSheet(matrix: Matrix, columns: SheetColumn[]): SheetRow[] {
 }
 
 /** גיליון אירועים, כולל נפילה לחוזה הישן שאין בו עמודת מזהה שורה. */
-export function parseEventSheet(matrix: Matrix): SheetRow[] {
-  const mapped = mapHeaderRow(matrix[0] ?? [], EVENT_COLUMNS)
-  return parseSheet(matrix, mapped ? EVENT_COLUMNS : LEGACY_EVENT_COLUMNS)
+export function parseEventSheet(matrix: Matrix, columns: SheetColumn[] = EVENT_COLUMNS): SheetRow[] {
+  const mapped = mapHeaderRow(matrix[0] ?? [], columns)
+  return parseSheet(matrix, mapped ? columns : legacyColumns(columns))
 }
 
 export interface GroupedTasks {
@@ -268,8 +301,18 @@ export function buildImportPayload(
   events: SheetRow[],
   tasksByKey: Map<string, SheetRow[]>,
   customers: { id: string; name: string }[],
+  customFields: FormField[] = [],
 ): BuiltPayload {
   const byName = new Map(customers.map((c) => [c.name.trim().toLowerCase(), c.id]))
+  /* שדה מותאם שייך ללקוח אחד. שורה של לקוח אחר עשויה לשאת ערך באותה עמודה —
+     קובץ אחד מכיל כמה לקוחות — והוא נשמט, כי ה-RPC ממילא היה מתעלם ממנו. */
+  const customByCustomer = new Map<string, string[]>()
+  for (const f of customFields) {
+    if (!f.customer_id) continue
+    const list = customByCustomer.get(f.customer_id)
+    if (list) list.push(f.field_key)
+    else customByCustomer.set(f.customer_id, [f.field_key])
+  }
   const unknown = new Set<string>()
   const payloads: ImportEventPayload[] = []
   let taskCount = 0
@@ -296,6 +339,10 @@ export function buildImportPayload(
       const v = (e[k] ?? '').trim()
       if (v) payload[k] = v
     }
+    for (const k of customByCustomer.get(id) ?? []) {
+      const v = (e[k] ?? '').trim()
+      if (v) payload[k] = v
+    }
     payloads.push(payload)
   }
 
@@ -307,8 +354,8 @@ export function buildImportPayload(
 const emptySheet = (name: string, columns: SheetColumn[]): SheetPlan => ({ name, columns, rows: [] })
 
 /** התבנית הריקה: כותרות בלבד, בשני הגיליונות. */
-export function buildTemplatePlan(): SheetPlan[] {
-  return [emptySheet(EVENTS_SHEET, EVENT_COLUMNS), emptySheet(TASKS_SHEET, TASK_COLUMNS)]
+export function buildTemplatePlan(eventCols: SheetColumn[] = EVENT_COLUMNS): SheetPlan[] {
+  return [emptySheet(EVENTS_SHEET, eventCols), emptySheet(TASKS_SHEET, TASK_COLUMNS)]
 }
 
 export interface SampleRefs {
@@ -327,7 +374,7 @@ const SAMPLE_DATE_2 = '2026-03-16'
  * במכוון — הערכים המותרים תלויים בלקוח ובסוג המשימה, וערך שנראה תקין בקובץ
  * אבל נפסל בייבוא מבלבל יותר משהוא מסביר. הרשימה המלאה נמצאת בגיליון ההסבר.
  */
-export function buildSamplePlan(refs: SampleRefs): SheetPlan[] {
+export function buildSamplePlan(refs: SampleRefs, eventCols: SheetColumn[] = EVENT_COLUMNS): SheetPlan[] {
   const customer = refs.customers[0] ?? 'שם הלקוח כפי שהוא מופיע במערכת'
   const customer2 = refs.customers[1] ?? customer
   const extraType =
@@ -466,7 +513,7 @@ export function buildSamplePlan(refs: SampleRefs): SheetPlan[] {
   }
 
   return [
-    { name: EVENTS_SHEET, columns: EVENT_COLUMNS, rows: events },
+    { name: EVENTS_SHEET, columns: eventCols, rows: events },
     { name: TASKS_SHEET, columns: TASK_COLUMNS, rows: tasks },
     guide,
   ]
