@@ -851,6 +851,12 @@ export default function CalendarPage() {
               locale={heLocale}
               direction="rtl"
               height="auto"
+              /* ‏רשת החודש נפרשת לפי מה שהחודש צריך, ולא לשש שורות תמיד:
+                 שורה שכל שבעת ימיה שייכים לחודש שכן אינה מציגה דבר מהחודש
+                 הזה — לא אירועים ולא חגים — והיא רק שורה ריקה שגונבת גובה
+                 מהשאר. הימים השכנים שמשלימים את השבוע הראשון והאחרון
+                 נשארים, כדי שהשבוע עצמו לא ייקטע באמצע. */
+              fixedWeekCount={false}
               editable={canEdit}
               eventStartEditable={canEdit}
               eventDurationEditable={false}
