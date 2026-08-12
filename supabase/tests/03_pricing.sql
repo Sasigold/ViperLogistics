@@ -43,6 +43,50 @@ select t_eq('בלי ראש צוות ובלי סבלות = 4836',
     '{"truck_count":3,"travel_hours":0.5,"hours_count":4,"worker_count":4,
       "no_parking":true}'::jsonb) ->> 'total')::numeric, 4836::numeric);
 
+\echo '--- worker_hours: מינימום שעות לחיוב ---'
+-- 3 שטח + 0.5×2 נסיעה = 4 ש׳, והרצפה של 6 משלימה: 6×100×2 עובדים = 1200
+select t_eq('min_hours משלים צבר נמוך ל-6',
+  (app.price_calc('{"model":"worker_hours","hour_rate":100,"per_worker_fee":0,"min_hours":6,
+     "hours":[{"id":"w","kind":"input","input":"hours_count"},
+              {"id":"t","kind":"input","input":"travel_hours","multiplier":2}],
+     "workers":{"input":"worker_count"}}'::jsonb,
+    '{"hours_count":3,"travel_hours":0.5,"worker_count":2}'::jsonb) ->> 'hours')::numeric,
+  6::numeric);
+
+select t_eq('ההשלמה נכנסת גם למחיר',
+  (app.price_calc('{"model":"worker_hours","hour_rate":100,"per_worker_fee":0,"min_hours":6,
+     "hours":[{"id":"w","kind":"input","input":"hours_count"},
+              {"id":"t","kind":"input","input":"travel_hours","multiplier":2}],
+     "workers":{"input":"worker_count"}}'::jsonb,
+    '{"hours_count":3,"travel_hours":0.5,"worker_count":2}'::jsonb) ->> 'total')::numeric,
+  1200::numeric);
+
+select t_eq('צבר מעל הרצפה לא נוגעים בו',
+  (app.price_calc('{"model":"worker_hours","hour_rate":100,"per_worker_fee":0,"min_hours":6,
+     "hours":[{"id":"w","kind":"input","input":"hours_count"},
+              {"id":"t","kind":"input","input":"travel_hours","multiplier":2}],
+     "workers":{"input":"worker_count"}}'::jsonb,
+    '{"hours_count":8,"travel_hours":0.5,"worker_count":2}'::jsonb) ->> 'hours')::numeric,
+  9::numeric);
+
+select t_eq('בלי min_hours ההתנהגות כמו שהייתה',
+  (app.price_calc('{"model":"worker_hours","hour_rate":100,"per_worker_fee":0,
+     "hours":[{"id":"w","kind":"input","input":"hours_count"},
+              {"id":"t","kind":"input","input":"travel_hours","multiplier":2}],
+     "workers":{"input":"worker_count"}}'::jsonb,
+    '{"hours_count":3,"travel_hours":0.5,"worker_count":2}'::jsonb) ->> 'hours')::numeric,
+  4::numeric);
+
+-- ההשלמה מוסברת בפירוט השעות, כדי שהמזין יבין מאיפה הגיע המספר
+select t_eq('ההשלמה מופיעה כשורת זמן',
+  (select count(*) from jsonb_array_elements(
+     app.price_calc('{"model":"worker_hours","hour_rate":100,"per_worker_fee":0,"min_hours":6,
+       "hours":[{"id":"w","kind":"input","input":"hours_count"}],
+       "workers":{"input":"worker_count"}}'::jsonb,
+      '{"hours_count":3,"worker_count":1}'::jsonb) -> 'hour_lines') l
+    where l ->> 'id' = 'min_hours' and (l ->> 'hours')::numeric = 3),
+  1::bigint);
+
 \echo '--- worker_hours: מקרי קצה ברכיב המדורג ---'
 select t_eq('משאית אחת = שעה אחת',
   (app.price_calc('{"model":"worker_hours","hour_rate":1,"per_worker_fee":0,

@@ -422,6 +422,8 @@ export interface PricingConfig {
   /* worker_hours */
   hour_rate?: number
   per_worker_fee?: number
+  /** רצפת שעות לחיוב: סכום רכיבי הזמן מושלם אליה אם יצא נמוך ממנה */
+  min_hours?: number | null
   hours?: PricingHourComponent[]
   workers?: { input: string; adjustments?: PricingWorkerAdjustment[] }
   after_workers?: PricingAfterWorkers[]

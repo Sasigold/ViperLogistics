@@ -169,6 +169,9 @@ export function emptyConfig(model: PricingModel): PricingConfig {
         model,
         hour_rate: 0,
         per_worker_fee: 0,
+        // מחשבון חדש נולד עם רצפת 6 שעות; מחשבונים קיימים לא נוגעים —
+        // normalizeConfig לא משלים את המפתח למי שנשמר בלעדיו.
+        min_hours: 6,
         constants: {},
         hours: [],
         workers: { input: 'worker_count', adjustments: [] },

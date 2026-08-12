@@ -363,6 +363,7 @@ function NumField({
   suffix,
   step = 'any',
   className,
+  hint,
 }: {
   label: string
   value: number | null | undefined
@@ -371,9 +372,10 @@ function NumField({
   suffix?: string
   step?: string
   className?: string
+  hint?: string
 }) {
   return (
-    <Field label={label} className={className}>
+    <Field label={label} className={className} hint={hint}>
       <Input
         type="number"
         step={step}
@@ -775,6 +777,14 @@ function WorkerHoursEditor({
           value={config.per_worker_fee ?? null}
           disabled={!canEdit}
           onChange={(v) => onChange({ per_worker_fee: v ?? 0 })}
+        />
+        <NumField
+          label="מינימום שעות לחיוב"
+          suffix="ש׳"
+          hint="רכיבי זמן שהסתכמו לפחות מזה מושלמים אליו. ריק = בלי מינימום"
+          value={config.min_hours ?? null}
+          disabled={!canEdit}
+          onChange={(v) => onChange({ min_hours: v })}
         />
       </section>
 
