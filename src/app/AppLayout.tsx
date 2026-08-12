@@ -19,11 +19,9 @@ import {
 import { Avatar, Divider, IconButton, Kbd, MenuItem, MenuSeparator, Popover, Tooltip, cx } from '../components/ui'
 import { useAuth } from '../state/auth'
 import { RouteGate } from '../features/auth/guards'
-import { PERM } from '../lib/permissions'
 import { NotificationsBell } from '../features/notifications/NotificationsBell'
 import { usePushNavigation, usePushSync } from '../features/notifications/pushQueries'
 import { CommandPalette } from '../features/search/CommandPalette'
-import { useOverdueCount } from '../features/tasks/useOverdueCount'
 import { ROUTE_LABELS, bottomNavItems, visibleNavSections } from './nav'
 import type { NavItem, NavSection } from './nav'
 import { PageTitleProvider, useCurrentPageTitle } from './breadcrumbs'
@@ -45,8 +43,6 @@ export default function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
 
-  const canSeeTasks = has(PERM.TASKS_VIEW)
-  const { data: overdue = 0 } = useOverdueCount(canSeeTasks)
   const online = useOnline()
 
   // מיישר את מנוי הדחיפה של הדפדפן מול המסד בכל עלייה. ראו את ההסבר
@@ -118,8 +114,7 @@ export default function AppLayout() {
                 <p className={cx('px-3 pb-1.5 type-overline', collapsed && 'lg:hidden')}>{section.title}</p>
                 {collapsed && <div className="mx-auto mb-2 hidden h-px w-6 bg-line-subtle lg:block" aria-hidden />}
                 <ul className="space-y-0.5">
-                  {section.items.map(({ to, label, icon: Icon, badge, end }) => {
-                    const count = badge === 'overdue' ? overdue : 0
+                  {section.items.map(({ to, label, icon: Icon, end }) => {
                     const link = (
                       <NavLink
                         to={to}
@@ -147,19 +142,6 @@ export default function AppLayout() {
                             />
                             <Icon size={ICON.md} strokeWidth={STROKE} className="shrink-0" />
                             <span className={cx('truncate', collapsed && 'lg:hidden')}>{label}</span>
-                            {count > 0 && (
-                              <span
-                                className={cx(
-                                  'inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 type-caption font-bold tabular text-white',
-                                  collapsed
-                                    ? 'lg:absolute lg:end-1.5 lg:top-1 lg:h-3.5 lg:min-w-3.5 lg:px-0.5 lg:text-[9px]'
-                                    : 'ms-auto',
-                                )}
-                                title={`${count} משימות באיחור`}
-                              >
-                                {count > 99 ? '99+' : count}
-                              </span>
-                            )}
                           </>
                         )}
                       </NavLink>
@@ -167,7 +149,7 @@ export default function AppLayout() {
                     return (
                       <li key={to}>
                         {collapsed ? (
-                          <Tooltip content={count > 0 ? `${label} · ${count} באיחור` : label} placement="end">
+                          <Tooltip content={label} placement="end">
                             {link}
                           </Tooltip>
                         ) : (
@@ -339,7 +321,7 @@ export default function AppLayout() {
           </main>
         </div>
 
-        <BottomNav sections={sections} overdue={overdue} onMore={() => setMobileNav(true)} />
+        <BottomNav sections={sections} onMore={() => setMobileNav(true)} />
 
         <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
       </div>
@@ -352,15 +334,7 @@ export default function AppLayout() {
    the same sidebar the desktop shows permanently — so nothing is reachable
    on one form factor and lost on the other.                                */
 
-function BottomNav({
-  sections,
-  overdue,
-  onMore,
-}: {
-  sections: NavSection[]
-  overdue: number
-  onMore: () => void
-}) {
+function BottomNav({ sections, onMore }: { sections: NavSection[]; onMore: () => void }) {
   const items = bottomNavItems(sections)
   if (items.length === 0) return null
 
@@ -373,7 +347,7 @@ function BottomNav({
       <ul className="flex items-stretch">
         {items.map((item) => (
           <li key={item.to} className="min-w-0 flex-1">
-            <BottomNavLink item={item} count={item.badge === 'overdue' ? overdue : 0} />
+            <BottomNavLink item={item} />
           </li>
         ))}
         <li className="min-w-0 flex-1">
@@ -394,7 +368,7 @@ function BottomNav({
   )
 }
 
-function BottomNavLink({ item, count }: { item: NavItem; count: number }) {
+function BottomNavLink({ item }: { item: NavItem }) {
   const { to, label, shortLabel, icon: Icon, end } = item
   return (
     <NavLink
@@ -417,21 +391,10 @@ function BottomNavLink({ item, count }: { item: NavItem; count: number }) {
               isActive ? 'opacity-100' : 'opacity-0',
             )}
           />
-          <span className="relative">
-            <Icon size={ICON.lg} strokeWidth={isActive ? 2.25 : STROKE} aria-hidden />
-            {count > 0 && (
-              <span
-                className="absolute -end-2 -top-1 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-error px-0.5 text-[9px] font-bold tabular text-white"
-                aria-hidden
-              >
-                {count > 99 ? '99+' : count}
-              </span>
-            )}
-          </span>
+          <Icon size={ICON.lg} strokeWidth={isActive ? 2.25 : STROKE} aria-hidden />
           <span className="max-w-full truncate type-caption font-medium leading-none">
             {shortLabel ?? label}
           </span>
-          {count > 0 && <span className="sr-only">{count} משימות באיחור</span>}
         </>
       )}
     </NavLink>
