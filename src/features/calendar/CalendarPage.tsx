@@ -555,7 +555,7 @@ export default function CalendarPage() {
             <span
               className={cx(
                 'min-w-0 flex-1 truncate type-caption font-semibold',
-                isMobile ? 'max-sm:text-[0.5625rem] max-sm:leading-[0.9375rem]' : !showCustomerDot && 'ps-1',
+                isMobile ? 'max-sm:text-[0.5rem] max-sm:leading-[0.8125rem]' : !showCustomerDot && 'ps-1',
                 cancelled && 'line-through',
               )}
             >
