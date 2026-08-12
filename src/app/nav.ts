@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Bell,
   Building2,
   Calendar,
@@ -89,6 +90,7 @@ export const NAV_SECTIONS: NavSection[] = [
          לבחור ביניהן. */
       { to: '/shifts', label: 'לוח משמרות צוות', shortLabel: 'שיבוץ', icon: CalendarDays, perm: PERM.ATTENDANCE_VIEW_ALL },
       { to: '/attendance', label: 'דוח נוכחות', shortLabel: 'נוכחות', icon: Clock, perm: PERM.ATTENDANCE_VIEW_ALL },
+      { to: '/reports', label: 'דוחות', shortLabel: 'דוחות', icon: BarChart3, perm: PERM.REPORTS_VIEW },
     ],
   },
   {
@@ -141,6 +143,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/contractors': 'קבלנים',
   '/attendance': 'דוח נוכחות',
   '/shifts': 'לוח משמרות צוות',
+  '/reports': 'דוחות',
   '/my/schedule': 'משמרות',
   '/my/attendance': 'שעון נוכחות',
   '/my/notifications': 'התראות',

@@ -100,6 +100,8 @@ export const PERM = {
   PRICING_EDIT: 'pricing.edit',
   PRICING_MANAGE_RULES: 'pricing.manage_rules',
   PRICING_REVENUE: 'pricing.revenue',
+  REPORTS_VIEW: 'reports.view',
+  REPORTS_EXPORT: 'reports.export',
   PORTAL_VIEW: 'portal.view',
   PORTAL_ATTENDANCE: 'portal.attendance',
   PORTAL_ATTENDANCE_PAY: 'portal.attendance_pay',

@@ -129,7 +129,7 @@ export function customResultToSheet(title: string, value: unknown, taken: Set<st
 }
 
 /** the same caveats the card prints, in the same order */
-function exportNotices(meta: Record<string, unknown>): string[] {
+export function exportNotices(meta: Record<string, unknown>): string[] {
   const out: string[] = []
   if (meta.estimated) out.push(`משוער — לא משויך: ${cell(meta.unallocated)}`)
   if (Number(meta.unrated_shifts ?? 0) > 0) out.push(`משמרות ללא תעריף שאינן נספרות: ${meta.unrated_shifts}`)

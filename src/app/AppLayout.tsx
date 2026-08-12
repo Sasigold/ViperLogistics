@@ -367,6 +367,7 @@ function BottomNav({
   return (
     <nav
       aria-label="ניווט ראשי"
+      data-bottom-nav
       /* below the sidebar's scrim (z-40) so opening "עוד" dims the bar too */
       className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 pb-safe backdrop-blur-md lg:hidden"
     >
