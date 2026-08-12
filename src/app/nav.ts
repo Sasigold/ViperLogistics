@@ -30,8 +30,6 @@ export interface NavItem {
    * that two entries point at, where the wider one already covers the narrower.
    */
   hiddenBy?: string[]
-  /** key of a live counter rendered as a badge */
-  badge?: 'overdue'
   end?: boolean
   /** competes for one of the four slots in the mobile bottom bar */
   primary?: boolean
@@ -53,7 +51,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/', label: 'דשבורד', icon: LayoutDashboard, perm: PERM.DASHBOARD_VIEW, end: true, primary: true },
       { to: '/calendar', label: 'לוח שנה', icon: Calendar, perm: PERM.CALENDAR_VIEW, primary: true },
-      { to: '/board', label: 'לו״ז עבודה', shortLabel: 'לו״ז', icon: ClipboardList, perm: PERM.BOARD_VIEW, badge: 'overdue', primary: true },
+      { to: '/board', label: 'לו״ז עבודה', shortLabel: 'לו״ז', icon: ClipboardList, perm: PERM.BOARD_VIEW, primary: true },
     ],
   },
   {
