@@ -8,10 +8,11 @@ import { shortAddress } from './address'
 
 describe('shortAddress', () => {
   it('drops the administrative tail an Israeli address drags behind it', () => {
-    // נפה, מחוז, מיקוד ו"ישראל" הם שש מילים שלא עוזרות לאף אחד להגיע לאירוע
+    // נפה, מחוז, מיקוד ו"ישראל" הם שש מילים שלא עוזרות לאף אחד להגיע לאירוע,
+    // וגם השכונה שבין הרחוב לעיר לא — נשארים הרחוב והעיר
     expect(
       shortAddress('יפו, שוק מחנה יהודה, זכרון משה, ירושלים, נפת ירושלים, מחוז ירושלים, 9422904, ישראל'),
-    ).toBe('יפו, שוק מחנה יהודה, ירושלים')
+    ).toBe('יפו, ירושלים')
   })
 
   it('keeps the street and the city when there is nothing between them', () => {
@@ -46,9 +47,9 @@ describe('shortAddress', () => {
     expect(shortAddress('   ')).toBe('')
   })
 
-  it('honours a caller that wants only one part above the city', () => {
-    expect(shortAddress('יפו, שוק מחנה יהודה, זכרון משה, ירושלים, מחוז ירושלים, ישראל', 1)).toBe(
-      'יפו, ירושלים',
+  it('honours a caller that wants more than one part above the city', () => {
+    expect(shortAddress('יפו, שוק מחנה יהודה, זכרון משה, ירושלים, מחוז ירושלים, ישראל', 2)).toBe(
+      'יפו, שוק מחנה יהודה, ירושלים',
     )
   })
 

@@ -12,7 +12,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { ICON, MapPin, STROKE } from '../../components/ui/icons'
 import { Autocomplete, Field, Input } from '../../components/ui'
-import { addressProvider } from '../../lib/address'
+import { addressProvider, shortAddress } from '../../lib/address'
 import type { AddressSuggestion } from '../../types/domain'
 
 const FALLBACK_CENTER: [number, number] = [31.9, 35.0]
@@ -105,7 +105,7 @@ export function LocationPicker({
         renderOption={(s) => (
           <>
             <MapPin size={ICON.sm} className="mt-0.5 shrink-0 text-ink-tertiary" strokeWidth={STROKE} aria-hidden />
-            <span className="line-clamp-2">{s.label}</span>
+            <span className="line-clamp-2">{shortAddress(s.label)}</span>
           </>
         )}
       />

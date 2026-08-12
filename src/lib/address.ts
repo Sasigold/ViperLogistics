@@ -47,7 +47,7 @@ const NOISE = [
  * @param keep כמה חלקים מהתחילת הכתובת לשמור מעל שם העיר.
  * @returns הכתובת המקוצרת, או '' כשאין מה להציג.
  */
-export function shortAddress(text: string | null | undefined, keep = 2): string {
+export function shortAddress(text: string | null | undefined, keep = 1): string {
   const raw = (text ?? '').trim()
   if (!raw) return ''
 

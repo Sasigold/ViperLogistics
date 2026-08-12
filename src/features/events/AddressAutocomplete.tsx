@@ -1,6 +1,6 @@
 import { ICON, MapPin, STROKE } from '../../components/ui/icons'
 import { Autocomplete } from '../../components/ui'
-import { addressProvider } from '../../lib/address'
+import { addressProvider, shortAddress } from '../../lib/address'
 import type { AddressSuggestion } from '../../types/domain'
 
 /**
@@ -36,7 +36,8 @@ export function AddressAutocomplete({
       renderOption={(s) => (
         <>
           <MapPin size={ICON.sm} className="mt-0.5 shrink-0 text-ink-tertiary" strokeWidth={STROKE} aria-hidden />
-          <span className="line-clamp-2">{s.label}</span>
+          {/* מוצג מקוצר; onPick עדיין מקבל את ההצעה המלאה, וזו שנשמרת */}
+          <span className="line-clamp-2">{shortAddress(s.label)}</span>
         </>
       )}
     />

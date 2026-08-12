@@ -470,7 +470,7 @@ export default function CalendarPage() {
               ev.customers?.name,
               fmtDate(ev.event_date),
               ev.event_number && `אירוע #${ev.event_number}`,
-              ev.location_text,
+              shortAddress(ev.location_text),
               ev.truck_count != null ? `${ev.truck_count} משאיות` : null,
             ]
               .filter(Boolean)
@@ -514,7 +514,7 @@ export default function CalendarPage() {
             <span className="block space-y-1 py-0.5">
               <span className="block font-bold">{label}</span>
               {ev.customers && <span className="block opacity-90">{ev.customers.name}</span>}
-              {ev.location_text && <span className="block opacity-80">📍 {ev.location_text}</span>}
+              {ev.location_text && <span className="block opacity-80">📍 {shortAddress(ev.location_text)}</span>}
               {ev.truck_count != null && <span className="block opacity-80">🚚 {ev.truck_count} משאיות</span>}
               {ev.volume_m != null && <span className="block opacity-80">נפח {ev.volume_m}</span>}
               {status && <span className="block opacity-80">● {status.name}</span>}

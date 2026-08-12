@@ -17,6 +17,7 @@ import { useAllCustomFormFields, useCustomers, useExecutionMethods, useTaskTypes
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { errorMessage } from '../../lib/errors'
+import { shortAddress } from '../../lib/address'
 import {
   EVENTS_SHEET,
   TASKS_SHEET,
@@ -145,7 +146,9 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
           end_client_name: String(e.end_client_name ?? ''),
           event_number: String(e.event_number ?? ''),
           event_date: String(e.event_date ?? ''),
-          location_text: String(e.location_text ?? ''),
+          /* מקוצר, כמו בכל שאר האפליקציה. שימו לב שהגיליון הזה הוא גם תבנית
+             הייבוא: ייצוא וייבוא חזרה יכתבו את הכתובת המקוצרת למסד */
+          location_text: shortAddress(String(e.location_text ?? '')),
           location_notes: String(e.location_notes ?? ''),
           volume_m: String(e.volume_m ?? ''),
           truck_count: String(e.truck_count ?? ''),
@@ -185,7 +188,7 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
         worker_count: String(t.worker_count ?? ''),
         execution_method: (t.execution_methods as { name: string } | null)?.name ?? '',
         truck_free_text: String(t.truck_free_text ?? ''),
-        location_text: String(t.location_text ?? ''),
+        location_text: shortAddress(String(t.location_text ?? '')),
         notes: String(t.notes ?? ''),
       }))
 

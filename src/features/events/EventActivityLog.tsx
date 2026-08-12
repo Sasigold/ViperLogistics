@@ -31,8 +31,28 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { fmtDateTime } from '../../lib/dates'
+import { shortAddress } from '../../lib/address'
 import type { EventActivity, EventActivityKind } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
+
+/**
+ * ערך של שדה שהשתנה, כפי שהוא נקרא ביומן.
+ *
+ * מיקום נשמר כ-display_name מלא, ושתי כתובות כאלה זו לצד זו הופכות שורה ביומן
+ * לפסקה. מוצג הקיצור, והערך שנרשם באמת — זה שהיומן קיים כדי לתעד — נשאר בלחיצה.
+ */
+function ChangeValue({ field, value }: { field: string; value: string | null }) {
+  if (!value) return <>—</>
+  if (field !== 'location_text') return <>{value}</>
+
+  const short = shortAddress(value)
+  if (short === value) return <>{value}</>
+  return (
+    <Tooltip content={value} openOnClick>
+      <span className="cursor-help">{short}</span>
+    </Tooltip>
+  )
+}
 
 const KIND_COLORS: Record<EventActivityKind, string> = {
   created: '#16a34a',
@@ -245,12 +265,14 @@ export function EventActivityLog({ eventId, className }: { eventId: string; clas
                             <td className="py-1 pe-2 align-top type-caption text-ink-tertiary">{c.label}</td>
                             <td className="py-1 type-caption">
                               <span className="text-error-text line-through decoration-error/40">
-                                {c.from || '—'}
+                                <ChangeValue field={c.key} value={c.from} />
                               </span>
                               <span className="mx-1.5 text-ink-tertiary" aria-label="השתנה ל">
                                 ←
                               </span>
-                              <span className="font-medium text-success-text">{c.to || '—'}</span>
+                              <span className="font-medium text-success-text">
+                                <ChangeValue field={c.key} value={c.to} />
+                              </span>
                             </td>
                           </tr>
                         ))}

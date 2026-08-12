@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { AvatarGroup, EmptyState, Tooltip } from '../../../components/ui'
 import { fmtTime } from '../../../lib/dates'
+import { shortAddress } from '../../../lib/address'
 import { useIsPhone } from '../../../lib/useMediaQuery'
 import type { WorkBoardRow } from '../../../types/domain'
 
@@ -120,7 +121,9 @@ export function DayTimeline({ tasks, onOpen }: { tasks: WorkBoardRow[]; onOpen: 
                           {fmtTime(t.onsite_start_time)}
                           {endTime && ` – ${fmtTime(endTime)}`}
                         </span>
-                        {t.location_text && <span className="block opacity-70">{t.location_text}</span>}
+                        {t.location_text && (
+                          <span className="block opacity-70">{shortAddress(t.location_text)}</span>
+                        )}
                       </span>
                     }
                   >
