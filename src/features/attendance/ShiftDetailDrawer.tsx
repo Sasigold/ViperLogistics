@@ -19,7 +19,7 @@ import {
   User,
   Users,
 } from '../../components/ui/icons'
-import { Badge, Drawer, ErrorState, Skeleton, cx } from '../../components/ui'
+import { Badge, Drawer, ErrorState, LocationText, Skeleton, cx } from '../../components/ui'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { chipPaint } from '../../lib/colors'
@@ -290,7 +290,11 @@ function TaskCard({ task: t }: { task: ShiftTaskRow }) {
         <Chip icon={<MapPin size={ICON.xs} strokeWidth={STROKE} />}>
           {t.work_site === 'warehouse' && t.warehouse_name ? t.warehouse_name : WORK_SITE_LABELS[t.work_site]}
         </Chip>
-        {t.location_text && <Chip icon={<MapPin size={ICON.xs} strokeWidth={STROKE} />}>{t.location_text}</Chip>}
+        {t.location_text && (
+          <Chip icon={<MapPin size={ICON.xs} strokeWidth={STROKE} />}>
+            <LocationText value={t.location_text} />
+          </Chip>
+        )}
         {t.truck_name && <Chip icon={<Truck size={ICON.xs} strokeWidth={STROKE} />}>{t.truck_name}</Chip>}
         {t.my_role && (
           <Chip icon={<User size={ICON.xs} strokeWidth={STROKE} />}>{ASSIGNMENT_ROLE_LABELS[t.my_role]}</Chip>

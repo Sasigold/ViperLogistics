@@ -11,6 +11,7 @@ export {
   Button,
   IconButton,
   Tooltip,
+  LocationText,
   Badge,
   StatusPill,
   Avatar,

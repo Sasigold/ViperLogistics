@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Checkbox, Popover, StatusPill, Tooltip, cx } from '../../components/ui'
 import { fmtHours, fmtTime } from '../../lib/dates'
+import { shortAddress } from '../../lib/address'
 import type {
   Contractor,
   ExecutionMethod,
@@ -648,7 +649,13 @@ export const BOARD_FIELDS: BoardField[] = [
   {
     key: 'location',
     label: 'מיקום',
-    render: ({ row }) => (row.location_text ? <Clip>{row.location_text}</Clip> : <Muted />),
+    render: ({ row }) =>
+      row.location_text ? (
+        /* הבועה נושאת את הכתובת המלאה, התא את המקוצרת */
+        <Clip title={row.location_text}>{shortAddress(row.location_text)}</Clip>
+      ) : (
+        <Muted />
+      ),
   },
   {
     key: 'task_type',

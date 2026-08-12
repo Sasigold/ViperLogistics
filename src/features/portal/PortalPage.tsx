@@ -47,6 +47,7 @@ import { PERM } from '../../lib/permissions'
 import { useContractorWorkers } from '../../lib/queries'
 import { HIGHLIGHT_CLASS, useDeepLinkHighlight } from '../../lib/deepLink'
 import { fmtDate, fmtMoney, fmtTime } from '../../lib/dates'
+import { shortAddress } from '../../lib/address'
 import { WorkersTab } from '../contractors/ContractorDetailPage'
 import { AttendanceReport } from '../attendance/AttendanceReportPage'
 import type { WorkBoardRow } from '../../types/domain'
@@ -372,7 +373,12 @@ function PortalTaskCard({
       <CardBody className="space-y-3">
         {/* location / time / counts are read-only for contractors — enforced by RLS */}
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <PortalFact icon={<MapPin size={ICON.sm} strokeWidth={STROKE} />} label="מיקום" value={task.location_text || '—'} />
+          <PortalFact
+            icon={<MapPin size={ICON.sm} strokeWidth={STROKE} />}
+            label="מיקום"
+            value={shortAddress(task.location_text) || '—'}
+            full={task.location_text || undefined}
+          />
           <PortalFact
             icon={<Clock size={ICON.sm} strokeWidth={STROKE} />}
             label="שעה בשטח"
@@ -412,7 +418,21 @@ function PortalTaskCard({
   )
 }
 
-function PortalFact({ icon, label, value, ltr }: { icon: React.ReactNode; label: string; value: string; ltr?: boolean }) {
+function PortalFact({
+  icon,
+  label,
+  value,
+  full,
+  ltr,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  /** what the bubble says, when the cell shows a shortened form of it */
+  full?: string
+  ltr?: boolean
+}) {
+  const bubble = full ?? value
   return (
     <div className="min-w-0">
       <dt className="flex items-center gap-1 type-caption text-ink-tertiary">
@@ -421,7 +441,7 @@ function PortalFact({ icon, label, value, ltr }: { icon: React.ReactNode; label:
         </span>
         {label}
       </dt>
-      <Tooltip content={value.length > 24 ? value : ''}>
+      <Tooltip content={bubble !== value || bubble.length > 24 ? bubble : ''} openOnClick>
         <dd className={cx('mt-0.5 truncate type-body font-medium', ltr && 'tabular')} dir={ltr ? 'ltr' : undefined}>
           {value}
         </dd>

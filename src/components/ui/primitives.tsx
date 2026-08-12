@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2 } from 'lucide-react'
+import { shortAddress } from '../../lib/address'
 
 export function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(' ')
@@ -276,6 +277,33 @@ export function Tooltip({
           document.body,
         )}
     </>
+  )
+}
+
+/* ===== LocationText =======================================================
+   מיקום של אירוע נשמר כ-display_name מלא של ספק הכתובות — עד המחוז, המיקוד
+   ו"ישראל". זה תופס שתי שורות בכל מקום שבו הוא מוצג. כאן מוצגת הגרסה המקוצרת,
+   והמלאה נשארת מרחק לחיצה אחת (openOnClick, כי בטלפון אין ריחוף).           */
+
+export function LocationText({
+  value,
+  className,
+}: {
+  value: string | null | undefined
+  className?: string
+}) {
+  const short = shortAddress(value)
+  if (!short) return null
+
+  const full = (value ?? '').trim()
+  const text = <span className={className}>{short}</span>
+  /* לא מציעים לחשוף מה שכבר גלוי */
+  if (short === full) return text
+
+  return (
+    <Tooltip content={full} openOnClick>
+      {text}
+    </Tooltip>
   )
 }
 

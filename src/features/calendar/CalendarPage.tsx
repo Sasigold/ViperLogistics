@@ -48,6 +48,7 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { useCustomers, useStatuses } from '../../lib/queries'
 import { fmtDate, toISODate } from '../../lib/dates'
+import { shortAddress } from '../../lib/address'
 import { KIND_LABEL, holidaysInRange, isDayOff } from '../../lib/hebrewHolidays'
 import type { Holiday } from '../../lib/hebrewHolidays'
 import { useIsMobile } from '../../lib/useMediaQuery'
@@ -498,7 +499,7 @@ export default function CalendarPage() {
             {ev.location_text && (
               <span className="inline-flex min-w-0 items-center gap-0.5 type-caption text-ink-tertiary">
                 <MapPin size={ICON.xs} className="shrink-0" />
-                <span className="truncate">{ev.location_text}</span>
+                <span className="truncate">{shortAddress(ev.location_text)}</span>
               </span>
             )}
             {status && <Badge color={status.color}>{status.name}</Badge>}

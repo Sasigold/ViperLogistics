@@ -28,6 +28,7 @@ import {
   CardHeader,
   DataTable,
   EmptyState,
+  LocationText,
   MenuItem,
   MenuLabel,
   PageHeader,
@@ -332,7 +333,14 @@ export default function EventDetailPage() {
       : []),
     ['שם לקוח האירוע', event.end_client_name],
     ...(show('event_number') ? ([['מספר אירוע', event.event_number]] as [string, React.ReactNode][]) : []),
-    ...(show('location') ? ([['מיקום', event.location_text]] as [string, React.ReactNode][]) : []),
+    /* השדה נבנה רק כשיש כתובת — אלמנט הוא תמיד "לא ריק" מבחינת הפילטר למטה,
+       ובלעדי התנאי הזה הייתה נשארת שורת "מיקום" ריקה */
+    ...(show('location') && event.location_text
+      ? ([['מיקום', <LocationText key="location" value={event.location_text} />]] as [
+          string,
+          React.ReactNode,
+        ][])
+      : []),
     ...(show('location_notes')
       ? ([['הערות למיקום', event.location_notes]] as [string, React.ReactNode][])
       : []),
@@ -386,7 +394,11 @@ export default function EventDetailPage() {
           <span className="flex flex-wrap items-center gap-x-3">
             <span>{fmtDateLong(event.event_date)}</span>
             {event.event_number && <span className="tabular">· אירוע #{event.event_number}</span>}
-            {event.location_text && <span>· {event.location_text}</span>}
+            {event.location_text && (
+              <span>
+                · <LocationText value={event.location_text} />
+              </span>
+            )}
           </span>
         }
         actions={

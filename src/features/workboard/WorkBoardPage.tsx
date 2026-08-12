@@ -49,6 +49,7 @@ import {
   useTrucks,
 } from '../../lib/queries'
 import { fmtDate, fmtMonth, fmtTime, toISODate } from '../../lib/dates'
+import { shortAddress } from '../../lib/address'
 import { NEUTRAL, readableOn } from '../../lib/colors'
 import { useIsMobile } from '../../lib/useMediaQuery'
 import { useDragScroll } from '../../lib/useDragScroll'
@@ -1451,7 +1452,7 @@ const MobileTaskCard = memo(function MobileTaskCard({
         {row.location_text && (
           <span className="flex items-center gap-1 type-caption text-ink-tertiary">
             <MapPin size={ICON.xs} className="shrink-0" />
-            <span className="truncate">{row.location_text}</span>
+            <span className="truncate">{shortAddress(row.location_text)}</span>
           </span>
         )}
 

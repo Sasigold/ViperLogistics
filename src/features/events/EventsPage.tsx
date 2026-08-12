@@ -19,6 +19,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { useCustomFormFields, useCustomers } from '../../lib/queries'
 import { fmtDate } from '../../lib/dates'
+import { shortAddress } from '../../lib/address'
 import { EventFormModal } from './EventFormModal'
 import { formatCustomValue } from './CustomFieldInput'
 import { RequirePermission } from '../auth/guards'
@@ -136,7 +137,7 @@ export default function EventsPage() {
         render: (e) =>
           e.location_text ? (
             <Tooltip content={e.location_text}>
-              <span className="block truncate">{e.location_text}</span>
+              <span className="block truncate">{shortAddress(e.location_text)}</span>
             </Tooltip>
           ) : (
             <span className="text-ink-tertiary">—</span>
@@ -274,7 +275,7 @@ export default function EventsPage() {
                 {showVolume && e.volume_m != null && <span className="tabular">· נפח {e.volume_m}</span>}
               </div>
               {showLocation && e.location_text && (
-                <p className="truncate type-caption text-ink-tertiary">{e.location_text}</p>
+                <p className="truncate type-caption text-ink-tertiary">{shortAddress(e.location_text)}</p>
               )}
             </div>
           )}
