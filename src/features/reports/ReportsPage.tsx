@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import {
   Button,
   Checkbox,
@@ -302,6 +302,15 @@ function ReportsBody({
                   </button>
                 )
               })}
+              {/* דף הרווחיות המלא — P&L פר לקוח — חי במסך משלו */}
+              {domain === 'margin' && (
+                <Link
+                  to="/reports/profitability"
+                  className="shrink-0 rounded-lg border border-line-subtle px-2.5 py-1.5 type-caption font-medium text-primary-text transition-colors hover:bg-hover"
+                >
+                  דף רווחיות לקוחות ←
+                </Link>
+              )}
             </div>
           </div>
         </PageHeader>

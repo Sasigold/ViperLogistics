@@ -55,6 +55,26 @@ select t_eq('reports_run: פילוח לפי סטטוס רץ גם הוא',
                  "dimension":{"type":"cat","field":"tasks.status"}}',
                current_date - 30, current_date + 30)) -> 'rows' <> 'null'::jsonb, true);
 
+\echo '--- רווחיות לקוחות (0059) ---'
+
+-- אדמין: שורות אמיתיות, וכל שורה נושאת את הרווח המחושב-בשרת
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select t_eq('אדמין מקבל שורות רווחיות',
+  (customer_profitability(current_date - 30, current_date + 30)) -> 'rows' <> 'null'::jsonb, true);
+select t_eq('והסיכום נושא רווח גולמי',
+  (customer_profitability(current_date - 30, current_date + 30)) #> '{summary,gross}' is not null, true);
+select t_eq('וכל שורה נושאת gross מחושב בשרת',
+  (select count(*)::int from jsonb_array_elements(
+     (customer_profitability(current_date - 30, current_date + 30)) -> 'rows') e
+    where e -> 'gross' is null), 0);
+
+-- קורא דוחות בלבד, בלי צרור הרווח: null ולא אפס — הדף אינו מרחיב נתונים
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+select t_eq('בלי מפתחות הרווח: רווחיות → null',
+  (customer_profitability(current_date - 30, current_date + 30)) -> 'rows', 'null'::jsonb);
+select t_eq('...ומסומן denied',
+  (customer_profitability(current_date - 30, current_date + 30)) #>> '{meta,denied}', 'true');
+
 \echo '--- המסך אינו מרחיב נתונים ---'
 
 -- המדד הכספי נשאר מאחורי המפתחות שלו. rows=null ו-denied, לא 0 — מוסכמת 06.
@@ -84,6 +104,10 @@ select t_expect_fail('reports_run בלי אף מפתח נדחה',
 select t_expect_fail('גם app.report_run עצמה נדחית',
   $q$ select app.report_run('{"variant":"query","source":"tasks","measure":"tasks.count","agg":"count_distinct"}',
                             current_date - 30, current_date + 30) $q$);
+
+-- ורווחיות לקוחות נעולה על אותו מפתח דלת
+select t_expect_fail('רווחיות לקוחות בלי reports.view נדחית',
+  $q$ select customer_profitability(current_date - 30, current_date + 30) $q$);
 
 \echo '--- ניקוי ---'
 

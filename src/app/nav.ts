@@ -144,6 +144,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/attendance': 'דוח נוכחות',
   '/shifts': 'לוח משמרות צוות',
   '/reports': 'דוחות',
+  '/reports/profitability': 'רווחיות לקוחות',
   '/my/schedule': 'משמרות',
   '/my/attendance': 'שעון נוכחות',
   '/my/notifications': 'התראות',
