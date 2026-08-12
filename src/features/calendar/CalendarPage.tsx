@@ -756,20 +756,23 @@ export default function CalendarPage() {
   )
 
   return (
-    /* the month grid is the tallest thing this app scrolls, and the bottom bar
-       floats over it — the page keeps its own clearance so the last week row
-       (and the legend under it) can always be scrolled clear of the bar */
-    <div className="space-y-4 max-lg:pb-shell">
+    /* ‏המסך הוא עמודה בגובה החלון: הכותרת, המקרא ושורת הסינון לוקחות את מה
+       שהן צריכות, והלוח מקבל את כל מה שנשאר. `min-h-full` ולא `h-full` —
+       במסך נמוך, כשגם אחרי שהלוח התכווץ אין מקום למקרא, העמוד עדיין יכול
+       לגלול במקום לדחוס. הריפוד לפס הניווט התחתון מגיע מ-`main` ב-AppLayout,
+       ולכן אין כאן `pb-shell` משלו — הוא היה נספר פעמיים ומחזיר גלילה. */
+    <div className="flex min-h-full flex-col gap-4">
       {promptDialog}
       {menu}
 
       {isMobile ? (
-        <div className="space-y-3">
+        <div className="shrink-0 space-y-3">
           <div className="flex w-full flex-wrap items-center gap-2">{headerActions}</div>
           {headerExtras}
         </div>
       ) : (
         <PageHeader
+          className="shrink-0"
           title="לוח שנה"
           subtitle={period ? `${filtered.length} אירועים בתקופה המוצגת` : 'טוען...'}
           actions={headerActions}
@@ -799,7 +802,15 @@ export default function CalendarPage() {
 
       {/* not `overflow-hidden`: the day's popover ("+2") is portalled inside
           this card and a day in the last row would have it clipped away */}
-      <div ref={swipeRef} className="vl-calendar surface relative p-2 sm:p-3 touch-pan-y" {...swipeHandlers}>
+      <div
+        ref={swipeRef}
+        /* ‏הכרטיס הוא מה שנמתח: `flex-1` לוקח את כל הגובה שנשאר מהעמודה.
+           ה-`min-h` הוא מה שמרשה לו גם להתכווץ מתחת לגובה התוכן שלו —
+           בלעדיו הלוח היה דוחף את המקרא מתחת לקצה המסך — אבל לא עד אינסוף:
+           מתחת ל-24rem חודש כבר לא קריא, ומשם העמוד גולל במקום לדחוס. */
+        className="vl-calendar surface relative flex min-h-96 flex-1 flex-col p-2 sm:p-3 touch-pan-y"
+        {...swipeHandlers}
+      >
         {/* thin top progress line instead of a spinner that blanks the grid */}
         <div
           aria-hidden
@@ -813,7 +824,7 @@ export default function CalendarPage() {
             make in one gesture, so it appears only once you have swiped away
             from the period today is in, and leaves again when you are back. */}
         {isMobile && (
-          <div className="mb-2 flex items-center justify-center gap-2 px-1">
+          <div className="mb-2 flex shrink-0 items-center justify-center gap-2 px-1">
             <h2 className="truncate type-title font-bold">{nav.title}</h2>
             {!nav.showsToday && (
               <button
@@ -830,8 +841,10 @@ export default function CalendarPage() {
         {eventsError != null ? (
           <ErrorState error={eventsError} onRetry={() => void refetchEvents()} />
         ) : (
-        <div className={cx(swiping && 'overflow-hidden')}>
-          <div style={trackStyle}>
+        <div className={cx('min-h-0 flex-1', swiping && 'overflow-hidden')}>
+          {/* ‏שרשרת הגובה עד ל-FullCalendar: `height="100%"` נמדד מול ההורה
+              הישיר, ולכן גם מסילת הגרירה חייבת להיות בגובה מלא */}
+          <div className="h-full" style={trackStyle}>
             <FullCalendar
               ref={calRef}
               plugins={[dayGridPlugin, listPlugin, interactionPlugin]}
@@ -850,7 +863,11 @@ export default function CalendarPage() {
               buttonText={{ month: 'חודש', week: 'שבוע', day: 'יום', list: 'סדר יום', today: 'היום' }}
               locale={heLocale}
               direction="rtl"
-              height="auto"
+              /* ‏"auto" נתן ללוח לגדול לפי התוכן והשאיר חצי מסך ריק מתחתיו.
+                 עכשיו הוא ממלא את הגובה שהכרטיס נותן לו: שורות השבוע נמתחות
+                 יחד, ואם גם הגובה המינימלי של השורות לא נכנס (מסך נמוך,
+                 "סדר יום" ארוך) — הגלילה היא בתוך הלוח, לא של העמוד. */
+              height="100%"
               /* ‏רשת החודש נפרשת לפי מה שהחודש צריך, ולא לשש שורות תמיד:
                  שורה שכל שבעת ימיה שייכים לחודש שכן אינה מציגה דבר מהחודש
                  הזה — לא אירועים ולא חגים — והיא רק שורה ריקה שגונבת גובה
@@ -904,7 +921,10 @@ export default function CalendarPage() {
                   : undefined
               }
               /* events, not rows: a cell shows three of them and says how many it
-                 is holding back, rather than spending one of the three saying it */
+                 is holding back, rather than spending one of the three saying it.
+                 ‏נשאר מספר ולא `true` גם עכשיו כשהתא נמתח: `true` מודד כמה
+                 נכנסים בבטחה ומשאיר מקום ל-"+N", ובפועל הראה צ׳יפ אחד במקום
+                 שלושה — פחות ממה שהתא באמת יכול להכיל. */
               dayMaxEvents={isMobile ? 3 : 4}
               /* "+2" and nothing else — "עוד 2" costs half the width of a cell on
                  a phone, and the number is the whole message */
@@ -925,7 +945,7 @@ export default function CalendarPage() {
           own status, and the cancelled one carries the toggle that reveals it
           — it is where you look when you wonder where a cancelled event went */}
       {statusLegend.length > 0 && (
-        <div className="scroll-row gap-x-1 gap-y-1.5 px-1 sm:flex-wrap sm:gap-x-2">
+        <div className="scroll-row shrink-0 gap-x-1 gap-y-1.5 px-1 sm:flex-wrap sm:gap-x-2">
           <span className="scroll-row-item type-overline pe-1">סטטוס</span>
           {statusLegend.map((s) => {
             const isCancelled = s.code === CANCELLED
@@ -965,7 +985,7 @@ export default function CalendarPage() {
       {/* a legend of one is not a legend — it just names the company you are
           already inside, which is what a client sees once RLS has scoped the rows */}
       {legend.length > 1 && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1">
+        <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1.5 px-1">
           <span className="type-overline">לקוחות בתצוגה</span>
           {/* the customer's colour is the dot on the chip, not its fill */}
           {legend.map(([id, c]) => (
