@@ -125,5 +125,8 @@ export {
   FileText,
   PencilLine,
   WifiOff,
+  BarChart3,
+  Printer,
+  Bookmark,
 } from 'lucide-react'
 

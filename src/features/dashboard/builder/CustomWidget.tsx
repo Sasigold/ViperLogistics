@@ -60,9 +60,10 @@ export function makeCustomComponent(row: { id: string; title: string; subtitle: 
 /* ===== what the number does not say =======================================
    Every one of these corresponds to a way the number can be quietly wrong,
    and the rule throughout the dashboard is that the card says so rather than
-   the reader finding out later.                                              */
+   the reader finding out later. Exported so the reports screen prints the
+   same caveats under its panels instead of maintaining a second copy.        */
 
-function Disclosures({ meta }: { meta: RunMeta }) {
+export function Disclosures({ meta }: { meta: RunMeta }) {
   const lines: string[] = []
 
   // an allocation, not a join: shifts with no task ids cannot be attributed

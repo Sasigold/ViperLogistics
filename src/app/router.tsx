@@ -32,6 +32,8 @@ const SettingsPage = lazyPage(() => import('../features/settings/SettingsPage'))
 const TimeClockPage = lazyPage(() => import('../features/attendance/TimeClockPage'))
 const MySchedulePage = lazyPage(() => import('../features/attendance/MySchedulePage'))
 const AttendanceReportPage = lazyPage(() => import('../features/attendance/AttendanceReportPage'))
+const ReportsPage = lazyPage(() => import('../features/reports/ReportsPage'))
+const CustomerProfitabilityPage = lazyPage(() => import('../features/reports/CustomerProfitabilityPage'))
 const ShiftBoardPage = lazyPage(() => import('../features/attendance/ShiftBoardPage'))
 const NotificationPreferencesPage = lazyPage(() => import('../features/notifications/NotificationPreferencesPage'))
 
@@ -105,6 +107,12 @@ export const router = createBrowserRouter([
           { path: '/', handle: { open: true }, element: page(<HomeRoute />) },
           { path: '/calendar', handle: { perm: PERM.CALENDAR_VIEW }, element: page(<CalendarPage />) },
           { path: '/board', handle: { perm: PERM.BOARD_VIEW }, element: page(<WorkBoardPage />) },
+          { path: '/reports', handle: { perm: PERM.REPORTS_VIEW }, element: page(<ReportsPage />) },
+          {
+            path: '/reports/profitability',
+            handle: { perm: PERM.REPORTS_VIEW },
+            element: page(<CustomerProfitabilityPage />),
+          },
           { path: '/events', handle: { perm: PERM.EVENTS_VIEW }, element: page(<EventsPage />) },
           { path: '/events/:id', handle: { perm: PERM.EVENTS_VIEW }, element: page(<EventDetailPage />) },
           { path: '/customers', handle: { perm: PERM.CUSTOMERS_VIEW }, element: page(<CustomersPage />) },

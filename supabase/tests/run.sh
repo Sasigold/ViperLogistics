@@ -107,6 +107,15 @@ OUT="$OUT
 $OUT7"
 
 echo
+echo "== reports page suite =="
+# 09 משחק במענקים האישיים של f3 ומחזיר אותם בסופו; הוא רץ אחרון כדי שאף
+# בדיקה אחרת לא תראה את f3 באמצע התחפושת.
+OUT8=$($PSQL -d vl -f "$HERE/09_reports_page.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT8"
+OUT="$OUT
+$OUT8"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

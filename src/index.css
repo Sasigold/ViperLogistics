@@ -1190,3 +1190,26 @@
     gap: 0;
   }
 }
+
+/* ===== הדפסה =============================================================
+   הנתיב של "ייצוא PDF" במסך הדוחות הוא דיאלוג ההדפסה של הדפדפן — אפס
+   תלויות, וגרפי ה-SVG של Recharts מודפסים כמות שהם. הכללים כאן הם הכלליים:
+   קליפת האפליקציה היא כרום, לא תוכן. מה שמסך רוצה להסתיר נקודתית מקבל
+   print:hidden אצלו. */
+@media print {
+  aside,
+  header,
+  [data-bottom-nav] {
+    display: none !important;
+  }
+  main {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  body {
+    background: #fff;
+  }
+  .print-panel {
+    break-inside: avoid;
+  }
+}
