@@ -470,7 +470,10 @@ function MethodCell({ row, canEdit, patch, lookups }: CellContext) {
   )
 }
 
-function StatusCell({ row, canEdit, patch, lookups }: CellContext) {
+function StatusCell({ row, canEdit, can, patch, lookups }: CellContext) {
+  // פרסום ("משובץ") הוא מפתח נפרד מ-tasks.change_status. מי שאינו רשאי לפרסם
+  // לא רואה את האפשרות — אך היא נשארת כשזה הסטטוס הנוכחי של השורה.
+  const canPublish = can(PERM.TASKS_PUBLISH)
   return (
     <PickCell
       canEdit={canEdit}
@@ -484,7 +487,9 @@ function StatusCell({ row, canEdit, patch, lookups }: CellContext) {
         {
           key: 'statuses',
           multi: false,
-          options: lookups.statuses.map((s) => ({ id: s.id, label: s.name, checked: s.id === row.status_id })),
+          options: lookups.statuses
+            .filter((s) => canPublish || s.code !== 'assigned' || s.id === row.status_id)
+            .map((s) => ({ id: s.id, label: s.name, checked: s.id === row.status_id })),
         },
       ]}
       /* a status is mandatory, so re-picking the current one is a no-op */
