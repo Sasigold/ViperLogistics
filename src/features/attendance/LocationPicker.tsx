@@ -12,7 +12,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { ICON, MapPin, STROKE } from '../../components/ui/icons'
 import { Autocomplete, Field, Input } from '../../components/ui'
-import { addressProvider, shortAddress } from '../../lib/address'
+import { addressProvider, MIN_QUERY_CHARS, shortAddress } from '../../lib/address'
 import type { AddressSuggestion } from '../../types/domain'
 
 const FALLBACK_CENTER: [number, number] = [31.9, 35.0]
@@ -95,13 +95,14 @@ export function LocationPicker({
           onChange(s.lat, s.lng)
           map.current?.setView([s.lat, s.lng], 16)
         }}
-        placeholder="חיפוש כתובת..."
-        minChars={3}
-        debounce={400}
+        placeholder="חיפוש כתובת או שם מקום..."
+        minChars={MIN_QUERY_CHARS}
+        debounce={300}
         leading={<MapPin size={ICON.sm} strokeWidth={STROKE} />}
         fetcher={(q) => addressProvider.search(q)}
         getKey={(s) => s.place_id}
-        emptyText="לא נמצאה כתובת תואמת"
+        // תמיד אפשר גם ללחוץ על המפה, ולכן חיפוש שלא מצא אינו סוף הדרך
+        emptyText="לא נמצאה כתובת — אפשר לסמן על המפה"
         renderOption={(s) => (
           <>
             <MapPin size={ICON.sm} className="mt-0.5 shrink-0 text-ink-tertiary" strokeWidth={STROKE} aria-hidden />

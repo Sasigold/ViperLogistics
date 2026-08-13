@@ -1,5 +1,11 @@
-// Nominatim proxy: adds a proper User-Agent, caches results, and keeps the
+// OSM geocoding proxy: adds a proper User-Agent, caches results, and keeps the
 // address-provider swappable server-side without touching the client adapter.
+//
+// שני ספקים, לא אחד. Nominatim בנוי לכתובת שלמה ומדויקת, ולכן מי שהקליד "אש
+// התורה" לא קיבל את "ישיבת אש התורה" — הוא חיפוש כתובות, לא חיפוש שמות.
+// Photon בנוי בדיוק להקלדה תוך כדי: התאמת מילים חלקיות, שגיאות כתיב ושמות של
+// נקודות עניין. הוא הספק הראשי כאן, ו-Nominatim נשאר כמשלים לשאילתות שבהן
+// Photon מחזיר מעט מדי או נופל.
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const cors = {
@@ -13,6 +19,22 @@ function json(body: unknown, status = 200, extra: Record<string, string> = {}) {
     status,
     headers: { ...cors, 'Content-Type': 'application/json', ...extra },
   })
+}
+
+const UA = 'ViperLogistics/1.0 (workforce management app)'
+
+/** ישראל והשטח שסביבה, בסדר minLon,minLat,maxLon,maxLat ש-Photon מצפה לו. */
+const IL_BBOX = '34.2,29.4,35.95,33.45'
+
+/** מספר התוצאות שנשלחות ללקוח. הוא מדרג ומקצר מעבר לזה. */
+const MAX_RESULTS = 12
+
+interface Suggestion {
+  provider: string
+  place_id: string
+  label: string
+  lat: number
+  lng: number
 }
 
 /**
@@ -52,25 +74,167 @@ function cacheSet(key: string, data: unknown) {
  * exceeding it gets the caller's IP blocked — which would take address search
  * down for everyone, not just whoever triggered it. The cache alone doesn't
  * bound this: every distinct query is a miss. Misses are therefore serialised
- * through a promise chain with a one-second floor between upstream calls.
+ * through a promise chain with a minimum interval between upstream calls.
+ *
+ * ל-Photon אין מכסה נוקשה כזו, אבל גם הוא שירות ציבורי בחינם — ולכן הוא עובר
+ * דרך אותו מנגנון עם מרווח קצר יותר.
  */
-const MIN_INTERVAL_MS = 1000
-let upstreamChain: Promise<unknown> = Promise.resolve()
-let lastCall = 0
+function makeThrottle(minIntervalMs: number) {
+  let chain: Promise<unknown> = Promise.resolve()
+  let lastCall = 0
+  return <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = chain.then(async () => {
+      const wait = minIntervalMs - (Date.now() - lastCall)
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+      lastCall = Date.now()
+      return fn()
+    })
+    // the chain must not break on a rejected link, or every later call rejects
+    chain = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
+}
 
-function throttled<T>(fn: () => Promise<T>): Promise<T> {
-  const run = upstreamChain.then(async () => {
-    const wait = MIN_INTERVAL_MS - (Date.now() - lastCall)
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait))
-    lastCall = Date.now()
-    return fn()
+const nominatimThrottle = makeThrottle(1000)
+const photonThrottle = makeThrottle(250)
+
+/**
+ * מפתח זהות של מקום ב-OSM. שני הספקים שואבים מאותו מסד, כך שאותו בית כנסת יחזור
+ * פעמיים עם place_id שונה לחלוטין — רק צמד (סוג, מזהה) מזהה אותו כאותו מקום.
+ */
+function osmKey(type: unknown, id: unknown): string | null {
+  if (id == null) return null
+  const t = String(type ?? '')
+    .charAt(0)
+    .toUpperCase()
+  return t ? `${t}${id}` : `?${id}`
+}
+
+/**
+ * Photon מחזיר שדות מובנים ולא מחרוזת אחת. הרכבתם לכתובת בסדר של Nominatim —
+ * מהפרט אל הכללי — משאירה את `shortAddress` בצד הלקוח עובד בדיוק כמו קודם:
+ * הוא מקצץ את הזנב המנהלי (נפה, מחוז, מיקוד, "ישראל") מהסוף.
+ */
+function photonLabel(p: Record<string, unknown>): string {
+  const s = (k: string) => (typeof p[k] === 'string' ? (p[k] as string).trim() : '')
+  const street = s('street')
+  const num = s('housenumber')
+  // בעברית המספר בא אחרי שם הרחוב
+  const line = street && num ? `${street} ${num}` : street || num
+  const parts = [
+    s('name'),
+    line,
+    s('locality'),
+    s('district'),
+    s('city'),
+    s('county'),
+    s('state'),
+    s('postcode'),
+    s('country'),
+  ]
+  return [...new Set(parts.filter(Boolean))].join(', ')
+}
+
+/**
+ * ברירת המחדל היא המופע הציבורי של Photon. `PHOTON_URL` מאפשר להצביע על מופע
+ * עצמאי בלי לגעת בקוד, אם התעבורה תגדל מעבר למה שנאה לבקש משירות חינמי.
+ */
+const PHOTON_URL = Deno.env.get('PHOTON_URL') || 'https://photon.komoot.io/api/'
+
+async function searchPhoton(q: string): Promise<Suggestion[]> {
+  const url = new URL(PHOTON_URL)
+  url.searchParams.set('q', q)
+  url.searchParams.set('limit', '10')
+  // Photon תומך ב-default/de/en/fr בלבד; "default" הוא השם המקומי, כלומר עברית
+  url.searchParams.set('lang', 'default')
+  url.searchParams.set('bbox', IL_BBOX)
+
+  const res = await photonThrottle(() => fetch(url, { headers: { 'User-Agent': UA } }))
+  if (!res.ok) throw new Error(`photon ${res.status}`)
+  const body = (await res.json()) as {
+    features?: Array<{ properties?: Record<string, unknown>; geometry?: { coordinates?: number[] } }>
+  }
+  return (body.features ?? []).flatMap((f) => {
+    const p = f.properties ?? {}
+    const [lng, lat] = f.geometry?.coordinates ?? []
+    const label = photonLabel(p)
+    if (typeof lat !== 'number' || typeof lng !== 'number' || !label) return []
+    const key = osmKey(p.osm_type, p.osm_id)
+    return [{ provider: 'photon', place_id: key ?? `photon:${lat},${lng}`, label, lat, lng }]
   })
-  // the chain must not break on a rejected link, or every later call rejects
-  upstreamChain = run.then(
-    () => undefined,
-    () => undefined,
-  )
-  return run
+}
+
+async function searchNominatim(q: string): Promise<Suggestion[]> {
+  const url = new URL('https://nominatim.openstreetmap.org/search')
+  url.searchParams.set('q', q)
+  url.searchParams.set('format', 'jsonv2')
+  url.searchParams.set('limit', '6')
+  url.searchParams.set('countrycodes', 'il')
+  url.searchParams.set('accept-language', 'he')
+
+  const res = await nominatimThrottle(() => fetch(url, { headers: { 'User-Agent': UA } }))
+  if (!res.ok) throw new Error(`nominatim ${res.status}`)
+  const raw = (await res.json()) as Array<Record<string, unknown>>
+  return raw.flatMap((r) => {
+    const lat = Number(r.lat)
+    const lng = Number(r.lon)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || typeof r.display_name !== 'string') return []
+    const key = osmKey(r.osm_type, r.osm_id)
+    return [
+      {
+        provider: 'nominatim',
+        place_id: key ?? `nominatim:${r.place_id}`,
+        label: r.display_name,
+        lat,
+        lng,
+      },
+    ]
+  })
+}
+
+/** מוסיף לרשימה רק מקומות שעדיין אינם בה, לפי זהות ה-OSM. */
+function merge(into: Suggestion[], more: Suggestion[]): Suggestion[] {
+  const seen = new Set(into.map((s) => s.place_id))
+  for (const s of more) {
+    if (seen.has(s.place_id)) continue
+    seen.add(s.place_id)
+    into.push(s)
+  }
+  return into
+}
+
+/**
+ * מילות תיאור שאדם מוסיף מעצמו ולא תמיד קיימות בשם ב-OSM ("אולם שמחות הגן
+ * הקסום" כשהשם הוא "הגן הקסום"). מנוסות רק כשלא נמצא כלום — הן דווקא עוזרות
+ * כשהן חלק מהשם.
+ */
+const DESCRIPTORS = new Set([
+  'אולם',
+  'אולמי',
+  'בית',
+  'בניין',
+  'בנין',
+  'גן',
+  'גני',
+  'היכל',
+  'ישיבה',
+  'ישיבת',
+  'מלון',
+  'מרכז',
+  'מתחם',
+  'קניון',
+  'רחוב',
+  "רח'",
+  'שדרות',
+  "שד'",
+])
+
+function loosen(q: string): string {
+  const kept = q.split(/\s+/).filter((t) => t && !DESCRIPTORS.has(t))
+  return kept.length ? kept.join(' ') : ''
 }
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!
@@ -83,8 +247,8 @@ Deno.serve(async (req) => {
   // Whether this function is reachable without a JWT is a dashboard setting
   // (verify_jwt) that is not represented anywhere in this repo, so it is not
   // reviewable and not something a migration can assert. Checking in the body
-  // makes the answer part of the code: an open proxy to Nominatim is both
-  // someone else's rate limit to burn and our IP that gets blocked for it.
+  // makes the answer part of the code: an open proxy to a public geocoder is
+  // both someone else's rate limit to burn and our IP that gets blocked for it.
   const authHeader = req.headers.get('Authorization') ?? ''
   if (!authHeader) return json({ error: 'לא מחובר' }, 401)
   const asUser = createClient(supabaseUrl, anonKey, {
@@ -94,8 +258,12 @@ Deno.serve(async (req) => {
   if (authErr || !claims?.user) return json({ error: 'לא מחובר' }, 401)
 
   const url = new URL(req.url)
-  const q = (url.searchParams.get('q') ?? '').trim()
-  if (q.length < 3) return json([])
+  // ניקוד וסימני טעמים נדבקים להדבקה מטקסט מנוקד ואף ספק לא מתאים איתם
+  const q = (url.searchParams.get('q') ?? '')
+    .replace(/[\u0591-\u05C7]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (q.length < 2) return json([])
   // an unbounded query string is just cache keys and upstream bytes
   if (q.length > 200) return json({ error: 'שאילתת חיפוש ארוכה מדי' }, 400)
 
@@ -103,34 +271,43 @@ Deno.serve(async (req) => {
   const hit = cacheGet(key)
   if (hit !== null) return json(hit, 200, { 'X-Cache': 'HIT' })
 
-  const nominatim = new URL('https://nominatim.openstreetmap.org/search')
-  nominatim.searchParams.set('q', q)
-  nominatim.searchParams.set('format', 'jsonv2')
-  nominatim.searchParams.set('limit', '6')
-  nominatim.searchParams.set('countrycodes', 'il')
-  nominatim.searchParams.set('accept-language', 'he')
+  const out: Suggestion[] = []
+  let reachedSomeone = false
 
-  let res: Response
   try {
-    res = await throttled(() =>
-      fetch(nominatim, {
-        headers: { 'User-Agent': 'ViperLogistics/1.0 (workforce management app)' },
-      }),
-    )
+    merge(out, await searchPhoton(q))
+    reachedSomeone = true
   } catch {
-    return json([], 200, { 'X-Upstream-Status': 'unreachable' })
+    // Photon לא זמין — Nominatim למטה עדיין ינסה
   }
-  if (!res.ok) {
-    return json([], 200, { 'X-Upstream-Status': String(res.status) })
+
+  // מעט מדי תוצאות מהספק המשלים-שמות: כתובת מדויקת היא בדיוק מה ש-Nominatim
+  // טוב בו, ולכן שווה את שנייית ההמתנה של המכסה שלו.
+  if (out.length < 3) {
+    try {
+      merge(out, await searchNominatim(q))
+      reachedSomeone = true
+    } catch {
+      // ממשיכים עם מה שיש
+    }
   }
-  const raw = (await res.json()) as Array<Record<string, unknown>>
-  const data = raw.map((r) => ({
-    provider: 'nominatim',
-    place_id: String(r.place_id),
-    label: r.display_name as string,
-    lat: Number(r.lat),
-    lng: Number(r.lon),
-  }))
+
+  // ניסיון אחרון וסלחני: אותה שאילתה בלי מילות התיאור שהמשתמש הוסיף מעצמו
+  if (out.length === 0) {
+    const loose = loosen(q)
+    if (loose && loose !== q && loose.length >= 2) {
+      try {
+        merge(out, await searchPhoton(loose))
+        reachedSomeone = true
+      } catch {
+        // אין יותר מה לנסות
+      }
+    }
+  }
+
+  if (!reachedSomeone) return json([], 200, { 'X-Upstream-Status': 'unreachable' })
+
+  const data = out.slice(0, MAX_RESULTS)
   cacheSet(key, data)
   return json(data, 200, { 'X-Cache': 'MISS' })
 })

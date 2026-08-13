@@ -10,19 +10,171 @@ export interface AddressProvider {
   search(q: string, signal?: AbortSignal): Promise<AddressSuggestion[]>
 }
 
-class NominatimProvider implements AddressProvider {
+/** מאיזה אורך מתחילים לחפש. שם מקום בעברית יכול להיות קצר ("יד ושם"). */
+export const MIN_QUERY_CHARS = 2
+
+/* ===== סלחנות בהקלדה ====================================================
+   מי שמקליד מקום לא מקליד את מה שרשום ב-OpenStreetMap. הוא כותב "אש התורה"
+   כשהשם המלא הוא "ישיבת אש התורה", מקצר "ת״א", מוסיף "רח'" לפני שם הרחוב
+   ומדביק לפעמים טקסט מנוקד. שלושה דברים סוגרים את הפער: נרמול של מה שנשלח
+   לספק (כאן), חיפוש עמיד לשמות חלקיים (Photon, בפונקציית הקצה), ודירוג של מה
+   שחזר מול מה שבאמת הוקלד (בהמשך הקובץ). */
+
+const NIQQUD = /[\u0591-\u05C7]/g
+const DOUBLE_QUOTES = /[\u05F4\u201C\u201D]/g
+const SINGLE_QUOTES = /[\u05F3\u2018\u2019`]/g
+
+/**
+ * קיצורים שנפוצים בהקלדה ואינם קיימים כשם ב-OSM. ההחלפה היא לפי מילה שלמה,
+ * לא לפי תת-מחרוזת: `\b` ב-JavaScript מבוסס על [A-Za-z0-9_] ולכן חסר משמעות
+ * בין אותיות עבריות. ערך ריק פירושו "השמט את המילה".
+ */
+const ALIASES = new Map<string, string>([
+  ['ת"א', 'תל אביב'],
+  ['ב"ש', 'באר שבע'],
+  ['פ"ת', 'פתח תקווה'],
+  ['ר"ג', 'רמת גן'],
+  ['ב"ב', 'בני ברק'],
+  ['כ"ס', 'כפר סבא'],
+  ['ראשל"צ', 'ראשון לציון'],
+  ['י"ם', 'ירושלים'],
+  ['י-ם', 'ירושלים'],
+  ["רח'", ''],
+  ['רחוב', ''],
+  ["שד'", 'שדרות'],
+])
+
+/**
+ * מנרמל את מה שהוקלד לפני שהוא נשלח לספק — ניקוד, גרשיים טיפוגרפיים, קיצורים
+ * ומילות קישור מיותרות. הטקסט שהמשתמש רואה בשדה אינו משתנה; זו שאילתה בלבד.
+ */
+export function normalizeQuery(raw: string): string {
+  const unified = (raw ?? '')
+    .replace(NIQQUD, '')
+    .replace(DOUBLE_QUOTES, '"')
+    .replace(SINGLE_QUOTES, "'")
+
+  const out: string[] = []
+  for (const token of unified.split(/\s+/)) {
+    if (!token) continue
+    const alias = ALIASES.get(token)
+    if (alias === undefined) out.push(token)
+    else if (alias) out.push(alias)
+  }
+  return out.join(' ').replace(/^[,;\s]+|[,;\s]+$/g, '')
+}
+
+/** משטח טקסט להשוואה: בלי ניקוד, בלי פיסוק, אותיות קטנות, רווח יחיד. */
+function fold(s: string): string {
+  return s
+    .replace(NIQQUD, '')
+    .toLowerCase()
+    .replace(/["'`.,;:()[\]{}/\\|–—_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function words(s: string): string[] {
+  return fold(s).split(' ').filter(Boolean)
+}
+
+/** "התורה" ו"תורה" הן אותה מילה לצורך התאמה; ה"א הידיעה אינה הבדל אמיתי. */
+function bare(t: string): string {
+  return t.length > 3 && t.startsWith('ה') ? t.slice(1) : t
+}
+
+/** התאמה סלחנית: תחילית לכל כיוון, עם או בלי ה"א הידיעה. */
+function tokenMatches(q: string, t: string): boolean {
+  if (t.startsWith(q)) return true
+  if (t.length >= 2 && q.startsWith(t)) return true
+  const bq = bare(q)
+  const bt = bare(t)
+  return bt.startsWith(bq) || (bt.length >= 2 && bq.startsWith(bt))
+}
+
+/**
+ * עד כמה ההצעה עונה על מה שהוקלד.
+ *
+ * 0 — אף מילה שהוקלדה אינה מופיעה בכתובת.
+ * 1 — כל מילה שהוקלדה מופיעה בחלק הספציפי של הכתובת (השם והרחוב), ולא רק
+ *     בזנב המנהלי שבו "ירושלים" מופיעה גם בשלוש רמות מעל.
+ * עד 1.15 — תוספת כשהשם עצמו מתחיל בדיוק במה שהוקלד.
+ *
+ * זה נחוץ מפני שהתוצאות מגיעות משני ספקים בשתי שיטות דירוג שונות, ומה שחוזר
+ * ראשון אינו בהכרח מה שהמשתמש חיפש.
+ */
+export function scoreSuggestion(query: string, label: string): number {
+  const qs = words(query)
+  if (qs.length === 0) return 0
+
+  const parts = (label ?? '')
+    .split(',')
+    .map((p) => fold(p))
+    .filter(Boolean)
+  // שתי החוליות הראשונות הן השם והרחוב — שם ההתאמה שווה כפליים
+  const head = parts.slice(0, 2).flatMap((p) => p.split(' ')).filter(Boolean)
+  const tail = parts.slice(2).flatMap((p) => p.split(' ')).filter(Boolean)
+
+  let hits = 0
+  for (const q of qs) {
+    if (head.some((t) => tokenMatches(q, t))) hits += 2
+    else if (tail.some((t) => tokenMatches(q, t))) hits += 1
+  }
+
+  const base = hits / (2 * qs.length)
+  const prefix = parts[0]?.startsWith(fold(query)) ? 0.15 : 0
+  return base + prefix
+}
+
+/**
+ * אותו מקום מגיע משני ספקים עם מזהים שונים לגמרי. מעבר למזהה ה-OSM שפונקציית
+ * הקצה כבר מאחדת לפיו, שתי הצעות באותן קואורדינטות (עד כ-11 מ') ובאותו שם הן
+ * אותה שורה מבחינת מי שקורא את הרשימה.
+ */
+function sameSpotKey(s: AddressSuggestion): string {
+  return `${s.lat.toFixed(4)},${s.lng.toFixed(4)}|${fold(s.label.split(',')[0] ?? '')}`
+}
+
+/** מסיר כפילויות ומסדר לפי קרבה למה שהוקלד. הסדר המקורי מכריע בתיקו. */
+export function rankSuggestions(
+  query: string,
+  items: AddressSuggestion[],
+  limit = 8,
+): AddressSuggestion[] {
+  const seen = new Set<string>()
+  const unique = items.filter((s) => {
+    const keys = [s.place_id, sameSpotKey(s)]
+    if (keys.some((k) => seen.has(k))) return false
+    for (const k of keys) seen.add(k)
+    return true
+  })
+
+  return unique
+    .map((s, i) => ({ s, i, score: scoreSuggestion(query, s.label) }))
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .slice(0, limit)
+    .map((x) => x.s)
+}
+
+/**
+ * הספק בפועל: פונקציית הקצה `geocode-proxy`, שמאחדת מאחוריה את Photon (חיפוש
+ * סלחני לשמות ולשגיאות כתיב) ואת Nominatim (כתובת מדויקת). הדירוג נעשה כאן,
+ * מול הטקסט שהוקלד.
+ */
+class OsmProvider implements AddressProvider {
   async search(q: string): Promise<AddressSuggestion[]> {
-    if (q.trim().length < 3) return []
+    const query = normalizeQuery(q)
+    if (query.length < MIN_QUERY_CHARS) return []
     const { data, error } = await supabase.functions.invoke(
-      `geocode-proxy?q=${encodeURIComponent(q)}`,
+      `geocode-proxy?q=${encodeURIComponent(query)}`,
       { method: 'GET' },
     )
     if (error) return []
-    return (data as AddressSuggestion[]) ?? []
+    return rankSuggestions(query, (data as AddressSuggestion[]) ?? [])
   }
 }
 
-export const addressProvider: AddressProvider = new NominatimProvider()
+export const addressProvider: AddressProvider = new OsmProvider()
 
 /**
  * מה שנשמר ב-`location_text` הוא ה-display_name המלא של הספק — שרשרת של כל רמות

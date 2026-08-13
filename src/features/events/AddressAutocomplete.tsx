@@ -1,6 +1,6 @@
 import { ICON, MapPin, STROKE } from '../../components/ui/icons'
 import { Autocomplete } from '../../components/ui'
-import { addressProvider, shortAddress } from '../../lib/address'
+import { addressProvider, MIN_QUERY_CHARS, shortAddress } from '../../lib/address'
 import type { AddressSuggestion } from '../../types/domain'
 
 /**
@@ -26,13 +26,14 @@ export function AddressAutocomplete({
       onChange={onChange}
       onPick={onPick}
       disabled={disabled}
-      placeholder="חיפוש כתובת..."
-      minChars={3}
-      debounce={400}
+      placeholder="חיפוש כתובת או שם מקום..."
+      minChars={MIN_QUERY_CHARS}
+      debounce={300}
       leading={<MapPin size={ICON.sm} strokeWidth={STROKE} />}
       fetcher={(q) => addressProvider.search(q)}
       getKey={(s) => s.place_id}
-      emptyText="לא נמצאה כתובת תואמת"
+      // מיקום הוא שדה טקסט חופשי; מה שהוקלד נשמר גם בלי לבחור מהרשימה
+      emptyText="לא נמצאה כתובת — אפשר להשאיר את מה שהוקלד"
       renderOption={(s) => (
         <>
           <MapPin size={ICON.sm} className="mt-0.5 shrink-0 text-ink-tertiary" strokeWidth={STROKE} aria-hidden />
