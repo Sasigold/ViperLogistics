@@ -183,7 +183,10 @@ export function OverdueListWidget(_props: WidgetProps) {
         .from('work_board_view')
         .select('*')
         .lt('task_date', today)
-        .eq('status_is_terminal', false)
+        /* משימה שתאריכה עבר והיא עדיין לא פורסמה לעובד. `status_is_terminal`
+           היה המדד עד 0063, שבו ירדו "הושלם" ו"בוטל" ולמשימה לא נשאר סטטוס
+           סוגר — ומאז הוא היה מחזיר את כל ההיסטוריה. */
+        .or('status_code.is.null,status_code.neq.assigned')
         .order('task_date')
         .limit(8)
       if (error) throw error

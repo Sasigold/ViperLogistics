@@ -63,7 +63,7 @@ export function OvertimeSettingsTab() {
   // המפתח נוסף ב-0024, ולכן קונפיגורציה שנשמרה לפניו לא מכילה אותו. ברירות
   // המחדל כאן הן אותן ברירות מחדל של ה-RPC, כדי שהמסך לא יציג "כבוי" למשהו
   // שבשרת פועל.
-  const selfEntry = ck.self_entry ?? { enabled: true, max_backdate_days: 14, max_hours: 16 }
+  const selfEntry = ck.self_entry ?? { enabled: true, max_backdate_days: 14, max_hours: 24 }
   const patchSelf = (p: Partial<ClockConfig['self_entry']>) =>
     patchCk({ self_entry: { ...selfEntry, ...p } })
 
@@ -324,7 +324,7 @@ export function OvertimeSettingsTab() {
                 onChange={(e) => patchSelf({ max_backdate_days: Number(e.target.value) })}
               />
             </Field>
-            <Field label="אורך משמרת מרבי (שעות)">
+            <Field label="אורך משמרת מרבי (שעות)" hint="ברירת המחדל 24 — התקרה תופסת טעות הקלדה">
               <Input
                 type="number"
                 dir="ltr"
