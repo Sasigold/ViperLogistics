@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
   Banknote,
   Briefcase,
   CalendarDays,
   CircleCheck,
+  ClipboardList,
   Clock,
   ICON,
   LogOut,
-  MapPin,
   Moon,
   STROKE,
   Sun,
@@ -20,37 +20,23 @@ import {
 import {
   Avatar,
   Card,
-  CardBody,
-  CardHeader,
-  EmptyState,
   ErrorState,
   Field,
   IconButton,
   Input,
-  MultiSelect,
   ProgressBar,
   Skeleton,
   SkeletonCard,
-  SkeletonList,
   StatCard,
-  StatusPill,
   Tabs,
-  Tooltip,
-  cx,
-  relativeDayLabel,
-  useToast,
 } from '../../components/ui'
+import { fmtMoney } from '../../lib/dates'
 import { supabase } from '../../lib/supabase'
-import { errorMessage } from '../../lib/errors'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
-import { useContractorWorkers } from '../../lib/queries'
-import { HIGHLIGHT_CLASS, useDeepLinkHighlight } from '../../lib/deepLink'
-import { fmtDate, fmtMoney, fmtTime } from '../../lib/dates'
-import { shortAddress } from '../../lib/address'
 import { WorkersTab } from '../contractors/ContractorDetailPage'
+import { ContractorCalendar, ContractorSchedule } from '../contractors/ContractorWork'
 import { AttendanceReport } from '../attendance/AttendanceReportPage'
-import type { WorkBoardRow } from '../../types/domain'
 
 interface PortalStats {
   tasks_count: number
@@ -62,11 +48,17 @@ interface PortalStats {
   upcoming_count: number
 }
 
+/* הלו״ז ולוח השנה רוכבים על portal.view, אותו מפתח שפותח את הפורטל עצמו:
+   הם *התצוגה* של אותן משימות שהלשונית הראשונה כבר הראתה, ולא מידע נוסף.
+   השיבוץ שבתוכם הוא מה שנשלט בנפרד, דרך portal.assign_workers. */
 const TABS = [
-  { key: 'tasks' as const, label: 'המשימות שלי', icon: <Briefcase size={ICON.sm} />, perm: PERM.PORTAL_VIEW },
+  { key: 'schedule' as const, label: 'לו״ז עבודה', icon: <ClipboardList size={ICON.sm} />, perm: PERM.PORTAL_VIEW },
+  { key: 'calendar' as const, label: 'לוח שנה', icon: <CalendarDays size={ICON.sm} />, perm: PERM.PORTAL_VIEW },
   { key: 'workers' as const, label: 'העובדים שלי', icon: <Users size={ICON.sm} />, perm: PERM.PORTAL_MANAGE_WORKERS },
   { key: 'attendance' as const, label: 'נוכחות', icon: <Clock size={ICON.sm} />, perm: PERM.PORTAL_ATTENDANCE },
 ]
+
+type PortalTab = (typeof TABS)[number]['key']
 
 export default function PortalPage() {
   const { me, theme, toggleTheme, signOut, has } = useAuth()
@@ -81,7 +73,7 @@ export default function PortalPage() {
   const contractorId = me?.profile.contractor_id ?? null
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
-  const [tab, setTab] = useState<'tasks' | 'workers' | 'attendance'>('tasks')
+  const [tab, setTab] = useState<PortalTab>('schedule')
 
   /* התראת משימה של קבלן מובילה לכאן ולא ללוח העבודה — /board מגודר ב-board.view
      שהיא הרשאת staff, ולקבלן אין אותה. app.notification_link (0054) מפצל לפי
@@ -89,8 +81,25 @@ export default function PortalPage() {
   const [params] = useSearchParams()
   const taskParam = params.get('task')
   useEffect(() => {
-    if (taskParam) setTab('tasks')
+    if (taskParam) setTab('schedule')
   }, [taskParam])
+
+  /* הלו״ז נפתח על חודש, ולכן קישור למשימה חייב לדעת באיזה חודש היא יושבת —
+     אחרת הוא היה נוחת על החודש הנוכחי ומדגיש שורה שאינה בו. שאילתה של שדה
+     אחד, ורק כשהגיעו מקישור. */
+  const { data: taskMonth } = useQuery({
+    queryKey: ['portal', 'task_month', taskParam],
+    enabled: !!taskParam,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('work_board_view')
+        .select('task_date')
+        .eq('id', taskParam)
+        .maybeSingle()
+      if (error) throw error
+      return (data?.task_date as string | undefined) ?? null
+    },
+  })
 
   const { data: stats, isLoading, error: statsError, refetch: refetchStats } = useQuery({
     queryKey: ['portal', 'stats', from, to],
@@ -201,7 +210,11 @@ export default function PortalPage() {
           )
         )}
 
+        {/* הטווח הזה מסנן את הסיכום שלמעלה בלבד. ללו״ז וללוח השנה יש ניווט
+            חודשי משלהם, ושני סרגלי תאריכים שמכריעים על אותו דבר היו שניים
+            יותר מדי — ולכן הכותרת אומרת במפורש על מה הוא חל. */}
         <Card padded className="flex flex-wrap items-end gap-3">
+          <p className="basis-full type-caption text-ink-tertiary">טווח לסיכום שלמעלה</p>
           <Field label="מתאריך" className="grow basis-36 sm:w-40 sm:grow-0 sm:basis-auto">
             <Input type="date" inputSize="sm" value={from} onChange={(e) => setFrom(e.target.value)} />
           </Field>
@@ -223,14 +236,17 @@ export default function PortalPage() {
 
         {visibleTabs.length > 1 && <Tabs items={visibleTabs} value={tab} onChange={setTab} />}
 
-        {tab === 'tasks' ? (
-          <PortalTasks
-            contractorId={contractorId!}
-            from={from}
-            to={to}
-            canAssign={canAssign}
-            highlightId={taskParam}
-          />
+        {tab === 'schedule' ? (
+          contractorId && (
+            <ContractorSchedule
+              contractorId={contractorId}
+              canAssign={canAssign}
+              highlightId={taskParam}
+              initialMonth={taskMonth}
+            />
+          )
+        ) : tab === 'calendar' ? (
+          contractorId && <ContractorCalendar contractorId={contractorId} canAssign={canAssign} />
         ) : tab === 'attendance' ? (
           /* אותו רכיב דוח של המנהל. התחימה לסגל של הקבלן נעשית בשרת, ולכן
              הפרופ כאן הוא נוחות ולא הגנה. */
@@ -239,213 +255,6 @@ export default function PortalPage() {
           contractorId && <WorkersTab contractorId={contractorId} canManage={has(PERM.PORTAL_MANAGE_WORKERS)} />
         )}
       </div>
-    </div>
-  )
-}
-
-function PortalTasks({
-  contractorId,
-  from,
-  to,
-  canAssign,
-  highlightId,
-}: {
-  contractorId: string
-  from: string
-  to: string
-  canAssign: boolean
-  /** המשימה שהגיעו אליה מהתראה — נגללת ומובזקת פעם אחת */
-  highlightId?: string | null
-}) {
-  const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ['portal', 'tasks', from, to],
-    queryFn: async () => {
-      let q = supabase.from('work_board_view').select('*').order('task_date', { ascending: false }).limit(500)
-      if (from) q = q.gte('task_date', from)
-      if (to) q = q.lte('task_date', to)
-      const { data, error } = await q
-      if (error) throw error
-      return data as WorkBoardRow[]
-    },
-  })
-
-  const { data: terms = [] } = useQuery({
-    queryKey: ['portal', 'terms'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('task_contractor_terms').select('task_id, price, paid_at, paid_amount')
-      if (error) throw error
-      return data as { task_id: string; price: number; paid_at: string | null; paid_amount: number | null }[]
-    },
-  })
-
-  if (isLoading) return <SkeletonList rows={4} />
-  if (tasks.length === 0)
-    return (
-      <Card>
-        <EmptyState
-          art="calendar"
-          title="אין משימות בטווח"
-          description="משימות שיואצלו אליך יופיעו כאן, ותוכל לשבץ אליהן את העובדים שלך"
-        />
-      </Card>
-    )
-
-  return (
-    <div className="space-y-3">
-      {tasks.map((t) => (
-        <PortalTaskCard
-          key={t.id}
-          task={t}
-          term={terms.find((x) => x.task_id === t.id)}
-          contractorId={contractorId}
-          canAssign={canAssign}
-          highlighted={t.id === highlightId}
-        />
-      ))}
-    </div>
-  )
-}
-
-function PortalTaskCard({
-  task,
-  term,
-  contractorId,
-  canAssign,
-  highlighted,
-}: {
-  task: WorkBoardRow
-  term?: { price: number; paid_at: string | null; paid_amount: number | null }
-  contractorId: string
-  canAssign: boolean
-  highlighted?: boolean
-}) {
-  const ref = useDeepLinkHighlight(highlighted ? task.id : null)
-  const qc = useQueryClient()
-  const toast = useToast()
-  const { data: roster = [] } = useContractorWorkers(contractorId)
-  const chosen = (task.contractor_worker_list ?? []).map((w) => w.id)
-  const dayLabel = relativeDayLabel(task.task_date)
-  const full = task.worker_count > 0 && chosen.length >= task.worker_count
-
-  const toggleWorker = async (workerId: string) => {
-    if (chosen.includes(workerId)) {
-      const { error } = await supabase
-        .from('task_contractor_workers')
-        .delete()
-        .eq('task_id', task.id)
-        .eq('contractor_worker_id', workerId)
-      if (error) return toast.error(errorMessage(error))
-    } else {
-      const { error } = await supabase
-        .from('task_contractor_workers')
-        .insert({ task_id: task.id, contractor_worker_id: workerId })
-      if (error) return toast.error(errorMessage(error))
-    }
-    void qc.invalidateQueries({ queryKey: ['portal', 'tasks'] })
-  }
-
-  return (
-    /* ה-ref יושב על עטיפה ולא על Card: Card מפזר את ה-rest שלו על אלמנט DOM
-       אבל אינו מצהיר על ref בטיפוסים, ותיקון ה-UI kit בשביל גלילה אחת הוא
-       שינוי גדול מהצורך. */
-    <div ref={ref as React.Ref<HTMLDivElement>} className={highlighted ? HIGHLIGHT_CLASS : undefined}>
-    <Card>
-      <CardHeader
-        title={
-          <span className="flex flex-wrap items-center gap-2">
-            {task.title || task.task_type_name}
-            <StatusPill color={task.status_color}>{task.status_name}</StatusPill>
-            {term && (
-              <StatusPill color={term.paid_at ? '#16a34a' : '#f59e0b'}>
-                {term.paid_at ? `שולם ${fmtMoney(term.paid_amount ?? term.price)}` : `צפוי ${fmtMoney(term.price)}`}
-              </StatusPill>
-            )}
-          </span>
-        }
-        subtitle={
-          <span className="flex flex-wrap items-center gap-x-2">
-            <span className="tabular">{fmtDate(task.task_date)}</span>
-            {dayLabel && <span className="font-semibold text-primary-text">· {dayLabel}</span>}
-            {task.customer_name && <span>· {task.customer_name}</span>}
-          </span>
-        }
-      />
-      <CardBody className="space-y-3">
-        {/* location / time / counts are read-only for contractors — enforced by RLS */}
-        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <PortalFact
-            icon={<MapPin size={ICON.sm} strokeWidth={STROKE} />}
-            label="מיקום"
-            value={shortAddress(task.location_text) || '—'}
-            full={task.location_text || undefined}
-          />
-          <PortalFact
-            icon={<Clock size={ICON.sm} strokeWidth={STROKE} />}
-            label="שעה בשטח"
-            value={fmtTime(task.onsite_start_time) || '—'}
-            ltr
-          />
-          <PortalFact
-            icon={<CalendarDays size={ICON.sm} strokeWidth={STROKE} />}
-            label="כמות עובדים"
-            value={String(task.worker_count || '—')}
-          />
-        </dl>
-
-        <div>
-          <div className="mb-1.5 flex items-center gap-2">
-            <p className="type-caption font-semibold text-ink-secondary">העובדים שלי למשימה</p>
-            <span
-              className={cx(
-                'rounded-full px-1.5 py-0.5 type-caption font-bold tabular',
-                full ? 'bg-success-subtle text-success-text' : 'bg-warning-subtle text-warning-text',
-              )}
-            >
-              {chosen.length}/{task.worker_count || '∞'}
-            </span>
-          </div>
-          <MultiSelect
-            options={roster.map((w) => ({ id: w.id, label: w.full_name }))}
-            values={chosen}
-            onToggle={(id) => void toggleWorker(id)}
-            placeholder="בחירת עובדים מהסגל שלך..."
-            disabled={!canAssign}
-          />
-        </div>
-      </CardBody>
-    </Card>
-    </div>
-  )
-}
-
-function PortalFact({
-  icon,
-  label,
-  value,
-  full,
-  ltr,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  /** what the bubble says, when the cell shows a shortened form of it */
-  full?: string
-  ltr?: boolean
-}) {
-  const bubble = full ?? value
-  return (
-    <div className="min-w-0">
-      <dt className="flex items-center gap-1 type-caption text-ink-tertiary">
-        <span className="shrink-0" aria-hidden>
-          {icon}
-        </span>
-        {label}
-      </dt>
-      <Tooltip content={bubble !== value || bubble.length > 24 ? bubble : ''} openOnClick>
-        <dd className={cx('mt-0.5 truncate type-body font-medium', ltr && 'tabular')} dir={ltr ? 'ltr' : undefined}>
-          {value}
-        </dd>
-      </Tooltip>
     </div>
   )
 }
