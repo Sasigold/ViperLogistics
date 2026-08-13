@@ -227,3 +227,56 @@ select t_eq('וגם בלו״ז — רק שלו',
     where id in ('31000000-0000-0000-0000-000000110002','31000000-0000-0000-0000-000000110003')), 1);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+-- ===========================================================================
+-- 0067: תפקיד חוצה-סוג לא מזליג, ומסכי הצוות סגורים
+-- ===========================================================================
+-- a9 — איש staff שהוצמד לו (בטעות) גם התפקיד customer_manager. הזריעה רצה
+-- בלי JWT, ולכן שומר ההצמדה מדלג; הבדיקה היא ש-app.has מתעלם ממנו בכל מקרה.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000011a9', 'staff-crosskind@vl.test');
+insert into profiles (id, user_id, user_kind, is_admin, full_name) values
+  ('20000000-0000-0000-0000-0000000011a9', '00000000-0000-0000-0000-0000000011a9',
+   'staff', false, 'איש צוות עם תפקיד לקוח');
+insert into profile_roles (profile_id, role_id)
+select '20000000-0000-0000-0000-0000000011a9', id from permission_roles where key in ('worker','customer_manager');
+
+-- אירוע ומשימה משובצת נפרדים, כדי לבדוק שהצוות רואה את הקשר האירוע שלו
+insert into events (id, customer_id, event_date, location_lat, location_lng) values
+  ('30000000-0000-0000-0000-000000000019', '10000000-0000-0000-0000-000000000011',
+   current_date + 5, 32.09, 34.78);
+insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id, worker_count)
+select '31000000-0000-0000-0000-000000110009', '30000000-0000-0000-0000-000000000019',
+       '10000000-0000-0000-0000-000000000011',
+       (select id from task_types where code = 'setup' limit 1),
+       current_date + 5,
+       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null), 1;
+insert into task_assignments (task_id, profile_id, role, work_site) values
+  ('31000000-0000-0000-0000-000000110009', '20000000-0000-0000-0000-0000000011a9', 'worker', 'field');
+
+\echo '--- תפקיד חוצה-סוג (customer_manager על staff) אינו מזליג ---'
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000011a9', false);
+select t_eq('צוות: אין dashboard.view (למרות תפקיד לקוח)', app.has('dashboard.view'), false);
+select t_eq('צוות: אין pricing.view (הכנסות)',            app.has('pricing.view'), false);
+select t_eq('צוות: אין pricing.revenue',                 app.has('pricing.revenue'), false);
+select t_eq('צוות: אין customers.view',                  app.has('customers.view'), false);
+select t_eq('צוות: אין users.view (עובדים)',             app.has('users.view'), false);
+select t_eq('צוות: אין reports.view (דוחות)',            app.has('reports.view'), false);
+select t_eq('צוות: אין events.view (עמוד אירועים)',      app.has('events.view'), false);
+
+\echo '--- אבל מסכי הצוות פתוחים ---'
+select t_eq('צוות: calendar.view',            app.has('calendar.view'), true);
+select t_eq('צוות: board.view',               app.has('board.view'), true);
+select t_eq('צוות: attendance.view_schedule', app.has('attendance.view_schedule'), true);
+select t_eq('צוות: attendance.view_own',      app.has('attendance.view_own'), true);
+
+\echo '--- והצוות רואה את הקשר האירוע שהוא משובץ אליו, בלי events.view ---'
+select t_eq('צוות רואה את האירוע שהוא משובץ אליו',
+  (select count(*)::int from events where id = '30000000-0000-0000-0000-000000000019'), 1);
+select t_eq('אך לא אירוע שאינו משובץ אליו',
+  (select count(*)::int from events where id = '30000000-0000-0000-0000-000000000011'), 0);
+select t_eq('והלו״ז נושא את הקשר האירוע (מספר/לקוח קצה)',
+  (select count(*)::int from work_board_view where id = '31000000-0000-0000-0000-000000110009'), 1);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
