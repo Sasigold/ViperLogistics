@@ -156,6 +156,15 @@ const SHIFT_TONE: Record<ShiftTone, ToneStyle> = {
   },
 }
 
+/**
+ * הטונים שהם חוות דעת על המשמרת, להבדיל ממצב הרשומה במערכת.
+ *
+ * ‏"נוכח", "שעות נוספות" ו"חסר" הם מה שהמנהל מסיק מהשעות; "ממתין", "נדחה"
+ * ו"במשמרת" הם עובדות על הרשומה עצמה שהעובד חייב לדעת — בלעדיהן הוא לא
+ * יודע שהדיווח שלו טרם אושר. לכן רק הראשונים נחסכים מהעובד.
+ */
+const OUTCOME_TONES = new Set<ShiftTone>(['present', 'overtime', 'short'])
+
 /** שורה ברשימת הכרטיסים. תמיד משמרת שהייתה — אין שורות ליום ריק. */
 interface ShiftRowView {
   key: string
@@ -265,6 +274,10 @@ export function AttendanceReport({
   // מנהל רואה את כל הצוות, קבלן רואה רק את הסגל שלו — שתי הרשימות מציגות
   // מסנן "עובד" זהה בעיצובו, כל אחת מהמאגר שמותר לה.
   const showEmployeeFilter = canSeeAll || canPortal
+  // אותה הבחנה קובעת גם מי רואה את חוות הדעת על המשמרת. מי שהדוח הוא שלו
+  // בלבד מקבל את השעות שלו ולא את "נוכח"/"חסר" שנגזר מהן — זו שיחה עם
+  // המנהל, לא תווית שמחכה לו בטלפון.
+  const showOutcome = showEmployeeFilter
   const canEdit = has(PERM.ATTENDANCE_EDIT_ENTRY)
   const canAdd = has(PERM.ATTENDANCE_MANUAL_ENTRY)
   const canApprove = has(PERM.ATTENDANCE_APPROVE_ENTRY)
@@ -657,6 +670,7 @@ export function AttendanceReport({
           key={d.key}
           view={d}
           showName={showEmployeeFilter && singleEmployee}
+          showOutcome={showOutcome}
           clickable={canOpenRow}
           onOpen={() => canOpenRow && setSelected(d.row)}
         />
@@ -1035,16 +1049,20 @@ const DELTA_CLASS: Record<ShiftRowView['deltaTone'], string> = {
 function ShiftCard({
   view: d,
   showName,
+  showOutcome,
   clickable,
   onOpen,
 }: {
   view: ShiftRowView
   showName: boolean
+  /** האם להציג את חוות הדעת על המשמרת — ראו OUTCOME_TONES */
+  showOutcome: boolean
   clickable: boolean
   onOpen: () => void
 }) {
   const tone = SHIFT_TONE[d.tone]
   const { Icon } = tone
+  const showTone = showOutcome || !OUTCOME_TONES.has(d.tone)
 
   return (
     <div
@@ -1134,13 +1152,19 @@ function ShiftCard({
         </p>
       )}
 
-      {/* מה קרה במשמרת */}
-      <div className="flex w-13 shrink-0 flex-col items-center gap-1 sm:w-16">
-        <span className={cx('flex size-8 items-center justify-center rounded-xl border sm:size-9', tone.box)} aria-hidden>
-          <Icon size={ICON.lg} strokeWidth={STROKE} />
-        </span>
-        <span className={cx('type-caption text-center font-bold leading-tight', tone.text)}>{tone.label}</span>
-      </div>
+      {/* מה קרה במשמרת. בדוח של העובד עצמו זה נעלם — הוא רואה את השעות שלו,
+          לא את מה שמסיקים מהן. מה שנשאר הוא מצב הרשומה בלבד. */}
+      {showTone && (
+        <div className="flex w-13 shrink-0 flex-col items-center gap-1 sm:w-16">
+          <span
+            className={cx('flex size-8 items-center justify-center rounded-xl border sm:size-9', tone.box)}
+            aria-hidden
+          >
+            <Icon size={ICON.lg} strokeWidth={STROKE} />
+          </span>
+          <span className={cx('type-caption text-center font-bold leading-tight', tone.text)}>{tone.label}</span>
+        </div>
+      )}
     </div>
   )
 }
