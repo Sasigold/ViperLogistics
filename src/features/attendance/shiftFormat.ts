@@ -1,6 +1,6 @@
 import { format, parseISO } from 'date-fns'
 import { he } from 'date-fns/locale'
-import type { AttendanceStatus, StaffRole, WorkSite } from '../../types/domain'
+import type { AttendanceReportRow, AttendanceStatus, StaffRole, WorkSite } from '../../types/domain'
 
 export const WORK_SITE_LABELS: Record<WorkSite, string> = {
   field: 'שטח',
@@ -60,6 +60,47 @@ export const STATUS_TONES: Record<AttendanceStatus, 'warning' | 'success' | 'err
   pending: 'warning',
   approved: 'success',
   rejected: 'error',
+}
+
+/** פער של פחות מדקה בין המתוכנן לבפועל הוא עיגול, לא חוסר. */
+export const SHORTFALL_TOLERANCE_H = 1 / 60
+
+/**
+ * כמה שעות חסרות במשמרת מול השיבוץ שלה.
+ *
+ * משמרת בלי שיבוץ — החתמה ספונטנית — אינה "חסרה": אין מולה מה להשוות, וכל
+ * מספר שהיה מוחזר כאן היה המצאה. אותה הכרעה משמשת גם את שורת המשמרת וגם את
+ * אריח "שעות חסרות", כדי שהאריח יהיה בדיוק סכום השורות שמתחתיו.
+ */
+export function shiftShortfall(
+  plannedHours: number | null | undefined,
+  actualHours: number | null | undefined,
+): number {
+  const planned = plannedHours ?? 0
+  if (planned <= 0) return 0
+  const gap = planned - (actualHours ?? 0)
+  return gap >= SHORTFALL_TOLERANCE_H ? gap : 0
+}
+
+/**
+ * מה המשמרת אומרת במבט אחד — לא מצב האישור בלבד. משמרת מאושרת יכולה עדיין
+ * להיות "שעות נוספות" או "חסר", וזה מה שמי שקורא את הדוח מחפש בה.
+ */
+export type ShiftTone = 'present' | 'overtime' | 'short' | 'pending' | 'rejected' | 'open'
+
+/**
+ * הטון של משמרת אחת. סדר ההכרעה הוא מה שמעכב תשלום לפני מה שרק מתאר את
+ * המשמרת: רשומה שממתינה לאישור אינה "נוכח" גם אם השעות בה מושלמות, ומשמרת
+ * שעדיין פתוחה אינה "חסר" רק משום שהעובד לא סיים אותה עדיין.
+ */
+export function shiftTone(
+  r: Pick<AttendanceReportRow, 'status' | 'clock_out_at' | 'planned_hours' | 'actual_hours' | 'pay'>,
+): ShiftTone {
+  if (r.status === 'pending') return 'pending'
+  if (r.status === 'rejected') return 'rejected'
+  if (!r.clock_out_at) return 'open'
+  if ((r.pay?.overtime_hours ?? 0) > 0) return 'overtime'
+  return shiftShortfall(r.planned_hours, r.actual_hours) > 0 ? 'short' : 'present'
 }
 
 /** דגלים שמצדיקים תשומת לב של מנהל, להבדיל מאלה שהם רק מידע. */
