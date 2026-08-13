@@ -286,8 +286,18 @@ on conflict (id) do nothing;
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000007a1', false);
 
+-- שישה ולא שמונה מאז 0064: "לקוח פתח אירוע חדש" צומצם לקהל 'admin' (הפולט
+-- ממילא רץ על `where is_admin`), ו"עובד דיווח משמרת" קיבל
+-- required_permission = attendance.approve_entry, שאין לעובד הזה.
 select t_eq('my_notification_settings מחזיר רק סוגים של הקהל שלי',
-  (select count(*)::int from jsonb_array_elements(my_notification_settings())), 8);
+  (select count(*)::int from jsonb_array_elements(my_notification_settings())), 6);
+
+select t_eq('...ובכללם אין את שני הסוגים של המנהל',
+  (select count(*)::int from jsonb_array_elements(my_notification_settings()) e
+    where e ->> 'type' in ('event_created', 'attendance_submitted')), 0);
+
+select t_expect_fail('וגם כתיבה ישירה עליהם נדחית', $$
+  select set_notification_preference('attendance_submitted', 'email', true)$$);
 
 select t_eq('task_assigned מסומן נעול בפעמון',
   (select (e -> 'channels' -> 'inapp' ->> 'locked')::boolean
@@ -444,20 +454,64 @@ select t_eq('עדכון שאינו סטטוס אינו מתריע',
       and recipient_id in ('20000000-0000-0000-0000-0000000000c1',
                            '20000000-0000-0000-0000-0000000000c2')), 2);
 
-\echo '--- ביטול שיבוץ ---'
+\echo '--- שיבוץ, ביטול שיבוץ, ופרסום (0064) ---'
 
-delete from notifications where type = 'assignment_removed';
+delete from notifications where type in ('assignment_removed', 'task_assigned');
+
+create temp table n7_task as
+select t.id from tasks t where t.deleted_at is null order by t.created_at limit 1;
+
+-- ── משימה שטרם פורסמה: שני הכיוונים שקטים ─────────────────────────────
+update tasks set status_id = (select id from statuses
+  where entity = 'task' and code = 'draft' and deleted_at is null)
+ where id in (select id from n7_task);
 
 insert into task_assignments (task_id, profile_id, role)
-select t.id, '20000000-0000-0000-0000-0000000000f2', 'worker'
-  from tasks t where t.deleted_at is null order by t.created_at limit 1
+select id, '20000000-0000-0000-0000-0000000000f2', 'worker' from n7_task
 on conflict do nothing;
+
+select t_eq('שיבוץ למשימה בטיוטה אינו מתריע',
+  (select count(*)::int from notifications
+    where type = 'task_assigned'
+      and recipient_id = '20000000-0000-0000-0000-0000000000f2'), 0);
 
 delete from task_assignments
  where profile_id = '20000000-0000-0000-0000-0000000000f2'
-   and task_id = (select id from tasks where deleted_at is null order by created_at limit 1);
+   and task_id in (select id from n7_task);
 
-select t_eq('הסרת שיבוץ מודיעה לעובד',
+select t_eq('וגם הסרתו שקטה — העובד מעולם לא ראה את המשימה',
+  (select count(*)::int from notifications
+    where type = 'assignment_removed'
+      and recipient_id = '20000000-0000-0000-0000-0000000000f2'), 0);
+
+-- ── הפרסום עצמו מודיע למי שכבר שובץ ──────────────────────────────────
+insert into task_assignments (task_id, profile_id, role)
+select id, '20000000-0000-0000-0000-0000000000f2', 'worker' from n7_task
+on conflict do nothing;
+
+update tasks set status_id = (select id from statuses
+  where entity = 'task' and code = 'assigned' and deleted_at is null)
+ where id in (select id from n7_task);
+
+select t_eq('מעבר ל"משובץ" מודיע למי ששובץ קודם',
+  (select count(*)::int from notifications
+    where type = 'task_assigned'
+      and recipient_id = '20000000-0000-0000-0000-0000000000f2'), 1);
+
+-- אותו סטטוס פעם שנייה אינו אירוע
+update tasks set worker_count = coalesce(worker_count, 0) + 1
+ where id in (select id from n7_task);
+select t_eq('עדכון שאינו סטטוס אינו מתריע שוב',
+  (select count(*)::int from notifications
+    where type = 'task_assigned'
+      and recipient_id = '20000000-0000-0000-0000-0000000000f2'), 1);
+
+-- ── ומכאן הסרה כן מדברת ──────────────────────────────────────────────
+delete from task_assignments
+ where profile_id = '20000000-0000-0000-0000-0000000000f2'
+   and task_id in (select id from n7_task);
+
+select t_eq('הסרת שיבוץ ממשימה שפורסמה מודיעה לעובד',
   (select count(*)::int from notifications
     where type = 'assignment_removed'
       and recipient_id = '20000000-0000-0000-0000-0000000000f2'), 1);
@@ -466,7 +520,10 @@ select t_eq('הסרת שיבוץ מודיעה לעובד',
 delete from notifications where type = 'assignment_removed';
 insert into tasks (event_id, task_type_id, task_date, status_id)
 select e.id, (select id from task_types where deleted_at is null limit 1),
-       current_date + 30, (select id from statuses where entity = 'task' and deleted_at is null limit 1)
+       -- משובץ במפורש: על משימה שלא פורסמה השקט מובטח ממילא (0064), והטענה
+       -- כאן היא דווקא שגם משימה שפורסמה שותקת כשהיא נמחקת
+       current_date + 30, (select id from statuses
+                            where entity = 'task' and code = 'assigned' and deleted_at is null)
   from events e where e.deleted_at is null order by e.created_at limit 1;
 
 insert into task_assignments (task_id, profile_id, role)

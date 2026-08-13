@@ -60,7 +60,7 @@ import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { BOARD_FIELDS, DEFAULT_HIDDEN_FIELDS } from './boardFields'
 import type { BoardLookups } from './boardFields'
-import { COLOR_BY_OPTIONS, buildTones, clusterDay } from './grouping'
+import { COLOR_BY_OPTIONS, buildTones, clusterDay, isOverdue } from './grouping'
 import type { Cluster, ColorBy, GroupTone } from './grouping'
 import type { StaffRole, TaskRow, WorkBoardRow } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
@@ -696,10 +696,11 @@ export default function WorkBoardPage() {
     setJumpPending(false)
   }, [jumpPending, isLoading, scrollToToday, toast])
 
-  const overdueTotal = useMemo(
-    () => rows.filter((r) => r.task_date < today && !r.status_is_terminal).length,
-    [rows, today],
-  )
+  /* "באיחור" נמדד לפי הפרסום ולא לפי `status_is_terminal`. מאז 0063 אין
+     למשימה סטטוס סוגר בכלל — טיוטה, מתוכנן ומשובץ, וזהו — ולכן הבדיקה
+     הישנה הייתה מסמנת כל משימה שתאריכה עבר. מה שבאמת פספסנו הוא משימה
+     שהתאריך שלה חלף והיא עדיין לא הגיעה לעובד. */
+  const overdueTotal = useMemo(() => rows.filter(isOverdue(today)).length, [rows, today])
 
   const workingDays = useMemo(() => bands.filter((b) => b.count > 0).length, [bands])
   const activeFilterCount = Object.values(filters).filter(Boolean).length
@@ -1382,7 +1383,7 @@ function MobileBoard({
                         <MobileTaskCard
                           row={row}
                           tone={cluster.tone}
-                          overdue={row.task_date < today && !row.status_is_terminal}
+                          overdue={isOverdue(today)(row)}
                           onOpen={onOpen}
                         />
                       </li>

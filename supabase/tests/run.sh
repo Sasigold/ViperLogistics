@@ -116,6 +116,16 @@ OUT="$OUT
 $OUT8"
 
 echo
+echo "== task status lifecycle suite =="
+# 10 מקימה לקוח, אירוע ואנשים משל עצמה ואינה נשענת על אף חבילה קודמת — 02
+# הופכת את f2 לאדמין ו-06 מזיזה מפתחות על f1. היא רצה אחרונה כי היא סופרת
+# את קטלוג הסטטוסים כולו, ומשימה שחבילה אחרת תיצור אחריה לא תשנה את הספירה.
+OUT9=$($PSQL -d vl -f "$HERE/10_task_status.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT9"
+OUT="$OUT
+$OUT9"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

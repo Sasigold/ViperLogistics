@@ -80,6 +80,12 @@ export interface ExecutionMethod {
   deleted_at: string | null
 }
 
+/**
+ * מחזור החיים של משימה (0063). טיוטה ומתוכנן הם עבודה שעדיין בבנייה — העובד
+ * המשובץ אינו רואה אותה בשום מסך ואינו מקבל עליה התראה; משובץ הוא הפרסום.
+ */
+export type TaskStatusCode = 'draft' | 'planned' | 'assigned'
+
 export interface Status {
   id: string
   entity: 'task' | 'event'
@@ -297,6 +303,12 @@ export interface WorkBoardRow {
   status_name: string
   status_color: string
   status_is_terminal: boolean
+  /**
+   * הזהות היציבה של הסטטוס — 'draft' | 'planned' | 'assigned' (0063). השם
+   * ניתן לעריכה בהגדרות, ולכן כל החלטה שנשענת על הסטטוס נשענת על זה.
+   * null בסטטוס שנוצר ידנית.
+   */
+  status_code: TaskStatusCode | null
   contractor_id: string | null
   contractor_name: string | null
   updated_at: string

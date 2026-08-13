@@ -46,7 +46,7 @@ insert into tasks (id, event_id, task_type_id, task_date, warehouse_start_time,
 select v.id, '30000000-0000-0000-0000-00000000a001',
        (select id from task_types where code = 'setup'),
        current_date, v.wh, v.onsite, v.hrs, v.travel,
-       (select id from statuses where entity = 'task' and is_default), 2
+       (select id from statuses where entity = 'task' and code = 'assigned'), 2
 from (values
   -- שתי משימות בפער 90 דקות: 08:00–10:00 ואז 11:30–13:30 ⇒ משמרת אחת
   ('60000000-0000-0000-0000-00000000a001'::uuid, '07:00'::time, '08:00'::time, 2.0::numeric, 0.5::numeric),
@@ -60,7 +60,7 @@ insert into tasks (id, event_id, task_type_id, task_date, onsite_start_time, hou
                    travel_hours, status_id, worker_count)
 values ('60000000-0000-0000-0000-00000000a004', '30000000-0000-0000-0000-00000000a001',
         (select id from task_types where code = 'teardown'), current_date + 1,
-        '22:00', 4.0, 0, (select id from statuses where entity = 'task' and is_default), 1);
+        '22:00', 4.0, 0, (select id from statuses where entity = 'task' and code = 'assigned'), 1);
 
 -- העובד יוצא מהמחסן במשימה הראשונה, ובשטח בשאר
 insert into task_assignments (task_id, profile_id, role, work_site) values
@@ -882,7 +882,7 @@ insert into tasks (id, event_id, task_type_id, task_date, onsite_start_time, hou
 select v.id, '30000000-0000-0000-0000-00000000a001',
        (select id from task_types where code = 'setup'),
        current_date + 20, v.onsite, v.hrs, 0,
-       (select id from statuses where entity = 'task' and is_default), 1
+       (select id from statuses where entity = 'task' and code = 'assigned'), 1
 from (values
   ('60000000-0000-0000-0000-00000000c001'::uuid, '10:00'::time, 2.0::numeric),
   ('60000000-0000-0000-0000-00000000c002'::uuid, '11:00'::time, 2.0::numeric),
@@ -1218,7 +1218,7 @@ insert into tasks (id, event_id, task_type_id, task_date, warehouse_start_time,
 select v.id, '30000000-0000-0000-0000-00000000a001',
        (select id from task_types where code = 'setup'),
        current_date + 30, v.wh, v.onsite, v.hrs, v.travel,
-       (select id from statuses where entity = 'task' and is_default), 2
+       (select id from statuses where entity = 'task' and code = 'assigned'), 2
 from (values
   -- שתי משימות בפער 90 דקות ⇒ משמרת אחת בת שתי משימות.
   -- זמני נסיעה שונים בכוונה: 0.5 בראשונה ו-0.25 באחרונה, כדי ש"האחרונה"

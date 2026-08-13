@@ -1,4 +1,18 @@
-import type { WorkBoardRow } from '../../types/domain'
+import type { TaskStatusCode, WorkBoardRow } from '../../types/domain'
+
+/** הסטטוס שממנו ואילך המשימה גלויה לעובד המשובץ אליה (0063). */
+export const PUBLISHED: TaskStatusCode = 'assigned'
+
+/**
+ * משימה באיחור: התאריך שלה עבר והיא עדיין לא פורסמה לעובד.
+ *
+ * עד 0063 המדד היה `!status_is_terminal` — "הושלם" ו"בוטל" סגרו את המשימה
+ * וכל השאר נחשב פתוח. שלושת הסטטוסים האלה ירדו, ומאז אין למשימה סטטוס סוגר
+ * בכלל, כך שאותו מדד היה מסמן כל משימה שתאריכה עבר — כלומר את כל
+ * ההיסטוריה. מה שנשאר ניתן לפספוס הוא הפרסום, וזה מה שנמדד כאן.
+ */
+export const isOverdue = (today: string) => (row: WorkBoardRow) =>
+  row.task_date < today && row.status_code !== PUBLISHED
 
 /* ── colour-coded groups ───────────────────────────────────────────────────
    Every task that belongs to the same event is painted with the same hue, so
