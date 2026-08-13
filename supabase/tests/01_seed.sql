@@ -34,9 +34,10 @@ insert into profiles (id, user_id, user_kind, is_admin, full_name, customer_id) 
 insert into staff_roles (profile_id, role) values
   ('20000000-0000-0000-0000-0000000000f1', 'driver');
 
--- The client admin: may manage their own people. events.* and tasks.view come
--- from kind_permission_defaults (seeded by 0011), so only the users.* keys and
--- the deliberately-withheld ones are set here.
+-- The client admin: may manage their own people. Since 0066 the events.* edit
+-- rights come from the customer_manager role rather than kind defaults (which
+-- now open only view), so the role is attached below; only the users.* keys and
+-- the deliberately-withheld ones are set as personal grants here.
 insert into user_permission_grants (profile_id, permission_key, allowed) values
   ('20000000-0000-0000-0000-0000000000c1', 'users.view',               true),
   ('20000000-0000-0000-0000-0000000000c1', 'users.create',             true),
@@ -48,6 +49,12 @@ insert into user_permission_grants (profile_id, permission_key, allowed) values
   -- the "can hand on what you hold" branch is reachable — without it the guard
   -- would refuse for the other reason and prove nothing about applies_to.
   ('20000000-0000-0000-0000-0000000000c1', 'attendance.clock',         true);
+
+-- 0066: מנהל אצל הלקוח הוא כעת תפקיד (customer_manager), ולא ברירת מחדל של
+-- ה-kind. c1 הוא בדיוק הדמות הזו, ולכן הוא מקבל את התפקיד — כמו ה-backfill
+-- שהמיגרציה מריצה על משתמשי לקוח קיימים.
+insert into profile_roles (profile_id, role_id)
+select '20000000-0000-0000-0000-0000000000c1', id from permission_roles where key = 'customer_manager';
 
 -- A client-facing role that carries a key no client admin holds. The
 -- profile_roles guard has three separate reasons to refuse a role, and without

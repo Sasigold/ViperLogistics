@@ -93,6 +93,9 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   const canEdit = isNew ? canCreate : has(PERM.TASKS_EDIT)
   const canReschedule = gate(PERM.TASKS_RESCHEDULE)
   const canChangeStatus = gate(PERM.TASKS_CHANGE_STATUS)
+  // פרסום ("משובץ") הוא מפתח נפרד מ-tasks.change_status: מי שרשאי לשנות סטטוס
+  // אך לא לפרסם (מנהל לקוח, למשל) לא יראה את האפשרות הזו בבורר.
+  const canPublish = gate(PERM.TASKS_PUBLISH)
   const canChangeType = gate(PERM.TASKS_CHANGE_TYPE)
   const canChangeWorkerCount = gate(PERM.TASKS_CHANGE_WORKER_COUNT)
   const canChangeMethod = gate(PERM.TASKS_CHANGE_EXECUTION_METHOD)
@@ -435,11 +438,15 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                 <Field label="סטטוס">
                   <Select value={form.status_id ?? ''} onChange={(e) => set({ status_id: e.target.value })} disabled={!canChangeStatus}>
                     <option value="">ברירת מחדל</option>
-                    {statuses.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
+                    {statuses
+                      // מסתירים את "משובץ" ממי שאינו רשאי לפרסם — אך משאירים אותו
+                      // כשזה הסטטוס הנוכחי, כדי שמשימה שכבר פורסמה תוצג נכון.
+                      .filter((s) => canPublish || s.code !== 'assigned' || s.id === form.status_id)
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
                   </Select>
                 </Field>
               </div>

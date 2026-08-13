@@ -129,6 +129,7 @@ export const PERM = {
   TASKS_VIEW_DELETED: 'tasks.view_deleted',
   TASKS_RESCHEDULE: 'tasks.reschedule',
   TASKS_CHANGE_STATUS: 'tasks.change_status',
+  TASKS_PUBLISH: 'tasks.publish',
   TASKS_CHANGE_TYPE: 'tasks.change_type',
   TASKS_CHANGE_WORKER_COUNT: 'tasks.change_worker_count',
   TASKS_CHANGE_EXECUTION_METHOD: 'tasks.change_execution_method',

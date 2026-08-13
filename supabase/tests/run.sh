@@ -126,6 +126,16 @@ OUT="$OUT
 $OUT9"
 
 echo
+echo "== default permissions suite =="
+# 11 מקימה לקוח, קבלן, אירוע ומשימות משל עצמה ואינה נשענת על אף חבילה קודמת.
+# היא רצה אחרונה כי היא מזריעה משימות "משובצות" ואנשי צוות נוספים, ואינה
+# מנקה אחריה — כל מי שסופר שורות חייב לרוץ לפניה.
+OUT10=$($PSQL -d vl -f "$HERE/11_default_permissions.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT10"
+OUT="$OUT
+$OUT10"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

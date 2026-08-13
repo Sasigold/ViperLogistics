@@ -168,7 +168,9 @@ select t_expect_fail('cannot grant board.inline_edit',
   $$insert into user_permission_grants values ('20000000-0000-0000-0000-0000000000c2','board.inline_edit',true)$$);
 select t_expect_fail('cannot grant users.set_admin',
   $$insert into user_permission_grants values ('20000000-0000-0000-0000-0000000000c2','users.set_admin',true)$$);
-select t_expect_fail('cannot grant board.view_staffing',
+-- 0066 turned board.view_staffing into a client-facing default (the client sees
+-- who is assigned), so a client admin may now hand it on to a sub-user.
+select t_expect_ok('CAN grant board.view_staffing',
   $$insert into user_permission_grants values ('20000000-0000-0000-0000-0000000000c2','board.view_staffing',true)$$);
 
 \echo '--- the two keys a client inherits without anyone granting them ---'
@@ -177,7 +179,9 @@ select t_expect_fail('cannot grant board.view_staffing',
 -- client the day the /client redirect comes down.
 select t_eq('board.view is inherited from tasks.view', (select app.has('board.view')), true);
 select t_eq('calendar.drag is inherited from events.change_date', (select app.has('calendar.drag')), true);
-select t_eq('board.view_staffing is not inherited by anyone', (select app.has('board.view_staffing')), false);
+-- 0066: board.view_staffing הפך לברירת מחדל של customer_user (הלקוח רואה מי
+-- משובץ), ולכן הוא כעת דלוק לכל לקוח — בעבר היה כבוי לכולם.
+select t_eq('board.view_staffing is now a client default', (select app.has('board.view_staffing')), true);
 
 \echo '--- the calendar drag path ---'
 select t_expect_ok('update_event moves a date — what dragging now calls',
