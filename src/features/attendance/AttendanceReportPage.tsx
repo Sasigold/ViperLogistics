@@ -52,6 +52,7 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
 import { useContractors, useStaff } from '../../lib/queries'
+import { useIsPhone } from '../../lib/useMediaQuery'
 import { fmtDate, fmtMoney, fmtTime, toISODate } from '../../lib/dates'
 import { addMonths, endOfMonth, format, parseISO, startOfMonth, subMonths } from 'date-fns'
 import { useAttendanceInvalidate, useAttendanceReport, useContractorStaff } from './attendanceQueries'
@@ -211,9 +212,11 @@ function toShiftView(r: AttendanceReportRow, sameDayCount: number): ShiftRowView
       ? 'מחסן ראשי'
       : 'מרכז לוגיסטי',
     hoursText: fmtDurationHHMM(actual),
+    // בלי המילה "נוספות": הסמל שבקצה השורה כבר אומר אותה, וברוחב של טלפון
+    // עמודת השעות מחזיקה מספר אחד ולא משפט.
     deltaText:
       overtime > 0
-        ? `+${fmtDurationHHMM(overtime)} נוספות`
+        ? `+${fmtDurationHHMM(overtime)}`
         : shortfall > 0
         ? `חסר ${fmtDurationHHMM(shortfall)}`
         : planned > 0
@@ -273,6 +276,17 @@ export function AttendanceReport({
   const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()))
   const [showFilters, setShowFilters] = useState(false)
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards')
+
+  /**
+   * הטבלה היא מסך של מחשב.
+   *
+   * ‏DataTable היא שתים-עשרה עמודות שנקראות זו לצד זו; בטלפון היא מתקפלת
+   * לגלילה אופקית שאיש לא מוצא, והכרטיסים כבר אומרים את אותו דבר בפריסה
+   * שנבנתה לרוחב הזה. לכן המתג לא מוצג בטלפון — וגם לא נאכף רק בהסתרה שלו:
+   * מי שבחר "טבלה" במחשב וצמצם את החלון חוזר לכרטיסים.
+   */
+  const isPhone = useIsPhone()
+  const effectiveView = isPhone ? 'cards' : viewMode
 
   const from = useMemo(() => toISODate(startOfMonth(monthDate)), [monthDate])
   const to = useMemo(() => toISODate(endOfMonth(monthDate)), [monthDate])
@@ -710,14 +724,16 @@ export function AttendanceReport({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <SegmentedControl
-            value={viewMode}
-            onChange={setViewMode}
-            items={[
-              { key: 'cards', label: 'כרטיסים', icon: <LayoutGrid size={ICON.sm} strokeWidth={STROKE} /> },
-              { key: 'table', label: 'טבלה', icon: <List size={ICON.sm} strokeWidth={STROKE} /> },
-            ]}
-          />
+          {!isPhone && (
+            <SegmentedControl
+              value={viewMode}
+              onChange={setViewMode}
+              items={[
+                { key: 'cards', label: 'כרטיסים', icon: <LayoutGrid size={ICON.sm} strokeWidth={STROKE} /> },
+                { key: 'table', label: 'טבלה', icon: <List size={ICON.sm} strokeWidth={STROKE} /> },
+              ]}
+            />
+          )}
           <Button
             variant={showFilters ? 'primary' : 'outlined'}
             size="sm"
@@ -853,7 +869,7 @@ export function AttendanceReport({
         <SkeletonList rows={6} />
       ) : error ? (
         <ErrorState error={error} onRetry={() => void refetch()} />
-      ) : viewMode === 'table' ? (
+      ) : effectiveView === 'table' ? (
         <DataTable
           rows={rows}
           columns={columns}
@@ -971,11 +987,33 @@ function SummaryTile({
   )
 }
 
-/** תא בשורת המשמרת: כותרת קטנה מעל, הערך מתחתיה, וקו מפריד מהתא שלפניו. */
-function ShiftCell({ label, divided, children }: { label: string; divided?: boolean; children: ReactNode }) {
+/**
+ * תא בשורת המשמרת: כותרת קטנה מעל, הערך מתחתיה, וקו מפריד מהתא שלפניו.
+ *
+ * ‏`wide` נותן חלק גדול יותר מהרוחב לשתי העמודות שיש בהן שתי שורות —
+ * הכניסה (שעה ומיקום) והסה"כ (שעות והפרש). בחלוקה שווה הן היו היחידות
+ * שנחתכות, בזמן שעמודת היציאה מחזיקה מספר אחד ונשאר בה מקום.
+ */
+function ShiftCell({
+  label,
+  divided,
+  wide,
+  children,
+}: {
+  label: string
+  divided?: boolean
+  wide?: boolean
+  children: ReactNode
+}) {
   return (
-    <div className={cx('min-w-0 flex-1 px-2 text-center', divided && 'border-s border-line-subtle')}>
-      <p className="type-caption text-ink-tertiary">{label}</p>
+    <div
+      className={cx(
+        'min-w-0 px-1 text-center sm:px-2',
+        wide ? 'flex-[1.3]' : 'flex-1',
+        divided && 'border-s border-line-subtle',
+      )}
+    >
+      <p className="truncate type-caption leading-tight text-ink-tertiary">{label}</p>
       {children}
     </div>
   )
@@ -1015,7 +1053,7 @@ function ShiftCard({
       onClick={clickable ? onOpen : undefined}
       onKeyDown={clickable ? (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onOpen()) : undefined}
       className={cx(
-        'surface flex flex-wrap items-center gap-x-2 gap-y-3 px-3 py-3 transition-colors',
+        'surface flex flex-wrap items-center gap-x-1 gap-y-2 px-2 py-3 transition-colors sm:gap-x-2 sm:px-3',
         clickable &&
           'cursor-pointer hover:border-line-strong hover:bg-subtle/60 focus-visible:outline-none focus-visible:focus-ring',
       )}
@@ -1026,25 +1064,25 @@ function ShiftCard({
 
       {/* פתיחת המשמרת */}
       <ChevronRight
-        size={ICON.lg}
+        size={ICON.md}
         strokeWidth={STROKE}
         className={cx('shrink-0 text-ink-tertiary', !clickable && 'invisible')}
         aria-hidden
       />
 
       {/* תאריך ויום */}
-      <div className="min-w-14 shrink-0">
-        <p className="type-caption text-ink-tertiary">יום {d.hebrewDayLetter}</p>
+      <div className="shrink-0">
+        <p className="type-caption leading-tight text-ink-tertiary">יום {d.hebrewDayLetter}</p>
         <p className="type-body font-semibold tabular" dir="ltr">
           {d.formattedDate}
         </p>
-        {d.shiftLabel && <p className="type-caption text-ink-tertiary">{d.shiftLabel}</p>}
+        {d.shiftLabel && <p className="type-caption leading-tight text-ink-tertiary">{d.shiftLabel}</p>}
       </div>
 
-      {/* השעות עצמן. בטלפון הן יורדות לשורה משלהן מתחת לתאריך ולסמל — שלוש
-          עמודות ברוחב 390px היו נמעכות עד שאף אחת מהן לא נקראת. */}
-      <div className="order-last flex w-full items-start sm:order-none sm:w-auto sm:min-w-56 sm:flex-1">
-        <ShiftCell label="כניסה">
+      {/* השעות עצמן. שלוש העמודות נשארות בשורה אחת גם בטלפון — זה כל מה
+          שיש בשורה, וירידת שורה שנייה הפכה כל משמרת לשני כרטיסים. */}
+      <div className="flex min-w-0 flex-1 items-start">
+        <ShiftCell label="כניסה" wide>
           {/* הנקודה מסמנת אם ההחתמה אומתה מול מיקום. ב-RTL היא נופלת לימין
               השעה, בדיוק כמו בעיצוב. */}
           <p className="flex items-center justify-center gap-1.5">
@@ -1057,8 +1095,10 @@ function ShiftCard({
             </span>
           </p>
           {d.location && (
+            /* סמל הסיכה יורד בטלפון: הוא עולה 16px מעמודה שבה שם המחסן כבר
+               נחתך בלעדיו, והמילה עצמה ברורה גם בלי הסמל שלידה. */
             <p className="flex items-center justify-center gap-1 type-caption text-ink-tertiary">
-              <MapPin size={ICON.xs} strokeWidth={STROKE} className="shrink-0" />
+              <MapPin size={ICON.xs} strokeWidth={STROKE} className="hidden shrink-0 sm:block" />
               <span className="truncate">{d.location}</span>
             </p>
           )}
@@ -1070,27 +1110,33 @@ function ShiftCard({
           </p>
         </ShiftCell>
 
-        <ShiftCell label='סה"כ שעות' divided>
+        <ShiftCell label='סה"כ שעות' divided wide>
           <p className="type-title tabular" dir="ltr">
             {d.hoursText}
           </p>
-          {d.deltaText && <p className={cx('type-caption tabular', DELTA_CLASS[d.deltaTone])}>{d.deltaText}</p>}
+          {d.deltaText && (
+            <p className={cx('truncate type-caption tabular', DELTA_CLASS[d.deltaTone])}>{d.deltaText}</p>
+          )}
         </ShiftCell>
       </div>
 
+      {/* הבונוס יורד לשורה משלו בטלפון. בשורה הראשית הוא היה דוחק את שלוש
+          עמודות השעות עד שהן נדרסות זו על זו. */}
       {d.bonus != null && (
-        <span
-          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-accent-200 bg-accent-50 px-2 py-0.5 type-caption font-bold text-accent-700 dark:border-accent-800 dark:bg-accent-950/50 dark:text-accent-300"
-          title={d.row.bonus_note ?? 'בונוס למשמרת'}
-        >
-          <Banknote size={ICON.xs} strokeWidth={STROKE} />
-          {fmtMoney(d.bonus)}
-        </span>
+        <p className="order-last w-full text-end sm:order-none sm:w-auto">
+          <span
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-accent-200 bg-accent-50 px-2 py-0.5 type-caption font-bold text-accent-700 dark:border-accent-800 dark:bg-accent-950/50 dark:text-accent-300"
+            title={d.row.bonus_note ?? 'בונוס למשמרת'}
+          >
+            <Banknote size={ICON.xs} strokeWidth={STROKE} />
+            {fmtMoney(d.bonus)}
+          </span>
+        </p>
       )}
 
       {/* מה קרה במשמרת */}
-      <div className="ms-auto flex w-16 shrink-0 flex-col items-center gap-1 sm:ms-0">
-        <span className={cx('flex size-9 items-center justify-center rounded-xl border', tone.box)} aria-hidden>
+      <div className="flex w-13 shrink-0 flex-col items-center gap-1 sm:w-16">
+        <span className={cx('flex size-8 items-center justify-center rounded-xl border sm:size-9', tone.box)} aria-hidden>
           <Icon size={ICON.lg} strokeWidth={STROKE} />
         </span>
         <span className={cx('type-caption text-center font-bold leading-tight', tone.text)}>{tone.label}</span>
