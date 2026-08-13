@@ -274,9 +274,17 @@ export function AttendanceReport({
   // מנהל רואה את כל הצוות, קבלן רואה רק את הסגל שלו — שתי הרשימות מציגות
   // מסנן "עובד" זהה בעיצובו, כל אחת מהמאגר שמותר לה.
   const showEmployeeFilter = canSeeAll || canPortal
-  // אותה הבחנה קובעת גם מי רואה את חוות הדעת על המשמרת. מי שהדוח הוא שלו
-  // בלבד מקבל את השעות שלו ולא את "נוכח"/"חסר" שנגזר מהן — זו שיחה עם
-  // המנהל, לא תווית שמחכה לו בטלפון.
+  /**
+   * אותה הבחנה קובעת גם מי רואה את המדידה מול המתוכנן.
+   *
+   * העובד מקבל את מה שקרה — נכנס, יצא, כך וכך שעות. כמה מתוכן היו "מתוך",
+   * "חסר" או "נוספות" הוא כבר לא נתון אלא הערכה, והמקום שלה הוא אצל מי
+   * שמאשר את המשמרת ולא בכרטיס שמחכה לעובד בטלפון.
+   *
+   * זה חוסם שלושה מקומות: הסמל שבקצה השורה, שורת ההפרש שמתחת לסה"כ, והרמז
+   * "מתוך 104:00" באריח שעות העבודה. שלושתם אותה אמירה בשלוש רזולוציות,
+   * ולכן שלושתם על אותו מתג.
+   */
   const showOutcome = showEmployeeFilter
   const canEdit = has(PERM.ATTENDANCE_EDIT_ENTRY)
   const canAdd = has(PERM.ATTENDANCE_MANUAL_ENTRY)
@@ -778,7 +786,7 @@ export function AttendanceReport({
           icon={<Clock size={ICON.xl} strokeWidth={STROKE} />}
           label="שעות עבודה"
           value={fmtDurationHHMM(totalWorkHours)}
-          hint={plannedHours > 0 ? `מתוך ${fmtDurationHHMM(plannedHours)}` : undefined}
+          hint={showOutcome && plannedHours > 0 ? `מתוך ${fmtDurationHHMM(plannedHours)}` : undefined}
           tone="#2e90fa"
         />
         {showOvertime && (
@@ -1132,7 +1140,9 @@ function ShiftCard({
           <p className="type-title tabular" dir="ltr">
             {d.hoursText}
           </p>
-          {d.deltaText && (
+          {/* גם השורה הזו היא השוואה ולא נתון: "מתוך 9:00", "חסר 2:00",
+              "1:13+". בדוח של העובד נשאר המספר עצמו בלבד. */}
+          {showOutcome && d.deltaText && (
             <p className={cx('truncate type-caption tabular', DELTA_CLASS[d.deltaTone])}>{d.deltaText}</p>
           )}
         </ShiftCell>
