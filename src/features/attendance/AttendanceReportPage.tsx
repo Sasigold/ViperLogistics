@@ -1,23 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ComponentType, ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { useMutation } from '@tanstack/react-query'
 import {
+  AlertCircle,
   Banknote,
-  Briefcase,
   CalendarCheck,
+  CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
   Clock,
   Download,
+  History,
   ICON,
   LayoutGrid,
   List,
   MapPin,
+  PieChart,
   Plus,
   PlusCircle,
   STROKE,
   SlidersHorizontal,
+  Timer,
   Wallet,
+  XCircle,
 } from '../../components/ui/icons'
 import {
   Badge,
@@ -36,7 +43,6 @@ import {
   Select,
   SegmentedControl,
   SkeletonList,
-  StatCard,
   cx,
   useToast,
 } from '../../components/ui'
@@ -47,7 +53,7 @@ import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
 import { useContractors, useStaff } from '../../lib/queries'
 import { fmtDate, fmtMoney, fmtTime, toISODate } from '../../lib/dates'
-import { addMonths, eachDayOfInterval, endOfMonth, format, parseISO, startOfMonth, subMonths } from 'date-fns'
+import { addMonths, endOfMonth, format, parseISO, startOfMonth, subMonths } from 'date-fns'
 import { useAttendanceInvalidate, useAttendanceReport, useContractorStaff } from './attendanceQueries'
 import { AttendanceEntryDrawer } from './AttendanceEntryDrawer'
 import {
@@ -57,8 +63,11 @@ import {
   flagLabel,
   fmtDuration,
   needsAttention,
+  shiftShortfall,
+  shiftTone,
   visibleFlags,
 } from './shiftFormat'
+import type { ShiftTone } from './shiftFormat'
 import type { AttendanceReportRow, AttendanceStatus } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
@@ -87,66 +96,135 @@ const HEBREW_DAY_LETTERS: Record<number, string> = {
   6: "ש'",
 }
 
-function fmtDurationHHMM(hours: number | null | undefined, padHour = true): string {
-  if (hours == null || isNaN(hours) || hours <= 0) return '00:00'
+/** '9:00'. השעה אינה מרופדת באפס — '0:00' ולא '00:00'. */
+function fmtDurationHHMM(hours: number | null | undefined): string {
+  if (hours == null || isNaN(hours) || hours <= 0) return '0:00'
   const totalMins = Math.round(hours * 60)
-  const h = Math.floor(totalMins / 60)
-  const m = totalMins % 60
-  const hh = padHour ? String(h).padStart(2, '0') : String(h)
-  const mm = String(m).padStart(2, '0')
-  return `${hh}:${mm}`
+  return `${Math.floor(totalMins / 60)}:${String(totalMins % 60).padStart(2, '0')}`
 }
 
-type ShiftStatus = 'completed' | 'pending' | 'rejected' | 'absence' | 'rest'
+interface ToneStyle {
+  label: string
+  Icon: ComponentType<{ size?: number; strokeWidth?: number }>
+  /** הריבוע המסומל בקצה השורה */
+  box: string
+  /** התווית שמתחתיו, ושורת ההפרש כשהיא באותו טון */
+  text: string
+}
 
 /**
- * טונים לנקודת הסטטוס ולתג שלידה. אחד לכל מצב, במקום אחד, כדי שהכרטיס
- * והתג לא יוכלו לצבוע את אותה שורה בשני צבעים.
+ * טון אחד לכל מצב, במקום אחד, כדי שהסמל, התווית ושורת ההפרש לא יוכלו
+ * לצבוע את אותה משמרת בשלושה צבעים.
  */
-const SHIFT_STATUS: Record<ShiftStatus, { label: string | null; dot: string; pill: string }> = {
-  completed: {
-    label: 'הושלם',
-    dot: 'bg-success',
-    pill: 'border-success-border bg-success-subtle text-success-text',
+const SHIFT_TONE: Record<ShiftTone, ToneStyle> = {
+  present: {
+    label: 'נוכח',
+    Icon: Check,
+    box: 'border-success-border bg-success-subtle text-success',
+    text: 'text-success-text',
+  },
+  overtime: {
+    label: 'שעות נוספות',
+    Icon: Clock,
+    box: 'border-violet-200 bg-violet-50 text-violet-600 dark:border-violet-900 dark:bg-violet-950/60 dark:text-violet-300',
+    text: 'text-violet-700 dark:text-violet-300',
+  },
+  short: {
+    label: 'חסר',
+    Icon: AlertCircle,
+    box: 'border-error-border bg-error-subtle text-error',
+    text: 'text-error-text',
   },
   pending: {
     label: 'ממתין',
-    dot: 'bg-warning',
-    pill: 'border-warning-border bg-warning-subtle text-warning-text',
+    Icon: History,
+    box: 'border-warning-border bg-warning-subtle text-warning',
+    text: 'text-warning-text',
   },
   rejected: {
     label: 'נדחה',
-    dot: 'bg-error',
-    pill: 'border-error-border bg-error-subtle text-error-text',
+    Icon: XCircle,
+    box: 'border-error-border bg-error-subtle text-error',
+    text: 'text-error-text',
   },
-  absence: {
-    label: 'היעדרות',
-    dot: 'bg-error',
-    pill: 'border-error-border bg-error-subtle text-error-text',
+  open: {
+    label: 'במשמרת',
+    Icon: Timer,
+    box: 'border-primary-border bg-primary-subtle text-primary',
+    text: 'text-primary-text',
   },
-  rest: { label: null, dot: 'bg-line-strong', pill: '' },
+}
+
+/** שורה ברשימת הכרטיסים. תמיד משמרת שהייתה — אין שורות ליום ריק. */
+interface ShiftRowView {
+  key: string
+  /** '23/05' */
+  formattedDate: string
+  hebrewDayLetter: string
+  /** "משמרת 2" — רק ביום שיש בו יותר מאחת לאותו עובד */
+  shiftLabel: string | null
+  employeeName: string | null
+  clockIn: string
+  /** null במשמרת שעדיין פתוחה */
+  clockOut: string | null
+  /** אימות המיקום בהחתמה, לנקודה שליד שעת הכניסה */
+  locationVerified: boolean
+  location: string | null
+  hoursText: string
+  /** השורה שמתחת לסה"כ: הנוספות, החוסר, או מול מה נמדדה המשמרת */
+  deltaText: string | null
+  deltaTone: 'overtime' | 'short' | 'muted'
+  /** הבונוס על המשמרת, או null כשאין או כשאין הרשאה לראות סכומים */
+  bonus: number | null
+  tone: ShiftTone
+  row: AttendanceReportRow
+  hours: number
 }
 
 /**
- * שורה ברשימת הכרטיסים: או משמרת אחת, או יום שאין בו משמרת בכלל. `row` הוא
- * מה שמבדיל ביניהם — יש רשומה לפתוח, או שאין.
+ * משמרת אחת לתצוגה. הכל נגזר מהשורה עצמה ולא ממצב המסך, ולכן זה יושב מחוץ
+ * לרכיב.
  */
-interface ShiftRowView {
-  key: string
-  formattedDate: string
-  hebrewDayLetter: string
-  /** "משמרת 2" — רק ביום שיש בו יותר מאחת */
-  shiftLabel: string | null
-  employeeName: string | null
-  shiftTime: string
-  location: string | null
-  hoursText: string
-  overtimeText: string | null
-  /** הבונוס על המשמרת, או null כשאין או כשאין הרשאה לראות סכומים */
-  bonus: number | null
-  status: ShiftStatus
-  row: AttendanceReportRow | null
-  hours: number
+function toShiftView(r: AttendanceReportRow, sameDayCount: number): ShiftRowView {
+  const day = parseISO(r.work_date)
+  const clockIn = new Date(r.clock_in_at)
+  const clockOut = r.clock_out_at ? new Date(r.clock_out_at) : null
+  const overtime = r.pay?.overtime_hours ?? 0
+  const planned = r.planned_hours ?? 0
+  const actual = r.actual_hours ?? 0
+  // משמרת פתוחה לא "חסרה" — היא פשוט עוד לא נגמרה, והשעות שחסרות בה ימלאו
+  // את עצמן כשהעובד יחתים יציאה. מולה מוצג המתוכנן בלבד.
+  const shortfall = clockOut ? shiftShortfall(planned, actual) : 0
+
+  return {
+    key: r.id,
+    formattedDate: format(day, 'dd/MM'),
+    hebrewDayLetter: HEBREW_DAY_LETTERS[day.getDay()],
+    shiftLabel: sameDayCount > 1 ? `משמרת ${r.seq}` : null,
+    employeeName: r.full_name,
+    clockIn: fmtTime(clockIn.toTimeString()),
+    clockOut: clockOut ? fmtTime(clockOut.toTimeString()) : null,
+    locationVerified: !needsAttention(r.flags),
+    location: r.work_site
+      ? WORK_SITE_LABELS[r.work_site]
+      : r.contractor_id
+      ? 'מחסן ראשי'
+      : 'מרכז לוגיסטי',
+    hoursText: fmtDurationHHMM(actual),
+    deltaText:
+      overtime > 0
+        ? `+${fmtDurationHHMM(overtime)} נוספות`
+        : shortfall > 0
+        ? `חסר ${fmtDurationHHMM(shortfall)}`
+        : planned > 0
+        ? `מתוך ${fmtDurationHHMM(planned)}`
+        : null,
+    deltaTone: overtime > 0 ? 'overtime' : shortfall > 0 ? 'short' : 'muted',
+    bonus: r.pay?.bonus ? r.pay.bonus : null,
+    tone: shiftTone(r),
+    row: r,
+    hours: actual,
+  }
 }
 
 /** סיכום של עובד אחד בתוך דוח שיש בו כמה. */
@@ -303,91 +381,45 @@ export function AttendanceReport({
   const yearStr = monthDate.getFullYear()
   const dateRangeStr = `${format(startOfMonth(monthDate), 'dd.MM.yyyy')} - ${format(endOfMonth(monthDate), 'dd.MM.yyyy')}`
 
-  const todayISO = useMemo(() => toISODate(new Date()), [])
-
   /**
    * דוח של אדם אחד: או שהמשתמש רואה רק את עצמו, או שהוא סינן לעובד יחיד,
-   * או שבפועל חזר עובד אחד בלבד. זו ההבחנה שקובעת גם את ימי ההיעדרות
-   * וגם את הקיבוץ למטה.
+   * או שבפועל חזר עובד אחד בלבד. זו ההבחנה שקובעת את הקיבוץ למטה.
    */
   const singleEmployee = useMemo(
     () => new Set(rows.map((r) => r.profile_id)).size <= 1 && (!showEmployeeFilter || profileIds.length <= 1),
     [rows, showEmployeeFilter, profileIds],
   )
 
-  const toShiftView = (r: AttendanceReportRow, sameDayCount: number, day: Date): ShiftRowView => {
-    const clockIn = new Date(r.clock_in_at)
-    const clockOut = r.clock_out_at ? new Date(r.clock_out_at) : null
-    const overtime = r.pay?.overtime_hours ?? 0
-    return {
-      key: r.id,
-      formattedDate: format(day, 'dd.MM.yy'),
-      hebrewDayLetter: HEBREW_DAY_LETTERS[day.getDay()],
-      shiftLabel: sameDayCount > 1 ? `משמרת ${r.seq}` : null,
-      employeeName: r.full_name,
-      shiftTime: `${fmtTime(clockIn.toTimeString())} - ${clockOut ? fmtTime(clockOut.toTimeString()) : '…'}`,
-      location: r.work_site
-        ? WORK_SITE_LABELS[r.work_site]
-        : r.contractor_id
-        ? 'מחסן ראשי'
-        : 'מרכז לוגיסטי',
-      hoursText: fmtDurationHHMM(r.actual_hours, true),
-      overtimeText: overtime > 0 ? `${fmtDurationHHMM(overtime, true)} נוספות` : null,
-      bonus: r.pay?.bonus ? r.pay.bonus : null,
-      status: r.status === 'approved' ? 'completed' : r.status,
-      row: r,
-      hours: r.actual_hours ?? 0,
-    }
-  }
-
   /**
-   * שורה אחת לכל משמרת, לא לכל יום.
+   * שורה אחת לכל משמרת שהייתה — ותו לא.
    *
    * יום עם שתי משמרות — יציאה לשטח בבוקר וחזרה למחסן בערב, או שתי משימות
    * שהפער ביניהן גדול מ-merge_gap_minutes — הוא מקרה רגיל ולא חריג, וכל
    * משמרת היא רשומה משלה: שעות משלה, סטטוס משלו ואישור נפרד.
    *
-   * ימים בלי משמרת ממשיכים לתפוס שורה **רק בדוח של אדם אחד**. בדוח של כל
-   * הצוות "היעדרות" בלי שם היא שורה שאי אפשר לענות עליה — של מי ההיעדרות?
-   * — ובחודש מלא היא הייתה מציפה את המשמרות עצמן.
+   * ימים בלי החתמה אינם מקבלים שורה. הדוח הוא רשימת המשמרות ולא לוח שנה:
+   * חודש שבו רוב השורות ריקות קובר בתוכו את מה שבאמת קרה, וממילא שורה כזו
+   * לא ידעה להבחין בין חופשה, מחלה ויום שלא שובץ בו דבר. החוסר עצמו לא
+   * נעלם — הוא נמדד מול המתוכנן, בשורת המשמרת ובאריח "שעות חסרות".
+   *
+   * הסדר מהחדש לישן: את החודש קוראים מהמשמרת האחרונה אחורה. בתוך יום אחד
+   * הסדר נשאר כרונולוגי, כי שתי משמרות של אותו יום נקראות ברצף.
    */
   const shiftRows = useMemo<ShiftRowView[]>(() => {
-    const start = startOfMonth(monthDate)
-    const end = endOfMonth(monthDate)
-
-    return eachDayOfInterval({ start, end }).flatMap<ShiftRowView>((day) => {
-      const dateStr = toISODate(day)
-      const dayOfWeek = day.getDay()
-
-      const dayRows = rows
-        .filter((r) => r.work_date === dateStr)
-        .sort((a, b) => a.seq - b.seq || a.clock_in_at.localeCompare(b.clock_in_at))
-
-      if (dayRows.length > 0) return dayRows.map((r) => toShiftView(r, dayRows.length, day))
-      if (!singleEmployee) return []
-
-      // יום חול שעבר ואין בו החתמה. שבת אינה יום עבודה, ולכן היא "מנוחה".
-      const isPastOrToday = dateStr <= todayISO
-      const isWorkDay = dayOfWeek !== 6
-      return [
-        {
-          key: dateStr,
-          formattedDate: format(day, 'dd.MM.yy'),
-          hebrewDayLetter: HEBREW_DAY_LETTERS[dayOfWeek],
-          shiftLabel: null,
-          employeeName: null,
-          shiftTime: '-',
-          location: null,
-          hoursText: '-',
-          overtimeText: null,
-          bonus: null,
-          status: isPastOrToday && isWorkDay ? 'absence' : 'rest',
-          row: null,
-          hours: 0,
-        },
-      ]
-    })
-  }, [monthDate, rows, todayISO, singleEmployee])
+    // הספירה היא לפי עובד ויום, ולא לפי יום בלבד: בדוח צוותי, שני עובדים
+    // שעבדו באותו יום אינם "שתי משמרות" של אף אחד מהם.
+    const perDay = new Map<string, number>()
+    for (const r of rows) {
+      const k = `${r.profile_id}|${r.work_date}`
+      perDay.set(k, (perDay.get(k) ?? 0) + 1)
+    }
+    return [...rows]
+      .sort(
+        (a, b) =>
+          b.work_date.localeCompare(a.work_date) || a.seq - b.seq || a.clock_in_at.localeCompare(b.clock_in_at),
+      )
+      .map((r) => toShiftView(r, perDay.get(`${r.profile_id}|${r.work_date}`) ?? 1))
+  }, [rows])
 
   /**
    * קיבוץ לפי עובד, לדוח שיש בו יותר מאחד. זה מה שהופך את "הבונוס נספר
@@ -402,7 +434,6 @@ export function AttendanceReport({
     const byId = new Map<string, EmployeeGroup>()
     for (const s of shiftRows) {
       const r = s.row
-      if (!r) continue
       let g = byId.get(r.profile_id)
       if (!g) {
         g = { profileId: r.profile_id, name: r.full_name, hours: 0, overtime: 0, bonus: 0, total: null, shifts: [] }
@@ -428,7 +459,28 @@ export function AttendanceReport({
     return rows.reduce((acc, r) => acc + (r.pay?.overtime_hours ?? 0), 0)
   }, [totals, rows])
 
-  const regularHours = useMemo(() => Math.max(0, totalWorkHours - overtimeHours), [totalWorkHours, overtimeHours])
+  /**
+   * המתוכנן והחוסר מולו.
+   *
+   * מאושרות בלבד, בדיוק כמו ה-totals שהשרת מחזיר: אחרת "96:30 מתוך 104:00"
+   * היה משווה שעות מאושרות לתכנון שכולל גם משמרות שטרם הוכרעו, ושני הצדדים
+   * של אותו משפט היו נספרים לפי שני כללים.
+   *
+   * משמרת בלי planned_hours אינה נכנסת לאף אחד משני הסכומים — לא לתכנון ולא
+   * לחוסר. לכן ייתכן שהעבודה בפועל תעלה על המתוכנן, וזה נכון: מי שהחתים בלי
+   * שיבוץ עבד שעות שאיש לא תכנן.
+   */
+  const { plannedHours, missingHours } = useMemo(() => {
+    let planned = 0
+    let missing = 0
+    for (const r of rows) {
+      if (r.status !== 'approved') continue
+      planned += r.planned_hours ?? 0
+      // משמרת שעדיין פתוחה אינה נספרת כחוסר, בדיוק כמו בשורה שלה
+      if (r.clock_out_at) missing += shiftShortfall(r.planned_hours, r.actual_hours)
+    }
+    return { plannedHours: planned, missingHours: missing }
+  }, [rows])
 
   /** ימים, לא משמרות: יום עם שתי משמרות הוא עדיין יום עבודה אחד. */
   const workDaysCount = useMemo(
@@ -591,12 +643,30 @@ export function AttendanceReport({
           key={d.key}
           view={d}
           showName={showEmployeeFilter && singleEmployee}
-          showOvertime={showOvertime}
-          clickable={!!d.row && canOpenRow}
-          onOpen={() => d.row && canOpenRow && setSelected(d.row)}
+          clickable={canOpenRow}
+          onOpen={() => canOpenRow && setSelected(d.row)}
         />
       ))}
     </div>
+  )
+
+  /**
+   * כותרת הרשימה. "המשמרות שלי" רק כשהדוח באמת של הקורא — מנהל שסינן לעובד
+   * אחד רואה את המשמרות של מישהו אחר.
+   */
+  const listTitle = !showEmployeeFilter ? 'המשמרות שלי' : singleEmployee ? 'המשמרות' : 'פירוט לפי עובד'
+
+  const exportButton = (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => void runExport()}
+      loading={exporting}
+      disabled={!data || rows.length === 0}
+    >
+      <Download size={ICON.sm} strokeWidth={STROKE} />
+      ייצוא
+    </Button>
   )
 
   return (
@@ -606,24 +676,12 @@ export function AttendanceReport({
           title="דוח נוכחות"
           subtitle={canSeeAll ? 'שעות, שעות נוספות ושכר לכל העובדים' : 'השעות שלי'}
           actions={
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void runExport()}
-                loading={exporting}
-                disabled={!data || rows.length === 0}
-              >
-                <Download size={ICON.sm} strokeWidth={STROKE} />
-                ייצוא לאקסל
+            canAdd ? (
+              <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
+                <Plus size={ICON.sm} strokeWidth={STROKE} />
+                הזנה ידנית
               </Button>
-              {canAdd && (
-                <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
-                  <Plus size={ICON.sm} strokeWidth={STROKE} />
-                  הזנה ידנית
-                </Button>
-              )}
-            </div>
+            ) : undefined
           }
         />
       )}
@@ -632,6 +690,9 @@ export function AttendanceReport({
           זה מזה — כדור מרחף במרכז הדף ומחליף תצוגה ליד כותרת הרשימה. */}
       <Card className="flex flex-wrap items-center justify-between gap-3 p-3">
         <div className="flex items-center gap-1">
+          <span className="me-1 flex size-9 shrink-0 items-center justify-center rounded-xl bg-subtle text-ink-secondary" aria-hidden>
+            <CalendarDays size={ICON.lg} strokeWidth={STROKE} />
+          </span>
           <IconButton label="חודש קודם" variant="ghost" onClick={handlePrevMonth}>
             <ChevronRight size={ICON.lg} strokeWidth={STROKE} />
           </IconButton>
@@ -668,43 +729,44 @@ export function AttendanceReport({
         </div>
       </Card>
 
-      {/* סיכום החודש. אריח מופיע רק כשיש לו מה לומר: שעות נוספות למי שהן
-          חלות עליו, בונוסים למי שניתנו, וסכומים למי שרשאי לראות אותם. */}
+      {/* סיכום החודש. הסדר הוא מהמוחשי למופשט — ימים, שעות, ואז החריגות
+          משניהם. אריח מופיע רק כשיש לו מה לומר: שעות נוספות למי שהן חלות
+          עליו, בונוסים למי שניתנו, וסכומים למי שרשאי לראות אותם. */}
       <div
         className={cx(
-          'grid gap-3',
-          'grid-cols-2',
-          'sm:grid-cols-3',
-          (showOvertime ? 1 : 0) + (showMoney && showBonus ? 1 : 0) + (showMoney ? 1 : 0) >= 2
-            ? 'lg:grid-cols-6'
-            : 'lg:grid-cols-4',
+          'grid gap-3 grid-cols-2 sm:grid-cols-4',
+          (showMoney && showBonus ? 1 : 0) + (showMoney ? 1 : 0) >= 1 && 'lg:grid-cols-6',
         )}
       >
-        <StatCard
-          icon={<Clock size={ICON.xl} strokeWidth={STROKE} />}
-          label='סה"כ שעות'
-          value={fmtDurationHHMM(totalWorkHours)}
-        />
-        <StatCard
+        <SummaryTile
           icon={<CalendarCheck size={ICON.xl} strokeWidth={STROKE} />}
-          label="שעות רגילות"
-          value={fmtDurationHHMM(regularHours)}
+          label="ימי עבודה"
+          value={workDaysCount}
+          tone="#16a34a"
+        />
+        <SummaryTile
+          icon={<Clock size={ICON.xl} strokeWidth={STROKE} />}
+          label="שעות עבודה"
+          value={fmtDurationHHMM(totalWorkHours)}
+          hint={plannedHours > 0 ? `מתוך ${fmtDurationHHMM(plannedHours)}` : undefined}
+          tone="#2e90fa"
         />
         {showOvertime && (
-          <StatCard
+          <SummaryTile
             icon={<PlusCircle size={ICON.xl} strokeWidth={STROKE} />}
             label="שעות נוספות"
             value={fmtDurationHHMM(overtimeHours)}
-            tone="#f59e0b"
+            tone="#7c3aed"
           />
         )}
-        <StatCard
-          icon={<Briefcase size={ICON.xl} strokeWidth={STROKE} />}
-          label="ימי עבודה"
-          value={workDaysCount}
+        <SummaryTile
+          icon={<PieChart size={ICON.xl} strokeWidth={STROKE} />}
+          label="שעות חסרות"
+          value={fmtDurationHHMM(missingHours)}
+          tone="#f59e0b"
         />
         {showMoney && showBonus && (
-          <StatCard
+          <SummaryTile
             icon={<Banknote size={ICON.xl} strokeWidth={STROKE} />}
             label="בונוסים"
             value={fmtMoney(totals?.bonus ?? 0)}
@@ -713,11 +775,12 @@ export function AttendanceReport({
           />
         )}
         {showMoney && (
-          <StatCard
+          <SummaryTile
             icon={<Wallet size={ICON.xl} strokeWidth={STROKE} />}
             label='סה"כ לתשלום'
             value={fmtMoney(totals?.total ?? 0)}
             hint="מאושר בלבד"
+            tone="#3563f0"
           />
         )}
       </div>
@@ -760,23 +823,28 @@ export function AttendanceReport({
         </Card>
       )}
 
-      <div className="flex items-center justify-between gap-3 pt-1">
-        <h3 className="type-heading">{singleEmployee ? 'פירוט לפי יום' : 'פירוט לפי עובד'}</h3>
-        {showEmployeeFilter && (
-          <div className="w-52">
-            <Select
-              value={profileIds[0] || ''}
-              onChange={(e) => setProfileIds(e.target.value ? [e.target.value] : [])}
-            >
-              <option value="">כל העובדים</option>
-              {employeeOptions.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-        )}
+      {/* הייצוא יושב כאן ולא בכותרת הדף: הוא מייצא את הרשימה שמתחתיו, ובפורטל
+          הקבלן — שבו הכותרת מוסתרת — הוא לא היה נגיש בכלל. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <h3 className="type-heading">{listTitle}</h3>
+        <div className="flex items-center gap-2">
+          {showEmployeeFilter && (
+            <div className="w-52">
+              <Select
+                value={profileIds[0] || ''}
+                onChange={(e) => setProfileIds(e.target.value ? [e.target.value] : [])}
+              >
+                <option value="">כל העובדים</option>
+                {employeeOptions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
+          {exportButton}
+        </div>
       </div>
 
       {/* תצוגת הכרטיסים לא הציגה עד כה טעינה, שגיאה או ריק — רק הטבלה ידעה
@@ -798,7 +866,7 @@ export function AttendanceReport({
       ) : shiftRows.length === 0 ? (
         <EmptyState
           art="calendar"
-          title="אין רשומות נוכחות בחודש הזה"
+          title="אין משמרות בחודש הזה"
           description="אפשר לדפדף לחודש אחר, או לשחרר את הסינון."
         />
       ) : singleEmployee ? (
@@ -832,6 +900,38 @@ export function AttendanceReport({
         </div>
       )}
 
+      {/* שורת הסגירה של החודש. אותם מספרים שבאריחים למעלה, במשפט אחד —
+          אחרי הגלילה דרך הרשימה, בלי לגלול חזרה. */}
+      {!isLoading && !error && rows.length > 0 && (
+        <Card className="flex items-center gap-3 p-4">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-subtle text-primary" aria-hidden>
+            <PieChart size={ICON.xl} strokeWidth={STROKE} />
+          </span>
+          <div className="min-w-0">
+            <p className="type-title">סיכום החודש</p>
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 type-caption text-ink-secondary">
+              <span className="tabular">{workDaysCount} ימי עבודה</span>
+              <span className="text-ink-tertiary" aria-hidden>|</span>
+              <span className="tabular">{fmtDurationHHMM(totalWorkHours)} שעות עבודה</span>
+              {showOvertime && overtimeHours > 0 && (
+                <>
+                  <span className="text-ink-tertiary" aria-hidden>|</span>
+                  <span className="tabular text-violet-700 dark:text-violet-300">
+                    {fmtDurationHHMM(overtimeHours)} שעות נוספות
+                  </span>
+                </>
+              )}
+              {missingHours > 0 && (
+                <>
+                  <span className="text-ink-tertiary" aria-hidden>|</span>
+                  <span className="tabular text-error-text">{fmtDurationHHMM(missingHours)} שעות חסרות</span>
+                </>
+              )}
+            </p>
+          </div>
+        </Card>
+      )}
+
       <AttendanceEntryDrawer row={selected} onClose={() => setSelected(null)} />
       {adding && <ManualEntryModal onClose={() => setAdding(false)} />}
     </div>
@@ -839,27 +939,74 @@ export function AttendanceReport({
 }
 
 /**
- * שורת משמרת אחת.
+ * אריח סיכום. גרסה מאונכת של StatCard: הסמל למעלה והמספר מתחתיו, כדי
+ * ששורה של ארבעה תיקרא בטלפון בלי להתמעך לצדדים.
+ */
+function SummaryTile({
+  icon,
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  icon: ReactNode
+  label: string
+  value: ReactNode
+  hint?: string
+  tone: string
+}) {
+  return (
+    <div className="surface flex flex-col items-center gap-1 px-2 py-4 text-center">
+      <span
+        className="mb-1 flex size-11 items-center justify-center rounded-full"
+        style={{ background: `color-mix(in srgb, ${tone} 14%, transparent)`, color: tone }}
+        aria-hidden
+      >
+        {icon}
+      </span>
+      <p className="type-caption font-medium text-ink-tertiary">{label}</p>
+      <p className="type-display tabular leading-7">{value}</p>
+      {hint && <p className="type-caption tabular text-ink-tertiary">{hint}</p>}
+    </div>
+  )
+}
+
+/** תא בשורת המשמרת: כותרת קטנה מעל, הערך מתחתיה, וקו מפריד מהתא שלפניו. */
+function ShiftCell({ label, divided, children }: { label: string; divided?: boolean; children: ReactNode }) {
+  return (
+    <div className={cx('min-w-0 flex-1 px-2 text-center', divided && 'border-s border-line-subtle')}>
+      <p className="type-caption text-ink-tertiary">{label}</p>
+      {children}
+    </div>
+  )
+}
+
+const DELTA_CLASS: Record<ShiftRowView['deltaTone'], string> = {
+  overtime: 'text-violet-700 dark:text-violet-300',
+  short: 'text-error-text',
+  muted: 'text-ink-tertiary',
+}
+
+/**
+ * שורת משמרת אחת: תאריך, כניסה, יציאה, סה"כ — ובקצה סמל שאומר במילה אחת
+ * מה קרה בה.
  *
- * הפריסה משתנה ברוחב במקום להתכווץ: במסך צר התאריך והסטטוס יושבים בשורה
- * אחת והשעות מתחתיה, ובמסך רחב הכול בשורה. קודם זו הייתה רשת של 12 עמודות
- * בכל הרוחבים, ובטלפון היא נמעכה.
+ * הפריסה משתנה ברוחב במקום להתכווץ: במסך צר שלוש עמודות השעות יורדות
+ * לשורה משלהן מתחת לתאריך ולסמל, ובמסך רחב הכול בשורה אחת.
  */
 function ShiftCard({
   view: d,
   showName,
-  showOvertime,
   clickable,
   onOpen,
 }: {
   view: ShiftRowView
   showName: boolean
-  showOvertime: boolean
   clickable: boolean
   onOpen: () => void
 }) {
-  const tone = SHIFT_STATUS[d.status]
-  const isRest = d.status === 'rest'
+  const tone = SHIFT_TONE[d.tone]
+  const { Icon } = tone
 
   return (
     <div
@@ -868,67 +1015,85 @@ function ShiftCard({
       onClick={clickable ? onOpen : undefined}
       onKeyDown={clickable ? (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onOpen()) : undefined}
       className={cx(
-        'surface flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 transition-colors',
-        isRest && 'bg-subtle/40',
-        clickable && 'cursor-pointer hover:border-line-strong hover:bg-subtle/60 focus-visible:outline-none focus-visible:focus-ring',
+        'surface flex flex-wrap items-center gap-x-2 gap-y-3 px-3 py-3 transition-colors',
+        clickable &&
+          'cursor-pointer hover:border-line-strong hover:bg-subtle/60 focus-visible:outline-none focus-visible:focus-ring',
       )}
     >
-      {/* תאריך + יום */}
-      <div className="flex min-w-32 items-center gap-2.5">
-        <span className={cx('size-2.5 shrink-0 rounded-full', tone.dot)} aria-hidden />
-        <span className="min-w-0">
-          <span className="block type-body font-semibold tabular" dir="ltr">
-            {d.formattedDate}
-          </span>
-          <span className="block type-caption text-ink-tertiary">
-            יום {d.hebrewDayLetter}
-            {d.shiftLabel && ` · ${d.shiftLabel}`}
-          </span>
-        </span>
-      </div>
+      {showName && d.employeeName && (
+        <p className="w-full truncate type-caption font-semibold text-ink-tertiary">{d.employeeName}</p>
+      )}
 
-      {/* שעון ומיקום */}
-      <div className="min-w-40 flex-1">
-        {showName && d.employeeName && (
-          <p className="truncate type-caption font-semibold text-ink-tertiary">{d.employeeName}</p>
-        )}
-        <p className="type-body font-medium tabular" dir="ltr">
-          {d.shiftTime}
+      {/* פתיחת המשמרת */}
+      <ChevronRight
+        size={ICON.lg}
+        strokeWidth={STROKE}
+        className={cx('shrink-0 text-ink-tertiary', !clickable && 'invisible')}
+        aria-hidden
+      />
+
+      {/* תאריך ויום */}
+      <div className="min-w-14 shrink-0">
+        <p className="type-caption text-ink-tertiary">יום {d.hebrewDayLetter}</p>
+        <p className="type-body font-semibold tabular" dir="ltr">
+          {d.formattedDate}
         </p>
-        {d.location && (
-          <p className="flex items-center gap-1 type-caption text-ink-tertiary">
-            <MapPin size={ICON.xs} strokeWidth={STROKE} />
-            {d.location}
+        {d.shiftLabel && <p className="type-caption text-ink-tertiary">{d.shiftLabel}</p>}
+      </div>
+
+      {/* השעות עצמן. בטלפון הן יורדות לשורה משלהן מתחת לתאריך ולסמל — שלוש
+          עמודות ברוחב 390px היו נמעכות עד שאף אחת מהן לא נקראת. */}
+      <div className="order-last flex w-full items-start sm:order-none sm:w-auto sm:min-w-56 sm:flex-1">
+        <ShiftCell label="כניסה">
+          {/* הנקודה מסמנת אם ההחתמה אומתה מול מיקום. ב-RTL היא נופלת לימין
+              השעה, בדיוק כמו בעיצוב. */}
+          <p className="flex items-center justify-center gap-1.5">
+            <span
+              className={cx('size-1.5 shrink-0 rounded-full', d.locationVerified ? 'bg-success' : 'bg-warning')}
+              title={d.locationVerified ? 'מיקום אומת' : 'המיקום לא אומת'}
+            />
+            <span className="type-body font-semibold tabular text-success-text" dir="ltr">
+              {d.clockIn}
+            </span>
           </p>
-        )}
+          {d.location && (
+            <p className="flex items-center justify-center gap-1 type-caption text-ink-tertiary">
+              <MapPin size={ICON.xs} strokeWidth={STROKE} className="shrink-0" />
+              <span className="truncate">{d.location}</span>
+            </p>
+          )}
+        </ShiftCell>
+
+        <ShiftCell label="יציאה" divided>
+          <p className="type-body font-semibold tabular" dir="ltr">
+            {d.clockOut ?? '…'}
+          </p>
+        </ShiftCell>
+
+        <ShiftCell label='סה"כ שעות' divided>
+          <p className="type-title tabular" dir="ltr">
+            {d.hoursText}
+          </p>
+          {d.deltaText && <p className={cx('type-caption tabular', DELTA_CLASS[d.deltaTone])}>{d.deltaText}</p>}
+        </ShiftCell>
       </div>
 
-      {/* שעות */}
-      <div className="min-w-20 text-end">
-        <p className="type-title tabular">{d.hoursText}</p>
-        {showOvertime && d.overtimeText && (
-          <p className="type-caption text-warning-text">{d.overtimeText}</p>
-        )}
-      </div>
+      {d.bonus != null && (
+        <span
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-accent-200 bg-accent-50 px-2 py-0.5 type-caption font-bold text-accent-700 dark:border-accent-800 dark:bg-accent-950/50 dark:text-accent-300"
+          title={d.row.bonus_note ?? 'בונוס למשמרת'}
+        >
+          <Banknote size={ICON.xs} strokeWidth={STROKE} />
+          {fmtMoney(d.bonus)}
+        </span>
+      )}
 
-      {/* בונוס וסטטוס */}
-      <div className="flex min-w-24 items-center justify-end gap-2">
-        {d.bonus != null && (
-          <span
-            className="inline-flex items-center gap-1 rounded-lg border border-accent-200 bg-accent-50 px-2 py-0.5 type-caption font-bold text-accent-700 dark:border-accent-800 dark:bg-accent-950/50 dark:text-accent-300"
-            title={d.row?.bonus_note ?? 'בונוס למשמרת'}
-          >
-            <Banknote size={ICON.xs} strokeWidth={STROKE} />
-            {fmtMoney(d.bonus)}
-          </span>
-        )}
-        {tone.label ? (
-          <span className={cx('inline-flex items-center rounded-lg border px-2.5 py-1 type-caption font-bold', tone.pill)}>
-            {tone.label}
-          </span>
-        ) : (
-          <span className="type-caption text-ink-tertiary">—</span>
-        )}
+      {/* מה קרה במשמרת */}
+      <div className="ms-auto flex w-16 shrink-0 flex-col items-center gap-1 sm:ms-0">
+        <span className={cx('flex size-9 items-center justify-center rounded-xl border', tone.box)} aria-hidden>
+          <Icon size={ICON.lg} strokeWidth={STROKE} />
+        </span>
+        <span className={cx('type-caption text-center font-bold leading-tight', tone.text)}>{tone.label}</span>
       </div>
     </div>
   )

@@ -126,6 +126,7 @@ export {
   PencilLine,
   WifiOff,
   BarChart3,
+  PieChart,
   Printer,
   Bookmark,
 } from 'lucide-react'
