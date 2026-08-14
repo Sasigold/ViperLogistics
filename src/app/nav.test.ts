@@ -44,6 +44,42 @@ const CONTRACTOR_WORKER = [
 
 const STAFF_WORKER = CONTRACTOR_WORKER
 
+/**
+ * מנהל אצל הלקוח, אחרי 0074. פרסונה שלא הייתה כאן — וזו הסיבה שאיש לא ראה
+ * שהוא מקבל "דוחות" מ-`reports.view` שנגזר מ-`dashboard.view`, ושלושה פריטי
+ * נוכחות מ-`attendance.view_own` שתפקידו העניק לו במפורש מאז 0011.
+ */
+const CUSTOMER_MANAGER = [
+  PERM.DASHBOARD_VIEW,
+  PERM.CALENDAR_VIEW,
+  PERM.BOARD_VIEW,
+  PERM.BOARD_VIEW_STAFFING,
+  PERM.TASKS_VIEW,
+  PERM.EVENTS_VIEW,
+  PERM.PRICING_VIEW,
+  PERM.FINANCE_CUSTOMER_SPEND,
+  PERM.NOTIFICATIONS_PREFERENCES,
+]
+
+/**
+ * העובד שגם מביא סגל (0075). הוא מחזיק את שני הסטים במקביל, ולכן התפריט שלו
+ * הוא האיחוד — לא אחד מהם.
+ */
+const STAFF_CONTRACTOR = [
+  PERM.CALENDAR_VIEW,
+  PERM.BOARD_VIEW,
+  PERM.TASKS_VIEW,
+  PERM.ATTENDANCE_VIEW_OWN,
+  PERM.ATTENDANCE_VIEW_SCHEDULE,
+  PERM.ATTENDANCE_CLOCK,
+  PERM.NOTIFICATIONS_PREFERENCES,
+  PERM.PORTAL_VIEW,
+  PERM.PORTAL_VIEW_FINANCIALS,
+  PERM.PORTAL_MANAGE_WORKERS,
+  PERM.PORTAL_ASSIGN_WORKERS,
+  PERM.PORTAL_ATTENDANCE,
+]
+
 /** רכז משמרות: רואה את כל הצוות, ואינו קבלן. */
 const COORDINATOR = [
   PERM.CALENDAR_VIEW,
@@ -119,6 +155,47 @@ describe('מה רואה כל פרסונה', () => {
   it('ועובד קבלן רואה בדיוק מה שעובד צוות רואה', () => {
     expect(destinations(CONTRACTOR_WORKER).sort()).toEqual(destinations(STAFF_WORKER).sort())
   })
+
+  it('מנהל אצל הלקוח — הדשבורד, האירועים והלו״ז שלו, בלי דוחות ובלי נוכחות', () => {
+    const seen = destinations(CUSTOMER_MANAGER)
+    expect(seen).toEqual(expect.arrayContaining(['/', '/calendar', '/board', '/events', '/my/notifications']))
+    /* ‏`/reports` נגזר אצלו מ-`dashboard.view` עד 0074, ושלושת פריטי הנוכחות
+       הגיעו מ-`attendance.view_own` שהתפקיד העניק לו. ללקוח אין שעון. */
+    for (const blocked of [
+      '/reports',
+      '/my/attendance',
+      '/my/schedule',
+      '/attendance',
+      '/shifts',
+      '/portal',
+      '/my/staff',
+      '/receipts',
+      '/customers',
+      '/users',
+      '/contractors',
+      '/settings',
+    ])
+      expect(seen).not.toContain(blocked)
+  })
+
+  it('העובד שגם קבלן — הכובעים מצטרפים ולא מחליפים זה את זה', () => {
+    const seen = destinations(STAFF_CONTRACTOR)
+    // הצד השעתי שלו
+    expect(seen).toEqual(expect.arrayContaining(['/calendar', '/board', '/my/schedule', '/my/attendance']))
+    // ובנוסף הצד הקבלני
+    expect(seen).toEqual(expect.arrayContaining(['/portal', '/my/staff', '/attendance', '/shifts']))
+    // מה שלא נפתח לו: מסכי המשרד
+    for (const blocked of ['/events', '/customers', '/users', '/contractors', '/reports', '/settings'])
+      expect(seen).not.toContain(blocked)
+  })
+
+  it('...וכל מה שעובד רגיל רואה, הוא רואה גם', () => {
+    const worker = destinations(STAFF_WORKER)
+    const dual = destinations(STAFF_CONTRACTOR)
+    /* פרט ל"דוח הנוכחות שלי", שאותה רשומה עצמה מוסתרת אצלו לטובת "נוכחות
+       הסגל שלי" — אותו יעד, ניסוח רחב יותר. */
+    for (const to of worker) expect(dual).toContain(to)
+  })
 })
 
 /**
@@ -131,6 +208,7 @@ describe('הרשומות אל /attendance סותרות זו את זו', () => {
     ['מנהל קבלן', CONTRACTOR_MANAGER, 'נוכחות הסגל שלי'],
     ['עובד', STAFF_WORKER, 'דוח הנוכחות שלי'],
     ['רכז משמרות', COORDINATOR, 'דוח נוכחות'],
+    ['העובד שגם קבלן', STAFF_CONTRACTOR, 'נוכחות הסגל שלי'],
   ])('%s רואה רשומה אחת בלבד', (_who, keys, label) => {
     expect(labelsFor(keys as string[], '/attendance')).toEqual([label])
   })

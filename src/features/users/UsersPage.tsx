@@ -383,7 +383,12 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
         is_admin: isAdmin ? form.is_admin : undefined,
         is_active: form.is_active,
         customer_id: form.user_kind === 'customer_user' ? form.customer_id || null : null,
-        contractor_id: form.user_kind === 'contractor_user' ? form.contractor_id || null : null,
+        /* לא רק ל-`contractor_user`: עובד צוות שגם מביא סגל משלו נושא את
+           העמודה הזאת, וזה מה שפותח לו את הצד הקבלני (0075). האילוץ
+           `profiles_contractor_kind` (0001) תמיד הרשה את זה — השורה הזאת
+           היא שאיפסה אותה בכל שמירה. `customer_user` עדיין מנוקה: לקוח
+           שהוא גם קבלן אינו מקרה שקיים. */
+        contractor_id: form.user_kind === 'customer_user' ? null : form.contractor_id || null,
       }
       let profileId = profile?.id
       if (profile) {
@@ -400,8 +405,37 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
         const { error } = await supabase.from('staff_roles').insert(form.roles.map((role) => ({ profile_id: profileId, role })))
         if (error) throw error
       }
+
+      /* שינוי סוג משתמש מפקיע את תפקידי ההרשאה שהוצמדו לסוג הקודם:
+         `app.my_role_ids()` (0067) מסנן אותם, כלומר הם נשארים מוצמדים ואינם
+         מעניקים דבר. בלי הניקוי הזה המשתמש יוצא מהשמירה עם פחות הרשאות ממה
+         שמסך הניהול מראה — וזה בדיוק המצב שנמצא בפרודקשן. תפקיד בלי
+         `user_kind` (כמו "קבלן — בנוסף לתפקיד") שורד כל שינוי סוג. */
+      if (profile && profile.user_kind !== form.user_kind) {
+        const { data: strays } = await supabase
+          .from('profile_roles')
+          .select('role_id, permission_roles!inner(user_kind)')
+          .eq('profile_id', profileId)
+          .not('permission_roles.user_kind', 'is', null)
+          .neq('permission_roles.user_kind', form.user_kind)
+        if (strays?.length) {
+          await supabase
+            .from('profile_roles')
+            .delete()
+            .eq('profile_id', profileId)
+            .in('role_id', strays.map((s) => s.role_id))
+        }
+        return { dropped: strays?.length ?? 0 }
+      }
     },
-    onSuccess: () => {
+    onSuccess: (r) => {
+      if (r?.dropped) {
+        toast.info(`המשתמש נשמר · ${r.dropped} תפקידים שאינם מתאימים לסוג החדש הוסרו`)
+        void qc.invalidateQueries({ queryKey: ['profile_roles'] })
+        void qc.invalidateQueries({ queryKey: ['profiles'] })
+        onClose()
+        return
+      }
       toast.success('המשתמש נשמר')
       void qc.invalidateQueries({ queryKey: ['profiles'] })
       onClose()
@@ -551,6 +585,27 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
             <Field label="קבלן משויך" required error={linkError}>
               <Select value={form.contractor_id} onChange={(e) => setForm((f) => ({ ...f, contractor_id: e.target.value }))}>
                 <option value="">בחירה...</option>
+                {contractors.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+
+          {/* עובד שגם מביא סגל משלו. הוא נשאר עובד לכל דבר — שעון, משמרות
+              ושכר שעתי — ומקבל בנוסף את הסגל, השיבוץ והכספים של הקבלן שהוא
+              מקושר אליו. ‏0075 שינה את ההכרעה מ"מי הוא" ל"למי הוא שייך",
+              ולכן העמודה הזאת על פרופיל צוות היא כל מה שנדרש; את התפקיד
+              ‏"קבלן — בנוסף לתפקיד" מצמידים בלשונית ההרשאות. */}
+          {form.user_kind === 'staff' && !pinnedKind && (
+            <Field
+              label="גם קבלן"
+              hint="לעובד שמביא גם סגל משלו. בחירת קבלן פותחת לו את הסגל, השיבוץ והכספים שלו — בנוסף לתפקיד שלו כעובד"
+            >
+              <Select value={form.contractor_id} onChange={(e) => setForm((f) => ({ ...f, contractor_id: e.target.value }))}>
+                <option value="">לא — עובד בלבד</option>
                 {contractors.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}

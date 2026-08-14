@@ -35,6 +35,8 @@ export const SECTIONS = [
   'finance.client_share',
   'cost.payroll_employer',
   'finance.profit_summary',
+  // הצד של הלקוח (0074) — הוצאה, לא הכנסה
+  'spend.summary',
   // תפעול
   'tasks.by_type',
   'tasks.by_method',

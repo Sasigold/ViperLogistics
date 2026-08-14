@@ -166,6 +166,15 @@ OUT="$OUT
 $OUT13"
 
 echo
+echo "== customer spend / dual hat / clock error codes =="
+# 15 מקימה לקוח, קבלן, אירוע ומשימה משל עצמה, ובודקת בעיקר *היעדר* מפתחות
+# אצל הלקוח. היא רצה אחרונה כי היא מוסיפה שיבוץ ותמחור שאינם מנוקים.
+OUT14=$($PSQL -d vl -f "$HERE/15_customer_spend_and_dual_hat.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT14"
+OUT="$OUT
+$OUT14"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

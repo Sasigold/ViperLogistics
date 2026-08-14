@@ -30,7 +30,7 @@ import {
 import type { Column } from '../../components/ui'
 import { supabase, invokeFunction } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { useContractorWorkers } from '../../lib/queries'
+import { useContractorAssignableWorkers, useContractorWorkers } from '../../lib/queries'
 import { fmtDate, fmtMoney } from '../../lib/dates'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { RequirePermission } from '../auth/guards'
@@ -232,21 +232,22 @@ export function WorkersTab({
   const { data: workers = [], isLoading } = useContractorWorkers(contractorId)
   const [form, setForm] = useState({ full_name: '', phone: '', id_number: '' })
   const [clockFor, setClockFor] = useState<ContractorWorker | null>(null)
-  // מי מהסגל כבר קיבל התחברות. profiles.contractor_worker_id הוא הקישור
-  // היחיד בין שורת הסגל לחשבון, ולכן זו גם הבדיקה וגם מה שמזין את התווית.
-  const { data: linked = [] } = useQuery({
-    queryKey: ['profiles', 'byContractorWorker', contractorId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, contractor_worker_id')
-        .eq('contractor_id', contractorId)
-        .not('contractor_worker_id', 'is', null)
-        .is('deleted_at', null)
-      if (error) throw error
-      return data as { id: string; contractor_worker_id: string }[]
-    },
-  })
+  /* מי מהסגל כבר קיבל התחברות.
+     `profiles.contractor_worker_id` הוא הקישור היחיד בין שורת הסגל לחשבון,
+     אבל שאילתה ישירה על `profiles` עונה נכון רק במשרד: ל-`contractor_user`
+     ‏`profiles_select` מחזיר את השורה שלו בלבד — ובלי שגיאה — ולכן התווית
+     הייתה כבויה תמיד אצל מי שהמסך הזה נבנה בשבילו. `contractor_assignable_workers`
+     ‏(0072) הוא `security definer` וכבר מחזיר `has_login` לכל שורת רוסטר,
+     לשני הקהלים, מאותה סיבה שהוליד אותו מלכתחילה.
+
+     ‏`enabled: mayManage` מיישר את הקריאה עם מה שה-RPC דורש: בהיקף זר הוא
+     מבקש `contractors.manage_workers`, וזה בדיוק מה ש-`mayManage` שווה לו
+     במשרד. מי שרק צופה אינו רואה תוויות התחברות, וגם אינו מקבל סירוב. */
+  const { data: assignable = [] } = useContractorAssignableWorkers(mayManage ? contractorId : null)
+  const hasLogin = useMemo(
+    () => new Set(assignable.filter((a) => a.has_login && a.worker_id).map((a) => a.worker_id as string)),
+    [assignable],
+  )
 
   const add = useMutation({
     mutationFn: async () => {
@@ -332,7 +333,7 @@ export function WorkersTab({
                     {[w.phone, w.id_number].filter(Boolean).join(' · ') || '—'}
                   </p>
                 </div>
-                {linked.some((l) => l.contractor_worker_id === w.id) ? (
+                {hasLogin.has(w.id) ? (
                   <Badge tone="success">שעון נוכחות</Badge>
                 ) : (
                   canCreateLogin && (
