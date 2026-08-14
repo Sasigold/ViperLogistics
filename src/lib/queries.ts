@@ -6,7 +6,9 @@ import type {
   Contractor,
   ContractorWorker,
   Customer,
+  CustomerIncomeSplit,
   CustomerPricingRule,
+  IncomeCategory,
   EventAutoTask,
   PricingZone,
   TaskPricing,
@@ -317,6 +319,50 @@ export function useAllowedExecutionMethods(taskTypeId?: string | null, customerI
     if (customerId && customerMethods) list = list.filter((m) => customerMethods.includes(m.id))
     return list
   }, [methods, typeMethods, taskTypeId, customerId, customerMethods])
+}
+
+/** קטלוג קטגוריות ההכנסה (0068) — מסך ההגדרות, כרטיס הלקוח וטופס האירוע. */
+export function useIncomeCategories() {
+  return useQuery({
+    queryKey: ['income_categories', 'list'],
+    queryFn: () => fetchList<IncomeCategory>('income_categories', 'sort_order'),
+  })
+}
+
+/**
+ * חלוקת ההכנסות של לקוח: קיום שורה = הקטגוריה מופעלת, והיא שמדליקה את שדות
+ * הסכומים בטופס האירוע. RLS מחזירה ריק למי שאינו רשאי — הטופס פשוט לא יציג
+ * את הסטפ, בלי שגיאה.
+ */
+export function useCustomerIncomeSplits(customerId?: string | null) {
+  return useQuery({
+    queryKey: ['customer_income_splits', customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customer_income_splits')
+        .select('*')
+        .eq('customer_id', customerId)
+      if (error) throw error
+      return data as CustomerIncomeSplit[]
+    },
+  })
+}
+
+/** הסכומים שכבר הוזנו על אירוע — הידרציה של טופס העריכה. */
+export function useEventIncome(eventId?: string | null) {
+  return useQuery({
+    queryKey: ['event_income', eventId],
+    enabled: !!eventId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('event_income')
+        .select('category_id, amount, viper_share_pct')
+        .eq('event_id', eventId)
+      if (error) throw error
+      return data as { category_id: string; amount: number; viper_share_pct: number }[]
+    },
+  })
 }
 
 /** The הקמה/פירוק tasks the event trigger created — used to prefill the event form. */

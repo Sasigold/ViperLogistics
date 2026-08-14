@@ -136,6 +136,16 @@ OUT="$OUT
 $OUT10"
 
 echo
+echo "== income & receipts suite =="
+# 12 מקימה לקוח, אירוע ואנשים משלה, והאירוע שלה יושב ב-current_date+210 כדי
+# שטווחי הסקשנים שלה לא יתפסו משימות של חבילות אחרות. היא משנה את חלוקת
+# הלקוח שלה בלבד ואינה נוגעת ב-f1/f2/f3.
+OUT11=$($PSQL -d vl -f "$HERE/12_income_receipts.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT11"
+OUT="$OUT
+$OUT11"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

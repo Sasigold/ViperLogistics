@@ -33,6 +33,7 @@ const TimeClockPage = lazyPage(() => import('../features/attendance/TimeClockPag
 const MySchedulePage = lazyPage(() => import('../features/attendance/MySchedulePage'))
 const AttendanceReportPage = lazyPage(() => import('../features/attendance/AttendanceReportPage'))
 const ReportsPage = lazyPage(() => import('../features/reports/ReportsPage'))
+const ReceiptsPage = lazyPage(() => import('../features/finance/ReceiptsPage'))
 const CustomerProfitabilityPage = lazyPage(() => import('../features/reports/CustomerProfitabilityPage'))
 const ShiftBoardPage = lazyPage(() => import('../features/attendance/ShiftBoardPage'))
 const NotificationPreferencesPage = lazyPage(() => import('../features/notifications/NotificationPreferencesPage'))
@@ -113,6 +114,7 @@ export const router = createBrowserRouter([
             handle: { perm: PERM.REPORTS_VIEW },
             element: page(<CustomerProfitabilityPage />),
           },
+          { path: '/receipts', handle: { perm: PERM.FINANCE_RECEIPTS_VIEW }, element: page(<ReceiptsPage />) },
           { path: '/events', handle: { perm: PERM.EVENTS_VIEW }, element: page(<EventsPage />) },
           { path: '/events/:id', handle: { perm: PERM.EVENTS_VIEW }, element: page(<EventDetailPage />) },
           { path: '/customers', handle: { perm: PERM.CUSTOMERS_VIEW }, element: page(<CustomersPage />) },

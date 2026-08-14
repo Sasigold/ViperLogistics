@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Banknote,
   Bell,
   Boxes,
   ClipboardList,
@@ -46,6 +47,7 @@ import { PERM } from '../../lib/permissions'
 import { RolesTab } from '../permissions/RolesTab'
 import { PricingZonesEditor } from '../pricing/PricingZonesEditor'
 import { OvertimeSettingsTab } from '../attendance/OvertimeSettingsTab'
+import { FinanceSettingsTab } from './FinanceSettingsTab'
 import { NotificationsAdminTab } from '../notifications/NotificationsAdminTab'
 import { errorMessage } from '../../lib/errors'
 
@@ -60,6 +62,7 @@ const TABS = [
   { key: 'statuses', label: 'סטטוסים', icon: <Zap size={ICON.sm} />, perm: PERM.SETTINGS_STATUSES },
   { key: 'trucks', label: 'משאיות', icon: <Truck size={ICON.sm} />, perm: PERM.SETTINGS_TRUCKS },
   { key: 'zones', label: 'אזורי נסיעה', icon: <Map size={ICON.sm} />, perm: PERM.PRICING_MANAGE_RULES },
+  { key: 'finance', label: 'כספים', icon: <Banknote size={ICON.sm} />, perm: PERM.SETTINGS_EDIT },
   { key: 'attendance', label: 'נוכחות ושעות נוספות', icon: <Clock size={ICON.sm} />, perm: PERM.ATTENDANCE_SETTINGS },
   { key: 'notifications', label: 'התראות', icon: <Bell size={ICON.sm} />, perm: PERM.NOTIFICATIONS_MANAGE },
   { key: 'roles', label: 'הרשאות ותפקידים', icon: <Shield size={ICON.sm} />, perm: PERM.SETTINGS_PERMISSIONS },
@@ -85,6 +88,7 @@ export default function SettingsPage() {
         {active === 'trucks' && <TrucksTab />}
         {/* customerId=null — האזורים שחלים על כל הלקוחות שאין להם אזור משלהם */}
         {active === 'zones' && <PricingZonesEditor customerId={null} />}
+        {active === 'finance' && <FinanceSettingsTab />}
         {active === 'attendance' && <OvertimeSettingsTab />}
         {active === 'notifications' && <NotificationsAdminTab />}
         {active === 'roles' && <RolesTab />}

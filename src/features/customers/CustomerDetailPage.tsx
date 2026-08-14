@@ -10,6 +10,7 @@ import {
   ICON,
   Mail,
   Package,
+  Percent,
   Phone,
   Plus,
   STROKE,
@@ -55,6 +56,7 @@ import {
 } from '../../lib/queries'
 import { usePageTitle } from '../../app/breadcrumbs'
 import PricingTab from './PricingTab'
+import IncomeSplitTab from './IncomeSplitTab'
 import { useWarehouses } from '../attendance/attendanceQueries'
 import { RequirePermission } from '../auth/guards'
 import type { Customer, CustomFieldType, FieldState, Supplier } from '../../types/domain'
@@ -66,6 +68,7 @@ const TABS = [
   { key: 'methods', label: 'אופני ביצוע', icon: <Boxes size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
   { key: 'suppliers', label: 'ספקים', icon: <Package size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
   { key: 'pricing', label: 'תמחור', icon: <Calculator size={ICON.sm} />, perm: PERM.PRICING_MANAGE_RULES },
+  { key: 'income', label: 'חלוקת הכנסות', icon: <Percent size={ICON.sm} />, perm: PERM.FINANCE_MANAGE_SPLITS },
 ] as const
 
 export default function CustomerDetailPage() {
@@ -126,6 +129,7 @@ export default function CustomerDetailPage() {
         {tab === 'methods' && <MethodsTab customerId={customer.id} />}
         {tab === 'suppliers' && <SuppliersTab customerId={customer.id} />}
         {tab === 'pricing' && <PricingTab customer={customer} />}
+        {tab === 'income' && <IncomeSplitTab customerId={customer.id} />}
       </div>
     </RequirePermission>
   )
