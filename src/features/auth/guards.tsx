@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Navigate, Outlet, useLocation, useMatches } from 'react-router'
+import { Navigate, Outlet, useMatches } from 'react-router'
 import { Truck } from '../../components/ui/icons'
 import { Button, Card, EmptyState, Spinner } from '../../components/ui'
 import { useAuth } from '../../state/auth'
@@ -48,32 +48,23 @@ function BootFailed({ error, onRetry }: { error: unknown; onRetry: () => void })
 
 export function RequireAuth() {
   const { session, booted, me, meError, refreshMe } = useAuth()
-  const location = useLocation()
 
   if (!booted) return <Booting />
   if (!session) return <Navigate to="/login" replace />
   if (!me) {
     return meError ? <BootFailed error={meError} onRetry={() => void refreshMe()} /> : <Booting />
   }
-  // The contractor portal is a genuinely different shell — a financial
-  // dashboard over delegated work — so a contractor still gets routed to it.
-  // Clients no longer are: they use the same screens as everyone else, and
-  // RouteGate below decides which of those they may open.
-  const path = location.pathname
-  // /my/* הוא המסך של האדם עצמו — שעון ומשמרות — ולכן הוא פתוח לכל סוג
-  // משתמש שיש לו את המפתח. עובד קבלן שקיבל התחברות רק כדי להחתים שעון אינו
-  // מנהל הקבלן, ואין לו מה לעשות בפורטל.
-  const isPersonal = path.startsWith('/my/')
-  if (me.profile.user_kind === 'contractor_user' && !path.startsWith('/portal') && !isPersonal) {
-    const toPortal = me.profile.is_admin || me.capabilities['portal.view']
-    return <Navigate to={toPortal ? '/portal' : '/my/schedule'} replace />
-  }
-  // and the other way round. `portal.view` cannot carry this on its own — it is
-  // `default_allowed`, so everyone resolves true for it — and /portal sits
-  // outside AppLayout, so RouteGate never sees it. Admins may look, to preview.
-  if (me.profile.user_kind !== 'contractor_user' && !me.profile.is_admin && path.startsWith('/portal')) {
-    return <Navigate to="/" replace />
-  }
+  // Nobody is routed by `user_kind` any more. Contractors were the last ones
+  // who were: a redirect kept them inside /portal and out of everything else,
+  // which is also why permissions they already held — board.view and
+  // calendar.view, granted to the contractor roles in 0066 §7ד — were
+  // unreachable code. They now use the same screens as staff and clients,
+  // and RouteGate below decides which of those they may open.
+  //
+  // What made the redirect necessary was that the four portal keys were
+  // `default_allowed`, so every staff user resolved them true and they could
+  // not gate a route. 0071 §1 turns that off, which is what lets the question
+  // "who may open this" go back to the route table where the rest of it lives.
   return <Outlet />
 }
 
@@ -96,6 +87,13 @@ function NoPermissionCard() {
  */
 export interface RouteHandle {
   perm?: string
+  /**
+   * For a screen that genuinely serves two audiences through two keys — the
+   * shift board is the roster to a coordinator holding `attendance.view_all`
+   * and to a contractor holding `portal.attendance`, and the server already
+   * answers both (`shift_roster`, 0034). Holding any one of them opens it.
+   */
+  anyPerm?: string[]
   open?: true
 }
 
@@ -120,7 +118,7 @@ export function RouteGate({ children }: { children: ReactNode }) {
   const handle = [...matches]
     .reverse()
     .map((m) => m.handle as RouteHandle | undefined)
-    .find((h) => h?.perm || h?.open)
+    .find((h) => h?.perm || h?.anyPerm?.length || h?.open)
 
   if (!handle) {
     if (import.meta.env.DEV) {
@@ -129,7 +127,8 @@ export function RouteGate({ children }: { children: ReactNode }) {
     return <NoPermissionCard />
   }
   if (handle.open) return <>{children}</>
-  return has(handle.perm!) ? <>{children}</> : <NoPermissionCard />
+  const ok = handle.anyPerm ? handle.anyPerm.some(has) : has(handle.perm!)
+  return ok ? <>{children}</> : <NoPermissionCard />
 }
 
 /**
@@ -142,16 +141,19 @@ export function RequirePermission({
   resource,
   action = 'view',
   perm,
+  any,
   children,
 }: {
   resource?: string
   action?: PermissionAction
   perm?: string
+  /** Any one of these opens the screen — the `anyPerm` of a route, in-component. */
+  any?: string[]
   children: ReactNode
 }) {
   const has = useAuth((s) => s.has)
-  const key = perm ?? `${resource}.${action}`
-  if (!has(key)) return <NoPermissionCard />
+  const ok = any ? any.some(has) : has(perm ?? `${resource}.${action}`)
+  if (!ok) return <NoPermissionCard />
   return <>{children}</>
 }
 

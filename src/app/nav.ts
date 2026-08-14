@@ -24,8 +24,14 @@ export interface NavItem {
   /** shorter label for the mobile bottom bar, where a slot is ~4rem wide */
   shortLabel?: string
   icon: ComponentType<{ size?: number | string; strokeWidth?: number | string; className?: string }>
-  /** registry key checked with `has(perm)` */
-  perm: string
+  /** registry key checked with `has(perm)` — omit only when `anyPerm` is given */
+  perm?: string
+  /**
+   * For a destination that two audiences reach through two different keys, the
+   * way `/shifts` is the roster to a shift coordinator and the contractor's own
+   * staff to a contractor. Holding any one of them shows the entry.
+   */
+  anyPerm?: string[]
   /**
    * Hides this entry from whoever holds any of these keys — for a destination
    * that two entries point at, where the wider one already covers the narrower.
@@ -51,6 +57,10 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'תפעול',
     items: [
       { to: '/', label: 'דשבורד', icon: LayoutDashboard, perm: PERM.DASHBOARD_VIEW, end: true, primary: true },
+      /* הסיכום הכספי של הקבלן — הדשבורד שלו, ולכן הוא יושב לצד הדשבורד ולא
+         בסקשן הנתונים. הוא גם הרשומה הראשונה שמנהל קבלן רואה, ולכן `/` מפנה
+         אליו מעצמו דרך HomeRoute. */
+      { to: '/portal', label: 'כספים ותשלומים', shortLabel: 'כספים', icon: Banknote, perm: PERM.PORTAL_VIEW, primary: true },
       { to: '/calendar', label: 'לוח שנה', icon: Calendar, perm: PERM.CALENDAR_VIEW, primary: true },
       { to: '/board', label: 'לו״ז עבודה', shortLabel: 'לו״ז', icon: ClipboardList, perm: PERM.BOARD_VIEW, primary: true },
     ],
@@ -64,8 +74,9 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/my/attendance', label: 'שעון נוכחות', shortLabel: 'שעון', icon: Clock, perm: PERM.ATTENDANCE_VIEW_OWN },
       /* אותו מסך של "דוח נוכחות" שלמטה, מצומצם לשורות של המשתמש עצמו — השרת
          כבר מחזיר רק אותן. מי שמחזיק view_all מגיע אליו דרך הרשומה בסקשן
-         "נתונים", ולעובד קבלן הוא יושב בלשונית הנוכחות שבפורטל; אצל שניהם
-         הרשומה הזאת נעלמת במקום להכפיל את היעד תחת כותרת צרה מדי. */
+         "נתונים", ומנהל קבלן דרך "נוכחות הסגל שלי" שמתחתיה; אצל שניהם הרשומה
+         הזאת נעלמת במקום להכפיל את היעד תחת כותרת צרה מדי. עובד קבלן אינו
+         מחזיק אף אחד מהשניים (המודול portal סגור לו), ולכן הוא רואה אותה. */
       {
         to: '/attendance',
         label: 'דוח הנוכחות שלי',
@@ -74,6 +85,18 @@ export const NAV_SECTIONS: NavSection[] = [
         perm: PERM.ATTENDANCE_VIEW_OWN,
         hiddenBy: [PERM.ATTENDANCE_VIEW_ALL, PERM.PORTAL_ATTENDANCE],
       },
+      /* הצד השני של אותה הכרעה: הסגל של הקבלן. `attendance_report` כבר תוחם
+         אותו לקבלן של הקורא, ולכן זה אותו מסך בהיקף אחר — ומוסתר ממי שמחזיק
+         view_all, שרואה את הרשומה הרחבה יותר ב"נתונים". */
+      {
+        to: '/attendance',
+        label: 'נוכחות הסגל שלי',
+        shortLabel: 'נוכחות',
+        icon: Clock,
+        perm: PERM.PORTAL_ATTENDANCE,
+        hiddenBy: [PERM.ATTENDANCE_VIEW_ALL],
+      },
+      { to: '/my/staff', label: 'העובדים שלי', icon: Users, perm: PERM.PORTAL_MANAGE_WORKERS },
       { to: '/my/notifications', label: 'התראות', icon: Bell, perm: PERM.NOTIFICATIONS_PREFERENCES },
     ],
   },
@@ -87,7 +110,13 @@ export const NAV_SECTIONS: NavSection[] = [
       /* shortLabel 'שיבוץ' ולא 'משמרות': מי שרואה את הרשומה הזאת רואה במקביל
          גם את "משמרות" שלמעלה, ושתי רשומות באותו שם הן שתי רשומות שאי אפשר
          לבחור ביניהן. */
-      { to: '/shifts', label: 'לוח משמרות צוות', shortLabel: 'שיבוץ', icon: CalendarDays, perm: PERM.ATTENDANCE_VIEW_ALL },
+      {
+        to: '/shifts',
+        label: 'לוח משמרות צוות',
+        shortLabel: 'שיבוץ',
+        icon: CalendarDays,
+        anyPerm: [PERM.ATTENDANCE_VIEW_ALL, PERM.PORTAL_ATTENDANCE],
+      },
       { to: '/attendance', label: 'דוח נוכחות', shortLabel: 'נוכחות', icon: Clock, perm: PERM.ATTENDANCE_VIEW_ALL },
       { to: '/reports', label: 'דוחות', shortLabel: 'דוחות', icon: BarChart3, perm: PERM.REPORTS_VIEW },
       { to: '/receipts', label: 'רישום תקבולים', shortLabel: 'תקבולים', icon: Banknote, perm: PERM.FINANCE_RECEIPTS_VIEW },
@@ -104,7 +133,8 @@ export const NAV_SECTIONS: NavSection[] = [
  * ההפניה של `/`, כדי שמסך שהתפריט מציג יהיה גם המסך שהבית שולח אליו.
  */
 export function navItemVisible(item: NavItem, has: (perm: string) => boolean): boolean {
-  return has(item.perm) && !item.hiddenBy?.some(has)
+  const held = item.anyPerm ? item.anyPerm.some(has) : has(item.perm!)
+  return held && !item.hiddenBy?.some(has)
 }
 
 /** הסקשנים שנשארים אחרי הסינון — בלי סקשן שהתרוקן. */
@@ -150,6 +180,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/my/schedule': 'משמרות',
   '/my/attendance': 'שעון נוכחות',
   '/my/notifications': 'התראות',
+  '/my/staff': 'העובדים שלי',
   '/settings': 'הגדרות',
-  '/portal': 'פורטל קבלן',
+  '/portal': 'כספים ותשלומים',
 }
