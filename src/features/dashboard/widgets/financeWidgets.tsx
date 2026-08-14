@@ -63,7 +63,7 @@ interface Margin {
    source — and the same rule about null, which is why it is a factory and not
    twelve copies.                                                            */
 
-function sectionKpi<T>(cfg: {
+export function sectionKpi<T>(cfg: {
   section: string
   label: string
   icon: ComponentType<{ size?: number; strokeWidth?: number }>

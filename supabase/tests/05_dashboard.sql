@@ -147,7 +147,8 @@ select t_expect_fail('טווח גדול מדי נדחה',
   $$select dashboard_sections(array['tasks.by_type'], current_date - 500, current_date, '{}')$$);
 select t_expect_fail('יותר מדי סקשנים בבקשה אחת נדחה',
   $$select dashboard_sections(
-      (select array_agg('k' || g) from generate_series(1,41) g),
+      -- התקרה עלתה ל-48 ב-0069, כשששת סקשני ההכנסה הצטרפו לברירת המחדל
+      (select array_agg('k' || g) from generate_series(1,49) g),
       current_date - 5, current_date, '{}')$$);
 
 -- ================= as the owner admin =================

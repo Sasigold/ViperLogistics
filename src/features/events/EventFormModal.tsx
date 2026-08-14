@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Clock, ICON, MapPin, Package, PartyPopper, Phone, SlidersHorizontal, STROKE, User } from '../../components/ui/icons'
+import { Banknote, Check, Clock, ICON, MapPin, Package, PartyPopper, Phone, SlidersHorizontal, STROKE, User } from '../../components/ui/icons'
 import {
   Button,
   Card,
@@ -22,10 +22,13 @@ import { PERM } from '../../lib/permissions'
 import {
   useAllowedExecutionMethods,
   useCustomFormFields,
+  useCustomerIncomeSplits,
   useEffectiveFormConfig,
   useCustomers,
   useEventAutoTasks,
+  useEventIncome,
   useExecutionMethods,
+  useIncomeCategories,
   useStatuses,
   useSuppliers,
   useTaskTypes,
@@ -71,6 +74,8 @@ type EventForm = {
   teardown_execution_method: string
   /** values of the customer's custom fields, keyed by field_key */
   custom: Record<string, CustomFormValue>
+  /** category income amounts (0068), keyed by income_categories.id */
+  income: Record<string, string>
 }
 
 const empty: EventForm = {
@@ -83,6 +88,7 @@ const empty: EventForm = {
   teardown_date: '', teardown_time: '', teardown_worker_count: '', teardown_hours_count: '', teardown_execution_method: '',
   teardown_price: '',
   custom: {},
+  income: {},
 }
 
 /**
@@ -204,6 +210,18 @@ export function EventFormModal({
   const teardownMethods = useAllowedExecutionMethods(teardownTypeId, effectiveCustomerId)
   const { data: autoTasks } = useEventAutoTasks(open && event ? event.id : null)
 
+  /* הכנסות לפי קטגוריה (0068): השדות קיימים רק ללקוח שהופעלו לו קטגוריות
+     בכרטיס הלקוח, ורק למי שמחזיק את מפתח ההזנה. */
+  const { data: incomeCategories = [] } = useIncomeCategories()
+  const { data: incomeSplits = [] } = useCustomerIncomeSplits(effectiveCustomerId)
+  const { data: eventIncome } = useEventIncome(open && event ? event.id : null)
+  const canEditIncome = has(PERM.FINANCE_INCOME_EDIT)
+  const enabledCategories = useMemo(
+    () =>
+      incomeCategories.filter((c) => c.is_active && incomeSplits.some((s) => s.category_id === c.id)),
+    [incomeCategories, incomeSplits],
+  )
+
   useEffect(() => {
     if (!open) return
     setStep(0)
@@ -241,6 +259,14 @@ export function EventFormModal({
       setForm(draft ? { ...empty, ...(JSON.parse(draft) as Partial<EventForm>) } : empty)
     }
   }, [open, event, contact, supplierIds, me?.profile.id])
+
+  /** Edit mode: the amounts live in event_income, hydrated once they arrive. */
+  useEffect(() => {
+    if (!open || !event || !eventIncome) return
+    const income: Record<string, string> = {}
+    for (const r of eventIncome) income[r.category_id] = String(r.amount)
+    setForm((f) => ({ ...f, income }))
+  }, [open, event, eventIncome])
 
   /** Edit mode: the section values live on the auto-created tasks, not on the event. */
   useEffect(() => {
@@ -312,8 +338,13 @@ export function EventFormModal({
         fields: customFields.map((f) => f.field_key),
       })
     }
-    return all.filter((s) => s.fields.some((f) => show(f)))
-  }, [show, customFields])
+    /* השדות כאן אינם form_fields — הסטפ קיים בדיוק כשיש קטגוריות מופעלות
+       ללקוח והמזין מחזיק את המפתח, ולכן הוא עוקף את מסנן show(). */
+    if (enabledCategories.length > 0 && canEditIncome) {
+      all.push({ key: 'income', label: 'הכנסות לפי קטגוריה', icon: Banknote, fields: [] })
+    }
+    return all.filter((s) => s.key === 'income' || s.fields.some((f) => show(f)))
+  }, [show, customFields, enabledCategories, canEditIncome])
 
   /** A step is incomplete when a field the customer marked "required" is empty. */
   const missingIn = (stepKey: string): string[] => {
@@ -411,6 +442,14 @@ export function EventFormModal({
         if (!show(f.field_key) || ro(f.field_key)) continue
         payload[f.field_key] = toPayloadValue(f, form.custom[f.field_key])
       }
+      /* הכנסות קטגוריה: נשלח רק כשהסטפ קיים, ובעריכה — רק אחרי שהערכים
+         הקיימים נטענו. בלי התנאי השני, שמירה מהירה הייתה שולחת מפתחות ריקים
+         ומרוקנת סכומים שכבר הוזנו (ערך ריק = "רוקן" בסמנטיקת ה-patch). */
+      if (enabledCategories.length > 0 && canEditIncome && (!event || eventIncome !== undefined)) {
+        payload.event_income = Object.fromEntries(
+          enabledCategories.map((c) => [c.id, form.income[c.id] ?? '']),
+        )
+      }
       if (event) {
         const { error } = await supabase.rpc('update_event', { p_event_id: event.id, payload })
         if (error) throw error
@@ -430,6 +469,7 @@ export function EventFormModal({
       void qc.invalidateQueries({ queryKey: ['calendar'] })
       void qc.invalidateQueries({ queryKey: ['workboard'] })
       void qc.invalidateQueries({ queryKey: ['dashboard'] })
+      void qc.invalidateQueries({ queryKey: ['event_income'] })
       onClose()
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -740,6 +780,41 @@ export function EventFormModal({
               />
             ) : null,
           )}
+        </div>
+      )}
+
+      {/* ── הכנסות לפי קטגוריה ─────────────────────────────────────────────
+          שדה לכל קטגוריה שהופעלה ללקוח בכרטיס הלקוח. האחוז שמוצג הוא זה
+          שיישמר על האירוע ברגע השמירה (snapshot).                        */}
+      {current?.key === 'income' && (
+        <div className="animate-fade-in space-y-4">
+          <p className="type-caption text-ink-secondary">
+            סכומי ההכנסה של האירוע לפי קטגוריה. שדה ריק אינו נספר; חלוקת ויפר/לקוח
+            נשמרת על האירוע לפי האחוז הנוכחי בכרטיס הלקוח.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {enabledCategories.map((c) => {
+              const pct = Number(incomeSplits.find((s) => s.category_id === c.id)?.viper_share_pct ?? 100)
+              return (
+                <Field
+                  key={c.id}
+                  label={`${c.name} (₪)`}
+                  hint={`ויפר ${pct}% · לקוח ${Math.round((100 - pct) * 100) / 100}%`}
+                >
+                  <Input
+                    type="number"
+                    step="any"
+                    min="0"
+                    dir="ltr"
+                    value={form.income[c.id] ?? ''}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, income: { ...f.income, [c.id]: e.target.value } }))
+                    }
+                  />
+                </Field>
+              )
+            })}
+          </div>
         </div>
       )}
 

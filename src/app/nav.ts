@@ -1,4 +1,5 @@
 import {
+  Banknote,
   BarChart3,
   Bell,
   Building2,
@@ -89,6 +90,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/shifts', label: 'לוח משמרות צוות', shortLabel: 'שיבוץ', icon: CalendarDays, perm: PERM.ATTENDANCE_VIEW_ALL },
       { to: '/attendance', label: 'דוח נוכחות', shortLabel: 'נוכחות', icon: Clock, perm: PERM.ATTENDANCE_VIEW_ALL },
       { to: '/reports', label: 'דוחות', shortLabel: 'דוחות', icon: BarChart3, perm: PERM.REPORTS_VIEW },
+      { to: '/receipts', label: 'רישום תקבולים', shortLabel: 'תקבולים', icon: Banknote, perm: PERM.FINANCE_RECEIPTS_VIEW },
     ],
   },
   {
@@ -143,6 +145,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/shifts': 'לוח משמרות צוות',
   '/reports': 'דוחות',
   '/reports/profitability': 'רווחיות לקוחות',
+  '/receipts': 'רישום תקבולים',
   '/my/schedule': 'משמרות',
   '/my/attendance': 'שעון נוכחות',
   '/my/notifications': 'התראות',

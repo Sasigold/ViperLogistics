@@ -22,6 +22,37 @@ export interface Customer {
   deleted_at: string | null
 }
 
+/** משפחת קטגוריית הכנסה — מקבעת את שני ה-KPI המסכמים בדשבורד */
+export type IncomeFamily = 'furniture' | 'logistics'
+
+export interface IncomeCategory {
+  id: string
+  name: string
+  family: IncomeFamily
+  color: string
+  sort_order: number
+  is_active: boolean
+  deleted_at: string | null
+}
+
+/** קיום שורה = הקטגוריה מופעלת ללקוח; חלק הלקוח נגזר (100 פחות) */
+export interface CustomerIncomeSplit {
+  customer_id: string
+  category_id: string
+  viper_share_pct: number
+}
+
+export interface Receipt {
+  id: string
+  customer_id: string
+  amount: number
+  received_at: string
+  note: string | null
+  created_by: string | null
+  created_at: string
+  deleted_at: string | null
+}
+
 export interface Contractor {
   id: string
   name: string

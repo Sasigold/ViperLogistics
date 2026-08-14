@@ -28,6 +28,13 @@ export const SECTIONS = [
   'margin.summary',
   'margin.trend',
   'margin.by_customer',
+  // כספים — הכנסות קטגוריה, תקבולים ועלות מעביד (0069)
+  'income.by_category',
+  'income.mix',
+  'finance.receivables',
+  'finance.client_share',
+  'cost.payroll_employer',
+  'finance.profit_summary',
   // תפעול
   'tasks.by_type',
   'tasks.by_method',
