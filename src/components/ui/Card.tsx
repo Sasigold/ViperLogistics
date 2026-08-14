@@ -183,9 +183,11 @@ export function StatCard({
           <p className="mt-0.5 type-display tabular leading-8">{value}</p>
         </div>
       </div>
-      {(showDelta || hint) && (
-        <div className="mt-2.5 flex items-center gap-2">
-          {showDelta && (
+      {/* Always rendered, with the populated row's height reserved, so a tile
+          with no delta or hint stands exactly as tall as one that has them —
+          KPI tiles sharing a row line up instead of stair-stepping. */}
+      <div className="mt-2.5 flex min-h-5 items-center gap-2">
+        {showDelta && (
             <span
               className={cx(
                 'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 type-caption font-semibold tabular',
@@ -198,8 +200,7 @@ export function StatCard({
             </span>
           )}
           {hint && <span className="min-w-0 truncate type-caption text-ink-tertiary">{hint}</span>}
-        </div>
-      )}
+      </div>
     </>
   )
 
