@@ -526,3 +526,41 @@ select t_eq('והערך הקודם נשמר בעדכון',
     where table_name = 'app_settings'
       and row_id = md5('app_settings:test.audit_probe')::uuid
       and action = 'UPDATE'), '1');
+
+-- ===== 0071: מנהל המחסנים רואה אזורי נסיעה, ואינו מזיז מחירים ===============
+--
+-- זמן הנסיעה מאריך את המשמרת (app.planned_shifts) בדיוק כפי שהוא מתמחר, ולכן
+-- מי שמגדיר את המחסנים שמהם יוצאים חייב לראות אותו. הכתיבה נשארת בתמחור, כי
+-- pricing_zones_recalc הופך כל שינוי באזור למחירים חדשים.
+\echo '--- אזורי נסיעה למי שמנהל מחסנים (0071) ---'
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000000f5', 'warehouse@vl.test');
+insert into profiles (id, user_id, user_kind, full_name) values
+  ('20000000-0000-0000-0000-0000000000f5', '00000000-0000-0000-0000-0000000000f5',
+   'staff', 'מנהל מחסנים');
+insert into user_permission_grants (profile_id, permission_key, allowed) values
+  ('20000000-0000-0000-0000-0000000000f5', 'attendance.manage_warehouses', true);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f5', false);
+
+select t_eq('בלי שום מפתח תמחור — האזור החי נראה',
+  (select count(*) from pricing_zones where name = 'גוש דן'), 1::bigint);
+
+select t_eq('ואזור שנמחק עדיין לא',
+  (select count(*) from pricing_zones where name = 'גוש דן — הסכם מיוחד'), 0::bigint);
+
+select t_rows('אבל אינו יכול לשנות זמן נסיעה (אף שורה לא נגעה)',
+  $$update pricing_zones set travel_hours = 9$$, 0);
+
+select t_expect_fail('ואינו יכול לצייר אזור חדש',
+  $$insert into pricing_zones (name, shape, points, travel_hours)
+    values ('אזור של מנהל המחסנים', 'polygon',
+            '[[32.0,34.7],[32.1,34.7],[32.1,34.8]]'::jsonb, 1)$$);
+
+select t_eq('ומחשבוני התמחור נשארים סגורים בפניו',
+  (select count(*) from customer_pricing_rules), 0::bigint);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);

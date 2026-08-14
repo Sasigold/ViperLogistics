@@ -1,9 +1,14 @@
 /**
  * עורך אזורי הנסיעה.
  *
- * זמן הנסיעה בנוסחת התמחור אינו מוזן ידנית לכל אירוע — הוא נגזר מהמיקום
- * שהלקוח בחר. המסך הזה הוא המקום שבו נקבע מה זה אומר: משרטטים אזור על
- * המפה, וכל אירוע שנופל בתוכו מקבל את זמן הנסיעה שלו.
+ * זמן הנסיעה אינו מוזן ידנית לכל אירוע — הוא נגזר מהמיקום שהלקוח בחר. המסך
+ * הזה הוא המקום שבו נקבע מה זה אומר: משרטטים אזור על המפה, וכל אירוע שנופל
+ * בתוכו מקבל את זמן הנסיעה שלו.
+ *
+ * שני צרכנים קוראים את אותו מספר (0020): נוסחת התמחור, ומעליה — גם ללקוח
+ * בתמחור ידני — גזירת המשמרת, שמוסיפה את הנסיעה חזרה למחסן לסיום המשמרת.
+ * לכן המסך מציג את המחסנים על המפה ואת המרחק אליהם: המספר שמזינים כאן הוא
+ * "כמה זמן מהמחסן לשם", ובלי המחסן על הרקע אין לפי מה להזין אותו.
  *
  * אותו רכיב משרת את שתי הרמות. customerId=null מנהל את האזורים הגלובליים
  * (בהגדרות), ו-customerId מנהל אזורים פרטיים ללקוח שגוברים עליהם. הגלובליים
@@ -34,9 +39,12 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { usePricingZones } from '../../lib/queries'
+import { useWarehouses } from '../attendance/attendanceQueries'
+import { fmtDuration } from '../attendance/shiftFormat'
 import { ZoneMap } from './ZoneMap'
+import { impliedSpeedKmh, nearestWarehouse, roundTripHours, zoneCenter } from './travelZones'
 import type { DraftShape } from './ZoneMap'
-import type { PricingZone } from '../../types/domain'
+import type { PricingZone, Warehouse } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
 const SHAPES = [
@@ -60,8 +68,12 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
   const { confirm, dialog } = useConfirm()
   const { has } = useAuth()
   const canEdit = has(PERM.PRICING_MANAGE_RULES)
+  // מי שמגיע לכאן מצד המשמרות (attendance.manage_warehouses) רואה זמני נסיעה
+  // ולא כסף. התוספת לאזור מוסתרת ממנו, ולא מוצגת ריקה כשדה שאפשר למלא.
+  const canSeeMoney = has(PERM.PRICING_VIEW) || has(PERM.PRICING_MANAGE_RULES)
 
   const { data: zones = [], isLoading } = usePricingZones(customerId)
+  const { data: warehouses = [] } = useWarehouses(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<DraftShape | null>(null)
   const [meta, setMeta] = useState<DraftMeta>(EMPTY_META)
@@ -134,6 +146,17 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
     onError: (e) => toast.error(errorMessage(e)),
   })
 
+  // ההקשר שהופך את הזנת זמן הנסיעה למושכלת בזמן הציור: כמה רחוק מה שמשרטטים
+  // מהמחסן הקרוב, ואיזו מהירות המספר שהוזן מתאר מול המרחק הזה.
+  const draftHit = useMemo(() => {
+    if (!draft) return null
+    const center =
+      draft.shape === 'circle'
+        ? draft.center
+        : zoneCenter({ shape: 'polygon', points: draft.points, center_lat: null, center_lng: null })
+    return nearestWarehouse(center, warehouses)
+  }, [draft, warehouses])
+
   // אזור של הלקוח ניתן לעריכה כאן; אזור גלובלי מוצג לצורך הקשר בלבד, כדי
   // שלא יערכו מהמסך של לקוח אחד משהו שחל על כולם.
   const { own, inherited } = useMemo(
@@ -151,7 +174,7 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
         title="אזורי נסיעה"
         subtitle={
           customerId
-            ? 'אזור של הלקוח גובר על אזור גלובלי. זמן הנסיעה נכנס לנוסחת התמחור.'
+            ? 'אזור של הלקוח גובר על אזור גלובלי. זמן הנסיעה מאריך את המשמרת (חזרה למחסן) וגם נכנס לנוסחת התמחור.'
             : 'ברירת המחדל לכל הלקוחות. אזור ספציפי בהגדרות לקוח גובר עליה.'
         }
         icon={<MapIcon size={ICON.md} strokeWidth={STROKE} />}
@@ -170,14 +193,22 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
         {isLoading ? (
           <Skeleton className="h-96 w-full" />
         ) : (
-          <ZoneMap
-            zones={zones}
-            selectedId={selectedId}
-            draft={draft}
-            onDraftChange={setDraft}
-            onSelect={setSelectedId}
-            className="h-[380px] w-full"
-          />
+          <>
+            <ZoneMap
+              zones={zones}
+              warehouses={warehouses}
+              selectedId={selectedId}
+              draft={draft}
+              onDraftChange={setDraft}
+              onSelect={setSelectedId}
+              className="h-[380px] w-full"
+            />
+            <p className="border-t border-line-subtle px-4 py-2 type-caption text-ink-tertiary">
+              {warehouses.some((w) => w.lat != null && w.lng != null)
+                ? 'הנקודות הכהות הן המחסנים. הקו המקווקו הוא המרחק האווירי מהמחסן הקרוב לאזור שנבחר — לא מסלול נסיעה.'
+                : 'אין מחסן עם קואורדינטות. הגדרות ← נוכחות ושעות נוספות ← מחסנים, ואז המפה תראה גם מהיכן יוצאים.'}
+            </p>
+          </>
         )}
       </CardBody>
 
@@ -209,7 +240,7 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
             <Field label="שם האזור" required>
               <Input value={meta.name} onChange={(e) => setMeta({ ...meta, name: e.target.value })} placeholder="גוש דן" />
             </Field>
-            <Field label="זמן נסיעה (ש׳)" hint="כיוון אחד — הנוסחה מכפילה ב-2">
+            <Field label="זמן נסיעה מהמחסן (ש׳)" hint="כיוון אחד — המשמרת מוסיפה חזרה, הנוסחה מכפילה ב-2">
               <Input
                 type="number"
                 step="0.25"
@@ -219,15 +250,17 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
                 onChange={(e) => setMeta({ ...meta, travel_hours: e.target.value })}
               />
             </Field>
-            <Field label="תוספת לאזור (₪)" hint="אופציונלי, נכנס רק אם המחשבון מפנה אליו">
-              <Input
-                type="number"
-                step="any"
-                dir="ltr"
-                value={meta.surcharge}
-                onChange={(e) => setMeta({ ...meta, surcharge: e.target.value })}
-              />
-            </Field>
+            {canSeeMoney && (
+              <Field label="תוספת לאזור (₪)" hint="אופציונלי, נכנס רק אם המחשבון מפנה אליו">
+                <Input
+                  type="number"
+                  step="any"
+                  dir="ltr"
+                  value={meta.surcharge}
+                  onChange={(e) => setMeta({ ...meta, surcharge: e.target.value })}
+                />
+              </Field>
+            )}
             {draft.shape === 'circle' ? (
               <Field label="רדיוס (ק״מ)" required>
                 <Input
@@ -250,6 +283,13 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
               </Field>
             )}
           </div>
+
+          <TravelContext
+            hit={draftHit}
+            travelHours={Number(meta.travel_hours) || 0}
+            className="mt-3"
+            empty="ציירו על המפה כדי לראות את המרחק מהמחסן"
+          />
 
           <div className="mt-3 flex gap-2">
             <Button variant="primary" loading={create.isPending} onClick={() => create.mutate()}>
@@ -276,7 +316,7 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
             title="אין אזורי נסיעה"
             description={
               customerId
-                ? 'בלי אזור, זמן הנסיעה של אירועי הלקוח הזה הוא אפס — אלא אם הוזן ידנית על המשימה.'
+                ? 'בלי אזור, זמן הנסיעה של אירועי הלקוח הזה הוא אפס — המשמרת נגמרת באתר ולא כוללת חזרה למחסן, אלא אם הזמן הוזן ידנית על המשימה.'
                 : 'הגדירו אזורים כדי שזמן הנסיעה ייגזר מהמיקום במקום להיות מוזן ידנית.'
             }
           />
@@ -286,6 +326,8 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
               <ZoneRow
                 key={z.id}
                 zone={z}
+                warehouses={warehouses}
+                canSeeMoney={canSeeMoney}
                 selected={z.id === selectedId}
                 canEdit={canEdit}
                 onSelect={() => setSelectedId(z.id)}
@@ -297,7 +339,16 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
               />
             ))}
             {inherited.map((z) => (
-              <ZoneRow key={z.id} zone={z} selected={z.id === selectedId} canEdit={false} inherited onSelect={() => setSelectedId(z.id)} />
+              <ZoneRow
+                key={z.id}
+                zone={z}
+                warehouses={warehouses}
+                canSeeMoney={canSeeMoney}
+                selected={z.id === selectedId}
+                canEdit={false}
+                inherited
+                onSelect={() => setSelectedId(z.id)}
+              />
             ))}
           </ul>
         )}
@@ -306,8 +357,39 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
   )
 }
 
+/**
+ * שורת ההקשר של זמן נסיעה: מאיזה מחסן, כמה רחוק, ומה זה אומר על השעון.
+ *
+ * המהירות המשתמעת היא סרגל ולא תחזית — היא נמדדת מול קו אווירי, ולכן היא
+ * תמיד נמוכה מהמהירות בכביש. מה שהיא כן תופסת הוא זמן שאי אפשר לכסות בו את
+ * הדרך: 120 קמ״ש בקו אווירי אינם נסיעה אלא טעות הקלדה.
+ */
+function TravelContext({
+  hit,
+  travelHours,
+  className,
+  empty,
+}: {
+  hit: { warehouse: Warehouse; km: number } | null
+  travelHours: number
+  className?: string
+  empty?: string
+}) {
+  const speed = impliedSpeedKmh(hit?.km ?? null, travelHours)
+  const parts = [
+    `הלוך-חזור ${fmtDuration(roundTripHours(travelHours))}`,
+    hit ? `${hit.km.toFixed(1)} ק״מ בקו אווירי ממחסן ${hit.warehouse.name}` : empty,
+    speed ? `≈${speed} קמ״ש` : null,
+  ].filter(Boolean)
+
+  // span ולא p: השורה מוצגת גם בתוך כפתור הבחירה של האזור, ושם p אינו חוקי.
+  return <span className={`block tabular type-caption text-ink-tertiary ${className ?? ''}`}>{parts.join(' · ')}</span>
+}
+
 function ZoneRow({
   zone,
+  warehouses,
+  canSeeMoney,
   selected,
   canEdit,
   inherited,
@@ -316,6 +398,8 @@ function ZoneRow({
   onRemove,
 }: {
   zone: PricingZone
+  warehouses: Warehouse[]
+  canSeeMoney: boolean
   selected: boolean
   canEdit: boolean
   inherited?: boolean
@@ -323,6 +407,7 @@ function ZoneRow({
   onPatch?: (values: Partial<PricingZone>) => void
   onRemove?: () => void
 }) {
+  const hit = nearestWarehouse(zoneCenter(zone), warehouses)
   return (
     <li
       className={
@@ -330,15 +415,18 @@ function ZoneRow({
         (selected ? 'bg-subtle' : '')
       }
     >
-      <button type="button" onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-2 text-start">
-        <span className="size-2.5 shrink-0 rounded-full" style={{ background: zone.color }} aria-hidden />
-        <span className="truncate type-body font-medium">{zone.name}</span>
-        {inherited && <Badge tone="neutral">גלובלי</Badge>}
-        {zone.shape === 'circle' && <span className="type-caption text-ink-tertiary">{zone.radius_km} ק״מ</span>}
+      <button type="button" onClick={onSelect} className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-start">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="size-2.5 shrink-0 rounded-full" style={{ background: zone.color }} aria-hidden />
+          <span className="truncate type-body font-medium">{zone.name}</span>
+          {inherited && <Badge tone="neutral">גלובלי</Badge>}
+          {zone.shape === 'circle' && <span className="type-caption text-ink-tertiary">{zone.radius_km} ק״מ</span>}
+        </span>
+        <TravelContext hit={hit} travelHours={Number(zone.travel_hours) || 0} />
       </button>
 
-      <span className="tabular type-caption text-ink-tertiary">{zone.travel_hours} ש׳ נסיעה</span>
-      {Number(zone.surcharge) !== 0 && (
+      <span className="tabular type-caption text-ink-tertiary">{fmtDuration(zone.travel_hours)} לכיוון</span>
+      {canSeeMoney && Number(zone.surcharge) !== 0 && (
         <span className="tabular type-caption text-ink-tertiary" dir="ltr">
           {fmtMoney(zone.surcharge)}
         </span>
