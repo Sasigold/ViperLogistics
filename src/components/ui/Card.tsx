@@ -210,7 +210,12 @@ export function StatCard({
         type="button"
         onClick={onClick}
         className={cx(
-          'surface p-4 text-start transition-[box-shadow,border-color,transform] duration-200',
+          /* `block w-full`: a <button> is inline-block, so a clickable tile
+             would shrink to fit its text while the plain <div> tile below
+             fills its cell — two tiles side by side in the same grid column
+             came out different widths, and the inline baseline put them at
+             different heights too. */
+          'surface block w-full p-4 text-start transition-[box-shadow,border-color,transform] duration-200',
           'hover:-translate-y-px hover:border-line-strong hover:shadow-md focus-visible:outline-none focus-visible:focus-ring',
           className,
         )}
