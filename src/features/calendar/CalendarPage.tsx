@@ -182,6 +182,7 @@ export default function CalendarPage() {
   // dragging an event rewrites events.event_date, which the column trigger
   // judges against events.change_date — gate the UI by the same key
   const canEdit = has(PERM.CALENDAR_DRAG)
+  const canOpenEvent = has(PERM.EVENTS_VIEW)
 
   const { data: customers = [] } = useCustomers()
   const { data: statuses = [] } = useStatuses('event')
@@ -447,12 +448,18 @@ export default function CalendarPage() {
       const showCustomerDot = customers.length > 1 && !!ev.customers
 
       const contextItems = [
-        {
-          key: 'open',
-          label: 'פתיחת האירוע',
-          icon: <ExternalLink size={ICON.sm} />,
-          onClick: () => navigate(`/events/${ev.id}`),
-        },
+        /* מושמט ולא מוצג מנוטרל: מי שאין לו events.view רואה כאן את הלוח
+           בלבד, ופריט שמוביל ל"אין הרשאה" אינו פעולה שהוצעה לו. */
+        ...(canOpenEvent
+          ? [
+              {
+                key: 'open',
+                label: 'פתיחת האירוע',
+                icon: <ExternalLink size={ICON.sm} />,
+                onClick: () => navigate(`/events/${ev.id}`),
+              },
+            ]
+          : []),
         {
           key: 'filter',
           label: `סינון לפי ${ev.customers?.name ?? 'לקוח'}`,
@@ -571,7 +578,7 @@ export default function CalendarPage() {
         </Tooltip>
       )
     },
-    [openMenu, navigate, toast, isMobile, customers.length],
+    [openMenu, navigate, toast, isMobile, customers.length, canOpenEvent],
   )
 
   /* ── filter controls, shared by the desktop panel and the mobile sheet ─── */
@@ -900,6 +907,10 @@ export default function CalendarPage() {
               eventClick={(info) => {
                 // חג הוא תווית, לא יעד
                 if (info.event.extendedProps.holiday) return
+                // ‏events.view הוא מפתח נפרד מ-calendar.view, ו-0067 §2 סגר
+                // אותו לצוות בזמן שהשאיר להם את הלוח — כמו שעשה 0071 לקבלן.
+                // בלי התנאי הזה כל לחיצה על צ׳יפ נוחתת על "אין הרשאה".
+                if (!canOpenEvent) return
                 navigate(`/events/${info.event.id}`)
               }}
               /* החג פותח את היום; אחריו האירועים בסדר הרגיל */

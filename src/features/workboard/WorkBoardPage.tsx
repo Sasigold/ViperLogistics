@@ -40,6 +40,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import {
+  useContractorWorkerAssign,
   useContractors,
   useCustomers,
   useExecutionMethods,
@@ -295,6 +296,13 @@ export default function WorkBoardPage() {
     (perm?: string) => canInline && (!perm || has(perm)),
     [canInline, has],
   )
+  /**
+   * שיבוץ עובדי קבלן אינו עובר ב-`canEditCell` בכוונה: היא מכפילה ב-
+   * `board.inline_edit`, שאין למנהל קבלן ולעולם לא יהיה — הלוח שלו לקריאה
+   * בלבד פרט לדבר האחד הזה. שני מפתחות כי אלה שני הקהלים שהפוליסות על
+   * `task_contractor_workers` כבר מכירות: הקבלן את שלו, והמשרד את של כולם.
+   */
+  const canAssignContractor = has(PERM.PORTAL_ASSIGN_WORKERS) || has(PERM.CONTRACTORS_ASSIGN_WORKERS)
   const [params, setParams] = useSearchParams()
   const prefs = useRef(loadPrefs())
   const isMobile = useIsMobile()
@@ -354,6 +362,7 @@ export default function WorkBoardPage() {
   const { data: staff = EMPTY } = useStaff(has(PERM.BOARD_VIEW_STAFFING))
   const inline = useInlineUpdate()
   const staffing = useAssignmentUpdate()
+  const contractorAssign = useContractorWorkerAssign()
 
   const { data: rows = EMPTY, isLoading, error: rowsError, refetch: refetchRows } = useQuery({
     queryKey: ['workboard', 'range', from, to, filters],
@@ -385,17 +394,33 @@ export default function WorkBoardPage() {
   })
 
   const lookups = useMemo<BoardLookups>(
-    () => ({ statuses, trucks, methods, contractors, staff }),
-    [statuses, trucks, methods, contractors, staff],
+    () => ({ statuses, trucks, methods, contractors, staff, canAssignContractor }),
+    [statuses, trucks, methods, contractors, staff, canAssignContractor],
   )
   const patchCell = useCallback(
     (row: WorkBoardRow, patch: Record<string, unknown>) => inline.mutate({ row, patch }),
     [inline],
   )
   const assignCell = useCallback(
-    (row: WorkBoardRow, role: StaffRole, profileId: string, on: boolean) =>
-      staffing.mutate({ row, role, profileId, on }),
-    [staffing],
+    (row: WorkBoardRow, role: StaffRole | 'contractor', id: string, on: boolean) => {
+      /* עובד קבלן אינו שורה ב-task_assignments, ולכן הוא הולך ל-RPC שלו.
+         הקידומת אומרת אם נבחרה שורת סגל קיימת או חשבון שעדיין אין לו אחת. */
+      if (role === 'contractor') {
+        const isProfile = id.startsWith('p:')
+        contractorAssign.mutate(
+          {
+            taskId: row.id,
+            workerId: isProfile ? null : id.slice(2),
+            profileId: isProfile ? id.slice(2) : null,
+            on,
+          },
+          { onError: (e) => toast.error(errorMessage(e)) },
+        )
+        return
+      }
+      staffing.mutate({ row, role, profileId: id, on })
+    },
+    [staffing, contractorAssign, toast],
   )
 
   /**
@@ -779,7 +804,9 @@ export default function WorkBoardPage() {
           <option key={s.id} value={s.id}>{s.name}</option>
         ))}
       </Select>
-      {contractors.length > 0 && (
+      {/* פילטר עם אפשרות אחת אינו פילטר. RLS מחזירה לקבלן את שורת הקבלן שלו
+          בלבד, ולכן `> 1` ולא `> 0` — אותה תבנית של פילטר הלקוחות שמעליו. */}
+      {contractors.length > 1 && (
         <Select
           className="w-full lg:w-32"
           selectSize="sm"
@@ -1632,7 +1659,7 @@ const TaskColumn = memo(
     row: WorkBoardRow
     canEditCell: (perm?: string) => boolean
     patch: (row: WorkBoardRow, patch: Record<string, unknown>) => void
-    assign: (row: WorkBoardRow, role: StaffRole, profileId: string, on: boolean) => void
+    assign: (row: WorkBoardRow, role: StaffRole | 'contractor', id: string, on: boolean) => void
     lookups: BoardLookups
     fields: typeof BOARD_FIELDS
     heights: number[]

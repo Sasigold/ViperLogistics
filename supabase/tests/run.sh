@@ -157,6 +157,15 @@ OUT="$OUT
 $OUT12"
 
 echo
+echo "== contractor shell suite =="
+# 14 מקימה שני קבלנים, לקוח, אירוע ומשימות משל עצמה. היא רצה אחרונה כי היא
+# מוסיפה שורות סגל ושיבוצים שאינם מנוקים, ובודקת ספירות בהיקף שלה בלבד.
+OUT13=$($PSQL -d vl -f "$HERE/14_contractor_shell.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT13"
+OUT="$OUT
+$OUT13"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

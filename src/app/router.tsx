@@ -28,6 +28,7 @@ const UsersPage = lazyPage(() => import('../features/users/UsersPage'))
 const ContractorsPage = lazyPage(() => import('../features/contractors/ContractorsPage'))
 const ContractorDetailPage = lazyPage(() => import('../features/contractors/ContractorDetailPage'))
 const PortalPage = lazyPage(() => import('../features/portal/PortalPage'))
+const MyStaffPage = lazyPage(() => import('../features/contractors/MyStaffPage'))
 const SettingsPage = lazyPage(() => import('../features/settings/SettingsPage'))
 const TimeClockPage = lazyPage(() => import('../features/attendance/TimeClockPage'))
 const MySchedulePage = lazyPage(() => import('../features/attendance/MySchedulePage'))
@@ -84,8 +85,6 @@ export const router = createBrowserRouter([
   {
     element: <RequireAuth />,
     children: [
-      { path: '/portal', element: page(<PortalPage />) },
-
       /* Clients used to live under /client with their own shell. They now use
          the same screens as everyone else, narrowed by their permissions, so
          these only keep old bookmarks and notification links working.
@@ -107,6 +106,13 @@ export const router = createBrowserRouter([
              provide by accident, and which two screens had already lost.
              `open` marks a route that decides for itself. */
           { path: '/', handle: { open: true }, element: page(<HomeRoute />) },
+          /* דף הכספים של הקבלן. עד 0071 הוא היה shell שלם מחוץ ל-AppLayout,
+             עם ארבע לשוניות שהחזיקו את לוח השנה, הלו״ז, הסגל והנוכחות שלו;
+             כל אחת מהן היא עכשיו נתיב של ממש, וכאן נשאר מה שהוא באמת —
+             סיכום כספי. `portal.view` יכול לגדר אותו רק מפני ש-0071 §1 כיבה
+             את ה-default_allowed שלו. */
+          { path: '/portal', handle: { perm: PERM.PORTAL_VIEW }, element: page(<PortalPage />) },
+          { path: '/my/staff', handle: { perm: PERM.PORTAL_MANAGE_WORKERS }, element: page(<MyStaffPage />) },
           { path: '/calendar', handle: { perm: PERM.CALENDAR_VIEW }, element: page(<CalendarPage />) },
           { path: '/board', handle: { perm: PERM.BOARD_VIEW }, element: page(<WorkBoardPage />) },
           { path: '/reports', handle: { perm: PERM.REPORTS_VIEW }, element: page(<ReportsPage />) },
@@ -132,11 +138,14 @@ export const router = createBrowserRouter([
             handle: { perm: PERM.CONTRACTORS_VIEW },
             element: page(<ContractorDetailPage />),
           },
-          /* לוח השיבוץ של כל הצוות. view_all ולא view_own: בשונה מהדוח, כאן
-             אין גרסה מצומצמת שמראה לך את עצמך — לזה יש את /my/schedule. */
+          /* לוח השיבוץ של הצוות. לא view_own: בשונה מהדוח, אין כאן גרסה
+             מצומצמת שמראה לך את עצמך — לזה יש את /my/schedule. שני מפתחות
+             ולא אחד, כי `shift_roster` (0034) עונה לשני קהלים מאותה שאילתה:
+             לרכז עם view_all את כל הצוות, ולקבלן עם portal.attendance את
+             הסגל שלו. */
           {
             path: '/shifts',
-            handle: { perm: PERM.ATTENDANCE_VIEW_ALL },
+            handle: { anyPerm: [PERM.ATTENDANCE_VIEW_ALL, PERM.PORTAL_ATTENDANCE] },
             element: page(<ShiftBoardPage />),
           },
           /* view_own, not view_all: the report widens from "my hours" to "the

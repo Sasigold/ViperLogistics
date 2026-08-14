@@ -88,7 +88,10 @@ function loadPrefs(): Prefs {
 
 export default function ShiftBoardPage() {
   return (
-    <RequirePermission perm={PERM.ATTENDANCE_VIEW_ALL}>
+    /* שני מפתחות: רכז משמרות רואה את כל הצוות, ומנהל קבלן את הסגל שלו.
+       ‏`shift_roster` (0034) כבר מכריע בין השניים — כאן רק לא נועלים את הדלת
+       על הזרוע השנייה. */
+    <RequirePermission any={[PERM.ATTENDANCE_VIEW_ALL, PERM.PORTAL_ATTENDANCE]}>
       <ShiftBoard />
     </RequirePermission>
   )

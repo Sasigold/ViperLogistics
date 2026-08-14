@@ -37,6 +37,8 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import {
   useAllowedExecutionMethods,
+  useContractorAssignableWorkers,
+  useContractorWorkerAssign,
   useContractors,
   useStaff,
   useStatuses,
@@ -116,6 +118,9 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
     team_lead: has(PERM.TASKS_ASSIGN_TEAM_LEAD),
   }
   const canAssignAny = canAssign.worker || canAssign.driver || canAssign.team_lead
+  /* לא נגזר מ-`canAssign`: הסגל של הקבלן אינו `task_assignments`, והמפתחות
+     שמתירים לגעת בו הם אחרים לגמרי — של הקבלן, או של המשרד מול קבלנים. */
+  const canAssignContractor = has(PERM.PORTAL_ASSIGN_WORKERS) || has(PERM.CONTRACTORS_ASSIGN_WORKERS)
 
   const { data: taskTypes = [] } = useTaskTypes()
   const { data: statuses = [] } = useStatuses('task')
@@ -130,11 +135,12 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
     queryFn: async () => {
       // task_pricing חסומה ב-RLS למי שאין לו pricing.view, ומחזירה אז פשוט
       // כלום — ולכן היא נשלפת כאן בלי תנאי והכרטיס הוא שמגודר.
-      const [t, a, terms, pricing] = await Promise.all([
+      const [t, a, terms, pricing, cw] = await Promise.all([
         supabase.from('tasks').select('*').eq('id', taskId).single(),
         supabase.from('task_assignments').select('*').eq('task_id', taskId),
         supabase.from('task_contractor_terms').select('*').eq('task_id', taskId).maybeSingle(),
         supabase.from('task_pricing').select('*').eq('task_id', taskId).maybeSingle(),
+        supabase.from('task_contractor_workers').select('contractor_worker_id').eq('task_id', taskId),
       ])
       if (t.error) throw t.error
       return {
@@ -142,6 +148,9 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
         assignments: (a.data ?? []) as Assignment[],
         terms: terms.data as { price: number; paid_at: string | null } | null,
         pricing: (pricing.data as TaskPricing) ?? null,
+        contractorWorkers: ((cw.data ?? []) as { contractor_worker_id: string }[]).map(
+          (r) => r.contractor_worker_id,
+        ),
       }
     },
   })
@@ -151,6 +160,14 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   const [price, setPrice] = useState<string>('')
   const [customerPrice, setCustomerPrice] = useState<string>('')
   const [touched, setTouched] = useState(false)
+
+  /* שיבוץ עובדי הקבלן נכתב מיד ולא נשמר עם הטופס, ולכן הוא נקרא מהשאילתה
+     ולא מוחזק ב-state: הרענון שאחרי הכתיבה הוא מה שמצייר את התוצאה. */
+  const chosenContractorWorkers = existing?.contractorWorkers ?? []
+  const contractorAssign = useContractorWorkerAssign()
+  const { data: assignableWorkers = [] } = useContractorAssignableWorkers(
+    canAssignContractor && open ? (form.contractor_id ?? null) : null,
+  )
 
   useEffect(() => {
     if (!open) return
@@ -817,7 +834,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
             <Card className={cx(form.contractor_id && 'border-warning-border')}>
               <CardHeader
                 title="האצלה לקבלן"
-                subtitle="קבלן רואה את המשימה בפורטל שלו ומשבץ אליה את עובדיו"
+                subtitle="הקבלן רואה את המשימה בלוח שלו ומשבץ אליה את עובדיו"
                 icon={<HardHat size={ICON.md} strokeWidth={STROKE} />}
               />
               <CardBody>
@@ -850,6 +867,53 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                     </Field>
                   )}
                 </div>
+              </CardBody>
+            </Card>
+          )}
+
+          {/* ── the contractor's own crew ─────────────────────────────────
+              נפרד מכרטיס "שיבוץ צוות" שמעליו בכוונה: שם השיבוץ הוא state של
+              הטופס שנשמר עם השאר, וכאן הוא נכתב מיד דרך RPC — `task_contractor_workers`
+              אינה עמודה של המשימה, ואין לה שמירה לחזור אליה. גם המפתח אחר:
+              ‏`portal.assign_workers` לקבלן ו-`contractors.assign_workers`
+              למשרד, ולא `tasks.assign.worker`.
+
+              זה גם המסך היחיד שבו מנהל קבלן בטלפון יכול לשבץ: הכרטיס הנייד
+              פותח את המגירה במקום לצייר את תא הצוות. */}
+          {taskId && form.contractor_id && canAssignContractor && (
+            <Card>
+              <CardHeader
+                title="עובדי הקבלן"
+                subtitle="הסגל של הקבלן, ועובדים שנרשמו תחתיו — נשמר מיד"
+                icon={<HardHat size={ICON.md} strokeWidth={STROKE} />}
+              />
+              <CardBody>
+                <MultiSelect
+                  options={assignableWorkers.map((w) => ({
+                    id: w.worker_id ? `w:${w.worker_id}` : `p:${w.profile_id}`,
+                    label: w.has_login ? `${w.full_name} · חשבון` : w.full_name,
+                  }))}
+                  values={assignableWorkers
+                    .filter((w) => w.worker_id && chosenContractorWorkers.includes(w.worker_id))
+                    .map((w) => `w:${w.worker_id}`)}
+                  onToggle={(id) => {
+                    const isProfile = id.startsWith('p:')
+                    const key = id.slice(2)
+                    contractorAssign.mutate(
+                      {
+                        taskId,
+                        workerId: isProfile ? null : key,
+                        profileId: isProfile ? key : null,
+                        on: !(!isProfile && chosenContractorWorkers.includes(key)),
+                      },
+                      { onError: (e) => toast.error(errorMessage(e)) },
+                    )
+                  }}
+                  placeholder="בחירת עובדים מהקבלן..."
+                />
+                {assignableWorkers.length === 0 && (
+                  <p className="mt-1 type-caption text-ink-tertiary">אין עדיין עובדים בסגל של הקבלן.</p>
+                )}
               </CardBody>
             </Card>
           )}

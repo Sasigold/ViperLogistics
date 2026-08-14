@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { useAuth } from '../state/auth'
 import type {
@@ -157,6 +157,78 @@ export function useContractorWorkers(contractorId?: string | null) {
         .order('full_name')
       if (error) throw error
       return data as ContractorWorker[]
+    },
+  })
+}
+
+/**
+ * מי מהקבלן ניתן לשיבוץ.
+ *
+ * ‏`useContractorWorkers` לעיל קורא את `contractor_workers` — הרוסטר הידני —
+ * וזה מה שהזין את בורר השיבוץ עד 0071. הבעיה: חשבון עובד קבלן שהמשרד יצר
+ * במסך העובדים נושא `contractor_id` בלי `contractor_worker_id`, ולכן אינו
+ * יושב ברוסטר ומעולם לא הופיע בבורר. ה-RPC מאחד את שתי הרשימות; פריט בלי
+ * `worker_id` הוא חשבון שעדיין אין לו שורת סגל, ו-`contractor_assign_worker`
+ * יוצר לו אותה בשיבוץ.
+ *
+ * שני ההוקים אינם מתחרים: הרוסטר הוא מה שמנהלים במסך "העובדים שלי", והאיחוד
+ * הוא מה שמשבצים ממנו.
+ */
+export interface AssignableContractorWorker {
+  worker_id: string | null
+  profile_id: string | null
+  full_name: string
+  phone: string | null
+  has_login: boolean
+}
+
+export function useContractorAssignableWorkers(contractorId?: string | null) {
+  return useQuery({
+    queryKey: ['contractor_assignable', contractorId],
+    enabled: !!contractorId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('contractor_assignable_workers', {
+        p_contractor_id: contractorId,
+      })
+      if (error) throw error
+      return (data ?? []) as AssignableContractorWorker[]
+    },
+  })
+}
+
+/**
+ * שיבוץ עובד קבלן למשימה, והסרתו.
+ *
+ * דרך RPC ולא בכתיבה ישירה ל-`task_contractor_workers`, כי שיבוץ של חשבון
+ * שאין לו שורת סגל חייב ליצור אותה קודם — ושתי הכתיבות באותה טרנזקציה.
+ *
+ * `onSettled` ולא `onSuccess`: כשלון הרשאה מגיע אחרי שהמצב האופטימי כבר צויר,
+ * ורענון בשני המקרים הוא מה שמחזיר את המסך למה שבשרת באמת יש.
+ */
+export function useContractorWorkerAssign() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: {
+      taskId: string
+      workerId?: string | null
+      profileId?: string | null
+      on: boolean
+      workSite?: 'field' | 'warehouse'
+    }) => {
+      const { error } = await supabase.rpc('contractor_assign_worker', {
+        p_task_id: v.taskId,
+        p_worker_id: v.workerId ?? null,
+        p_profile_id: v.profileId ?? null,
+        p_on: v.on,
+        p_work_site: v.workSite ?? 'field',
+      })
+      if (error) throw error
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['workboard'] })
+      /* השיבוץ עשוי ליצור שורת סגל, ולכן גם שתי רשימות העובדים מתיישנות */
+      void qc.invalidateQueries({ queryKey: ['contractor_assignable'] })
+      void qc.invalidateQueries({ queryKey: ['contractor_workers'] })
     },
   })
 }

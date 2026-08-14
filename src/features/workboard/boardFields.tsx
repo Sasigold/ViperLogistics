@@ -13,6 +13,7 @@ import type {
   WorkBoardRow,
 } from '../../types/domain'
 import { PERM } from '../../lib/permissions'
+import { useContractorAssignableWorkers } from '../../lib/queries'
 
 export interface BoardLookups {
   statuses: Status[]
@@ -20,6 +21,16 @@ export interface BoardLookups {
   methods: ExecutionMethod[]
   contractors: Contractor[]
   staff: Profile[]
+  /**
+   * Whether the reader may pick a delegated contractor's staff.
+   *
+   * It rides on the lookups rather than on `can()` deliberately: `can()` is
+   * `board.inline_edit && has(perm)`, and a contractor manager holds no
+   * `board.inline_edit` — every cell of his is read-only, and routing this
+   * through `can()` would leave the one control he *does* own permanently
+   * disabled. Resolved once in WorkBoardPage from either assignment key.
+   */
+  canAssignContractor: boolean
 }
 
 export interface CellContext {
@@ -28,8 +39,13 @@ export interface CellContext {
   /** any *other* key a cell needs — the team cell spans two assignment rights */
   can: (perm?: string) => boolean
   patch: (row: WorkBoardRow, patch: Record<string, unknown>) => void
-  /** staffing is a row in task_assignments, not a column on tasks */
-  assign: (row: WorkBoardRow, role: StaffRole, profileId: string, on: boolean) => void
+  /**
+   * staffing is a row in task_assignments, not a column on tasks — except for a
+   * delegated contractor's staff, which is a row in task_contractor_workers and
+   * goes through its own RPC. `id` is a profile id for the staff roles, and
+   * `w:<worker>` / `p:<profile>` for `'contractor'`.
+   */
+  assign: (row: WorkBoardRow, role: StaffRole | 'contractor', id: string, on: boolean) => void
   lookups: BoardLookups
 }
 
@@ -546,17 +562,28 @@ function TeamLeadCell({ row, canEdit, assign, lookups }: CellContext) {
 }
 
 /**
- * Everyone assigned, by name, one per line — and now the place they are
- * assigned from. Workers and drivers are rows in task_assignments, so the
- * picker writes there rather than through the task patch; contractor staff
- * belong to a delegated contractor and stay read-only, because choosing them
- * is a question about that contractor's roster and not about this cell.
+ * Everyone assigned, by name, one per line — and the place they are assigned
+ * from. Workers and drivers are rows in task_assignments, so the picker writes
+ * there rather than through the task patch.
+ *
+ * A delegated contractor's staff used to be read-only here, on the reasoning
+ * that choosing them is a question about that contractor's roster rather than
+ * about this cell. That was true while the contractor had a portal of his own
+ * to answer it in. With the portal gone, this cell *is* where the question is
+ * asked — by the contractor manager for his own tasks, and by the office
+ * through `contractors.assign_workers`, which until now had no picker at all.
  */
 function TeamCell({ row, canEdit, can, assign, lookups }: CellContext) {
   const workerIds = (row.workers ?? []).map((w) => w.profile_id)
   const driverIds = (row.drivers ?? []).map((d) => d.profile_id)
   const canDriver = can(PERM.TASKS_ASSIGN_DRIVER)
   const contractorWorkers = row.contractor_worker_list ?? []
+  const canContractor = lookups.canAssignContractor && !!row.contractor_id
+  /* אחת לכל קבלן ולא אחת לכל שורה — react-query מאחד לפי המפתח. */
+  const { data: assignable = [] } = useContractorAssignableWorkers(
+    canContractor ? row.contractor_id : null,
+  )
+  const chosenWorkerIds = contractorWorkers.map((w) => w.id)
 
   const people = [
     ...(row.workers ?? []).map((w) => ({ key: `w:${w.profile_id}`, name: w.name, mark: '', site: w.work_site })),
@@ -594,7 +621,7 @@ function TeamCell({ row, canEdit, can, assign, lookups }: CellContext) {
 
   return (
     <PickCell
-      canEdit={canEdit || canDriver}
+      canEdit={canEdit || canDriver || canContractor}
       view={view}
       empty="אין עובדים לשיבוץ"
       groups={[
@@ -621,13 +648,29 @@ function TeamCell({ row, canEdit, can, assign, lookups }: CellContext) {
                 checked: driverIds.includes(p.id),
               }))
             : [],
+        },
+        {
+          key: 'contractor',
+          label: 'עובדי הקבלן',
+          multi: true,
+          /* הרשימה מאחדת את הרוסטר הידני עם חשבונות שנרשמו תחת הקבלן ואין להם
+             עדיין שורת סגל; לאלה אין `worker_id`, וה-RPC יוצר להם אותה בשיבוץ. */
+          options: canContractor
+            ? assignable.map((w) => ({
+                id: w.worker_id ? `w:${w.worker_id}` : `p:${w.profile_id}`,
+                label: w.has_login ? `${w.full_name} · חשבון` : w.full_name,
+                checked: !!w.worker_id && chosenWorkerIds.includes(w.worker_id),
+              }))
+            : [],
           note:
-            contractorWorkers.length > 0
-              ? `${contractorWorkers.length} עובדי קבלן משובצים — שינוי שלהם נעשה מתוך המשימה`
-              : undefined,
+            canContractor && assignable.length === 0
+              ? 'אין עדיין עובדים בסגל של הקבלן'
+              : !canContractor && contractorWorkers.length > 0
+                ? `${contractorWorkers.length} עובדי קבלן משובצים`
+                : undefined,
         },
       ]}
-      onToggle={(group, id, on) => assign(row, group as StaffRole, id, on)}
+      onToggle={(group, id, on) => assign(row, group as StaffRole | 'contractor', id, on)}
     />
   )
 }
