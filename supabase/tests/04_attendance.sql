@@ -370,9 +370,16 @@ reset role;
 select set_config('request.jwt.claim.sub', '', false);
 delete from attendance_entries where profile_id = '20000000-0000-0000-0000-0000000000f3';
 
+/* היום נשאל לפי אסיה/ירושלים ולא לפי `current_date`, מאותה סיבה שהבלוק
+   למעלה כתב `task_date = now_il::date`: המשמרת נכתבה על היום הישראלי, והשרת
+   רץ ב-UTC. בין חצות בישראל לחצות ב-UTC — שלוש שעות בכל יממה — `current_date`
+   הוא היום הקודם, והשאילתה הייתה מחפשת את המשמרת ביום שאין בו אחת. שתי
+   הטענות האלה נכשלו בדיוק בחלון הזה, ונקראו "פלייק" כשהן בסך הכול נשאלו על
+   התאריך הלא נכון. כל שאר עולם הנוכחות כבר חושב בשעון ישראל. */
 select t_eq('המשמרת נושאת את שם המחסן של הלקוח',
   (select warehouse_name from app.planned_shifts('20000000-0000-0000-0000-0000000000f3',
-     current_date, current_date) order by shift_start limit 1),
+     (now() at time zone 'Asia/Jerusalem')::date,
+     (now() at time zone 'Asia/Jerusalem')::date) order by shift_start limit 1),
   'מחסן תל אביב');
 
 -- הלקוח עובר למחסן ירושלים. העובד עומד בדיוק בכתובת האירוע בתל אביב, וזה
@@ -404,7 +411,8 @@ select set_config('request.jwt.claim.sub', '', false);
 
 select t_eq('והמשמרת מציגה את המחסן שנדרס',
   (select warehouse_name from app.planned_shifts('20000000-0000-0000-0000-0000000000f3',
-     current_date, current_date) order by shift_start limit 1),
+     (now() at time zone 'Asia/Jerusalem')::date,
+     (now() at time zone 'Asia/Jerusalem')::date) order by shift_start limit 1),
   'מחסן תל אביב');
 
 update tasks set warehouse_id = null where id = '60000000-0000-0000-0000-00000000a001';
@@ -1092,15 +1100,15 @@ select t_eq('ושורת הבונוס אינה מתחזה למכפלה',
 -- חשב שכר: רואה כסף ורשאי לקבוע בונוס, ובמפורש *אינו* מחזיק edit_entry.
 -- זה בדיוק המקרה שבגללו הבונוס אינו פרמטר על attendance_save_entry.
 insert into auth.users (id, email) values
-  ('00000000-0000-0000-0000-0000000000f5', 'payroll@vl.test');
+  ('00000000-0000-0000-0000-0000000000fb', 'payroll@vl.test');
 insert into profiles (id, user_id, user_kind, full_name) values
-  ('20000000-0000-0000-0000-0000000000f5', '00000000-0000-0000-0000-0000000000f5',
+  ('20000000-0000-0000-0000-0000000000fb', '00000000-0000-0000-0000-0000000000fb',
    'staff', 'חשב שכר');
 insert into user_permission_grants (profile_id, permission_key, allowed) values
-  ('20000000-0000-0000-0000-0000000000f5', 'attendance.view_all',     true),
-  ('20000000-0000-0000-0000-0000000000f5', 'attendance.view_pay',     true),
-  ('20000000-0000-0000-0000-0000000000f5', 'attendance.manage_bonus', true),
-  ('20000000-0000-0000-0000-0000000000f5', 'attendance.edit_entry',   false);
+  ('20000000-0000-0000-0000-0000000000fb', 'attendance.view_all',     true),
+  ('20000000-0000-0000-0000-0000000000fb', 'attendance.view_pay',     true),
+  ('20000000-0000-0000-0000-0000000000fb', 'attendance.manage_bonus', true),
+  ('20000000-0000-0000-0000-0000000000fb', 'attendance.edit_entry',   false);
 
 -- משמרת ייעודית, כדי שהבדיקות שלמעלה לא יושפעו מסכום שנוסף להן
 insert into attendance_entries (id, profile_id, work_date, seq, clock_in_at, clock_out_at, source)
@@ -1116,7 +1124,7 @@ reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
 set role authenticated;
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f5', false);
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000fb', false);
 select t_expect_ok('חשב שכר עם manage_bonus ובלי edit_entry כן יכול', $$
   select attendance_set_bonus('70000000-0000-0000-0000-0000000000e1', 300, 'משמרת לילה')$$);
 
@@ -1175,7 +1183,7 @@ select set_config('request.jwt.claim.sub', '', false);
 
 -- ===== איפוס =====
 set role authenticated;
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f5', false);
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000fb', false);
 select t_expect_ok('אפס מוחק את הבונוס', $$
   select attendance_set_bonus('70000000-0000-0000-0000-0000000000e1', 0, null)$$);
 reset role;
@@ -1189,7 +1197,7 @@ select t_eq('והשורה נעלמת ולא מתאפסת',
 update attendance_entries set status = 'rejected'
  where id = '70000000-0000-0000-0000-0000000000e1';
 set role authenticated;
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f5', false);
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000fb', false);
 select t_expect_fail('אין בונוס על רשומה שנדחתה', $$
   select attendance_set_bonus('70000000-0000-0000-0000-0000000000e1', 100, 'מאוחר מדי')$$);
 reset role;

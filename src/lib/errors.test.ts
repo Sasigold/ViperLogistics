@@ -35,6 +35,26 @@ describe('errorMessage', () => {
     expect(errorMessage({ code: 'P0001', message: msg })).toBe(msg)
   })
 
+  /*
+   * הרגרסיה שהתלונה עליה הגיעה מהשטח: לחיצה על "כניסה" בשעון אמרה "אין לך
+   * הרשאה" למי שההרשאה שלו תקינה, כי `attendance_clock_in` נשא `42501` על
+   * כללים עסקיים והמיפוי לפי קוד רץ לפני ההודעה. גם אחרי שהשרת מפריד את
+   * הקודים, מי שמחזיק את ההבטחה הזאת הוא הסדר כאן.
+   */
+  it('prefers the reason a function gave over the label of its SQLSTATE class', () => {
+    const msg = 'אין לך משמרת משובצת כרגע'
+    expect(errorMessage({ code: '42501', message: msg })).toBe(msg)
+  })
+
+  it('still labels a genuine permission refusal that carries no authored reason', () => {
+    expect(errorMessage({ code: '42501', message: '' })).toBe('אין לך הרשאה לבצע את הפעולה הזו.')
+  })
+
+  it('keeps mapping GoTrue codes, whose messages are English by nature', () => {
+    expect(errorMessage({ code: 'invalid_credentials', message: 'Invalid login credentials' }))
+      .toBe('אימייל או סיסמה שגויים.')
+  })
+
   it('replaces raw engine text that happens to be in Hebrew-free English', () => {
     const out = errorMessage({ message: 'new row violates row-level security policy for table "tasks"' })
     expect(out).not.toContain('row-level security')

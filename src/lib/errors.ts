@@ -77,14 +77,29 @@ export function errorMessage(error: unknown): string {
 
   const e = error as PostgrestLikeError & { name?: string }
 
-  if (e.code && BY_CODE[e.code]) return BY_CODE[e.code]
-
   const message = typeof e.message === 'string' ? e.message : String(error)
 
   // TypeError: Failed to fetch — הדפדפן לא הצליח לצאת החוצה
   if (e.name === 'TypeError' && /fetch/i.test(message)) return OFFLINE
 
+  /*
+   * ההודעה המחוברת קודמת לקוד, ולא להפך.
+   *
+   * קוד SQLSTATE מתאר מחלקה של כשל, לא סיבה. `42501` הוא "אין הרשאה מספקת",
+   * וזה מה ש-`app.require` מדווח — אבל אותו קוד נשא גם כל כלל עסקי ב-RPC-ים
+   * של השעון ("אין לך משמרת משובצת כרגע", "כבר נרשמה כניסה למשמרת פתוחה",
+   * "שעון הנוכחות מושבת עבורך"). כשהמיפוי רץ ראשון הוא בלע את כולם והציג
+   * "אין לך הרשאה" למי שההרשאה שלו בסדר גמור — הודעה שגם שגויה וגם לא ניתן
+   * לפעול לפיה.
+   *
+   * המיגרציה מפרידה את הקודים בשרת, אבל הסדר כאן הוא מה שמונע את החזרה של
+   * התקלה: הסבר שנכתב בידינו טוב תמיד מתווית גנרית לפי מחלקת השגיאה. טקסט
+   * של המנוע עדיין ייפול ל-`BY_CODE` — `looksLikeRawPostgres` חוסם אותו,
+   * והודעות GoTrue כתובות אנגלית וממילא אינן עוברות את `isAuthoredMessage`.
+   */
   if (isAuthoredMessage(message)) return message
+
+  if (e.code && BY_CODE[e.code]) return BY_CODE[e.code]
 
   return GENERIC
 }
