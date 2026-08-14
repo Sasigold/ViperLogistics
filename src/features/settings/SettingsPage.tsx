@@ -55,13 +55,25 @@ import { errorMessage } from '../../lib/errors'
  * Each tab names the permission that governs it, so a coordinator who may edit
  * statuses but not the recycle bin lands on a screen with one tab rather than
  * on a wall of "אין הרשאה".
+ *
+ * `alt` is a second key that opens the same tab from a different direction.
+ * Travel zones carry the time it takes to drive out of the warehouse and back,
+ * which sets the length of a shift as much as it sets a price (0071) — so
+ * whoever defines the warehouses gets to read them too. Editing still needs
+ * the pricing key, because a zone edit reprices every future task.
  */
 const TABS = [
   { key: 'task_types', label: 'סוגי משימות', icon: <ClipboardList size={ICON.sm} />, perm: PERM.SETTINGS_TASK_TYPES },
   { key: 'execution_methods', label: 'אופני ביצוע', icon: <Boxes size={ICON.sm} />, perm: PERM.SETTINGS_EXECUTION_METHODS },
   { key: 'statuses', label: 'סטטוסים', icon: <Zap size={ICON.sm} />, perm: PERM.SETTINGS_STATUSES },
   { key: 'trucks', label: 'משאיות', icon: <Truck size={ICON.sm} />, perm: PERM.SETTINGS_TRUCKS },
-  { key: 'zones', label: 'אזורי נסיעה', icon: <Map size={ICON.sm} />, perm: PERM.PRICING_MANAGE_RULES },
+  {
+    key: 'zones',
+    label: 'אזורי נסיעה',
+    icon: <Map size={ICON.sm} />,
+    perm: PERM.PRICING_MANAGE_RULES,
+    alt: PERM.ATTENDANCE_MANAGE_WAREHOUSES,
+  },
   { key: 'finance', label: 'כספים', icon: <Banknote size={ICON.sm} />, perm: PERM.SETTINGS_EDIT },
   { key: 'attendance', label: 'נוכחות ושעות נוספות', icon: <Clock size={ICON.sm} />, perm: PERM.ATTENDANCE_SETTINGS },
   { key: 'notifications', label: 'התראות', icon: <Bell size={ICON.sm} />, perm: PERM.NOTIFICATIONS_MANAGE },
@@ -71,7 +83,7 @@ const TABS = [
 
 export default function SettingsPage() {
   const has = useAuth((s) => s.has)
-  const visible = TABS.filter((t) => has(t.perm))
+  const visible = TABS.filter((t) => has(t.perm) || ('alt' in t && has(t.alt)))
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>(visible[0]?.key ?? 'task_types')
   const active = visible.some((t) => t.key === tab) ? tab : visible[0]?.key
 

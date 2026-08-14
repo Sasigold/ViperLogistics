@@ -193,21 +193,22 @@ export default function PricingTab({ customer }: { customer: Customer }) {
       ) : isLoading ? (
         <Skeleton className="h-96 w-full" />
       ) : (
-        <>
-          {ordered.map((type) => (
-            <RuleCard
-              key={type.id}
-              customerId={customer.id}
-              taskType={type}
-              rule={rules.find((r) => r.task_type_id === type.id) ?? null}
-              canEdit={canEdit}
-            />
-          ))}
-          {/* זמן הנסיעה בנוסחה מגיע מכאן, ולכן המפה יושבת לצד המחשבון ולא
-              במסך נפרד שצריך לזכור שהוא קיים. */}
-          <PricingZonesEditor customerId={customer.id} />
-        </>
+        ordered.map((type) => (
+          <RuleCard
+            key={type.id}
+            customerId={customer.id}
+            taskType={type}
+            rule={rules.find((r) => r.task_type_id === type.id) ?? null}
+            canEdit={canEdit}
+          />
+        ))
       )}
+
+      {/* המפה יושבת מתחת למחשבון ולא במסך נפרד שצריך לזכור שהוא קיים — אבל
+          היא אינה חלק ממנו, ולכן היא מוצגת גם בתמחור ידני: זמן הנסיעה מזין
+          גם את גזירת המשמרת (0020), והמשמרת של לקוח בתמחור ידני מסתיימת
+          בחזרה למחסן בדיוק כמו כל משמרת אחרת. */}
+      <PricingZonesEditor customerId={customer.id} />
     </div>
   )
 }
