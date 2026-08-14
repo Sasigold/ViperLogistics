@@ -302,14 +302,22 @@ function ReportsBody({
                   </button>
                 )
               })}
-              {/* דף הרווחיות המלא — P&L פר לקוח — חי במסך משלו */}
+              {/* שני דפי הרווחיות המלאים — P&L פר לקוח ופר משימה — חיים במסכים משלהם */}
               {domain === 'margin' && (
-                <Link
-                  to="/reports/profitability"
-                  className="shrink-0 rounded-lg border border-line-subtle px-2.5 py-1.5 type-caption font-medium text-primary-text transition-colors hover:bg-hover"
-                >
-                  דף רווחיות לקוחות ←
-                </Link>
+                <>
+                  <Link
+                    to="/reports/profitability"
+                    className="shrink-0 rounded-lg border border-line-subtle px-2.5 py-1.5 type-caption font-medium text-primary-text transition-colors hover:bg-hover"
+                  >
+                    דף רווחיות לקוחות ←
+                  </Link>
+                  <Link
+                    to="/reports/task-pnl"
+                    className="shrink-0 rounded-lg border border-line-subtle px-2.5 py-1.5 type-caption font-medium text-primary-text transition-colors hover:bg-hover"
+                  >
+                    דף רווחיות לפי משימה ←
+                  </Link>
+                </>
               )}
             </div>
           </div>

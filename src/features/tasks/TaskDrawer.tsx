@@ -44,6 +44,7 @@ import {
   useTrucks,
 } from '../../lib/queries'
 import { Breakdown } from '../customers/PricingTab'
+import { TaskPnlCard } from '../reports/TaskPnlCard'
 import { useWarehouses } from '../attendance/attendanceQueries'
 import type {
   AssignmentConflict,
@@ -803,6 +804,12 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                 )}
               </CardBody>
             </Card>
+          )}
+
+          {/* ── task P&L ─────────────────────────────────────────────────── */}
+          {/* אחרי מחיר הלקוח בכוונה: שם עומדים כששואלים "וכמה זה עלה לי". */}
+          {!isNew && taskId && existing?.task && (
+            <TaskPnlCard taskId={taskId} taskDate={existing.task.task_date} />
           )}
 
           {/* ── delegation ───────────────────────────────────────────────── */}

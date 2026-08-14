@@ -146,6 +146,17 @@ OUT="$OUT
 $OUT11"
 
 echo
+echo "== task P&L suite =="
+# 13 מקימה לקוח, קבלן, אירוע, משימות, עובדים ומשמרות משל עצמה, והן יושבות
+# ביום שני שבשבוע current_date+240 כדי ששיעור יום המנוחה לא ייגע במספרים
+# ושחבילה אחרת לא תזלוג לטווח. היא רצה אחרונה כי היא סופרת שורות וסכומים
+# בטווח שלה, ומוסיפה משימות ומשמרות שאינן מנוקות.
+OUT12=$($PSQL -d vl -f "$HERE/13_task_pnl.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT12"
+OUT="$OUT
+$OUT12"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

@@ -35,6 +35,7 @@ const AttendanceReportPage = lazyPage(() => import('../features/attendance/Atten
 const ReportsPage = lazyPage(() => import('../features/reports/ReportsPage'))
 const ReceiptsPage = lazyPage(() => import('../features/finance/ReceiptsPage'))
 const CustomerProfitabilityPage = lazyPage(() => import('../features/reports/CustomerProfitabilityPage'))
+const TaskPnlPage = lazyPage(() => import('../features/reports/TaskPnlPage'))
 const ShiftBoardPage = lazyPage(() => import('../features/attendance/ShiftBoardPage'))
 const NotificationPreferencesPage = lazyPage(() => import('../features/notifications/NotificationPreferencesPage'))
 
@@ -113,6 +114,11 @@ export const router = createBrowserRouter([
             path: '/reports/profitability',
             handle: { perm: PERM.REPORTS_VIEW },
             element: page(<CustomerProfitabilityPage />),
+          },
+          {
+            path: '/reports/task-pnl',
+            handle: { perm: PERM.REPORTS_VIEW },
+            element: page(<TaskPnlPage />),
           },
           { path: '/receipts', handle: { perm: PERM.FINANCE_RECEIPTS_VIEW }, element: page(<ReceiptsPage />) },
           { path: '/events', handle: { perm: PERM.EVENTS_VIEW }, element: page(<EventsPage />) },
