@@ -11,6 +11,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Filter, ICON, KeyRound, STROKE, Shield, Users } from '../../components/ui/icons'
 import {
   Badge,
+  Button,
   Card,
   CardBody,
   CardHeader,
@@ -122,6 +123,14 @@ function RolesSection({ profile }: { profile: Profile }) {
   // a role scoped to another kind of user would grant nothing useful here
   const applicable = roles.filter((r) => !r.user_kind || r.user_kind === profile.user_kind)
 
+  /* תפקיד שמוצמד למשתמש ואינו תואם לסוג שלו.
+     `app.my_role_ids()` (0067) מסנן אותו, ולכן הוא אינו מעניק דבר — והסינון
+     שלמעלה גם הסתיר אותו מהמסך, כך שלא היה אפשר לראות שהוא שם ולא היה אפשר
+     להסיר אותו. כך נראה בפרודקשן משתמש קבלן שמחזיק שני תפקידי לקוח: מי
+     שהגדיר אותו בטוח שנתן לו הרשאות, והוא נכנס בלי כלום. ‏0075 §3 מנקה את
+     השורות הקיימות; זה מה שמונע מהן לחזור בשקט. */
+  const stray = roles.filter((r) => r.user_kind && r.user_kind !== profile.user_kind && mine.includes(r.id))
+
   return (
     <Card>
       <CardHeader
@@ -148,13 +157,34 @@ function RolesSection({ profile }: { profile: Profile }) {
             </li>
           ))}
         </ul>
-        {applicable.length === 0 && (
+        {applicable.length === 0 && stray.length === 0 && (
           <div className="p-6">
             <EmptyState
               art="people"
               title="אין תפקידים מתאימים"
               description={`לא הוגדרו תפקידים עבור סוג המשתמש הזה`}
             />
+          </div>
+        )}
+        {stray.length > 0 && (
+          <div className="border-t border-line-subtle bg-warning-subtle/30 p-4">
+            <p className="type-caption text-ink-secondary">
+              התפקידים הבאים מוצמדים למשתמש אבל אינם מתאימים לסוג שלו, ולכן אינם מעניקים לו דבר. סביר שסוג
+              המשתמש שונה אחרי שהם הוצמדו.
+            </p>
+            <ul className="mt-2">
+              {stray.map((r) => (
+                <li key={r.id} className="flex items-center gap-2 py-1.5">
+                  <Badge tone="warning">אינו בתוקף</Badge>
+                  <span className="type-body">{r.name_he}</span>
+                  {canAssign && (
+                    <Button size="sm" variant="ghost" onClick={() => toggle.mutate({ roleId: r.id, on: false })}>
+                      הסרה
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </CardBody>

@@ -101,6 +101,9 @@ export const PERM = {
   FINANCE_MANAGE_SPLITS: 'finance.manage_splits',
   FINANCE_RECEIPTS_VIEW: 'finance.receipts_view',
   FINANCE_RECEIPTS_MANAGE: 'finance.receipts_manage',
+  /* הצד של הלקוח באותו `task_pricing.price` שאיש משרד רואה כהכנסה. מפתח
+     נפרד ולא נגזר: משמעותו תלויה במי שואל, ולכן הוא ניתן ולא יורש. */
+  FINANCE_CUSTOMER_SPEND: 'finance.customer_spend',
   PRICING_VIEW: 'pricing.view',
   PRICING_EDIT: 'pricing.edit',
   PRICING_MANAGE_RULES: 'pricing.manage_rules',

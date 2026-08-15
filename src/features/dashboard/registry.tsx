@@ -9,6 +9,7 @@ import {
   CheckCheck,
   ClipboardList,
   Clock,
+  HandCoins,
   HardHat,
   History,
   ICON,
@@ -92,6 +93,7 @@ import {
   ViperPaidWidget,
   ViperUnpaidWidget,
 } from './widgets/incomeWidgets'
+import { CustomerSpendWidget, SpendByEventWidget, SpendTrendWidget } from './widgets/spendWidgets'
 import {
   MyClockWidget,
   MyHoursWidget,
@@ -266,6 +268,52 @@ export const WIDGETS: WidgetDef[] = [
     wantsDelta: true,
     sections: ['finance.profit_summary'],
     Component: ProfitSummaryWidget,
+  },
+
+  /* ── כספים: הצד של הלקוח (0074) ──────────────────────────────────────────
+     שלושת אלה הם התשובה לשאלה היחידה בכספים שיש לה משמעות מהצד של הלקוח —
+     כמה הוא הוציא. הם דלוקים כברירת מחדל ואינם מופיעים אצל אף אחד אחר:
+     `finance.customer_spend` אינו נגזר משום מפתח ואינו ניתן לאיש משרד, ולכן
+     הסקשן חוזר null והכרטיסים מוסרים בדיוק כמו כרטיסי ההכנסות אצל הלקוח. */
+  {
+    id: 'finance.my_spend',
+    title: 'הוצאה על אירועים',
+    description: 'סך מה שחויב על המשימות שלך בטווח',
+    group: 'finance',
+    icon: icon(HandCoins),
+    perms: [PERM.FINANCE_CUSTOMER_SPEND],
+    sizes: ['sm'],
+    defaultOn: true,
+    usesRange: true,
+    wantsDelta: true,
+    sections: ['spend.summary'],
+    Component: CustomerSpendWidget,
+  },
+  {
+    id: 'finance.my_spend_by_event',
+    title: 'הוצאה לפי אירוע',
+    description: 'על אילו אירועים הלך הכסף בטווח',
+    group: 'finance',
+    icon: icon(HandCoins),
+    perms: [PERM.FINANCE_CUSTOMER_SPEND],
+    sizes: ['md', 'lg'],
+    defaultOn: true,
+    usesRange: true,
+    sections: ['spend.summary'],
+    Component: SpendByEventWidget,
+  },
+  {
+    id: 'finance.my_spend_trend',
+    title: 'מגמת הוצאה',
+    description: 'ההוצאה על פני הזמן, לפי חלוקת הטווח',
+    group: 'finance',
+    icon: icon(HandCoins),
+    perms: [PERM.FINANCE_CUSTOMER_SPEND],
+    sizes: ['md', 'lg'],
+    defaultOn: true,
+    usesRange: true,
+    sections: ['spend.summary'],
+    Component: SpendTrendWidget,
   },
 
   /* ── תפעול ─────────────────────────────────────────────────────────────── */
@@ -1116,6 +1164,10 @@ export const BUILT_IN_DEFAULT: DashboardLayout = {
     { id: 'finance.viper_unpaid', size: 'sm' },
     { id: 'finance.client_share', size: 'sm' },
 
+    /* הצד של הלקוח (0074). יושב באותה שורה ולא בסקשן משלו: אצל הלקוח כל
+       השורה שמעליו נעלמת, ואצל איש משרד נעלם רק הוא. */
+    { id: 'finance.my_spend', size: 'sm' },
+
     { id: 'me.quick_actions', size: 'xl' },
 
     { id: 'ops.day_timeline', size: 'lg' },
@@ -1133,6 +1185,9 @@ export const BUILT_IN_DEFAULT: DashboardLayout = {
 
     { id: 'finance.income_mix', size: 'md' },
     { id: 'finance.profit_summary', size: 'md' },
+
+    { id: 'finance.my_spend_by_event', size: 'md' },
+    { id: 'finance.my_spend_trend', size: 'md' },
   ],
   hidden: [],
   seen: WIDGETS.map((w) => w.id),
