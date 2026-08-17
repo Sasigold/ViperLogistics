@@ -158,6 +158,9 @@ select t_eq('מנהל לקוח: החיפוש הגלובלי אינו מחזיר 
   (select count(*)::int from jsonb_array_elements(global_search('עובד שטח', 8)) x
     where x->>'kind' = 'profile'), 0);
 
+select t_eq('מנהל לקוח: אין users.view (מסך העובדים אינו מסך של לקוח)',
+  app.has('users.view'), false);
+
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 -- מחזירים את T1 למתוכנן לצורך המשך הבדיקות

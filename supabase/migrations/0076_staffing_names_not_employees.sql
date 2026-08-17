@@ -179,3 +179,21 @@ create policy profiles_select on profiles for select to authenticated using (
   or (deleted_at is null and (
     ((select app.user_kind()) = 'staff' and user_kind = 'staff')
     or ((select app.user_kind()) = 'customer_user' and customer_id = (select app.customer_id())))));
+
+-- ===== 4. מסך העובדים נסגר לתפקידי הלקוח ====================================
+--
+-- ‏`users.view` היה דלוק בפרוד ל-`customer_manager` — שורה שנוספה ממסך
+-- ההרשאות ואינה נמצאת באף מיגרציה, כלומר בהתקנה נקייה מנהל הלקוח מעולם לא
+-- קיבל את המסך. זה גם מה שפתח לו את קבוצת "עובדים" בחיפוש הגלובלי
+-- (CommandPalette מסנן שם לפי `users.view`). הפער נסגר לטובת ההתקנה הנקייה:
+-- מסך העובדים אינו מסך של לקוח.
+--
+-- דחייה מפורשת ולא מחיקת השורה, ולשני תפקידי הלקוח גם יחד — אותה צורה שבה
+-- ‏0072 סגר את `users.view` ל-`contractor_manager`. ל-`customer_viewer` אין
+-- ממילא שורה ואין ברצפת ה-kind, ולכן זו הצהרת כוונה שמונעת שחזור של אותה
+-- דריפט. מי ששיווע לניהול משתמשי החברה אצל הלקוח — הצירוף הוא `users.view`
+-- עם `users.create`, ואף אחד מהם אינו ברצפת ה-kind של `customer_user`.
+insert into role_permissions (role_id, permission_key, allowed)
+select r.id, 'users.view', false
+from permission_roles r where r.key in ('customer_manager', 'customer_viewer')
+on conflict (role_id, permission_key) do update set allowed = false;
