@@ -77,7 +77,15 @@ export function CardHeader({
 }
 
 export function CardBody({ children, className, padded = true }: { children: ReactNode; className?: string; padded?: boolean }) {
-  return <div className={cx(padded && 'p-4', className)}>{children}</div>
+  /* `data-card-body` is how a container outside the card finds the block that
+     should absorb leftover height — the dashboard's `widget-fill` uses it to
+     make every card in a grid row the same height. An attribute rather than a
+     `:last-child` rule, because a card with a footer has its body second. */
+  return (
+    <div data-card-body className={cx(padded && 'p-4', className)}>
+      {children}
+    </div>
+  )
 }
 
 export function CardFooter({ children, className }: { children: ReactNode; className?: string }) {

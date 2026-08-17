@@ -39,6 +39,7 @@ export default function DashboardEditGrid({
   onMove,
   onReorder,
   onSize,
+  onHeight,
   onRemove,
 }: {
   items: LayoutItem[]
@@ -46,6 +47,7 @@ export default function DashboardEditGrid({
   onMove: (id: string, offset: number) => void
   onReorder: (activeId: string, overId: string) => void
   onSize: (id: string, size: WidgetSize) => void
+  onHeight: (id: string, h: 'auto' | 'tall') => void
   onRemove: (id: string) => void
 }) {
   const [dragging, setDragging] = useState<string | null>(null)
@@ -77,7 +79,9 @@ export default function DashboardEditGrid({
       }}
     >
       <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
-        <div role="list" className="grid grid-cols-12 items-start gap-4">
+        {/* the same stretch-and-cap rhythm as the read-only grid, so nothing
+            moves when edit mode opens — see DashboardGrid */}
+        <div role="list" className="grid grid-cols-12 gap-4">
           {items.map((item, i) => {
             const def = byId.get(item.id)
             if (!def) return null
@@ -93,6 +97,7 @@ export default function DashboardEditGrid({
                   announce(id)
                 }}
                 onSize={onSize}
+                onHeight={onHeight}
                 onRemove={onRemove}
               />
             )
@@ -116,6 +121,7 @@ function SortableWidget({
   dragging,
   onMove,
   onSize,
+  onHeight,
   onRemove,
 }: {
   item: LayoutItem
@@ -124,6 +130,7 @@ function SortableWidget({
   dragging: boolean
   onMove: (id: string, offset: number) => void
   onSize: (id: string, size: WidgetSize) => void
+  onHeight: (id: string, h: 'auto' | 'tall') => void
   onRemove: (id: string) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: item.id })
@@ -140,6 +147,7 @@ function SortableWidget({
       dragHandleProps={{ ...attributes, ...listeners }}
       onMove={onMove}
       onSize={onSize}
+      onHeight={onHeight}
       onRemove={onRemove}
     />
   )

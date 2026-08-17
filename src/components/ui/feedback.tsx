@@ -185,6 +185,11 @@ export function EmptyState({
   const heading = title ?? text ?? 'אין נתונים להצגה'
   return (
     <div
+      /* Marked for the same reason `CardBody` is: a container that hands this
+         one extra height — a dashboard panel filling its grid row — can say so
+         from outside, and the state centres in the room it was given instead of
+         hugging the top of a tall card. */
+      data-empty-state
       className={cx(
         'flex flex-col items-center justify-center text-center',
         compact ? 'gap-2 px-4 py-8' : 'gap-3 px-6 py-14',

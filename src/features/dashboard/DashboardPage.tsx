@@ -17,7 +17,7 @@ import { CustomizeDrawer } from './CustomizeDrawer'
 import { SavedViewsMenu } from './SavedViewsMenu'
 import { useDashboardLayout } from './useDashboardLayout'
 import { useDashboardSections } from './useDashboardData'
-import { hideWidget, moveByIds, moveByOffset, setSize, showWidget } from './layout'
+import { hideWidget, moveByIds, moveByOffset, setHeight, setSize, showWidget } from './layout'
 import { buildDashboardExport, writeDashboardExport } from './exportDashboard'
 import { useReportCatalog } from './builder/useReportCatalog'
 import { toUuid } from './builder/customRegistry'
@@ -121,6 +121,8 @@ export default function DashboardPage() {
     layout.edit((s) => ({ ...s, items: moveByIds(s.items, activeId, overId) }))
   const onSize = (id: string, size: WidgetSize) =>
     layout.edit((s) => ({ ...s, items: setSize(s.items, id, size) }))
+  const onHeight = (id: string, h: 'auto' | 'tall') =>
+    layout.edit((s) => ({ ...s, items: setHeight(s.items, id, h) }))
   const onRemove = (id: string) => layout.edit((s) => hideWidget(s.items, s.hidden, id))
   const onToggle = (id: string, on: boolean) =>
     layout.edit((s) => {
@@ -250,6 +252,7 @@ export default function DashboardPage() {
                 onMove={onMove}
                 onReorder={onReorder}
                 onSize={onSize}
+                onHeight={onHeight}
                 onRemove={onRemove}
               />
             </Suspense>
