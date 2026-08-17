@@ -1110,11 +1110,17 @@ insert into user_permission_grants (profile_id, permission_key, allowed) values
   ('20000000-0000-0000-0000-0000000000fb', 'attendance.manage_bonus', true),
   ('20000000-0000-0000-0000-0000000000fb', 'attendance.edit_entry',   false);
 
--- משמרת ייעודית, כדי שהבדיקות שלמעלה לא יושפעו מסכום שנוסף להן
+-- משמרת ייעודית, כדי שהבדיקות שלמעלה לא יושפעו מסכום שנוסף להן.
+-- היום נדחק יום אחורה כשהוא נופל על שבת: rest_day.dow הוא [6] ו-base_rate שלו
+-- 1.5, ולכן אותן שמונה שעות שוות 600 ולא 400. הבדיקה שמתחת נוקבת בסכום, ולכן
+-- היא נכשלה בכל יום שני — היום היחיד שבו current_date - 2 הוא שבת. הבונוס עצמו
+-- אינו תלוי בתעריף; הסך שהוא נכנס אליו כן.
 insert into attendance_entries (id, profile_id, work_date, seq, clock_in_at, clock_out_at, source)
-values ('70000000-0000-0000-0000-0000000000e1', '20000000-0000-0000-0000-0000000000f3',
-        current_date - 2, 9, now() - interval '2 days' - interval '8 hours',
-        now() - interval '2 days', 'manual');
+select '70000000-0000-0000-0000-0000000000e1', '20000000-0000-0000-0000-0000000000f3',
+       current_date - back, 9,
+       now() - back * interval '1 day' - interval '8 hours',
+       now() - back * interval '1 day', 'manual'
+from (select 2 + case when extract(dow from current_date - 2) = 6 then 1 else 0 end as back) s;
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f4', false);
