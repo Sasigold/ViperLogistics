@@ -500,6 +500,52 @@
   flex: none;
 }
 
+/* A dashboard panel that fills the grid row it sits in.
+   A grid row is as tall as its tallest member, so a card left at its natural
+   height leaves the difference as page gap under every shorter card beside it —
+   which is what made a row of "chart, empty list, empty list" read as three
+   cards and two holes. This pushes the row's height down into the card: the
+   card becomes a flex column, its body takes up the slack, and the gap that
+   used to sit between the widgets is now card interior with the borders lining
+   up.
+
+   The body is also the part that scrolls, which is what makes capping a panel's
+   height safe — an eight-row list scrolls inside its own body instead of
+   setting the height of every card in its row, and its header stays put. */
+@utility widget-fill {
+  height: 100%;
+
+  /* The ceiling the frame asks for, and only where it buys something: from `lg`
+     up, where a row holds more than one widget. Below that every panel is
+     already full-width and alone in its row, so there is no neighbour to line up
+     with — capping there would trade a gap that does not exist for a scroll
+     inside a scroll, which on a phone is the worse of the two. */
+  @media (width >= 64rem) {
+    max-height: var(--panel-max, none);
+  }
+
+  /* the widget's own root — a Card for almost every one of them */
+  & > * {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* CardBody marks itself, so this does not depend on child order: a card with
+     a footer would hand the slack to the footer under a `:last-child` rule */
+  & > * > [data-card-body] {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  /* "nothing to show" is the whole body when it appears, so it centres in the
+     slack rather than sitting at the top of a card kept tall by its neighbour */
+  & > * > [data-card-body] > [data-empty-state]:only-child {
+    height: 100%;
+  }
+}
+
 /* Skeleton shimmer */
 @utility skeleton {
   position: relative;

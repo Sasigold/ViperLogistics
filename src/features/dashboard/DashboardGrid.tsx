@@ -6,8 +6,10 @@ import type { LayoutItem, WidgetDef, WidgetSize } from './dashboardTypes'
  *
  * `grid-auto-flow` stays normal rather than `dense`. Dense packing would fill
  * gaps by pulling later widgets forward, which moves them away from the order
- * the layout stores — "I put it third and it drew fifth". An occasional gap is
- * the cheaper price for a grid that shows you what you arranged.
+ * the layout stores — "I put it third and it drew fifth". The order is the
+ * user's, so the gaps are closed the other way round: every panel is held to its
+ * size's height and fills the row it lands in, which leaves nothing ragged to
+ * pack around. `WidgetFrame` owns both halves of that.
  */
 export function DashboardGrid({
   items,
@@ -15,6 +17,7 @@ export function DashboardGrid({
   editing,
   onMove,
   onSize,
+  onHeight,
   onRemove,
 }: {
   items: LayoutItem[]
@@ -22,16 +25,16 @@ export function DashboardGrid({
   editing?: boolean
   onMove?: (id: string, offset: number) => void
   onSize?: (id: string, size: WidgetSize) => void
+  onHeight?: (id: string, h: 'auto' | 'tall') => void
   onRemove?: (id: string) => void
 }) {
   return (
-    /* `items-start` rather than the default stretch: the old page was a stack
-       of separate grids, each holding one shape, so equal row heights came
-       free. One grid holding every shape does not have that luxury — a KPI
-       tile sharing a row with a chart would be stretched to the chart's
-       height. Natural heights are the honest answer once the arrangement is
-       the user's. */
-    <div role="list" className="grid grid-cols-12 items-start gap-4">
+    /* Stretch, not `items-start`: a row is as tall as its tallest card, and
+       leaving the shorter ones at their natural height left that difference as
+       page gap underneath them. Panels take the whole row; the one shape that
+       must not be stretched — the KPI tile — opts out per item with `self-start`
+       rather than the whole grid opting out on its behalf. */
+    <div role="list" className="grid grid-cols-12 gap-4">
       {items.map((item, i) => {
         const def = byId.get(item.id)
         if (!def) return null
@@ -44,6 +47,7 @@ export function DashboardGrid({
             position={{ index: i, total: items.length }}
             onMove={onMove}
             onSize={onSize}
+            onHeight={onHeight}
             onRemove={onRemove}
           />
         )

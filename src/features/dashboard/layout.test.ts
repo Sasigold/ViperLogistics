@@ -10,6 +10,7 @@ import {
   moveByIds,
   moveByOffset,
   normalizeLayout,
+  panelMaxHeight,
   resolveLayout,
   setSize,
   showWidget,
@@ -73,6 +74,27 @@ describe('grid tokens', () => {
     expect(bodyHeight('md', 'tall')).toBeGreaterThan(BODY_H.md)
     // `sm` sizes to its content, and 1.5 × nothing is still nothing
     expect(bodyHeight('sm', 'tall')).toBe(0)
+  })
+
+  it('every panel has a height ceiling, and the KPI tile has none', () => {
+    // 0 is what the frame reads as "size to content" — a KPI tile is short on
+    // purpose and must not be stretched to a chart's height
+    expect(panelMaxHeight('sm')).toBe(0)
+    expect(panelMaxHeight('sm', 'tall')).toBe(0)
+
+    for (const size of ['md', 'lg', 'xl'] as const) {
+      // the ceiling has to clear the body it is meant to hold, or a chart at
+      // its declared height would scroll inside its own card
+      expect(panelMaxHeight(size)).toBeGreaterThan(bodyHeight(size))
+    }
+  })
+
+  it('the taller body raises the ceiling with it', () => {
+    expect(panelMaxHeight('md', 'tall')).toBeGreaterThan(panelMaxHeight('md'))
+    // same chrome either way — the difference is exactly the extra body
+    expect(panelMaxHeight('md', 'tall') - panelMaxHeight('md')).toBe(
+      bodyHeight('md', 'tall') - bodyHeight('md'),
+    )
   })
 })
 

@@ -45,6 +45,29 @@ export function bodyHeight(size: WidgetSize, h?: 'auto' | 'tall'): number {
   return h === 'tall' ? Math.round(base * TALL_FACTOR) : base
 }
 
+/* A card's header and its body padding, measured off the rendered thing rather
+   than guessed: a `CardHeader` with a title and a subtitle is 67px, `CardBody`
+   adds 16px top and bottom, and the card's own borders another 2. Charts already
+   honour `bodyHeight`, so a chart card stands exactly that much taller than its
+   plot — which is what makes the sum the right ceiling for everything else: a
+   list that would run to 520px is held to the height of the chart beside it and
+   scrolls inside its own body. The few px of slack are deliberate; a ceiling
+   that lands a hair under the real chrome puts a scrollbar on every chart. */
+const PANEL_CHROME = 104
+
+/**
+ * How tall a widget is allowed to grow before its body scrolls.
+ *
+ * 0 means "no ceiling, size to content" — the KPI tiles, whose whole point is
+ * that they are short. Anything with a declared body height gets one, because a
+ * single content-driven card is otherwise free to set the height of every card
+ * in its row, and that is where the dashboard's gaps came from.
+ */
+export function panelMaxHeight(size: WidgetSize, h?: 'auto' | 'tall'): number {
+  const body = bodyHeight(size, h)
+  return body === 0 ? 0 : body + PANEL_CHROME
+}
+
 /* ===== permissions ========================================================
    The catalogue is filtered by the same answer the server gives. A widget the
    reader holds no key for is not offered, not drawn, and — importantly — not
