@@ -177,7 +177,13 @@ export default function UsersPage() {
   /* `profiles_select` already scoped this list — a client sees their own
      company's people and nobody else's. So the subtitle and the kind filter
      are built from the kinds that actually came back rather than from a fixed
-     three, and both disappear when there is only one kind to tell apart. */
+     three, and both disappear when there is only one kind to tell apart.
+
+     ‏0066 שבר את ההנחה הזאת לזמן מה: הוא פתח ללקוח את שורות הצוות המשובץ
+     לעבודות שלו, כדי שעמודות הצוות בלוח לא יחזרו ריקות — והמסך הזה, שקורא
+     ‏`profiles` ישירות ובלי סינון, הציג אותן כ"העובדים שלו". ‏0076 החזיר את
+     הפוליסה למקומה והעביר את השמות ל-`app.staffing_names`, view נפרד ששייך
+     ללוח. אם מסך אחר יזדקק לשמות של המשובצים — משם, לא מכאן. */
   const kindsPresent = useMemo(
     () => (Object.keys(kindLabels) as UserKind[]).filter((k) => profiles.some((p) => p.user_kind === k)),
     [profiles],

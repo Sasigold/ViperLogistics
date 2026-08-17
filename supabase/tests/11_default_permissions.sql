@@ -145,6 +145,19 @@ select t_eq('מנהל לקוח רואה מי משובץ (שם בלו״ז)',
   (select jsonb_array_length(workers) from work_board_view
     where id = '31000000-0000-0000-0000-000000110001'), 1);
 
+-- ‏0076: שני צידי אותו מטבע. השם של המשובץ גלוי בלוח (הבדיקה שלמעלה), אבל
+-- שורת הפרופיל שלו אינה נקראת — איש הצוות אינו "עובד של הלקוח", לא במסך
+-- העובדים, לא בחיפוש הגלובלי ולא בבקשת REST ישירה אל profiles.
+select t_eq('מנהל לקוח: שורת הפרופיל של המשובץ אינה נקראת',
+  (select count(*)::int from profiles where id = '20000000-0000-0000-0000-0000000011a8'), 0);
+
+select t_eq('מנהל לקוח: רואה את משתמשי החברה שלו בלבד',
+  (select count(*)::int from profiles), 2);
+
+select t_eq('מנהל לקוח: החיפוש הגלובלי אינו מחזיר את איש הצוות',
+  (select count(*)::int from jsonb_array_elements(global_search('עובד שטח', 8)) x
+    where x->>'kind' = 'profile'), 0);
+
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 -- מחזירים את T1 למתוכנן לצורך המשך הבדיקות
