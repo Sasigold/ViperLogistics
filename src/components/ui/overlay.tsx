@@ -612,6 +612,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             return (
               <div
                 key={t.id}
+                /* The region is `polite`, which is right for a save confirmation
+                   and wrong for the ~40 places where a red toast is the only
+                   sign a mutation failed: polite waits for the reader to finish
+                   whatever it was saying, and by then the user has moved on
+                   believing the thing worked. An `alert` on the item itself
+                   overrides the region for that one node, so failures interrupt
+                   and successes still wait their turn. */
+                role={t.kind === 'error' ? 'alert' : undefined}
                 className={cx(
                   'pointer-events-auto flex items-start gap-2.5 rounded-xl border p-3 shadow-lg backdrop-blur-sm',
                   'transition-all duration-150 ease-[cubic-bezier(.16,1,.3,1)]',

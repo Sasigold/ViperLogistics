@@ -48,14 +48,37 @@ interface FieldCtx {
 }
 const FieldContext = createContext<FieldCtx | null>(null)
 
-/** Controls call this to inherit id / aria wiring from an enclosing Field. */
+/**
+ * Controls call this to inherit id / aria wiring from an enclosing Field.
+ *
+ * `required` travels with the rest of it. `Field` has always carried the flag —
+ * it is what draws the asterisk — but the asterisk is `aria-hidden`, and the
+ * flag stopped at the context and never reached the control. Forty-four fields
+ * were marked required in the markup and four said so to a screen reader; for
+ * everyone else the distinction between "must fill" and "may fill" simply did
+ * not exist.
+ *
+ * It surfaces as `aria-required` and not as the native attribute on purpose.
+ * Native `required` hands validation to the browser, which then refuses the
+ * form with its own bubble in the *browser's* language — English chrome over a
+ * Hebrew form, and a second validation voice competing with the one `Field`
+ * already renders under the control.
+ */
 export function useFieldProps(own: { id?: string; 'aria-describedby'?: string; required?: boolean }) {
   const ctx = useContext(FieldContext)
-  if (!ctx) return { id: own.id, 'aria-describedby': own['aria-describedby'], invalid: false }
+  if (!ctx) {
+    return {
+      id: own.id,
+      'aria-describedby': own['aria-describedby'],
+      invalid: false,
+      required: own.required,
+    }
+  }
   return {
     id: own.id ?? ctx.id,
     'aria-describedby': [own['aria-describedby'], ctx.describedBy].filter(Boolean).join(' ') || undefined,
     invalid: ctx.invalid,
+    required: own.required ?? ctx.required,
   }
 }
 
@@ -144,6 +167,7 @@ export function Input({ className, inputSize = 'md', invalid, leading, trailing,
       id={f.id}
       aria-describedby={f['aria-describedby']}
       aria-invalid={bad || undefined}
+      aria-required={f.required || undefined}
       className={cx(
         CONTROL,
         SIZES[inputSize],
@@ -226,6 +250,7 @@ export function Textarea({ className, invalid, autoGrow, rows = 3, onChange, ...
       id={f.id}
       aria-describedby={f['aria-describedby']}
       aria-invalid={bad || undefined}
+      aria-required={f.required || undefined}
       onChange={(e) => {
         onChange?.(e)
         resize()
@@ -260,6 +285,7 @@ export function Select({ className, children, selectSize = 'md', invalid, ...res
         id={f.id}
         aria-describedby={f['aria-describedby']}
         aria-invalid={bad || undefined}
+        aria-required={f.required || undefined}
         className={cx(
           CONTROL,
           SIZES[selectSize],

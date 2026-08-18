@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, Columns3 } from 'lucide-react'
 import { Button, IconButton, cx } from './primitives'
 import { Checkbox } from './inputs'
@@ -52,6 +52,32 @@ function saveState(key: string | undefined, state: Persisted) {
 }
 
 const ALIGN = { start: 'text-start', center: 'text-center', end: 'text-end' } as const
+
+/**
+ * Opening a record is the whole point of these tables, and until now the only
+ * way to do it was a mouse. `onRowClick` put a pointer cursor on the row and
+ * nothing else — no tabindex, no role, no key handler — so on Events, Users,
+ * Contractors, Receipts and Attendance a keyboard user could reach the filters,
+ * the sort headers and the pagination, and never the rows.
+ *
+ * `role="button"` rather than `link`: the handler is a callback, and some call
+ * sites open a drawer rather than navigate. Space is preventDefault-ed because
+ * on a focusable non-button it would scroll the page instead.
+ */
+function rowActivation<T>(row: T, onRowClick?: (row: T) => void) {
+  if (!onRowClick) return undefined
+  return {
+    role: 'button' as const,
+    tabIndex: 0,
+    onClick: () => onRowClick(row),
+    onKeyDown: (e: KeyboardEvent) => {
+      if (e.target !== e.currentTarget) return
+      if (e.key !== 'Enter' && e.key !== ' ') return
+      e.preventDefault()
+      onRowClick(row)
+    },
+  }
+}
 
 export function DataTable<T>({
   rows,
@@ -282,8 +308,11 @@ export function DataTable<T>({
                     </span>
                   )}
                   <div
-                    onClick={onRowClick ? () => onRowClick(row) : undefined}
-                    className={cx('min-w-0 flex-1 py-3', onRowClick && 'cursor-pointer')}
+                    {...rowActivation(row, onRowClick)}
+                    className={cx(
+                      'min-w-0 flex-1 py-3',
+                      onRowClick && 'cursor-pointer focus-visible:outline-none focus-visible:focus-ring',
+                    )}
                   >
                     {mobileCard!(row, i)}
                   </div>
@@ -375,12 +404,12 @@ export function DataTable<T>({
                   return (
                     <tr
                       key={id}
-                      onClick={onRowClick ? () => onRowClick(row) : undefined}
+                      {...rowActivation(row, onRowClick)}
                       className={cx(
                         'border-b border-line-subtle transition-colors last:border-0',
                         isSelected ? 'bg-selected' : zebra && i % 2 === 1 ? 'bg-subtle/45' : 'bg-surface',
                         'hover:bg-hover',
-                        onRowClick && 'cursor-pointer',
+                        onRowClick && 'cursor-pointer focus-visible:outline-none focus-visible:focus-ring',
                         rowClassName?.(row),
                       )}
                     >

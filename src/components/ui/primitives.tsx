@@ -57,6 +57,9 @@ export function Button({
 }: ButtonProps) {
   return (
     <button
+      /* see the `pointer: coarse` rule in index.css — marks this as a control
+         whose touch target is widened past its painted box on a phone */
+      data-vl-control
       className={cx(BTN_BASE, BTN_VARIANTS[variant], BTN_SIZES[size], block && 'w-full', className)}
       disabled={loading || rest.disabled}
       aria-busy={loading || undefined}
@@ -96,6 +99,7 @@ export function IconButton({
   const btn = (
     <button
       aria-label={label}
+      data-vl-control
       className={cx(BTN_BASE, BTN_VARIANTS[variant], ICON_SIZES[size], 'shrink-0 p-0', className)}
       disabled={loading || rest.disabled}
       {...rest}

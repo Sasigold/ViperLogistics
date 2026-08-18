@@ -100,7 +100,14 @@
   /* text */
   --vl-text: #101828;
   --vl-text-secondary: #475467;
-  --vl-text-tertiary: #8a93a5;
+  /* 4.97:1 on --vl-surface and 4.64:1 on --vl-canvas. The previous #8a93a5
+     measured 3.09:1 and 2.88:1 — below AA for normal text, and this is the
+     token that colours `type-caption` at 12px: table heads, overlines, hints,
+     placeholders, timestamps, the breadcrumb parent, inactive bottom-nav
+     labels. Three hundred call sites of text that could not legally be read.
+     It stays clearly the third tier — secondary is 7.69:1 — it just stops
+     being decoration. */
+  --vl-text-tertiary: #667085;
   --vl-text-inverse: #ffffff;
 
   /* interaction states */
@@ -218,7 +225,10 @@
 
   --vl-text: #e9ecf3;
   --vl-text-secondary: #a3acbd;
-  --vl-text-tertiary: #6f7a8d;
+  /* 5.83:1 on --vl-surface, 6.38:1 on --vl-canvas; #6f7a8d was 4.10:1.
+     Dark failed too, just less obviously — a dim grey on near-black reads as
+     "subtle" to a designer and as "absent" to everyone else. */
+  --vl-text-tertiary: #8b94a7;
   --vl-text-inverse: #0b0d12;
 
   --vl-hover: rgb(255 255 255 / 0.05);
@@ -595,7 +605,8 @@
   }
 
   /* Touch pointers get no hover, so controls sized for a cursor are too small.
-     Every button-ish control keeps a 40px target on coarse pointers. */
+     `touch-action: manipulation` kills the 300ms double-tap wait; it does not
+     make anything bigger, which is what the comment here used to claim. */
   @media (pointer: coarse) {
     button,
     [role='button'],
@@ -603,6 +614,36 @@
     select,
     summary {
       touch-action: manipulation;
+    }
+
+    /* The target grows, the button does not.
+       IconButton at `sm` paints a 32px square, and a thumb in a warehouse at
+       06:00 is not a 32px instrument. Giving those controls a min-height
+       instead would have been the obvious fix and the wrong one: it reflows
+       every dense row, every chip strip and every toolbar on the one form
+       factor that can least afford it, for a change nobody asked to see.
+       An absolutely-positioned ::after centred on the control takes the press
+       from a 40px box while the painted box stays exactly where the design put
+       it. BTN_BASE is already `relative`, so there is nothing to anchor. */
+    [data-vl-control]::after {
+      content: '';
+      position: absolute;
+      /* physical left/translate on purpose: centring is not a directional
+         idea, and the logical form would need the sign flipped per writing
+         mode to mean the same thing */
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 100%;
+      height: 100%;
+      min-width: 40px;
+      min-height: 40px;
+    }
+
+    /* A disabled control is `pointer-events: none`, and the halo must not be
+       the one thing on it that still answers a press. */
+    [data-vl-control]:disabled::after {
+      content: none;
     }
   }
 
