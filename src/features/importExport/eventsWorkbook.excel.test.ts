@@ -41,6 +41,9 @@ describe('round-trip דרך ExcelJS אמיתי', () => {
         customers: ['אירועי הצפון'],
         taskTypes: ['הקמה', 'פירוק', 'סידור'],
         executionMethods: ['הובלה בלבד'],
+        contractors: ['קבלן הדרום'],
+        warehouses: ['מחסן ראשי'],
+        suppliers: [{ customer: 'אירועי הצפון', name: 'ספק הבמות' }],
       }),
     )
 
@@ -60,25 +63,57 @@ describe('round-trip דרך ExcelJS אמיתי', () => {
     expect(taskCount).toBe(5)
     expect(payloads[0].event_date).toBe('2026-03-15')
     expect(payloads[0].contact_phone).toBe('050-1234567')
+    // התוספות והספקים חוזרים כפי שהשרת מצפה לקבל אותם
+    expect(payloads[0].no_parking).toBe('true')
+    expect(payloads[0].supplier_pickup).toBe('false')
+    expect(payloads[0].suppliers).toBe('ספק הבמות')
     expect(payloads[0].tasks[0]).toMatchObject({
       task_type: 'הקמה',
       warehouse_start_time: '06:00',
       onsite_start_time: '08:00',
       hours_count: '4',
       worker_count: '5',
+      warehouse: 'מחסן ראשי',
+      travel_hours: '1',
+      requires_team_lead: 'true',
+      price: '2400',
     })
+    const delegated = payloads[0].tasks.find((t) => t.contractor)
+    expect(delegated).toMatchObject({ contractor: 'קבלן הדרום', contractor_price: '900' })
     // גיליון ההסבר קיים ואינו מפריע לפרסור
     expect(wb.getWorksheet('הסבר')).toBeTruthy()
+  })
+
+  it('תא מחיר שעוצב כמטבע ותא כן/לא נקראים נכון', async () => {
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('משימות')
+    ws.addRow(TASK_COLUMNS.map((c) => c.header))
+    const cells: Record<string, string> = {
+      row_key: '1', task_type: 'הקמה', price: '2400', requires_team_lead: 'כן',
+    }
+    const row = ws.addRow(TASK_COLUMNS.map((c) => cells[c.key] ?? ''))
+    const priceCell = row.getCell(TASK_COLUMNS.findIndex((c) => c.key === 'price') + 1)
+    priceCell.value = 2400
+    priceCell.numFmt = '#,##0.00 ₪'
+
+    const wb2 = new ExcelJS.Workbook()
+    await wb2.xlsx.load((await wb.xlsx.writeBuffer()) as ArrayBuffer)
+    expect(parseSheet(toMatrix(wb2.getWorksheet('משימות')), TASK_COLUMNS)[0]).toMatchObject({
+      price: '2400',
+      requires_team_lead: 'true',
+    })
   })
 
   it('תאי תאריך ושעה אמיתיים של Excel (Date, לא טקסט) נקראים נכון', async () => {
     const wb = new ExcelJS.Workbook()
     const ws = wb.addWorksheet('משימות')
     ws.addRow(TASK_COLUMNS.map((c) => c.header))
-    const row = ws.addRow(['1', 'הקמה', '', '', '', '', '4', '5', '', '', '', ''])
-    row.getCell(4).value = new Date(Date.UTC(2026, 2, 15))
-    row.getCell(5).value = new Date(Date.UTC(1899, 11, 30, 6, 0))
-    row.getCell(6).value = new Date(Date.UTC(1899, 11, 30, 8, 30))
+    const cells: Record<string, string> = { row_key: '1', task_type: 'הקמה', hours_count: '4', worker_count: '5' }
+    const row = ws.addRow(TASK_COLUMNS.map((c) => cells[c.key] ?? ''))
+    const at = (key: string) => row.getCell(TASK_COLUMNS.findIndex((c) => c.key === key) + 1)
+    at('task_date').value = new Date(Date.UTC(2026, 2, 15))
+    at('warehouse_start_time').value = new Date(Date.UTC(1899, 11, 30, 6, 0))
+    at('onsite_start_time').value = new Date(Date.UTC(1899, 11, 30, 8, 30))
 
     const wb2 = new ExcelJS.Workbook()
     await wb2.xlsx.load((await wb.xlsx.writeBuffer()) as ArrayBuffer)

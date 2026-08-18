@@ -24,8 +24,18 @@ export interface SheetColumn {
   header: string
   width: number
   /** נרמול הערך בקריאה. בעמודות הקבועות הוא נגזר מהמפתח, ובשדה מותאם — מהטיפוס */
-  coerce?: 'date' | 'time'
+  coerce?: CoerceKind
 }
+
+/**
+ * טיפוסי הנרמול בקריאה.
+ *
+ * 'number' ו-'bool' נוספו יחד עם עמודות הכסף והתוספות, ושניהם קיימים מאותה
+ * סיבה: התא נכתב בידי אדם, והשרת מקבל טקסט שהוא מיד יצטרך להמיר. '1,200 ₪'
+ * ו'כן' הם ערכים לגיטימיים לגמרי בעיני מי שממלא את הקובץ, ובלי הנרמול כאן הם
+ * חוזרים אליו כ-'invalid input syntax for type numeric'.
+ */
+export type CoerceKind = 'date' | 'time' | 'number' | 'bool'
 
 export const EVENTS_SHEET = 'אירועים'
 export const TASKS_SHEET = 'משימות'
@@ -41,6 +51,10 @@ export const EVENT_COLUMNS: SheetColumn[] = [
   { key: 'location_notes', header: 'הערות למיקום', width: 20 },
   { key: 'volume_m', header: 'נפח במטר', width: 12 },
   { key: 'truck_count', header: 'כמות משאיות', width: 13 },
+  { key: 'no_parking', header: 'ללא חניה (כן/לא)', width: 16 },
+  { key: 'porterage', header: 'סבלות (כן/לא)', width: 15 },
+  { key: 'supplier_pickup', header: 'איסוף מספק (כן/לא)', width: 19 },
+  { key: 'suppliers', header: 'ספקים (מופרדים בפסיק)', width: 26 },
   { key: 'contact_name', header: 'איש קשר', width: 18 },
   { key: 'contact_phone', header: 'טלפון איש קשר', width: 16 },
   { key: 'notes', header: 'הערות', width: 30 },
@@ -56,8 +70,14 @@ export const TASK_COLUMNS: SheetColumn[] = [
   { key: 'hours_count', header: 'כמות שעות', width: 12 },
   { key: 'worker_count', header: 'כמות עובדים', width: 13 },
   { key: 'execution_method', header: 'אופן ביצוע', width: 18 },
+  { key: 'warehouse', header: 'מחסן יציאה', width: 18 },
   { key: 'truck_free_text', header: 'משאית', width: 16 },
   { key: 'location_text', header: 'מיקום המשימה', width: 26 },
+  { key: 'travel_hours', header: 'זמן נסיעה בכיוון אחד (שעות)', width: 26 },
+  { key: 'requires_team_lead', header: 'נדרש ראש צוות (כן/לא)', width: 21 },
+  { key: 'price', header: 'מחיר ללקוח (₪)', width: 16 },
+  { key: 'contractor', header: 'קבלן', width: 18 },
+  { key: 'contractor_price', header: 'מחיר לקבלן (₪)', width: 16 },
   { key: 'notes', header: 'הערות', width: 30 },
 ]
 
@@ -84,10 +104,25 @@ export function eventColumns(custom: FormField[], customerNames?: Map<string, st
       key: f.field_key,
       header,
       width: 18,
-      coerce: f.field_type === 'date' ? 'date' : f.field_type === 'time' ? 'time' : undefined,
+      coerce: CUSTOM_COERCE[f.field_type],
     })
   }
   return out
+}
+
+/**
+ * נרמול של שדה מותאם נגזר מהטיפוס שלו.
+ *
+ * 'checkbox' הוא המקרה שהיה שבור עד כה: app.event_custom_patch ממירה את הערך
+ * ב-`::boolean`, בעוד הייצוא כותב 'כן'/'לא' (formatCustomValue) — כלומר ייצוא
+ * וייבוא חזרה של קובץ עם תיבת סימון נפלו על "ערך לא תקין בשדה". הנרמול ל-bool
+ * סוגר את המעגל.
+ */
+const CUSTOM_COERCE: Record<string, CoerceKind | undefined> = {
+  date: 'date',
+  time: 'time',
+  number: 'number',
+  checkbox: 'bool',
 }
 
 /** עמודות הייצוא הישן, בלי מזהה השורה — קובץ שיצא כך חייב להמשיך להיקלט. */
@@ -95,6 +130,17 @@ const legacyColumns = (columns: SheetColumn[]) => columns.filter((c) => c.key !=
 
 const DATE_KEYS = new Set(['event_date', 'task_date'])
 const TIME_KEYS = new Set(['onsite_start_time', 'warehouse_start_time'])
+const NUMBER_KEYS = new Set([
+  'volume_m', 'truck_count', 'hours_count', 'worker_count',
+  'travel_hours', 'price', 'contractor_price',
+])
+const BOOL_KEYS = new Set(['no_parking', 'porterage', 'supplier_pickup', 'requires_team_lead'])
+
+/* מה שנקרא בתא כ"כן" וכ"לא". הייצוא וקובץ הדוגמה כותבים 'כן'/'לא' כי זה מה
+   שאדם קורא, והשרת מקבל true/false — התרגום הוא כאן, בשכבה שמכירה את פורמט
+   הקובץ. ‏'v' ו-'✓' נכנסו כי זה מה שאנשים מסמנים בעמודת כן/לא באקסל. */
+const TRUE_CELLS = new Set(['כן', 'true', 't', 'yes', 'y', '1', 'v', '✓'])
+const FALSE_CELLS = new Set(['לא', 'false', 'f', 'no', 'n', '0', '-'])
 
 export type SheetRow = Record<string, string>
 /** גיליון אחרי נרמול התאים: שורה 0 היא הכותרות. */
@@ -118,8 +164,14 @@ export interface ImportTaskPayload {
   hours_count?: string
   worker_count?: string
   execution_method?: string
+  warehouse?: string
   truck_free_text?: string
   location_text?: string
+  travel_hours?: string
+  requires_team_lead?: string
+  price?: string
+  contractor?: string
+  contractor_price?: string
   notes?: string
 }
 
@@ -160,8 +212,8 @@ export function normalizeCell(v: unknown): string {
   return String(v).trim()
 }
 
-/** נרמול ערך לפי העמודה שאליה הוא שייך — תאריך, שעה, או טקסט. */
-export function coerceValue(key: string, raw: string, kind?: 'date' | 'time'): string {
+/** נרמול ערך לפי העמודה שאליה הוא שייך — תאריך, שעה, מספר, כן/לא, או טקסט. */
+export function coerceValue(key: string, raw: string, kind?: CoerceKind): string {
   const s = raw.trim()
   if (!s) return ''
   if (kind === 'date' || (!kind && DATE_KEYS.has(key))) {
@@ -174,6 +226,18 @@ export function coerceValue(key: string, raw: string, kind?: 'date' | 'time'): s
   if (kind === 'time' || (!kind && TIME_KEYS.has(key))) {
     const t = s.match(/(\d{1,2}):(\d{2})/)
     return t ? `${pad2(+t[1])}:${t[2]}` : s
+  }
+  if (kind === 'number' || (!kind && NUMBER_KEYS.has(key))) {
+    /* '1,200 ₪' ו-'₪1200.50' הם מה שיוצא מתא שעוצב כמטבע. מה שאינו מספר אחרי
+       הניקוי חוזר כפי שהוא — השרת הוא שיאמר על *איזו* משימה מדובר. */
+    const n = s.replace(/[₪$€,\s\u200e\u200f]/g, '')
+    return /^-?\d+(\.\d+)?$/.test(n) ? n : s
+  }
+  if (kind === 'bool' || (!kind && BOOL_KEYS.has(key))) {
+    const v = s.toLowerCase()
+    if (TRUE_CELLS.has(v)) return 'true'
+    if (FALSE_CELLS.has(v)) return 'false'
+    return s
   }
   return s
 }
@@ -358,10 +422,25 @@ export function buildTemplatePlan(eventCols: SheetColumn[] = EVENT_COLUMNS): She
   return [emptySheet(EVENTS_SHEET, eventCols), emptySheet(TASKS_SHEET, TASK_COLUMNS)]
 }
 
+
 export interface SampleRefs {
   customers: string[]
   taskTypes: string[]
   executionMethods: string[]
+  contractors?: string[]
+  warehouses?: string[]
+  /** הספק שייך ללקוח, ולכן הוא מוצג — וגם נבחר לשורת הדוגמה — יחד איתו */
+  suppliers?: { customer: string; name: string }[]
+  /**
+   * מה שמותר למי שמוריד את הקובץ.
+   *
+   * שלוש עמודות בגיליון המשימות דורשות מפתח משלהן בשרת (pricing.edit,
+   * tasks.delegate, contractors.edit_pricing). העמודות עצמן נשארות בקובץ תמיד
+   * — הוא עשוי לעבור לעמית שכן מחזיק את המפתח — אבל *הערכים* בשורות הדוגמה
+   * יורדים למי שאין לו, כדי שהקובץ שהוא הוריד ייקלט כפי שהוא ולא ייפול על
+   * "אין לך הרשאה" בשורה הראשונה.
+   */
+  allow?: { price?: boolean; contractor?: boolean; contractorPrice?: boolean }
 }
 
 /** תאריך קבוע ולא "היום": קובץ דוגמה שמשתנה בכל הורדה קשה להסביר ולבדוק. */
@@ -370,15 +449,26 @@ const SAMPLE_DATE_2 = '2026-03-16'
 
 /**
  * קובץ הדוגמה: שני אירועים עם משימות, ועוד גיליון "הסבר" עם הערכים החוקיים
- * שנשלפו מהמערכת בזמן ההורדה. עמודת "אופן ביצוע" נשארת ריקה בשורות הדוגמה
- * במכוון — הערכים המותרים תלויים בלקוח ובסוג המשימה, וערך שנראה תקין בקובץ
- * אבל נפסל בייבוא מבלבל יותר משהוא מסביר. הרשימה המלאה נמצאת בגיליון ההסבר.
+ * שנשלפו מהמערכת בזמן ההורדה.
+ *
+ * כלל אחד עובר על כל שורות הדוגמה: **תא מלא הוא תא שהייבוא יקבל**. לכן עמודת
+ * "אופן ביצוע" נשארת ריקה — הערכים המותרים תלויים בלקוח ובסוג המשימה, וערך
+ * שנראה תקין בקובץ אבל נפסל בייבוא מבלבל יותר משהוא מסביר — ולכן גם קבלן,
+ * מחסן וספק נכתבים רק כשהמערכת החזירה שם אמיתי, ומחיר לקבלן רק כשיש קבלן.
+ * הרשימות המלאות נמצאות בגיליון ההסבר.
  */
 export function buildSamplePlan(refs: SampleRefs, eventCols: SheetColumn[] = EVENT_COLUMNS): SheetPlan[] {
   const customer = refs.customers[0] ?? 'שם הלקוח כפי שהוא מופיע במערכת'
   const customer2 = refs.customers[1] ?? customer
   const extraType =
     refs.taskTypes.find((t) => t !== 'הקמה' && t !== 'פירוק') ?? 'סידור'
+  const allow = refs.allow ?? {}
+  const warehouse = refs.warehouses?.[0] ?? ''
+  const contractor = allow.contractor === false ? '' : (refs.contractors?.[0] ?? '')
+  const contractorPrice = contractor && allow.contractorPrice !== false ? '900' : ''
+  const price = (v: string) => (allow.price === false ? '' : v)
+  const supplierOf = (name: string) =>
+    refs.suppliers?.find((s) => s.customer === name)?.name ?? ''
 
   const events: SheetRow[] = [
     {
@@ -391,6 +481,10 @@ export function buildSamplePlan(refs: SampleRefs, eventCols: SheetColumn[] = EVE
       location_notes: 'כניסת פריקה מהחניון האחורי',
       volume_m: '18',
       truck_count: '2',
+      no_parking: 'כן',
+      porterage: 'כן',
+      supplier_pickup: 'לא',
+      suppliers: supplierOf(customer),
       contact_name: 'דנה לוי',
       contact_phone: '050-1234567',
       notes: 'שורת דוגמה — אפשר למחוק אותה ולכתוב במקומה נתונים אמיתיים',
@@ -405,6 +499,10 @@ export function buildSamplePlan(refs: SampleRefs, eventCols: SheetColumn[] = EVE
       location_notes: '',
       volume_m: '32',
       truck_count: '3',
+      no_parking: 'לא',
+      porterage: 'לא',
+      supplier_pickup: 'כן',
+      suppliers: supplierOf(customer2),
       contact_name: 'אורי כהן',
       contact_phone: '052-7654321',
       notes: '',
@@ -422,8 +520,14 @@ export function buildSamplePlan(refs: SampleRefs, eventCols: SheetColumn[] = EVE
       hours_count: '4',
       worker_count: '5',
       execution_method: '',
+      warehouse,
       truck_free_text: '',
       location_text: '',
+      travel_hours: '1',
+      requires_team_lead: 'כן',
+      price: price('2400'),
+      contractor: '',
+      contractor_price: '',
       notes: 'הקמה ופירוק כבר נוצרות לכל אירוע — השורה כאן ממלאת אותן',
     },
     {
@@ -436,8 +540,14 @@ export function buildSamplePlan(refs: SampleRefs, eventCols: SheetColumn[] = EVE
       hours_count: '2',
       worker_count: '3',
       execution_method: '',
+      warehouse: '',
       truck_free_text: '',
       location_text: '',
+      travel_hours: '',
+      requires_team_lead: 'לא',
+      price: price('1100'),
+      contractor: '',
+      contractor_price: '',
       notes: '',
     },
     {
@@ -450,9 +560,17 @@ export function buildSamplePlan(refs: SampleRefs, eventCols: SheetColumn[] = EVE
       hours_count: '1.5',
       worker_count: '2',
       execution_method: '',
+      warehouse: '',
       truck_free_text: '',
       location_text: '',
-      notes: 'משימה נוספת — נוצרת מעבר להקמה ולפירוק',
+      travel_hours: '',
+      requires_team_lead: '',
+      price: price('600'),
+      contractor,
+      contractor_price: contractorPrice,
+      notes: contractor
+        ? 'משימה נוספת שהואצלה לקבלן — "מחיר לקבלן" הוא מה שמשלמים לו'
+        : 'משימה נוספת — נוצרת מעבר להקמה ולפירוק',
     },
     {
       row_key: '2',
@@ -464,8 +582,14 @@ export function buildSamplePlan(refs: SampleRefs, eventCols: SheetColumn[] = EVE
       hours_count: '6',
       worker_count: '8',
       execution_method: '',
+      warehouse,
       truck_free_text: 'רכב מלווה',
       location_text: '',
+      travel_hours: '',
+      requires_team_lead: '',
+      price: price('5200'),
+      contractor: '',
+      contractor_price: '',
       notes: '',
     },
     {
@@ -478,8 +602,14 @@ export function buildSamplePlan(refs: SampleRefs, eventCols: SheetColumn[] = EVE
       hours_count: '3',
       worker_count: '6',
       execution_method: '',
+      warehouse: '',
       truck_free_text: '',
       location_text: '',
+      travel_hours: '',
+      requires_team_lead: '',
+      price: price('2600'),
+      contractor: '',
+      contractor_price: '',
       notes: '',
     },
   ]
@@ -488,6 +618,9 @@ export function buildSamplePlan(refs: SampleRefs, eventCols: SheetColumn[] = EVE
     ...refs.taskTypes.map((v) => ({ kind: 'סוג משימה', value: v })),
     ...refs.executionMethods.map((v) => ({ kind: 'אופן ביצוע', value: v })),
     ...refs.customers.map((v) => ({ kind: 'שם לקוח במערכת', value: v })),
+    ...(refs.warehouses ?? []).map((v) => ({ kind: 'מחסן יציאה', value: v })),
+    ...(refs.contractors ?? []).map((v) => ({ kind: 'קבלן', value: v })),
+    ...(refs.suppliers ?? []).map((s) => ({ kind: `ספק של ${s.customer}`, value: s.name })),
   ]
 
   const guide: SheetPlan = {
@@ -497,11 +630,19 @@ export function buildSamplePlan(refs: SampleRefs, eventCols: SheetColumn[] = EVE
       '',
       '1. בגיליון "אירועים" — שורה אחת לכל אירוע. עמודת "מזהה שורה" היא מספר או טקסט חופשי שאתם בוחרים; הוא משמש רק לקישור בתוך הקובץ ואינו נשמר במערכת.',
       '2. בגיליון "משימות" — שורה אחת לכל משימה, ובעמודת "מזהה שורה" רושמים את המזהה של האירוע שאליו היא שייכת. אפשר כמה שורות לאותו מזהה.',
-      '3. "שם לקוח במערכת" חייב להיות זהה לשם הלקוח כפי שהוא רשום במערכת (הרשימה למטה).',
+      '3. "שם לקוח במערכת" חייב להיות זהה לשם הלקוח כפי שהוא רשום במערכת (הרשימה למטה). כך גם "סוג משימה", "אופן ביצוע", "מחסן יציאה", "קבלן" ו"ספקים".',
       '4. תאריכים בפורמט YYYY-MM-DD, שעות בפורמט HH:MM. תאריך משימה ריק יילקח מתאריך האירוע.',
-      '5. לכל אירוע נוצרות אוטומטית משימת הקמה ומשימת פירוק. שורת "הקמה" או "פירוק" בגיליון המשימות ממלאת את המשימה הקיימת ואינה מייצרת כפילות.',
-      '6. "אופן ביצוע" הוא אופציונלי, והערכים המותרים תלויים בלקוח ובסוג המשימה. אם ערך אינו מותר ללקוח — אותה שורה תדווח בשגיאה והאירוע לא ייווצר.',
-      '7. אפשר להעלות גם קובץ בן גיליון אחד בלבד; אז ייווצרו האירועים בלי משימות מפורטות.',
+      '5. עמודות כן/לא — התוספות של האירוע ו"נדרש ראש צוות" — מקבלות "כן" או "לא". תא ריק אינו "לא" אלא "לא נכתב", והמערכת תשאיר את ברירת המחדל.',
+      '6. עמודת "ספקים" מקבלת שמות ספקים מופרדים בפסיק. הספק חייב להיות מוגדר אצל אותו לקוח — ספק של לקוח אחר ייפסל.',
+      '7. עמודות הכסף: "מחיר ללקוח" הוא מה שגובים, ו"מחיר לקבלן" הוא מה שמשלמים לקבלן שהמשימה הואצלה אליו. מספרים בלבד (₪, פסיקים ורווחים מנוקים אוטומטית).',
+      '   • מחיר שנכתב בקובץ נשמר כמחיר ידני ואינו נדרס בחישוב אוטומטי מאוחר יותר.',
+      '   • "מחיר לקבלן" מחייב שגם עמודת "קבלן" מלאה באותה שורה.',
+      '   • שלוש העמודות האלה דורשות הרשאה: מחיר ללקוח וזמן נסיעה — "עריכת מחיר ידנית"; קבלן — "האצלת משימה לקבלן"; מחיר לקבלן — "עריכת תמחור". בלי ההרשאה הקובץ כולו נדחה, ולא מיובא חלקית.',
+      '8. לכל אירוע נוצרות אוטומטית משימת הקמה ומשימת פירוק. שורת "הקמה" או "פירוק" בגיליון המשימות ממלאת את המשימה הקיימת ואינה מייצרת כפילות.',
+      '9. "אופן ביצוע" הוא אופציונלי, והערכים המותרים תלויים בלקוח ובסוג המשימה. אם ערך אינו מותר ללקוח — אותה שורה תדווח בשגיאה והאירוע לא ייווצר.',
+      '10. שורה שנפסלה מתגלגלת כולה: האירוע והמשימות שלו אינם נוצרים, והשגיאה מדווחת עם מספר השורה. אפשר לתקן ולהעלות שוב את אותו קובץ.',
+      '11. סטטוס אירוע וסטטוס משימה אינם מיובאים — הם נקבעים במערכת לפי מחזור החיים שלהם.',
+      '12. אפשר להעלות גם קובץ בן גיליון אחד בלבד; אז ייווצרו האירועים בלי משימות מפורטות.',
       '',
       'ערכים חוקיים במערכת',
     ],

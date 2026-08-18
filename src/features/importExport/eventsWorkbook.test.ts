@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   EVENT_COLUMNS,
+  eventColumns,
   TASK_COLUMNS,
   buildImportPayload,
   buildSamplePlan,
@@ -11,7 +12,8 @@ import {
   parseEventSheet,
   parseSheet,
 } from './eventsWorkbook'
-import type { Matrix, SheetRow } from './eventsWorkbook'
+import type { Matrix, SheetColumn, SheetRow } from './eventsWorkbook'
+import type { FormField } from '../../types/domain'
 
 const CUSTOMERS = [
   { id: 'cust-1', name: 'אירועי הצפון' },
@@ -23,15 +25,24 @@ const headerRow = (cols: { header: string }[]) => cols.map((c) => c.header)
 const eventsMatrix = (...rows: string[][]): Matrix => [headerRow(EVENT_COLUMNS), ...rows]
 const tasksMatrix = (...rows: string[][]): Matrix => [headerRow(TASK_COLUMNS), ...rows]
 
-/** שורת אירוע מלאה לפי סדר EVENT_COLUMNS */
-const eventCells = (key: string, customer: string, date = '2026-03-15') => [
-  key, customer, 'חתונה', '101', date, 'תל אביב', '', '18', '2', 'דנה', '050-1111111', '',
-]
+/* השורות נבנות לפי מפתח ולא לפי מיקום: עמודה שתיווסף באמצע הגיליון לא תזיז
+   כאן ערכים לעמודות שכנות בשקט. */
+const cellsOf = (cols: SheetColumn[], values: SheetRow) => cols.map((c) => values[c.key] ?? '')
 
-/** שורת משימה מלאה לפי סדר TASK_COLUMNS */
-const taskCells = (key: string, type: string, date = '2026-03-15') => [
-  key, type, '', date, '06:00', '08:00', '4', '5', '', '', '', '',
-]
+/** שורת אירוע לפי EVENT_COLUMNS */
+const eventCells = (key: string, customer: string, date = '2026-03-15', extra: SheetRow = {}) =>
+  cellsOf(EVENT_COLUMNS, {
+    row_key: key, customer_name: customer, end_client_name: 'חתונה', event_number: '101',
+    event_date: date, location_text: 'תל אביב', volume_m: '18', truck_count: '2',
+    contact_name: 'דנה', contact_phone: '050-1111111', ...extra,
+  })
+
+/** שורת משימה לפי TASK_COLUMNS */
+const taskCells = (key: string, type: string, date = '2026-03-15', extra: SheetRow = {}) =>
+  cellsOf(TASK_COLUMNS, {
+    row_key: key, task_type: type, task_date: date, warehouse_start_time: '06:00',
+    onsite_start_time: '08:00', hours_count: '4', worker_count: '5', ...extra,
+  })
 
 describe('normalizeCell', () => {
   it('מחזיר מחרוזת מקוצצת לטקסט ולמספר', () => {
@@ -65,6 +76,25 @@ describe('coerceValue', () => {
   it('מרפד שעה חד-ספרתית ומתעלם מחלק התאריך', () => {
     expect(coerceValue('onsite_start_time', '8:05')).toBe('08:05')
     expect(coerceValue('warehouse_start_time', '2026-03-15 06:00')).toBe('06:00')
+  })
+
+  it('מנקה מטבע ומפרידי אלפים ממחיר', () => {
+    expect(coerceValue('price', '1,200 ₪')).toBe('1200')
+    expect(coerceValue('contractor_price', '₪900.50')).toBe('900.50')
+    expect(coerceValue('travel_hours', '1.5')).toBe('1.5')
+  })
+
+  it('מה שאינו מספר חוזר כפי שהוא — השרת הוא שידווח על השורה', () => {
+    expect(coerceValue('price', 'לפי סיכום')).toBe('לפי סיכום')
+  })
+
+  it('כן/לא הופכים ל-true/false, בעברית ובאנגלית', () => {
+    expect(coerceValue('no_parking', 'כן')).toBe('true')
+    expect(coerceValue('porterage', ' לא ')).toBe('false')
+    expect(coerceValue('supplier_pickup', 'V')).toBe('true')
+    expect(coerceValue('requires_team_lead', 'TRUE')).toBe('true')
+    expect(coerceValue('requires_team_lead', '0')).toBe('false')
+    expect(coerceValue('no_parking', 'אולי')).toBe('אולי')
   })
 })
 
@@ -193,13 +223,52 @@ describe('buildImportPayload', () => {
 
   it('תאריך משימה ריק לא נשלח — השרת ייקח את תאריך האירוע', () => {
     const noDate = parseSheet(
-      tasksMatrix(['1', 'הקמה', '', '', '', '08:00', '4', '5', '', '', '', '']),
+      tasksMatrix(taskCells('1', 'הקמה', '', { warehouse_start_time: '' })),
       TASK_COLUMNS,
     )
     const { tasksByKey } = groupTasks(events, noDate)
     const { payloads } = buildImportPayload(events, tasksByKey, CUSTOMERS)
     expect(payloads[0].tasks[0]).not.toHaveProperty('task_date')
     expect(payloads[0].tasks[0].onsite_start_time).toBe('08:00')
+  })
+
+  it('עמודות התוספות והספקים נוסעות עם שורת האירוע', () => {
+    const withAddons = parseEventSheet(
+      eventsMatrix(
+        eventCells('1', 'אירועי הצפון', '2026-03-15', {
+          no_parking: 'כן', porterage: 'לא', suppliers: 'ספק א, ספק ב',
+        }),
+      ),
+    )
+    const { payloads } = buildImportPayload(withAddons, new Map(), CUSTOMERS)
+    expect(payloads[0].no_parking).toBe('true')
+    expect(payloads[0].porterage).toBe('false')
+    expect(payloads[0].suppliers).toBe('ספק א, ספק ב')
+    // תא ריק אינו "לא" — הוא פשוט אינו נשלח
+    expect(payloads[0]).not.toHaveProperty('supplier_pickup')
+  })
+
+  it('עמודות הכסף והשיוך נוסעות עם שורת המשימה', () => {
+    const money = parseSheet(
+      tasksMatrix(
+        taskCells('1', 'הקמה', '2026-03-15', {
+          warehouse: 'מחסן ראשי', travel_hours: '1', requires_team_lead: 'כן',
+          price: '2,400 ₪', contractor: 'קבלן הדרום', contractor_price: '900',
+        }),
+      ),
+      TASK_COLUMNS,
+    )
+    const { tasksByKey } = groupTasks(events, money)
+    const { payloads } = buildImportPayload(events, tasksByKey, CUSTOMERS)
+    expect(payloads[0].tasks[0]).toMatchObject({
+      task_type: 'הקמה',
+      warehouse: 'מחסן ראשי',
+      travel_hours: '1',
+      requires_team_lead: 'true',
+      price: '2400',
+      contractor: 'קבלן הדרום',
+      contractor_price: '900',
+    })
   })
 
   it('שם לקוח לא מוכר מדווח בשמו ולא כ"חסר"', () => {
@@ -216,6 +285,23 @@ describe('buildImportPayload', () => {
   })
 })
 
+describe('שדות מותאמים', () => {
+  const field = (field_key: string, label_he: string, field_type: FormField['field_type']): FormField => ({
+    field_key, label_he, field_type, sort_order: 10, customer_id: 'cust-1', options: [], deleted_at: null,
+  })
+
+  it('תיבת סימון מותאמת נקראת ל-true/false ולא נשארת "כן"', () => {
+    const cols = eventColumns([field('cf_vip', 'אירוע VIP', 'checkbox'), field('cf_qty', 'כמות כיסאות', 'number')])
+    const rows = parseEventSheet(
+      [cols.map((c) => c.header), cellsOf(cols, { customer_name: 'אירועי הצפון', cf_vip: 'כן', cf_qty: '1,200' })],
+      cols,
+    )
+    // app.event_custom_patch ממירה ב-::boolean וב-::numeric, ואלה הערכים שהיא מקבלת
+    expect(rows[0].cf_vip).toBe('true')
+    expect(rows[0].cf_qty).toBe('1200')
+  })
+})
+
 describe('תבנית וקובץ דוגמה', () => {
   it('התבנית היא שני גיליונות ריקים עם הכותרות', () => {
     const plan = buildTemplatePlan()
@@ -224,17 +310,56 @@ describe('תבנית וקובץ דוגמה', () => {
     expect(plan[0].columns[0].key).toBe('row_key')
   })
 
+  const REFS = {
+    customers: ['אירועי הצפון', 'הפקות דרום'],
+    taskTypes: ['הקמה', 'פירוק', 'סידור'],
+    executionMethods: ['הובלה בלבד'],
+    contractors: ['קבלן הדרום'],
+    warehouses: ['מחסן ראשי'],
+    suppliers: [{ customer: 'אירועי הצפון', name: 'ספק הבמות' }],
+  }
+
   it('קובץ הדוגמה מכיל אירועים, משימות וגיליון הסבר', () => {
-    const plan = buildSamplePlan({
-      customers: ['אירועי הצפון', 'הפקות דרום'],
-      taskTypes: ['הקמה', 'פירוק', 'סידור'],
-      executionMethods: ['הובלה בלבד'],
-    })
+    const plan = buildSamplePlan(REFS)
     expect(plan.map((s) => s.name)).toEqual(['אירועים', 'משימות', 'הסבר'])
     expect(plan[0].rows.length).toBeGreaterThan(0)
     expect(plan[1].rows.length).toBeGreaterThan(0)
     expect(plan[2].intro?.length).toBeGreaterThan(0)
     expect(plan[2].rows.map((r) => r.value)).toContain('הובלה בלבד')
+  })
+
+  it('גיליון ההסבר מונה גם מחסנים, קבלנים וספקים — עם הלקוח של הספק', () => {
+    const guide = buildSamplePlan(REFS)[2]
+    expect(guide.rows).toContainEqual({ kind: 'מחסן יציאה', value: 'מחסן ראשי' })
+    expect(guide.rows).toContainEqual({ kind: 'קבלן', value: 'קבלן הדרום' })
+    expect(guide.rows).toContainEqual({ kind: 'ספק של אירועי הצפון', value: 'ספק הבמות' })
+  })
+
+  it('שורות הדוגמה נושאות מחירים, תוספות ושיוך לקבלן', () => {
+    const [eventsSheet, tasksSheet] = buildSamplePlan(REFS)
+    expect(eventsSheet.rows[0].no_parking).toBe('כן')
+    expect(eventsSheet.rows[0].suppliers).toBe('ספק הבמות')
+    // ספק של לקוח אחר לא יימצא, ולכן התא נשאר ריק ולא ייפול בייבוא
+    expect(eventsSheet.rows[1].suppliers).toBe('')
+    expect(tasksSheet.rows[0].price).toBe('2400')
+    const delegated = tasksSheet.rows.find((r) => r.contractor)
+    expect(delegated?.contractor).toBe('קבלן הדרום')
+    expect(delegated?.contractor_price).toBe('900')
+  })
+
+  it('מה שאסור למוריד יורד מהדוגמה, כדי שהקובץ ייקלט כפי שהוא', () => {
+    const tasksSheet = buildSamplePlan({
+      ...REFS,
+      allow: { price: false, contractor: false, contractorPrice: false },
+    })[1]
+    expect(tasksSheet.rows.every((r) => r.price === '')).toBe(true)
+    expect(tasksSheet.rows.every((r) => r.contractor === '')).toBe(true)
+    expect(tasksSheet.rows.every((r) => r.contractor_price === '')).toBe(true)
+  })
+
+  it('בלי קבלן במערכת אין גם מחיר לקבלן — הצירוף הזה נפסל בשרת', () => {
+    const tasksSheet = buildSamplePlan({ ...REFS, contractors: [] })[1]
+    expect(tasksSheet.rows.every((r) => r.contractor === '' && r.contractor_price === '')).toBe(true)
   })
 
   it('כל משימה בדוגמה מצביעה על אירוע שקיים בגיליון האירועים', () => {

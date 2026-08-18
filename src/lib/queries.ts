@@ -144,6 +144,31 @@ export function useSuppliers(customerId?: string | null) {
   })
 }
 
+/**
+ * כל הספקים במערכת, עם הלקוח שכל אחד שייך אליו.
+ *
+ * useSuppliers מסננת ללקוח אחד כי כך עובד טופס האירוע. גיליון ההסבר של קובץ
+ * הייבוא צריך את ההפך — קובץ אחד נושא אירועים של כמה לקוחות, וכל שם ספק בו
+ * נבדק מול הלקוח של אותה שורה.
+ */
+export function useAllSuppliers(enabled = true) {
+  return useQuery({
+    queryKey: ['suppliers', 'all'],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select('name, is_active, customers(name)')
+        .is('deleted_at', null)
+        .order('name')
+      if (error) throw error
+      return (data as unknown as { name: string; is_active: boolean; customers: { name: string } | null }[])
+        .filter((s) => s.is_active)
+        .map((s) => ({ name: s.name, customer: s.customers?.name ?? '' }))
+    },
+  })
+}
+
 export function useContractorWorkers(contractorId?: string | null) {
   return useQuery({
     queryKey: ['contractor_workers', 'byContractor', contractorId],

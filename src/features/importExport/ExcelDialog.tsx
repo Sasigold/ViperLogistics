@@ -13,7 +13,15 @@ import {
 } from '../../components/ui/icons'
 import { supabase } from '../../lib/supabase'
 import { Button, Modal, Spinner, useToast } from '../../components/ui'
-import { useAllCustomFormFields, useCustomers, useExecutionMethods, useTaskTypes } from '../../lib/queries'
+import {
+  useAllCustomFormFields,
+  useAllSuppliers,
+  useContractors,
+  useCustomers,
+  useExecutionMethods,
+  useTaskTypes,
+} from '../../lib/queries'
+import { useWarehouses } from '../attendance/attendanceQueries'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { errorMessage } from '../../lib/errors'
@@ -70,6 +78,20 @@ async function downloadWorkbook(plans: SheetPlan[], filename: string) {
   URL.revokeObjectURL(url)
 }
 
+/** בוליאני כפי שהוא נקרא בקובץ. NULL — "לא נקבע" — נשאר תא ריק. */
+const yesNo = (v: unknown) => (v == null ? '' : v ? 'כן' : 'לא')
+
+/**
+ * מחיר מטבלת לוויין (task_pricing / task_contractor_terms).
+ * PostgREST מחזיר אובייקט ליחס 1:1 ומערך אחרת, ושני המקרים מטופלים — כמו
+ * ב-useEventAutoTasks — כדי שהייצוא לא יישבר על שינוי בזיהוי היחס.
+ */
+function embeddedPrice(v: unknown): string {
+  const one = Array.isArray(v) ? v[0] : v
+  const price = (one as { price?: number | string } | null | undefined)?.price
+  return price == null ? '' : String(price)
+}
+
 /** גיליון ExcelJS → מטריצת מחרוזות. שורה 0 היא הכותרות. */
 function sheetToMatrix(ws: ExcelJS.Worksheet | undefined): Matrix {
   if (!ws) return []
@@ -88,6 +110,11 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
   const { data: customers = [] } = useCustomers()
   const { data: taskTypes = [] } = useTaskTypes()
   const { data: executionMethods = [] } = useExecutionMethods()
+  /* הרשימות שגיליון ההסבר בקובץ הדוגמה נשען עליהן. כולן מסוננות ב-RLS, ולכן
+     מי שאינו רשאי לראות קבלנים או ספקים פשוט מקבל קובץ בלי הקטגוריות האלה. */
+  const { data: contractors = [] } = useContractors(open)
+  const { data: warehouses = [] } = useWarehouses(true)
+  const { data: suppliers = [] } = useAllSuppliers(open)
   /* Custom fields become extra columns. One file can carry rows for several
      customers, so the whole set is loaded, not one customer's. */
   const { data: customFields = [] } = useAllCustomFormFields(open)
@@ -102,6 +129,12 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
   const canExport = has(PERM.EVENTS_EXPORT)
   const canImport = has(PERM.EVENTS_IMPORT)
   const canSeeContacts = has(PERM.EVENTS_VIEW_CONTACTS)
+  /* שלוש עמודות בגיליון המשימות נבדקות בשרת מול מפתח משלהן, והוא דוחה את
+     הקובץ *כולו* כשהוא חסר. שורות הדוגמה נכתבות אפוא לפי מה שמותר למי שהוריד
+     אותן, כדי שהקובץ ייקלט כפי שהוא. */
+  const canPrice = has(PERM.PRICING_EDIT)
+  const canDelegate = has(PERM.TASKS_DELEGATE)
+  const canContractorPrice = has(PERM.CONTRACTORS_EDIT_PRICING)
   const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{
@@ -118,19 +151,26 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
         // event_contacts has its own RLS keyed on can_view_field('event',
         // 'contact_phone'), so the embed comes back empty for a user without
         // the right — the filtering is the server's, not this select's.
-        .select('*, customers(name), event_contacts(contact_name, contact_phone)')
+        .select(
+          '*, customers(name), event_contacts(contact_name, contact_phone),' +
+            ' event_suppliers(suppliers(name))',
+        )
         .is('deleted_at', null)
         .order('event_date', { ascending: false })
         .limit(5000)
       if (error) throw error
 
-      const rows = data as Record<string, unknown>[]
+      const rows = data as unknown as Record<string, unknown>[]
       // מזהה השורה מיוצר כאן ולא נשמר במסד — הוא קיים כדי שגיליון המשימות
       // יוכל להצביע על שורת האירוע, וכדי שקובץ שיצא יוכל לחזור פנימה.
       const keyById = new Map(rows.map((e, i) => [e.id as string, String(i + 1)]))
 
       const eventRows: SheetRow[] = rows.map((e) => {
         const contact = e.event_contacts as { contact_name?: string; contact_phone?: string } | null
+        const supplierNames = ((e.event_suppliers ?? []) as { suppliers: { name: string } | null }[])
+          .map((r) => r.suppliers?.name ?? '')
+          .filter(Boolean)
+          .join(', ')
         // a custom field belongs to one customer, so only that customer's rows
         // carry a value in its column — everyone else's cell stays empty
         const stored = (e.custom_fields ?? {}) as Record<string, CustomFieldValue>
@@ -152,6 +192,12 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
           location_notes: String(e.location_notes ?? ''),
           volume_m: String(e.volume_m ?? ''),
           truck_count: String(e.truck_count ?? ''),
+          /* 'כן'/'לא' ולא true/false: הקובץ נקרא בידי אדם, והייבוא מתרגם חזרה
+             (coerceValue). אותה הכרעה שהיומן עושה על אותם שדות. */
+          no_parking: yesNo(e.no_parking),
+          porterage: yesNo(e.porterage),
+          supplier_pickup: yesNo(e.supplier_pickup),
+          suppliers: supplierNames,
           contact_name: contact?.contact_name ?? '',
           contact_phone: contact?.contact_phone ?? '',
           notes: String(e.notes ?? ''),
@@ -165,10 +211,14 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
       for (let i = 0; i < ids.length; i += 200) {
         const { data: chunk, error: taskError } = await supabase
           .from('tasks')
+          // task_pricing ו-task_contractor_terms מסוננות ב-RLS כמו
+          // event_contacts למעלה: מי שאינו רשאי לראות מחירים מקבל שיבוץ ריק
+          // ולא שגיאה, והעמודה יוצאת ריקה בקובץ.
           .select(
             'event_id, title, task_date, warehouse_start_time, onsite_start_time, hours_count, ' +
-              'worker_count, truck_free_text, location_text, notes, ' +
-              'task_types(name), execution_methods(name)',
+              'worker_count, truck_free_text, location_text, travel_hours, requires_team_lead, notes, ' +
+              'task_types(name), execution_methods(name), warehouses(name), contractors(name), ' +
+              'task_pricing(price), task_contractor_terms(price)',
           )
           .in('event_id', ids.slice(i, i + 200))
           .is('deleted_at', null)
@@ -187,8 +237,14 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
         hours_count: String(t.hours_count ?? ''),
         worker_count: String(t.worker_count ?? ''),
         execution_method: (t.execution_methods as { name: string } | null)?.name ?? '',
+        warehouse: (t.warehouses as { name: string } | null)?.name ?? '',
         truck_free_text: String(t.truck_free_text ?? ''),
         location_text: shortAddress(String(t.location_text ?? '')),
+        travel_hours: t.travel_hours == null ? '' : String(t.travel_hours),
+        requires_team_lead: yesNo(t.requires_team_lead),
+        price: embeddedPrice(t.task_pricing),
+        contractor: (t.contractors as { name: string } | null)?.name ?? '',
+        contractor_price: embeddedPrice(t.task_contractor_terms),
         notes: String(t.notes ?? ''),
       }))
 
@@ -252,6 +308,10 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
         customers: customers.map((c) => c.name),
         taskTypes: taskTypes.filter((t) => t.is_active).map((t) => t.name),
         executionMethods: executionMethods.filter((m) => m.is_active).map((m) => m.name),
+        contractors: contractors.filter((c) => c.is_active).map((c) => c.name),
+        warehouses: warehouses.map((w) => w.name),
+        suppliers: suppliers.filter((s) => s.customer),
+        allow: { price: canPrice, contractor: canDelegate, contractorPrice: canContractorPrice },
       }, eventCols),
       'events-sample.xlsx',
     )
@@ -317,10 +377,12 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
 
           <div className="rounded-lg border border-info-border bg-info-subtle px-3 py-2.5">
             <p className="type-caption text-info-text">
-              גיליון "אירועים" — שורה לכל אירוע. גיליון "משימות" — שורה לכל משימה, מקושרת לאירוע
-              דרך עמודת "מזהה שורה". הייבוא מזהה לקוח לפי "שם לקוח במערכת" ומחיל את שדות החובה
-              שהוגדרו לכל לקוח. משימות ההקמה והפירוק נוצרות לכל אירוע ממילא, ושורה בגיליון המשימות
-              ממלאת אותן במקום להכפיל. אפשר להעלות גם קובץ בן גיליון אחד.
+              גיליון "אירועים" — שורה לכל אירוע, כולל תוספות (כן/לא) וספקים. גיליון "משימות" —
+              שורה לכל משימה, מקושרת לאירוע דרך עמודת "מזהה שורה", כולל מחסן, קבלן, מחיר ללקוח
+              ומחיר לקבלן. הייבוא מזהה לקוח, סוג משימה, אופן ביצוע, מחסן, קבלן וספק לפי השם
+              במערכת, ומחיל את שדות החובה שהוגדרו לכל לקוח. משימות ההקמה והפירוק נוצרות לכל אירוע
+              ממילא, ושורה בגיליון המשימות ממלאת אותן במקום להכפיל. עמודות הכסף דורשות את הרשאות
+              התמחור וההאצלה. אפשר להעלות גם קובץ בן גיליון אחד.
             </p>
           </div>
 
