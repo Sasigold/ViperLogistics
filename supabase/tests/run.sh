@@ -43,37 +43,63 @@ echo "all $(ls "$ROOT"/supabase/migrations/*.sql | wc -l) migrations applied"
 
 $PSQL -v ON_ERROR_STOP=1 -d vl -f "$HERE/01_seed.sql" >/dev/null
 
+# ── the suite runner ────────────────────────────────────────────────────────
+# ON_ERROR_STOP matters here as much as it does on the migrations above, and
+# for a subtler reason. The verdict at the bottom is a grep for '^FAIL', and a
+# suite that dies on a real SQL error — a renamed column, a dropped function —
+# prints ERROR, *carries on to the next statement*, and exits 0. The assertions
+# that would have printed FAIL never run, so they print nothing, the grep finds
+# nothing, and CI goes green on a suite that stopped testing. Failing loudly on
+# the first unexpected error is the only way the green means anything.
+#
+# Expected failures do not trip this: t_expect_fail/t_expect_ok (01_seed.sql)
+# trap the exception inside plpgsql, so psql never sees an error for a statement
+# that was *supposed* to be refused.
+SUITE_OUT=$(mktemp)
+trap 'rm -f "$SUITE_OUT"' EXIT
+
+run_suite() {
+  local file="$1" raw rc filtered
+  raw=$(mktemp)
+  set +e
+  $PSQL -v ON_ERROR_STOP=1 -d vl -f "$HERE/$file" >"$raw" 2>&1
+  rc=$?
+  set -e
+  filtered=$(grep -v '^[0-9a-f-]\{36\}$' "$raw" | grep -v '^$' || true)
+  echo "$filtered"
+  printf '%s\n' "$filtered" >>"$SUITE_OUT"
+  if [ "$rc" -ne 0 ]; then
+    echo
+    echo "ABORTED: $file stopped on a SQL error (psql exit $rc)."
+    echo "Everything after that point never ran, so a pass count here would be a lie."
+    tail -20 "$raw" | sed 's/^/    /'
+    rm -f "$raw"
+    exit 1
+  fi
+  rm -f "$raw"
+}
+
 echo
 echo "== privilege-escalation suite =="
-OUT=$($PSQL -d vl -f "$HERE/02_escalation.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT"
+run_suite 02_escalation.sql
 
 echo
 echo "== pricing suite =="
 # 03 seeds rows of its own and must run after 02, which asserts on row counts.
-OUT2=$($PSQL -d vl -f "$HERE/03_pricing.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT2"
-OUT="$OUT
-$OUT2"
+run_suite 03_pricing.sql
 
 echo
 echo "== attendance suite =="
 # 04 seeds its own people and tasks, and must run last: it moves task dates
 # around to exercise the clock's "too early" branch.
-OUT3=$($PSQL -d vl -f "$HERE/04_attendance.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT3"
-OUT="$OUT
-$OUT3"
+run_suite 04_attendance.sql
 
 echo
 echo "== dashboard suite =="
 # 05 runs last and reads what the earlier suites created: the payroll
 # neutrality check compares the report against the function it now sits on,
 # and needs attendance rows to exist for that comparison to mean anything.
-OUT4=$($PSQL -d vl -f "$HERE/05_dashboard.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT4"
-OUT="$OUT
-$OUT4"
+run_suite 05_dashboard.sql
 
 echo
 echo "== report builder suite =="
@@ -82,68 +108,47 @@ echo "== report builder suite =="
 # priced tasks and approved attendance for that comparison to mean anything.
 # It also grants and revokes keys on f1, so nothing after it may assume f1's
 # permissions are untouched.
-OUT5=$($PSQL -d vl -f "$HERE/06_report_builder.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT5"
-OUT="$OUT
-$OUT5"
+run_suite 06_report_builder.sql
 
 echo
 echo "== notifications suite =="
 # 07 runs last: it switches notifications.email and notifications.push on, and
 # any earlier suite that counts delivery rows would see a different picture.
 # It puts both back to off at the end.
-OUT6=$($PSQL -d vl -f "$HERE/07_notifications.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT6"
-OUT="$OUT
-$OUT6"
+run_suite 07_notifications.sql
 
 echo
 echo "== events import suite =="
 # 08 מקימה לקוח ואנשי צוות משלה ומייבאת אירועים חדשים, ולכן היא רצה אחרי כל
 # מי שסופר שורות. היא אינה נשענת על ההרשאות של f1, ש-06 מזיזה.
-OUT7=$($PSQL -d vl -f "$HERE/08_import_tasks.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT7"
-OUT="$OUT
-$OUT7"
+run_suite 08_import_tasks.sql
 
 echo
 echo "== reports page suite =="
 # 09 משחק במענקים האישיים של f3 ומחזיר אותם בסופו; הוא רץ אחרון כדי שאף
 # בדיקה אחרת לא תראה את f3 באמצע התחפושת.
-OUT8=$($PSQL -d vl -f "$HERE/09_reports_page.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT8"
-OUT="$OUT
-$OUT8"
+run_suite 09_reports_page.sql
 
 echo
 echo "== task status lifecycle suite =="
 # 10 מקימה לקוח, אירוע ואנשים משל עצמה ואינה נשענת על אף חבילה קודמת — 02
 # הופכת את f2 לאדמין ו-06 מזיזה מפתחות על f1. היא רצה אחרונה כי היא סופרת
 # את קטלוג הסטטוסים כולו, ומשימה שחבילה אחרת תיצור אחריה לא תשנה את הספירה.
-OUT9=$($PSQL -d vl -f "$HERE/10_task_status.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT9"
-OUT="$OUT
-$OUT9"
+run_suite 10_task_status.sql
 
 echo
 echo "== default permissions suite =="
 # 11 מקימה לקוח, קבלן, אירוע ומשימות משל עצמה ואינה נשענת על אף חבילה קודמת.
 # היא רצה אחרונה כי היא מזריעה משימות "משובצות" ואנשי צוות נוספים, ואינה
 # מנקה אחריה — כל מי שסופר שורות חייב לרוץ לפניה.
-OUT10=$($PSQL -d vl -f "$HERE/11_default_permissions.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT10"
-OUT="$OUT
-$OUT10"
+run_suite 11_default_permissions.sql
 
 echo
 echo "== income & receipts suite =="
 # 12 מקימה לקוח, אירוע ואנשים משלה, והאירוע שלה יושב ב-current_date+210 כדי
 # שטווחי הסקשנים שלה לא יתפסו משימות של חבילות אחרות. היא משנה את חלוקת
 # הלקוח שלה בלבד ואינה נוגעת ב-f1/f2/f3.
-OUT11=$($PSQL -d vl -f "$HERE/12_income_receipts.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT11"
-OUT="$OUT
-$OUT11"
+run_suite 12_income_receipts.sql
 
 echo
 echo "== task P&L suite =="
@@ -151,30 +156,33 @@ echo "== task P&L suite =="
 # ביום שני שבשבוע current_date+240 כדי ששיעור יום המנוחה לא ייגע במספרים
 # ושחבילה אחרת לא תזלוג לטווח. היא רצה אחרונה כי היא סופרת שורות וסכומים
 # בטווח שלה, ומוסיפה משימות ומשמרות שאינן מנוקות.
-OUT12=$($PSQL -d vl -f "$HERE/13_task_pnl.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT12"
-OUT="$OUT
-$OUT12"
+run_suite 13_task_pnl.sql
 
 echo
 echo "== contractor shell suite =="
 # 14 מקימה שני קבלנים, לקוח, אירוע ומשימות משל עצמה. היא רצה אחרונה כי היא
 # מוסיפה שורות סגל ושיבוצים שאינם מנוקים, ובודקת ספירות בהיקף שלה בלבד.
-OUT13=$($PSQL -d vl -f "$HERE/14_contractor_shell.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT13"
-OUT="$OUT
-$OUT13"
+run_suite 14_contractor_shell.sql
 
 echo
 echo "== customer spend / dual hat / clock error codes =="
 # 15 מקימה לקוח, קבלן, אירוע ומשימה משל עצמה, ובודקת בעיקר *היעדר* מפתחות
 # אצל הלקוח. היא רצה אחרונה כי היא מוסיפה שיבוץ ותמחור שאינם מנוקים.
-OUT14=$($PSQL -d vl -f "$HERE/15_customer_spend_and_dual_hat.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT14"
-OUT="$OUT
-$OUT14"
+run_suite 15_customer_spend_and_dual_hat.sql
 
 echo
-FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
-echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
-[ "$FAILED" -eq 0 ]
+PASSED=$(grep -c '^pass' "$SUITE_OUT" || true)
+FAILED=$(grep -c '^FAIL' "$SUITE_OUT" || true)
+echo "pass: $PASSED   FAIL: $FAILED"
+[ "$FAILED" -eq 0 ] || exit 1
+
+# A floor under the pass count. Without one, a suite that quietly shrinks from
+# 200 assertions to 3 is indistinguishable from one at full strength — every
+# number the run prints would still be green. Raise it when the suite grows;
+# that edit is the point, because it makes shrinkage a deliberate act.
+: "${VL_MIN_PASS:=880}"
+if [ "$PASSED" -lt "$VL_MIN_PASS" ]; then
+  echo "FAILED: only $PASSED assertions ran, expected at least $VL_MIN_PASS."
+  echo "Either a suite stopped early, or the floor needs updating on purpose."
+  exit 1
+fi
