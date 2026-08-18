@@ -59,7 +59,19 @@ Deno.serve(async (req) => {
 
     const body = await req.json()
     const action = body.action as Action
-    if (!REQUIRED[action]) return json({ error: 'פעולה לא מוכרת' }, 400)
+    /*
+     * `hasOwnProperty` and not a truthiness test on the lookup. `REQUIRED` is an
+     * object literal, so it inherits from Object.prototype — and
+     * `REQUIRED['toString']`, `REQUIRED['constructor']`, `REQUIRED['valueOf']`
+     * are all truthy. Each of those passed the old guard, resolved to a
+     * *function* rather than a permission key, and then `has()` short-circuited
+     * to true for an admin. Nothing after that matched, and execution fell
+     * through every branch to the unguarded tail — which deletes the login.
+     * An unrecognised action was the most destructive action in the file.
+     */
+    if (!Object.prototype.hasOwnProperty.call(REQUIRED, action)) {
+      return json({ error: 'פעולה לא מוכרת' }, 400)
+    }
     if (!has(REQUIRED[action])) return json({ error: 'אין לך הרשאה לבצע פעולה זו' }, 403)
 
     // Never trust a raw user_id from the body: the old code linked a fresh auth
@@ -134,11 +146,21 @@ Deno.serve(async (req) => {
       return json({ ok: true })
     }
 
-    // delete_login
-    const { error } = await admin.auth.admin.deleteUser(t.user_id)
-    if (error) return json({ error: error.message }, 400)
-    return json({ ok: true })
+    if (action === 'delete_login') {
+      const { error } = await admin.auth.admin.deleteUser(t.user_id)
+      if (error) return json({ error: error.message }, 400)
+      return json({ ok: true })
+    }
+
+    /* Unreachable while `REQUIRED` and the branches above agree. It exists so
+       that the next action added to the type — and forgotten here — refuses
+       instead of falling into whichever branch happens to be last. */
+    return json({ error: 'פעולה לא מוכרת' }, 400)
   } catch (e) {
-    return json({ error: (e as Error).message }, 500)
+    /* The message is logged, not returned: raw exception text carries Postgres
+       errors, env-var names and network internals, and `src/lib/errors.ts`
+       spends its whole existence keeping exactly that out of the UI. */
+    console.error('admin-users failed', e)
+    return json({ error: 'הפעולה נכשלה. נסה שוב, ואם זה חוזר פנה למנהל המערכת.' }, 500)
   }
 })

@@ -541,3 +541,69 @@ update app_settings set value = jsonb_set(value, '{enabled}', 'false'::jsonb)
  where key in ('notifications.email', 'notifications.push');
 
 select t_eq('שני הערוצים חזרו לכבוי', app.email_enabled(), false);
+
+-- ===== 13. ה-endpoint של מנוי דחיפה (0077) ===========================
+--
+-- הטבלה נכתבת ישירות מהדפדפן, והערך נקרא בידי notify-dispatch ב-service role
+-- כדי לבצע בקשה יוצאת. כל מה שאינו שירות דחיפה אמיתי הוא כתובת שמשתמש מחובר
+-- בחר עבור השרת.
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000007a1', false);
+
+select t_expect_ok('מנוי מ-FCM נכנס', $$
+  insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
+  values ('20000000-0000-0000-0000-0000000007a1',
+          'https://fcm.googleapis.com/fcm/send/abc123', 'k', 'a')$$);
+
+select t_expect_ok('וגם מ-Apple', $$
+  insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
+  values ('20000000-0000-0000-0000-0000000007a1',
+          'https://web.push.apple.com/QRS', 'k', 'a')$$);
+
+select t_expect_ok('וגם תת-דומיין של WNS', $$
+  insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
+  values ('20000000-0000-0000-0000-0000000007a1',
+          'https://db5p.notify.windows.com/w/?token=x', 'k', 'a')$$);
+
+-- ה-SSRF עצמו: רשת פנימית, לולאה מקומית, ושירות המטא-דאטה של ענן
+select t_expect_fail('כתובת פנימית נדחית', $$
+  insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
+  values ('20000000-0000-0000-0000-0000000007a1',
+          'https://10.0.0.5:8080/admin', 'k', 'a')$$);
+
+select t_expect_fail('לוקאלהוסט נדחה', $$
+  insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
+  values ('20000000-0000-0000-0000-0000000007a1',
+          'https://127.0.0.1/health', 'k', 'a')$$);
+
+select t_expect_fail('שירות המטא-דאטה נדחה', $$
+  insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
+  values ('20000000-0000-0000-0000-0000000007a1',
+          'https://169.254.169.254/latest/meta-data/', 'k', 'a')$$);
+
+select t_expect_fail('http פשוט נדחה גם למארח מותר', $$
+  insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
+  values ('20000000-0000-0000-0000-0000000007a1',
+          'http://fcm.googleapis.com/fcm/send/x', 'k', 'a')$$);
+
+-- מארח מותר כרכיב בתוך כתובת של מארח אחר: העיגון ב-^ הוא מה שחוסם את זה
+select t_expect_fail('מארח מותר כקידומת של דומיין אחר נדחה', $$
+  insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
+  values ('20000000-0000-0000-0000-0000000007a1',
+          'https://fcm.googleapis.com.evil.test/x', 'k', 'a')$$);
+
+select t_expect_fail('ומארח מותר בתוך הנתיב אינו הופך את היעד למותר', $$
+  insert into push_subscriptions (profile_id, endpoint, p256dh, auth)
+  values ('20000000-0000-0000-0000-0000000007a1',
+          'https://evil.test/https://fcm.googleapis.com/', 'k', 'a')$$);
+
+-- עדכון הוא הנתיב השני אל אותה עמודה, ו-ps_own מתירה אותו
+select t_expect_fail('גם עדכון של שורה קיימת אינו יכול להוציא את הכתובת החוצה', $$
+  update push_subscriptions set endpoint = 'https://192.168.1.1/x'
+   where endpoint = 'https://fcm.googleapis.com/fcm/send/abc123'$$);
+
+delete from push_subscriptions where profile_id = '20000000-0000-0000-0000-0000000007a1';
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
