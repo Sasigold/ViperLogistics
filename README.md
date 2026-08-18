@@ -128,7 +128,7 @@
 נשאר בדלי: ההיסטוריה יורדת מהמסך ואינה נמחקת. כל העלאה, הסרה ושחזור נרשמים
 ביומן הפעילות של האירוע.
 
-הסכמה ב-`0077_event_specs.sql`, החבילה ב-`supabase/tests/16_event_specs.sql`,
+הסכמה ב-`0077_event_specs.sql` (עם הידוקי ה-linter ב-0078), החבילה ב-`supabase/tests/16_event_specs.sql`,
 הלוגיקה הטהורה ב-`src/features/events/specs.ts` (נבדקת ב-`specs.test.ts`) והמסך
 ב-`EventSpecsModal.tsx`.
 
@@ -425,7 +425,7 @@ npm test            # שניהם
 ## מבנה
 
 ```
-supabase/migrations/   # 0001..0077 — סכמה, זריעה, RLS, RPCs, הרשאות, תמחור,
+supabase/migrations/   # 0001..0078 — סכמה, זריעה, RLS, RPCs, הרשאות, תמחור,
                        # נוכחות, דשבורד, דוחות, התראות, הכנסות, רווחיות משימה,
                        # מפרט אירוע (Storage)
 supabase/functions/    # admin-users (ניהול חשבונות), geocode-proxy (Nominatim),
