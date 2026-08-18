@@ -104,6 +104,10 @@ function sheetToMatrix(ws: ExcelJS.Worksheet | undefined): Matrix {
   return matrix
 }
 
+/* The server cap on one export. Named because the screen has to tell the
+   difference between a complete file and the first 5000 rows of a longer one. */
+const EXPORT_LIMIT = 5000
+
 export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast()
   const qc = useQueryClient()
@@ -157,7 +161,7 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
         )
         .is('deleted_at', null)
         .order('event_date', { ascending: false })
-        .limit(5000)
+        .limit(EXPORT_LIMIT)
       if (error) throw error
 
       const rows = data as unknown as Record<string, unknown>[]
@@ -255,6 +259,17 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
         ],
         `events-${new Date().toISOString().slice(0, 10)}.xlsx`,
       )
+
+      /* The one truncation in the product that leaves the building. A short
+         list on a screen is visibly a screen; a workbook is taken away, filed,
+         and reconciled against — and a partial one is indistinguishable from a
+         complete one once it is in someone's Downloads folder. */
+      if (rows.length >= EXPORT_LIMIT) {
+        toast.warning(`הקובץ מכיל את ${EXPORT_LIMIT.toLocaleString('he-IL')} האירועים האחרונים בלבד`, {
+          description: 'זו תקרת הייצוא. ייתכן שיש אירועים ישנים יותר שאינם בקובץ.',
+          duration: 12000,
+        })
+      }
     } catch (e) {
       toast.error(errorMessage(e))
     } finally {

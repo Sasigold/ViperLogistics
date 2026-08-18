@@ -1,9 +1,10 @@
 import { Suspense, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { FileSpreadsheet, ICON, Plus, STROKE } from '../../components/ui/icons'
 import {
   Button,
+  cx,
   DataTable,
   EmptyState,
   FilterBar,
@@ -25,11 +26,17 @@ import { formatCustomValue } from './CustomFieldInput'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { lazyPage } from '../../lib/lazyPage'
+import { useDebounced } from '../../lib/useDebounced'
+import { ilikeAcross } from '../../lib/postgrestFilter'
 import type { EventRow } from '../../types/domain'
 
 /* ExcelJS is ~1MB — keep it out of the initial bundle and load it only when
    the import/export dialog is actually opened. */
 const ExcelDialog = lazyPage(() => import('../importExport/ExcelDialog').then((m) => ({ default: m.ExcelDialog })))
+
+/* The server cap. Named so the screen can tell the difference between "that
+   is everything" and "that is the first 200 of something larger". */
+const EVENTS_LIMIT = 200
 
 export default function EventsPage() {
   const { me, has, canCreateEvent, showsEventField } = useAuth()
@@ -40,17 +47,26 @@ export default function EventsPage() {
   const [excelOpen, setExcelOpen] = useState(false)
   const { data: customers = [] } = useCustomers()
 
-  const { data: events = [], isLoading, error, refetch } = useQuery({
-    queryKey: ['events', 'list', q, customer],
+  /* the typed value drives the box, the settled one drives the request */
+  const settledQ = useDebounced(q)
+
+  const { data: events = [], isLoading, isFetching, error, refetch } = useQuery({
+    queryKey: ['events', 'list', settledQ, customer],
+    /* results refine instead of vanishing: without this every keystroke is a
+       new key, and a new key has no data, so the table drops to a skeleton
+       between one letter and the next */
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       let query = supabase
         .from('events')
         .select('*, customers(name, color), statuses(name, color)')
         .is('deleted_at', null)
         .order('event_date', { ascending: false })
-        .limit(200)
+        .limit(EVENTS_LIMIT)
       if (customer) query = query.eq('customer_id', customer)
-      if (q.trim()) query = query.or(`end_client_name.ilike.%${q}%,event_number.ilike.%${q}%,location_text.ilike.%${q}%`)
+      if (settledQ.trim()) {
+        query = query.or(ilikeAcross(['end_client_name', 'event_number', 'location_text'], settledQ.trim()))
+      }
       const { data, error } = await query
       if (error) throw error
       return data as EventRow[]
@@ -239,6 +255,15 @@ export default function EventsPage() {
           </FilterBar>
         </PageHeader>
 
+        {/* keepPreviousData keeps the old rows on screen while the new ones
+            load, so without this there is no sign anything is happening */}
+        <div
+          aria-hidden
+          className={cx(
+            'h-0.5 rounded-full bg-primary transition-opacity duration-200',
+            isFetching && !isLoading ? 'animate-shimmer opacity-100' : 'opacity-0',
+          )}
+        />
         <DataTable
           rows={events}
           columns={columns}
@@ -311,6 +336,16 @@ export default function EventsPage() {
             />
           }
         />
+
+        {/* The cap is a server `limit`, and a full page of results is
+            indistinguishable from "that is all of them" unless the screen says
+            so. Silence here reads as completeness, which is the one thing it
+            cannot promise. */}
+        {events.length >= EVENTS_LIMIT && (
+          <p className="mt-2 text-center type-caption text-ink-tertiary">
+            {`מוצגים ${EVENTS_LIMIT} האירועים האחרונים. צמצמו בעזרת החיפוש או בחירת לקוח כדי לראות אירועים ישנים יותר.`}
+          </p>
+        )}
 
         <EventFormModal open={createOpen} onClose={() => setCreateOpen(false)} />
         {excelOpen && (

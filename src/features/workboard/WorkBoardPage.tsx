@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { addMonths, differenceInCalendarDays, eachDayOfInterval, endOfMonth, isSameMonth, parseISO, startOfMonth } from 'date-fns'
 import {
@@ -38,6 +38,8 @@ import {
   useToast,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
+import { useDebounced } from '../../lib/useDebounced'
+import { ilikeAcross } from '../../lib/postgrestFilter'
 import { useAuth } from '../../state/auth'
 import {
   useContractorWorkerAssign,
@@ -212,6 +214,10 @@ interface DayLayout {
 }
 
 /** inline cell writes a single column with optimistic-concurrency on updated_at */
+/* The server cap on one range fetch. Named so the board can say when it has
+   hit it rather than quietly showing a partial schedule. */
+const BOARD_LIMIT = 2000
+
 function useInlineUpdate() {
   const qc = useQueryClient()
   const toast = useToast()
@@ -364,8 +370,26 @@ export default function WorkBoardPage() {
   const staffing = useAssignmentUpdate()
   const contractorAssign = useContractorWorkerAssign()
 
-  const { data: rows = EMPTY, isLoading, error: rowsError, refetch: refetchRows } = useQuery({
-    queryKey: ['workboard', 'range', from, to, filters],
+  /*
+   * The board filters twice over: `filters` drives the controls and the chip
+   * counts, `queryFilters` drives the request. Only the free-text box differs
+   * between them, and only because it is the one the user types into a
+   * character at a time — every keystroke was a new query key, which meant a
+   * fresh fetch of up to 2000 rows and `isLoading` flipping true, so the whole
+   * board collapsed into a skeleton while someone was still typing the word.
+   */
+  const settledQ = useDebounced(filters.q)
+  const queryFilters = useMemo(() => ({ ...filters, q: settledQ }), [filters, settledQ])
+
+  const {
+    data: rows = EMPTY,
+    isLoading,
+    isFetching,
+    error: rowsError,
+    refetch: refetchRows,
+  } = useQuery({
+    queryKey: ['workboard', 'range', from, to, queryFilters],
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       let q = supabase
         .from('work_board_view')
@@ -378,14 +402,17 @@ export default function WorkBoardPage() {
         .eq('event_is_cancelled', false)
         .order('task_date')
         .order('onsite_start_time', { nullsFirst: false })
-        .limit(2000)
-      if (filters.customer) q = q.eq('customer_id', filters.customer)
-      if (filters.status) q = q.eq('status_id', filters.status)
-      if (filters.type) q = q.eq('task_type_id', filters.type)
-      if (filters.contractor) q = q.eq('contractor_id', filters.contractor)
-      if (filters.q.trim())
+        .limit(BOARD_LIMIT)
+      if (queryFilters.customer) q = q.eq('customer_id', queryFilters.customer)
+      if (queryFilters.status) q = q.eq('status_id', queryFilters.status)
+      if (queryFilters.type) q = q.eq('task_type_id', queryFilters.type)
+      if (queryFilters.contractor) q = q.eq('contractor_id', queryFilters.contractor)
+      if (queryFilters.q.trim())
         q = q.or(
-          `title.ilike.%${filters.q}%,end_client_name.ilike.%${filters.q}%,event_number.ilike.%${filters.q}%,location_text.ilike.%${filters.q}%,customer_name.ilike.%${filters.q}%`,
+          ilikeAcross(
+            ['title', 'end_client_name', 'event_number', 'location_text', 'customer_name'],
+            queryFilters.q.trim(),
+          ),
         )
       const { data, error } = await q
       if (error) throw error
@@ -1044,8 +1071,27 @@ export default function WorkBoardPage() {
           )}
         </div>
 
+        {/* keepPreviousData holds the previous range on screen while the next
+            one loads; this is the only sign that anything is in flight.
+            Same idiom as the shift board's own progress hairline. */}
+        <div
+          aria-hidden
+          className={cx(
+            'h-0.5 shrink-0 rounded-full bg-primary transition-opacity duration-200',
+            isFetching && !isLoading ? 'animate-shimmer opacity-100' : 'opacity-0',
+          )}
+        />
+
         {/* ── the board ──────────────────────────────────────────────────── */}
         <div className="surface min-h-0 flex-1 overflow-hidden">
+          {rows.length >= BOARD_LIMIT && (
+            /* A schedule that silently stops at 2000 rows is worse than one
+               that admits it: the missing tasks look like tasks nobody
+               planned. */
+            <p className="border-b border-line-subtle px-3 py-1.5 type-caption text-warning-text">
+              {`הוצג המקסימום של ${BOARD_LIMIT.toLocaleString('he-IL')} משימות לטווח הזה. צמצמו את טווח התאריכים או הוסיפו סינון — ייתכן שיש משימות נוספות שאינן מוצגות.`}
+            </p>
+          )}
           {isLoading ? (
             <SkeletonTable rows={8} cols={6} />
           ) : rowsError != null ? (
