@@ -276,28 +276,42 @@ begin
       allowed_mime_types = excluded.allowed_mime_types
   $sql$;
 
-  execute 'drop policy if exists event_specs_objects_read   on storage.objects';
-  execute 'drop policy if exists event_specs_objects_insert on storage.objects';
-  execute 'drop policy if exists event_specs_objects_update on storage.objects';
-  execute 'drop policy if exists event_specs_objects_delete on storage.objects';
+  -- הפוליסות בבלוק משלהן, עם מטפל בחריגה, ולא מתוך זהירות כללית:
+  -- ב-Supabase ‏storage.objects שייכת ל-supabase_storage_admin, ו-postgres —
+  -- התפקיד שמריץ מיגרציות — אינו חבר בו. ‏CREATE POLICY דורש בעלות, ולכן
+  -- בפרויקט אמיתי הפקודות האלה נדחות ב-42501. זו תכונה קבועה של הפלטפורמה,
+  -- לא תקלה, והמיגרציה כולה אינה צריכה ליפול בגללה: מה שהיא מוסיפה כאן הוא
+  -- שער, וכשהשער חסר RLS דוחה הכול ממילא. הכשל סגור — העלאה לא תעבוד, אך
+  -- שום קובץ אינו נחשף.
+  --
+  -- ה-insert על storage.buckets נשאר מחוץ למטפל במכוון: הוא כן מצליח
+  -- (‏postgres מחזיק INSERT על הטבלה), ואם דווקא הוא ייפול זו שגיאה אמיתית.
+  begin
+    execute 'drop policy if exists event_specs_objects_read   on storage.objects';
+    execute 'drop policy if exists event_specs_objects_insert on storage.objects';
+    execute 'drop policy if exists event_specs_objects_update on storage.objects';
+    execute 'drop policy if exists event_specs_objects_delete on storage.objects';
 
-  execute $sql$
-    create policy event_specs_objects_read on storage.objects for select to authenticated
-      using (bucket_id = 'event-specs' and app.may_touch_event_spec(name, false))
-  $sql$;
-  execute $sql$
-    create policy event_specs_objects_insert on storage.objects for insert to authenticated
-      with check (bucket_id = 'event-specs' and app.may_touch_event_spec(name, true))
-  $sql$;
-  execute $sql$
-    create policy event_specs_objects_update on storage.objects for update to authenticated
-      using (bucket_id = 'event-specs' and app.may_touch_event_spec(name, true))
-      with check (bucket_id = 'event-specs' and app.may_touch_event_spec(name, true))
-  $sql$;
-  -- delete נדרש: העלאה שהקובץ שלה עלה אך שורת ה-DB נדחתה מנקה אחריה את האובייקט,
-  -- אחרת כל דחיית RLS משאירה קובץ יתום בדלי.
-  execute $sql$
-    create policy event_specs_objects_delete on storage.objects for delete to authenticated
-      using (bucket_id = 'event-specs' and app.may_touch_event_spec(name, true))
-  $sql$;
+    execute $sql$
+      create policy event_specs_objects_read on storage.objects for select to authenticated
+        using (bucket_id = 'event-specs' and app.may_touch_event_spec(name, false))
+    $sql$;
+    execute $sql$
+      create policy event_specs_objects_insert on storage.objects for insert to authenticated
+        with check (bucket_id = 'event-specs' and app.may_touch_event_spec(name, true))
+    $sql$;
+    execute $sql$
+      create policy event_specs_objects_update on storage.objects for update to authenticated
+        using (bucket_id = 'event-specs' and app.may_touch_event_spec(name, true))
+        with check (bucket_id = 'event-specs' and app.may_touch_event_spec(name, true))
+    $sql$;
+    -- delete נדרש: העלאה שהקובץ שלה עלה אך שורת ה-DB נדחתה מנקה אחריה את
+    -- האובייקט, אחרת כל דחיית RLS משאירה קובץ יתום בדלי.
+    execute $sql$
+      create policy event_specs_objects_delete on storage.objects for delete to authenticated
+        using (bucket_id = 'event-specs' and app.may_touch_event_spec(name, true))
+    $sql$;
+  exception when insufficient_privilege then
+    raise warning '0077: אין בעלות על storage.objects — ארבע פוליסות המפרט לא נוצרו. יש להגדיר אותן ב-Dashboard → Storage → Policies על הדלי event-specs, עם הביטוי app.may_touch_event_spec(name, <false לקריאה / true לכתיבה>). עד אז RLS דוחה כל גישה לקבצים.';
+  end;
 end $$;
