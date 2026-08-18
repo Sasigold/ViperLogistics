@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { WidgetFrame } from './WidgetFrame'
 import type { LayoutItem, WidgetDef, WidgetSize } from './dashboardTypes'
 
@@ -11,7 +12,7 @@ import type { LayoutItem, WidgetDef, WidgetSize } from './dashboardTypes'
  * size's height and fills the row it lands in, which leaves nothing ragged to
  * pack around. `WidgetFrame` owns both halves of that.
  */
-export function DashboardGrid({
+export const DashboardGrid = memo(function DashboardGrid({
   items,
   byId,
   editing,
@@ -54,4 +55,17 @@ export function DashboardGrid({
       })}
     </div>
   )
-}
+})
+
+/*
+ * Memoised because the page above it owns five pieces of overlay state — the
+ * task drawer, the event modal, edit mode, the catalogue, the builder — and
+ * every one of them re-rendered this grid and, through it, every Recharts
+ * container on the screen. Opening a task from a list widget re-laid-out the
+ * charts behind the drawer.
+ *
+ * The read-only path takes only `items` and `byId`, and `useDashboardLayout`
+ * already memoises both, so the comparison holds without threading callbacks
+ * anywhere. Edit mode is a different component (`DashboardEditGrid`) and keeps
+ * its own behaviour.
+ */

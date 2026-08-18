@@ -81,6 +81,7 @@ import {
   TasksByTypeWidget,
   TasksTrendWidget,
   UnderstaffedWidget,
+  UnratedShiftsBadgeWidget,
 } from './widgets/sectionWidgets'
 import {
   ClientShareWidget,
@@ -655,6 +656,24 @@ export const WIDGETS: WidgetDef[] = [
     usesRange: true,
     sections: ['cost.payroll'],
     Component: PayrollBonusWidget,
+  },
+  {
+    /* `app.payroll_summary` has counted these two since 0041, and the comment
+       beside the counter says what they are for: "so the widget can say X
+       shifts are not counted instead of lying with confidence". The widget was
+       written, exported — and never registered, so nobody could add it and the
+       number it exists to surface never reached a screen. Payroll totals silently
+       exclude a shift with no rate, and this is the only thing that says so. */
+    id: 'finance.unrated_shifts',
+    title: 'משמרות שאינן בעלות השכר',
+    description: 'משמרות ללא תעריף או שממתינות לאישור, ולכן אינן נספרות בסך השכר',
+    group: 'finance',
+    icon: icon(AlertTriangle),
+    perms: [PERM.DASHBOARD_PAYROLL],
+    sizes: ['sm'],
+    usesRange: true,
+    sections: ['cost.payroll'],
+    Component: UnratedShiftsBadgeWidget,
   },
   {
     id: 'finance.payroll_by_worker',

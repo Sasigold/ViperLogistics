@@ -62,8 +62,14 @@ export default function DashboardPage() {
   const custom = layout.customWidgets
   /* The catalogue is only needed by the builder, so it is fetched by the page
      rather than the drawer: opening the editor should not wait a round trip
-     before it can draw its first picker. */
-  const reportCatalog = useReportCatalog()
+     before it can draw its first picker.
+
+     Which is a good reason to fetch it early and no reason at all to fetch it
+     for everyone. It is three table reads, and most people who open this screen
+     — drivers, workers, client users — hold neither key and can never reach the
+     drawer they would pay for. */
+  const canBuild = has(PERM.DASHBOARD_BUILD_WIDGET)
+  const reportCatalog = useReportCatalog(canCustomize && canBuild)
   const confirmDelete = useConfirm()
 
   const ownIds = useMemo(

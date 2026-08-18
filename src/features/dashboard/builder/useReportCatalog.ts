@@ -29,11 +29,17 @@ const MEASURE_COLS =
 const FIELD_COLS =
   'key, source_key, label_he, kind, col_type, fans_out, nullable, is_estimate, can_group, can_filter, allowed_ops, sort_order'
 
-export function useReportCatalog() {
+/**
+ * `enabled` exists for callers that only *might* need the catalogue. The
+ * dashboard was fetching it on every load for every user — three table reads on
+ * the most-visited screen in the product, for a builder a driver or a client
+ * can never open.
+ */
+export function useReportCatalog(enabled = true) {
   const me = useAuth((s) => s.me)
   const query = useQuery({
     queryKey: ['report_catalog'],
-    enabled: !!me,
+    enabled: enabled && !!me,
     staleTime: 30 * 60 * 1000,
     gcTime: 60 * 60 * 1000,
     queryFn: async (): Promise<Catalog> => {
