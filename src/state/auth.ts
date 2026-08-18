@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { clearCachedUserData } from '../lib/queryClient'
 import { PERM } from '../lib/permissionKeys'
 import type { FieldState, MyPermissions, PermissionAction, UserKind } from '../types/domain'
 
@@ -70,7 +71,12 @@ export const useAuth = create<AuthState>((set, get) => ({
     supabase.auth.onAuthStateChange((_evt, session) => {
       set({ session })
       if (session) void get().refreshMe()
-      else set({ me: null, meError: null })
+      else {
+        set({ me: null, meError: null })
+        /* also the path a session takes when it is revoked elsewhere or simply
+           expires — the device is left with the same caches either way */
+        void clearCachedUserData()
+      }
     })
   },
 
@@ -90,6 +96,13 @@ export const useAuth = create<AuthState>((set, get) => ({
   signOut: async () => {
     await supabase.auth.signOut()
     set({ session: null, me: null, meError: null })
+    /* `signOut` clears the session and nothing else. What stayed behind was
+       every row the previous user had read: react-query's cache in memory, and
+       the Service Worker's week-long GET cache in CacheStorage. On a shared
+       warehouse time clock — two workers swapping on one device, the case
+       `pushQueries` is explicitly written for — the next person signed in and
+       saw the last person's lists until each query happened to revalidate. */
+    await clearCachedUserData()
   },
 
   toggleTheme: () => {

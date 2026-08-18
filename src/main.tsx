@@ -1,37 +1,18 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router/dom'
 import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import { router } from './app/router'
 import { ErrorBoundary, ToastProvider } from './components/ui'
 import { reportError } from './lib/reportError'
+import { queryClient } from './lib/queryClient'
 import { useAuth } from './state/auth'
 import { installZoomGuard } from './lib/zoomGuard'
 
 registerSW({ immediate: true })
 installZoomGuard()
-
-/**
- * כל שגיאה עוברת דרך נקודה אחת בדרך החוצה.
- *
- * קודם לכן כישלון בפרודקשן היה נראה רק למשתמש שנתקל בו, בטוסט, ולא השאיר
- * שום עקבה. ה-cache-ים כאן הם המקום היחיד שרואה *כל* שאילתה וכל מוטציה,
- * ולכן הם המקום הנכון לחבר אליו דיווח חיצוני — ולא כל onError בנפרד.
- */
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false },
-  },
-  queryCache: new QueryCache({
-    onError: (error, query) => reportError(error, { kind: 'query', key: query.queryHash }),
-  }),
-  mutationCache: new MutationCache({
-    onError: (error, _vars, _ctx, mutation) =>
-      reportError(error, { kind: 'mutation', key: mutation.options.mutationKey?.join('/') }),
-  }),
-})
 
 void useAuth.getState().boot()
 
