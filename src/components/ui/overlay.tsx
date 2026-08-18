@@ -39,9 +39,39 @@ function useScrollLock(active: boolean) {
 const FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
+/**
+ * Every open dialog, innermost last. Escape belongs to the top of this stack
+ * and to nothing else.
+ *
+ * Each trap used to answer Escape on its own, and `stopPropagation` did not
+ * stop the others: these listeners all sit on `document` in the capture phase,
+ * where propagation has nowhere left to go and only
+ * `stopImmediatePropagation` separates same-node siblings. So Escape on a
+ * confirm dialog inside TaskDrawer closed the confirm *and* the drawer behind
+ * it, taking a filled-in form with it.
+ *
+ * Reaching for `stopImmediatePropagation` would have inverted the bug rather
+ * than fixed it — listeners fire in registration order, the drawer registers
+ * first, and the drawer would have won and left its own confirm orphaned. What
+ * decides this correctly is depth, not ordering, so depth is what gets stored.
+ */
+const escStack: object[] = []
+
 /** Traps Tab inside the panel, restores focus to the opener on close. */
 function useFocusTrap(active: boolean, onClose: () => void) {
   const ref = useRef<HTMLDivElement>(null)
+  /*
+   * `onClose` is a fresh closure on nearly every call site — `useConfirm`
+   * builds `() => settle(false)` per render, and screens pass inline arrows —
+   * so listing it as a dependency re-ran this whole effect whenever the parent
+   * re-rendered. Cleanup pulled focus back to the opener and the re-run pushed
+   * it to the first field again, which meant a query settling behind an open
+   * drawer silently moved the caret out of whatever the user was typing in.
+   * The ref keeps the latest callback while the effect stays tied to `active`.
+   */
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+
   useEffect(() => {
     if (!active) return
     const opener = document.activeElement as HTMLElement | null
@@ -49,10 +79,15 @@ function useFocusTrap(active: boolean, onClose: () => void) {
     const first = panel?.querySelector<HTMLElement>('[data-autofocus]') ?? panel?.querySelector<HTMLElement>(FOCUSABLE)
     first?.focus()
 
+    const token = {}
+    escStack.push(token)
+    const atTop = () => escStack[escStack.length - 1] === token
+
     const onKey = (e: KeyboardEvent) => {
+      if (!atTop()) return
       if (e.key === 'Escape') {
         e.stopPropagation()
-        onClose()
+        closeRef.current()
         return
       }
       if (e.key !== 'Tab' || !panel) return
@@ -73,9 +108,11 @@ function useFocusTrap(active: boolean, onClose: () => void) {
     document.addEventListener('keydown', onKey, true)
     return () => {
       document.removeEventListener('keydown', onKey, true)
+      const i = escStack.indexOf(token)
+      if (i >= 0) escStack.splice(i, 1)
       opener?.focus?.()
     }
-  }, [active, onClose])
+  }, [active])
   return ref
 }
 

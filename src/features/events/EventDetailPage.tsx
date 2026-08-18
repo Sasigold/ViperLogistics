@@ -33,6 +33,7 @@ import {
   MenuLabel,
   PageHeader,
   Popover,
+  SegmentedControl,
   SkeletonCard,
   ErrorState,
   SkeletonTable,
@@ -555,85 +556,38 @@ export default function EventDetailPage() {
                     <Badge tone="neutral" className="tabular">{filteredTasks.length}</Badge>
                   </h2>
 
-                  {/* Filter Tabs */}
-                  <div className="flex items-center rounded-lg bg-subtle p-1 border border-line-subtle text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('all')}
-                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                        activeTab === 'all'
-                          ? 'bg-surface text-ink-primary shadow-xs'
-                          : 'text-ink-tertiary hover:text-ink-primary'
-                      }`}
-                    >
-                      הכול
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('setup')}
-                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                        activeTab === 'setup'
-                          ? 'bg-surface text-ink-primary shadow-xs'
-                          : 'text-ink-tertiary hover:text-ink-primary'
-                      }`}
-                    >
-                      הקמה ({taskStats.setupCount})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('teardown')}
-                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                        activeTab === 'teardown'
-                          ? 'bg-surface text-ink-primary shadow-xs'
-                          : 'text-ink-tertiary hover:text-ink-primary'
-                      }`}
-                    >
-                      פירוק ({taskStats.teardownCount})
-                    </button>
-                    {taskStats.otherCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('other')}
-                        className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                          activeTab === 'other'
-                            ? 'bg-surface text-ink-primary shadow-xs'
-                            : 'text-ink-tertiary hover:text-ink-primary'
-                        }`}
-                      >
-                        אחר ({taskStats.otherCount})
-                      </button>
-                    )}
-                  </div>
+                  <SegmentedControl
+                    value={activeTab}
+                    onChange={setActiveTab}
+                    items={[
+                      { key: 'all' as TaskTab, label: 'הכול' },
+                      { key: 'setup' as TaskTab, label: `הקמה (${taskStats.setupCount})` },
+                      { key: 'teardown' as TaskTab, label: `פירוק (${taskStats.teardownCount})` },
+                      ...(taskStats.otherCount > 0
+                        ? [{ key: 'other' as TaskTab, label: `אחר (${taskStats.otherCount})` }]
+                        : []),
+                    ]}
+                  />
                 </div>
 
                 <div className="flex items-center gap-2 ms-auto">
-                  {/* View Switcher */}
-                  <div className="flex items-center rounded-lg bg-subtle p-1 border border-line-subtle">
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('cards')}
-                      title="תצוגת כרטיסים"
-                      className={`p-1.5 rounded-md transition-all ${
-                        viewMode === 'cards'
-                          ? 'bg-surface text-primary shadow-xs'
-                          : 'text-ink-tertiary hover:text-ink-primary'
-                      }`}
-                    >
-                      <LayoutGrid size={ICON.sm} strokeWidth={STROKE} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('table')}
-                      title="תצוגת טבלה"
-                      className={`p-1.5 rounded-md transition-all ${
-                        viewMode === 'table'
-                          ? 'bg-surface text-primary shadow-xs'
-                          : 'text-ink-tertiary hover:text-ink-primary'
-                      }`}
-                    >
-                      <List size={ICON.sm} strokeWidth={STROKE} />
-                    </button>
-                  </div>
+                  {/* icons for the eye, labels for the reader */}
+                  <SegmentedControl
+                    value={viewMode}
+                    onChange={setViewMode}
+                    items={[
+                      {
+                        key: 'cards' as TaskViewMode,
+                        icon: <LayoutGrid size={ICON.sm} strokeWidth={STROKE} />,
+                        label: <span className="sr-only">תצוגת כרטיסים</span>,
+                      },
+                      {
+                        key: 'table' as TaskViewMode,
+                        icon: <List size={ICON.sm} strokeWidth={STROKE} />,
+                        label: <span className="sr-only">תצוגת טבלה</span>,
+                      },
+                    ]}
+                  />
 
                   {has(PERM.TASKS_CREATE) && (
                     <Button size="sm" variant="primary" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
@@ -699,7 +653,7 @@ export default function EventDetailPage() {
 
                             {/* Task Title */}
                             <div>
-                              <h3 className="type-title font-semibold text-ink-primary group-hover:text-primary transition-colors">
+                              <h3 className="type-title font-semibold text-ink group-hover:text-primary transition-colors">
                                 {t.title || t.task_type_name}
                               </h3>
                             </div>

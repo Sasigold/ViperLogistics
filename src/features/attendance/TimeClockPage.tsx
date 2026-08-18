@@ -263,7 +263,7 @@ function TimeClock() {
         {/* סטטוס נוכחי (שמאל ב-RTL) */}
         <div className="flex flex-col items-center justify-center text-center px-2">
           <div className="flex items-center gap-1.5 mb-1.5">
-            <span className={`w-2 h-2 rounded-full ${open ? 'bg-success-subtle0 animate-pulse' : 'bg-ink-tertiary'}`} />
+            <span className={`w-2 h-2 rounded-full ${open ? 'bg-success animate-pulse' : 'bg-ink-tertiary'}`} />
             <span className="text-xs text-ink-tertiary font-medium">סטטוס נוכחי</span>
           </div>
           <span className={`text-lg font-bold ${open ? 'text-success-text' : 'text-ink-secondary'}`}>
@@ -314,7 +314,7 @@ function TimeClock() {
 
         {/* פיל תג תחתון מתחת לכפתור */}
         <div className="mt-4 inline-flex items-center gap-2 bg-surface px-5 py-2 rounded-full border border-line shadow-xs">
-          <span className={`w-2.5 h-2.5 rounded-full ${open ? 'bg-success-subtle0 animate-pulse' : 'bg-ink-tertiary'}`} />
+          <span className={`w-2.5 h-2.5 rounded-full ${open ? 'bg-success animate-pulse' : 'bg-ink-tertiary'}`} />
           <span className={`text-sm font-bold ${open ? 'text-success-text' : 'text-ink-secondary'}`}>
             {open ? 'נמצא בעבודה' : 'מחוץ לעבודה'}
           </span>

@@ -27,6 +27,7 @@ import {
   Badge,
   Button,
   EmptyState,
+  ErrorState,
   Input,
   Modal,
   MultiSelect,
@@ -121,7 +122,7 @@ function ShiftBoard() {
   const { from, to } = useMemo(() => boardRange(anchor, mode), [anchor, mode])
   const days = useMemo(() => boardDays(from, to), [from, to])
 
-  const { data: roster = [], isLoading: rosterLoading } = useShiftRoster(from, to)
+  const { data: roster = [], isLoading: rosterLoading, error: rosterError, refetch: refetchRoster } = useShiftRoster(from, to)
   const { data: shifts = [], isFetching } = useTeamShifts(from, to, filters.employees)
   const { data: customers = [] } = useCustomers()
   const { data: contractors = [] } = useContractors()
@@ -365,6 +366,11 @@ function ShiftBoard() {
         />
         {rosterLoading ? (
           <Skeleton className="h-[32rem] w-full" />
+        ) : rosterError ? (
+          /* "אין עובדים להצגה — נסו לשנות את הסינון" is advice that cannot
+             work when the roster never arrived, and it sends a shift
+             coordinator hunting through filters for a network failure. */
+          <ErrorState error={rosterError} onRetry={() => void refetchRoster()} />
         ) : view.rows.length === 0 && view.empty.length === 0 ? (
           <EmptyState art="calendar" title="אין עובדים להצגה" description="נסו לשנות את הסינון או את הטווח" />
         ) : layout === 'roster' ? (

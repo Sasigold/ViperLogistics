@@ -254,7 +254,7 @@ export function EventActivityLog({ eventId, className }: { eventId: string; clas
 
                   {/* גם הערה חופשית וגם משימה שנוספה או ירדה הן משפט אחד */}
                   {e.note && (
-                    <p className="mt-2 whitespace-pre-wrap type-body text-ink-primary bg-subtle/30 p-2.5 rounded border border-line-subtle/50">{e.note}</p>
+                    <p className="mt-2 whitespace-pre-wrap type-body text-ink bg-subtle/30 p-2.5 rounded border border-line-subtle/50">{e.note}</p>
                   )}
 
                   {e.changes.length > 0 && (

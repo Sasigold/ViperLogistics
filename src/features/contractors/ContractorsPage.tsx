@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   EmptyState,
+  ErrorState,
   Field,
   Input,
   Modal,
@@ -26,7 +27,7 @@ import { errorMessage } from '../../lib/errors'
 
 export default function ContractorsPage() {
   const { has } = useAuth()
-  const { data: contractors = [], isLoading } = useContractors()
+  const { data: contractors = [], isLoading, error, refetch } = useContractors()
   const [createOpen, setCreateOpen] = useState(false)
   const [q, setQ] = useState('')
 
@@ -71,6 +72,14 @@ export default function ContractorsPage() {
               <SkeletonCard key={i} lines={1} />
             ))}
           </div>
+        ) : error ? (
+          /* Ahead of the empty branch on purpose. `data = []` is the default,
+             so a failed fetch reached "עדיין אין קבלנים" with a create button
+             under it — the app telling someone their records are gone when the
+             truth is the request never landed. */
+          <Card>
+            <ErrorState error={error} onRetry={() => void refetch()} />
+          </Card>
         ) : filtered.length === 0 ? (
           <Card>
             <EmptyState

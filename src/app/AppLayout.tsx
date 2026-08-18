@@ -24,7 +24,7 @@ import { usePushNavigation, usePushSync } from '../features/notifications/pushQu
 import { CommandPalette } from '../features/search/CommandPalette'
 import { ROUTE_LABELS, bottomNavItems, visibleNavSections } from './nav'
 import type { NavItem, NavSection } from './nav'
-import { PageTitleProvider, useCurrentPageTitle } from './breadcrumbs'
+import { PageTitleProvider, useCurrentPageTitle, useDocumentTitle } from './breadcrumbs'
 import { useOnline } from '../lib/useOnline'
 
 const COLLAPSE_KEY = 'vl-nav-collapsed'
@@ -70,6 +70,9 @@ export default function AppLayout() {
 
   return (
     <PageTitleProvider>
+      {/* inside the provider: the title needs the entity name a detail screen
+          publishes into it */}
+      <DocumentTitle />
       <div className="flex h-full bg-canvas">
         <a
           href="#main"
@@ -327,6 +330,11 @@ export default function AppLayout() {
       </div>
     </PageTitleProvider>
   )
+}
+
+function DocumentTitle() {
+  useDocumentTitle()
+  return null
 }
 
 /* ===== BottomNav ==========================================================

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Banknote, Check, Clock, ICON, MapPin, Package, PartyPopper, Phone, SlidersHorizontal, STROKE, User } from '../../components/ui/icons'
 import {
@@ -222,8 +222,38 @@ export function EventFormModal({
     [incomeCategories, incomeSplits],
   )
 
+  /*
+   * Hydration runs once per opening, and the refs are what make that true.
+   *
+   * The dependency list below has always included `contact` and `supplierIds`,
+   * which are props: `EventDetailPage` passes `suppliers.map(...)`, a fresh
+   * array on every one of its renders, and it re-renders whenever a drawer
+   * opens, a tab changes or a background query settles. Each of those re-ran
+   * this effect, and this effect calls `setForm` with a whole new object — so
+   * editing an event meant racing the parent, and anything typed was silently
+   * replaced by what the server had.
+   *
+   * Guarding on the event id rather than debouncing the props is safe here for
+   * a specific reason: `event`, `contact` and `suppliers` are three fields of
+   * one query (`events/one`, resolved together in a single Promise.all), so
+   * there is no arrival to wait for — when the modal can open at all, all three
+   * are already present. The two queries that genuinely resolve later have
+   * their own one-shot guards below.
+   */
+  const hydrated = useRef<string | null>(null)
+  const hydratedIncome = useRef(false)
+  const hydratedTasks = useRef(false)
+
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      hydrated.current = null
+      hydratedIncome.current = false
+      hydratedTasks.current = false
+      return
+    }
+    const key = event?.id ?? 'new'
+    if (hydrated.current === key) return
+    hydrated.current = key
     setStep(0)
     setTouched(false)
     if (event) {
@@ -262,7 +292,8 @@ export function EventFormModal({
 
   /** Edit mode: the amounts live in event_income, hydrated once they arrive. */
   useEffect(() => {
-    if (!open || !event || !eventIncome) return
+    if (!open || !event || !eventIncome || hydratedIncome.current) return
+    hydratedIncome.current = true
     const income: Record<string, string> = {}
     for (const r of eventIncome) income[r.category_id] = String(r.amount)
     setForm((f) => ({ ...f, income }))
@@ -270,7 +301,10 @@ export function EventFormModal({
 
   /** Edit mode: the section values live on the auto-created tasks, not on the event. */
   useEffect(() => {
-    if (!open || !event || !autoTasks) return
+    if (!open || !event || !autoTasks || hydratedTasks.current) return
+    /* once: a refetch of the auto tasks behind an open form must not push the
+       server's hours back over the ones being typed */
+    hydratedTasks.current = true
     const patch: Partial<EventForm> = {}
     for (const { code } of SECTIONS) {
       const t = autoTasks.find((x) => x.task_types.code === code)
