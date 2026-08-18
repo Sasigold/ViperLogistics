@@ -13,6 +13,7 @@ import {
   ICON,
   LayoutGrid,
   List,
+  Paperclip,
   Pencil,
   Plus,
   STROKE,
@@ -54,6 +55,8 @@ import { EventFormModal } from './EventFormModal'
 import { formatCustomValue } from './CustomFieldInput'
 import { TaskDrawer } from '../tasks/TaskDrawer'
 import { EventActivityLog } from './EventActivityLog'
+import { EventSpecsModal } from './EventSpecsModal'
+import { useEventSpecs } from './specQueries'
 import type { EventRow, WorkBoardRow } from '../../types/domain'
 
 type TaskTab = 'all' | 'setup' | 'teardown' | 'other'
@@ -67,6 +70,7 @@ export default function EventDetailPage() {
   const { has, canViewField, showsEventField } = useAuth()
   const { confirm, dialog } = useConfirm()
   const [editOpen, setEditOpen] = useState(false)
+  const [specsOpen, setSpecsOpen] = useState(false)
   const [taskDrawer, setTaskDrawer] = useState<{ open: boolean; taskId: string | null }>({ open: false, taskId: null })
   const [activeTab, setActiveTab] = useState<TaskTab>('all')
   const [viewMode, setViewMode] = useState<TaskViewMode>('cards')
@@ -98,6 +102,9 @@ export default function EventDetailPage() {
   })
 
   const { data: customFields } = useCustomFormFields(data?.event.customer_id ?? null)
+
+  // רק בשביל המונה על הכפתור. המסך עצמו נטען כשהמודאל נפתח.
+  const { data: specs = [] } = useEventSpecs(id ?? '', !!id && has(PERM.EVENTS_SPECS_VIEW))
 
   usePageTitle(data?.event.end_client_name ?? null)
 
@@ -403,6 +410,13 @@ export default function EventDetailPage() {
         }
         actions={
           <>
+            {has(PERM.EVENTS_SPECS_VIEW) && (
+              <Button size="sm" onClick={() => setSpecsOpen(true)}>
+                <Paperclip size={ICON.sm} strokeWidth={STROKE} />
+                מפרט
+                {specs.length > 0 && <Badge tone="primary">{specs.length}</Badge>}
+              </Button>
+            )}
             {has(PERM.EVENTS_DUPLICATE) && (
               <Button size="sm" onClick={() => void duplicate()}>
                 <Copy size={ICON.sm} strokeWidth={STROKE} />
@@ -805,6 +819,12 @@ export default function EventDetailPage() {
         event={event}
         contact={contact}
         supplierIds={suppliers.map((s) => s.supplier_id)}
+      />
+      <EventSpecsModal
+        eventId={event.id}
+        eventTitle={event.end_client_name ?? fmtDateLong(event.event_date)}
+        open={specsOpen}
+        onClose={() => setSpecsOpen(false)}
       />
       <TaskDrawer
         open={taskDrawer.open}
