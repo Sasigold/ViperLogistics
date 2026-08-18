@@ -132,5 +132,9 @@ export {
   PieChart,
   Printer,
   Bookmark,
+  Paperclip,
+  Columns2,
+  Image,
+  Link2,
 } from 'lucide-react'
 

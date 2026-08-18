@@ -225,6 +225,8 @@ export type EventActivityKind =
   | 'restored'
   | 'task_added'
   | 'task_removed'
+  | 'spec_added'
+  | 'spec_removed'
 
 /**
  * A line of an event's activity log, as `event_activity_feed` returns it: a
@@ -244,6 +246,31 @@ export interface EventActivity {
   /** free text: 'note' rows, and the description of a task that came or went */
   note: string | null
   created_at: string
+}
+
+/**
+ * גרסה אחת של מפרט האירוע — קובץ שהועלה ל-bucket‏ `event-specs`, או קישור
+ * למסמך חיצוני. `version` נקבע בשרת (0077) ולא נשלח מכאן, והגרסה הפעילה היא
+ * הגבוהה מביניהן: אין דגל `is_current` שיכול לסתור את המספור.
+ */
+export interface EventSpec {
+  id: string
+  event_id: string
+  version: number
+  source: 'file' | 'link'
+  /** source='file' — הנתיב בתוך הדלי, '<event_id>/<uuid>.<ext>' */
+  storage_path: string | null
+  file_name: string | null
+  mime_type: string | null
+  size_bytes: number | null
+  /** source='link' */
+  url: string | null
+  title: string | null
+  note: string | null
+  uploaded_by: string | null
+  uploader_name: string | null
+  created_at: string
+  deleted_at: string | null
 }
 
 export interface TaskRow {

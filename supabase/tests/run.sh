@@ -175,6 +175,16 @@ OUT="$OUT
 $OUT14"
 
 echo
+echo "== event specs suite =="
+# 16 מקימה לקוח, אירוע ושלושה פרופילים משלה ואינה נשענת על אף חבילה קודמת. היא
+# רצה אחרונה כי היא סופרת פוליסות על storage.objects ואת שורות היומן של האירוע
+# שלה, ומשאירה אחריה גרסאות מפרט שאינן מנוקות.
+OUT15=$($PSQL -d vl -f "$HERE/16_event_specs.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT15"
+OUT="$OUT
+$OUT15"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

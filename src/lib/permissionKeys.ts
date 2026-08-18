@@ -96,6 +96,8 @@ export const PERM = {
   EVENTS_EDIT_NOTES: 'events.edit_notes',
   EVENTS_ACTIVITY_LOG: 'events.activity_log',
   EVENTS_ACTIVITY_NOTE: 'events.activity_note',
+  EVENTS_SPECS_VIEW: 'events.specs_view',
+  EVENTS_SPECS_MANAGE: 'events.specs_manage',
   FINANCE_INCOME_VIEW: 'finance.income_view',
   FINANCE_INCOME_EDIT: 'finance.income_edit',
   FINANCE_MANAGE_SPLITS: 'finance.manage_splits',

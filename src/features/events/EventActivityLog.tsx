@@ -62,6 +62,8 @@ const KIND_COLORS: Record<EventActivityKind, string> = {
   restored: '#16a34a',
   task_added: '#7c3aed',
   task_removed: '#b45309',
+  spec_added: '#0284c7',
+  spec_removed: '#b45309',
 }
 
 const KIND_LABELS: Record<EventActivityKind, string> = {
@@ -72,6 +74,8 @@ const KIND_LABELS: Record<EventActivityKind, string> = {
   restored: 'האירוע שוחזר',
   task_added: 'משימה נוספה',
   task_removed: 'משימה הוסרה',
+  spec_added: 'מפרט הועלה',
+  spec_removed: 'מפרט הוסר',
 }
 
 /** One timeline entry: a note, a lifecycle event, or every field one save moved. */
