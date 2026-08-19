@@ -122,6 +122,19 @@ export function fmtShiftRange(start?: string | null, end?: string | null): strin
   return sameDay ? `${hhmm(start)}–${hhmm(end)}` : `${hhmm(start)}–${format(parseISO(end), 'HH:mm (dd/MM)')}`
 }
 
+/**
+ * השעה שבה יורדים מהעבודה, כשסוף המשמרת כולל נסיעה חזרה למחסן.
+ *
+ * ‏`shift_end` נושא את הנסיעה בתוכו (0079 §4) ו-`travel_hours` הוא בדיוק
+ * היא, ולכן החיסור הזה הוא היחיד שמפריד בין "סיימנו" ל"הגענו". מוחזר ''
+ * כשאין נסיעה — אז שתי השעות הן אותה שעה, ואין מה להפריד.
+ */
+export function fmtWorkEnd(end: string, travelHours: number | null | undefined): string {
+  const travel = travelHours ?? 0
+  if (travel <= 0) return ''
+  return format(new Date(parseISO(end).getTime() - travel * 3_600_000), 'HH:mm')
+}
+
 /** 'יום ג׳, 12 באוגוסט' */
 export function fmtDayLabel(d: string): string {
   return format(parseISO(d), 'EEEE, d בMMMM', { locale: he })

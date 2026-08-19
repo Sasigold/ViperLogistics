@@ -35,17 +35,24 @@ import { RequirePermission } from '../auth/guards'
 import { UserPermissionsTab } from '../permissions/UserPermissionsTab'
 import { EmployeeWorkSettingsCard } from '../attendance/EmployeeWorkSettingsCard'
 import { ASSIGNMENT_ROLE_LABELS } from '../attendance/shiftFormat'
-import type { Profile, StaffRole, UserKind } from '../../types/domain'
+import type { Profile, StaffRole } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
+import { USER_TYPE_LABELS, USER_TYPE_OPTION_LABELS, kindOfType, userTypeOf } from './userType'
+import type { UserType } from './userType'
 
-const kindLabels: Record<UserKind, string> = { staff: 'צוות', customer_user: 'לקוח', contractor_user: 'קבלן' }
+/**
+ * הרשימה והמסנן מדברים ב"סוג משתמש" של הטופס ולא ב-`user_kind` של המסד:
+ * מנהל מערכת שנרשם כשורת צוות היה מופיע כאן בתוך "צוות", בדיוק כמו העובדים
+ * שהוא אינו אחד מהם. ראו userType.ts.
+ */
+const kindLabels = USER_TYPE_LABELS
 /** מוגדר ב-shiftFormat, כדי שמסך העובדים ופירוק המשמרת יקראו לתפקיד אותו דבר. */
 const roleLabels = ASSIGNMENT_ROLE_LABELS
 
 
 export default function UsersPage() {
   const creatableKinds = useAuth((s) => s.creatableKinds)
-  const [kind, setKind] = useState<UserKind | ''>('')
+  const [kind, setKind] = useState<UserType | ''>('')
   const [q, setQ] = useState('')
   const [editing, setEditing] = useState<Profile | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -73,7 +80,7 @@ export default function UsersPage() {
   })
 
   const filtered = profiles.filter(
-    (p) => (!kind || p.user_kind === kind) && (p.full_name.includes(q) || (p.phone ?? '').includes(q)),
+    (p) => (!kind || userTypeOf(p) === kind) && (p.full_name.includes(q) || (p.phone ?? '').includes(q)),
   )
 
   const columns = useMemo<Column<Profile>[]>(
@@ -129,8 +136,8 @@ export default function UsersPage() {
         key: 'kind',
         header: 'סוג',
         width: 110,
-        sortValue: (p) => kindLabels[p.user_kind],
-        render: (p) => kindLabels[p.user_kind],
+        sortValue: (p) => kindLabels[userTypeOf(p)],
+        render: (p) => kindLabels[userTypeOf(p)],
       },
       {
         key: 'roles',
@@ -179,11 +186,11 @@ export default function UsersPage() {
      are built from the kinds that actually came back rather than from a fixed
      three, and both disappear when there is only one kind to tell apart. */
   const kindsPresent = useMemo(
-    () => (Object.keys(kindLabels) as UserKind[]).filter((k) => profiles.some((p) => p.user_kind === k)),
+    () => (Object.keys(kindLabels) as UserType[]).filter((k) => profiles.some((p) => userTypeOf(p) === k)),
     [profiles],
   )
   const subtitle = kindsPresent
-    .map((k) => `${profiles.filter((p) => p.user_kind === k).length} ${kindLabels[k]}`)
+    .map((k) => `${profiles.filter((p) => userTypeOf(p) === k).length} ${kindLabels[k]}`)
     .join(' · ')
 
   return (
@@ -228,7 +235,7 @@ export default function UsersPage() {
                   ...kindsPresent.map((k) => ({ key: k, label: kindLabels[k] })),
                 ]}
                 value={kind}
-                onChange={(k) => setKind(k as UserKind | '')}
+                onChange={(k) => setKind(k as UserType | '')}
               />
             )}
           </FilterBar>
@@ -253,7 +260,7 @@ export default function UsersPage() {
                   {p.is_admin && <Badge tone="primary">אדמין</Badge>}
                 </p>
                 <p className="flex flex-wrap items-center gap-x-1.5 type-caption text-ink-tertiary">
-                  <span>{kindLabels[p.user_kind]}</span>
+                  <span>{kindLabels[userTypeOf(p)]}</span>
                   {p.phone && (
                     <span className="tabular" dir="ltr">
                       · {p.phone}
@@ -319,13 +326,21 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
      write would refuse. Someone who may open only one kind is not asked. */
   const kinds = creatableKinds()
   const pinnedKind = kinds.length === 1 ? kinds[0] : null
+  /* ‏"מנהל מערכת" הוא אפשרות בבורר ולא מתג נסתר בתחתית הטופס, ולכן הוא נגזר
+     מאותה רשימה: הוא שורת `staff`, ומי שרשאי לפתוח מנהל הוא מי שמחזיק את
+     `users.set_admin` — בדיוק התנאי של `app.may_create_profile`. */
+  const canSetAdmin = has(PERM.USERS_SET_ADMIN)
+  const typeOptions: UserType[] = kinds.flatMap((k) =>
+    k === 'staff' && canSetAdmin ? (['staff', 'admin'] as UserType[]) : [k],
+  )
+  const pinnedType = typeOptions.length === 1 ? typeOptions[0] : null
 
   const [form, setForm] = useState({
     full_name: '',
     phone: '',
     email: '',
     notes: '',
-    user_kind: 'staff' as UserKind,
+    user_type: 'staff' as UserType,
     is_admin: false,
     is_active: true,
     customer_id: '',
@@ -345,7 +360,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
         phone: profile.phone ?? '',
         email: profile.email ?? '',
         notes: profile.notes ?? '',
-        user_kind: profile.user_kind,
+        user_type: userTypeOf(profile),
         is_admin: profile.is_admin,
         is_active: profile.is_active,
         customer_id: profile.customer_id ?? '',
@@ -359,7 +374,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
         phone: '',
         email: '',
         notes: '',
-        user_kind: pinnedKind ?? 'staff',
+        user_type: pinnedType ?? 'staff',
         is_admin: false,
         is_active: true,
         // pinned to the actor's own company, exactly as profiles_insert requires
@@ -374,21 +389,28 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
   const save = useMutation({
     mutationFn: async () => {
       if (!form.full_name.trim()) throw new Error('חובה להזין שם')
+      const kind = kindOfType(form.user_type)
+      /* מנהל מערכת הוא הדגל, וצוות הוא מה שהמתג אומר עליו. שאר הסוגים אינם
+         מנהלים בשום מקרה, ולכן בחירה בהם *מכבה* את הדגל ולא רק נמנעת מלהדליק
+         אותו — אחרת שינוי סוג היה משאיר אדמין מאחור. */
+      const wantsAdmin = form.user_type === 'admin' || (form.user_type === 'staff' && form.is_admin)
       const base = {
         full_name: form.full_name,
         phone: form.phone || null,
         email: form.email || null,
         notes: form.notes || null,
-        user_kind: form.user_kind,
-        is_admin: isAdmin ? form.is_admin : undefined,
+        user_kind: kind,
+        /* נשלח על ידי מי שרשאי לקבוע אותו — אותו מפתח שמראה את הבורר ואת
+           המתג, ואותו תנאי ש-`app.guard_profile_write` אוכף בשרת. */
+        is_admin: canSetAdmin ? wantsAdmin : undefined,
         is_active: form.is_active,
-        customer_id: form.user_kind === 'customer_user' ? form.customer_id || null : null,
+        customer_id: form.user_type === 'customer_user' ? form.customer_id || null : null,
         /* לא רק ל-`contractor_user`: עובד צוות שגם מביא סגל משלו נושא את
            העמודה הזאת, וזה מה שפותח לו את הצד הקבלני (0075). האילוץ
            `profiles_contractor_kind` (0001) תמיד הרשה את זה — השורה הזאת
            היא שאיפסה אותה בכל שמירה. `customer_user` עדיין מנוקה: לקוח
            שהוא גם קבלן אינו מקרה שקיים. */
-        contractor_id: form.user_kind === 'customer_user' ? null : form.contractor_id || null,
+        contractor_id: form.user_type === 'customer_user' ? null : form.contractor_id || null,
       }
       let profileId = profile?.id
       if (profile) {
@@ -400,8 +422,10 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
         profileId = data.id
       }
       // staff roles
+      /* ‏'admin' אינו כאן בכוונה: מנהל מערכת שנפתח כסוג משלו אינו עובד,
+         ותפקיד צוות היה מכניס אותו לרוסטר לוח המשמרות ולרשימות השיבוץ. */
       await supabase.from('staff_roles').delete().eq('profile_id', profileId)
-      if (form.user_kind === 'staff' && form.roles.length) {
+      if (form.user_type === 'staff' && form.roles.length) {
         const { error } = await supabase.from('staff_roles').insert(form.roles.map((role) => ({ profile_id: profileId, role })))
         if (error) throw error
       }
@@ -411,13 +435,13 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
          מעניקים דבר. בלי הניקוי הזה המשתמש יוצא מהשמירה עם פחות הרשאות ממה
          שמסך הניהול מראה — וזה בדיוק המצב שנמצא בפרודקשן. תפקיד בלי
          `user_kind` (כמו "קבלן — בנוסף לתפקיד") שורד כל שינוי סוג. */
-      if (profile && profile.user_kind !== form.user_kind) {
+      if (profile && profile.user_kind !== kind) {
         const { data: strays } = await supabase
           .from('profile_roles')
           .select('role_id, permission_roles!inner(user_kind)')
           .eq('profile_id', profileId)
           .not('permission_roles.user_kind', 'is', null)
-          .neq('permission_roles.user_kind', form.user_kind)
+          .neq('permission_roles.user_kind', kind)
         if (strays?.length) {
           await supabase
             .from('profile_roles')
@@ -475,9 +499,9 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
 
   const nameError = touched && !form.full_name.trim() ? 'חובה להזין שם' : undefined
   const linkError =
-    touched && form.user_kind === 'customer_user' && !form.customer_id
+    touched && form.user_type === 'customer_user' && !form.customer_id
       ? 'יש לבחור לקוח'
-      : touched && form.user_kind === 'contractor_user' && !form.contractor_id
+      : touched && form.user_type === 'contractor_user' && !form.contractor_id
         ? 'יש לבחור קבלן'
         : undefined
   const canSave = can('users', profile ? 'edit' : 'create') || isAdmin
@@ -500,7 +524,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
           'משתמש חדש'
         )
       }
-      description={profile ? kindLabels[profile.user_kind] : 'הוספת עובד, משתמש לקוח או משתמש קבלן'}
+      description={profile ? kindLabels[userTypeOf(profile)] : 'הוספת מנהל, עובד, משתמש לקוח או משתמש קבלן'}
       footer={
         tab === 'details' && (
           <>
@@ -539,17 +563,32 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
             </Field>
           </div>
 
-          {!pinnedKind && (
+          {!pinnedType && (
             <Field label="סוג משתמש" hint="קובע את סט ההרשאות ואת המסכים שהמשתמש רואה">
-              <Select value={form.user_kind} onChange={(e) => setForm((f) => ({ ...f, user_kind: e.target.value as UserKind }))}>
-                <option value="staff">צוות (עובד / נהג / ראש צוות)</option>
-                <option value="customer_user">משתמש לקוח</option>
-                <option value="contractor_user">משתמש קבלן</option>
+              <Select
+                value={form.user_type}
+                onChange={(e) => setForm((f) => ({ ...f, user_type: e.target.value as UserType }))}
+              >
+                {typeOptions.map((t) => (
+                  <option key={t} value={t}>
+                    {USER_TYPE_OPTION_LABELS[t]}
+                  </option>
+                ))}
               </Select>
             </Field>
           )}
 
-          {form.user_kind === 'staff' && (
+          {/* מנהל מערכת אינו עובד: אין לו תפקיד צוות, ולכן הוא אינו נכנס
+              לרוסטר לוח המשמרות ולרשימות השיבוץ. מי שגם מנהל וגם עובד נפתח
+              כ"צוות" ומקבל את המתג שבתחתית הטופס. */}
+          {form.user_type === 'admin' && (
+            <p className="rounded-lg border border-line-subtle bg-subtle/50 px-3 py-2.5 type-caption text-ink-secondary">
+              גישה מלאה לכל המסכים, בלי שיבוץ ובלי שעון נוכחות. למי שגם מנהל וגם עובד — בחרו "צוות"
+              והדליקו את המתג "מנהל מערכת" שבתחתית.
+            </p>
+          )}
+
+          {form.user_type === 'staff' && (
             <Field label="תפקידים" hint="ניתן לשלב מספר תפקידים לאותו עובד">
               <div className="grid gap-2 sm:grid-cols-3">
                 {(Object.keys(roleLabels) as StaffRole[]).map((r) => (
@@ -568,7 +607,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
             </Field>
           )}
 
-          {form.user_kind === 'customer_user' && !pinnedKind && (
+          {form.user_type === 'customer_user' && !pinnedKind && (
             <Field label="לקוח משויך" required error={linkError}>
               <Select value={form.customer_id} onChange={(e) => setForm((f) => ({ ...f, customer_id: e.target.value }))}>
                 <option value="">בחירה...</option>
@@ -581,7 +620,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
             </Field>
           )}
 
-          {form.user_kind === 'contractor_user' && !pinnedKind && (
+          {form.user_type === 'contractor_user' && !pinnedKind && (
             <Field label="קבלן משויך" required error={linkError}>
               <Select value={form.contractor_id} onChange={(e) => setForm((f) => ({ ...f, contractor_id: e.target.value }))}>
                 <option value="">בחירה...</option>
@@ -599,7 +638,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
               מקושר אליו. ‏0075 שינה את ההכרעה מ"מי הוא" ל"למי הוא שייך",
               ולכן העמודה הזאת על פרופיל צוות היא כל מה שנדרש; את התפקיד
               ‏"קבלן — בנוסף לתפקיד" מצמידים בלשונית ההרשאות. */}
-          {form.user_kind === 'staff' && !pinnedKind && (
+          {form.user_type === 'staff' && !pinnedKind && (
             <Field
               label="גם קבלן"
               hint="לעובד שמביא גם סגל משלו. בחירת קבלן פותחת לו את הסגל, השיבוץ והכספים שלו — בנוסף לתפקיד שלו כעובד"
@@ -620,7 +659,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
           </Field>
 
           <div className="space-y-3 rounded-lg border border-line-subtle bg-subtle/50 p-3">
-            {has(PERM.USERS_SET_ADMIN) && form.user_kind === 'staff' && (
+            {canSetAdmin && form.user_type === 'staff' && (
               <Switch
                 checked={form.is_admin}
                 onChange={(v) => setForm((f) => ({ ...f, is_admin: v }))}

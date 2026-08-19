@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PERM } from '../lib/permissions'
-import { bottomNavItems, navItemVisible, visibleNavSections } from './nav'
-import type { NavItem } from './nav'
+import { ANY_AUDIENCE, bottomNavItems, navItemVisible, visibleNavSections } from './nav'
+import type { NavAudience, NavItem } from './nav'
 
 /**
  * התפריט הוא מה שמכריע לאן `/` שולח משתמש שאין לו דשבורד (HomeRoute), ולכן
@@ -98,8 +98,26 @@ const COORDINATOR = [
   PERM.NOTIFICATIONS_PREFERENCES,
 ]
 
-function destinations(keys: string[]): string[] {
-  return visibleNavSections(hasFrom(keys)).flatMap((s) => s.items.map((i) => i.to))
+function destinations(keys: string[], audience: NavAudience = ANY_AUDIENCE): string[] {
+  return visibleNavSections(hasFrom(keys), audience).flatMap((s) => s.items.map((i) => i.to))
+}
+
+/**
+ * מנהל מערכת. אין לו סט מפתחות — `app.has` מחזיר לו true על כל מפתח — ולכן
+ * הפרסונה שלו היא בדיוק זה, וכל מה שמסנן את התפריט שלו הוא ה-audience.
+ */
+const adminHas = () => true
+
+const adminAudience = (isEmployee: boolean): NavAudience => ({
+  isAdmin: true,
+  isEmployee,
+  isContractor: false,
+})
+
+function adminSees(isEmployee: boolean): string[] {
+  return visibleNavSections(adminHas, adminAudience(isEmployee)).flatMap((s) =>
+    s.items.map((i) => i.to),
+  )
 }
 
 function labelsFor(keys: string[], to: string): string[] {
@@ -127,6 +145,12 @@ describe('navItemVisible', () => {
 
   it('hiddenBy גובר גם על anyPerm', () => {
     expect(navItemVisible(item({ anyPerm: ['a'], hiddenBy: ['z'] }), hasFrom(['a', 'z']))).toBe(false)
+  })
+
+  it('audience גודר גם את מי שמחזיק את המפתח', () => {
+    const gated = item({ perm: 'a', audience: (aud) => aud.isEmployee })
+    expect(navItemVisible(gated, hasFrom(['a']), { ...ANY_AUDIENCE, isEmployee: true })).toBe(true)
+    expect(navItemVisible(gated, hasFrom(['a']), { ...ANY_AUDIENCE, isEmployee: false })).toBe(false)
   })
 })
 
@@ -224,6 +248,59 @@ describe('הרשומות אל /attendance סותרות זו את זו', () => {
     ['העובד שגם קבלן', STAFF_CONTRACTOR, 'נוכחות הסגל שלי'],
   ])('%s רואה רשומה אחת בלבד', (_who, keys, label) => {
     expect(labelsFor(keys as string[], '/attendance')).toEqual([label])
+  })
+})
+
+/**
+ * המפתחות לבדם אינם עונים על מסך ששייך לאדם מסוים: מנהל מערכת מחזיק את כולם,
+ * ולכן קיבל שעון נוכחות בלי משמרות ומסך "העובדים שלי" בלי סגל. `audience` הוא
+ * מה שמפריד בין "מותר לך" ל"זה שלך".
+ */
+describe('מנהל מערכת', () => {
+  it('בלי תפקיד צוות — אין לו שעון ואין לו משמרות', () => {
+    const seen = adminSees(false)
+    for (const blocked of ['/my/schedule', '/my/attendance']) expect(seen).not.toContain(blocked)
+    // מסכי הניהול שלו במקומם
+    expect(seen).toEqual(expect.arrayContaining(['/', '/users', '/settings', '/attendance']))
+  })
+
+  it('ומי שמוגדר גם כעובד מקבל אותם בחזרה', () => {
+    const seen = adminSees(true)
+    expect(seen).toEqual(expect.arrayContaining(['/my/schedule', '/my/attendance']))
+  })
+
+  it('"העובדים שלי" הוא מסך של קבלן, ולא של מי שמחזיק את המפתח', () => {
+    expect(adminSees(true)).not.toContain('/my/staff')
+    expect(
+      visibleNavSections(adminHas, { isAdmin: true, isEmployee: true, isContractor: true }).flatMap((s) =>
+        s.items.map((i) => i.to),
+      ),
+    ).toContain('/my/staff')
+  })
+
+  it('ורשומה אחת בלבד מובילה אל /attendance', () => {
+    expect(
+      visibleNavSections(adminHas, adminAudience(false))
+        .flatMap((s) => s.items)
+        .filter((i) => i.to === '/attendance'),
+    ).toHaveLength(1)
+  })
+})
+
+/**
+ * שני דפי הרווחיות היו מסכים מלאים שאפשר היה להגיע אליהם רק דרך שורת
+ * התבניות שבתוך /reports. מי שמחזיק `reports.view` רואה עכשיו את שלושתם.
+ */
+describe('דפי הרווחיות בתפריט', () => {
+  it('נפתחים עם reports.view, כמו מסך הדוחות עצמו', () => {
+    const seen = destinations([PERM.REPORTS_VIEW])
+    expect(seen).toEqual(expect.arrayContaining(['/reports', '/reports/task-pnl', '/reports/profitability']))
+  })
+
+  it('ומי שאין לו את המפתח אינו רואה אף אחד מהם', () => {
+    const seen = destinations([PERM.CALENDAR_VIEW])
+    for (const blocked of ['/reports', '/reports/task-pnl', '/reports/profitability'])
+      expect(seen).not.toContain(blocked)
   })
 })
 

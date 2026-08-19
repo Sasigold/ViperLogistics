@@ -4,6 +4,8 @@ import { Truck } from '../../components/ui/icons'
 import { Button, Card, EmptyState, Spinner } from '../../components/ui'
 import { useAuth } from '../../state/auth'
 import { errorMessage } from '../../lib/errors'
+import { navAudience } from '../../app/nav'
+import type { NavAudience } from '../../app/nav'
 import type { PermissionAction } from '../../types/domain'
 
 /** Branded boot screen — better than a bare spinner on a cold load. */
@@ -94,6 +96,13 @@ export interface RouteHandle {
    * answers both (`shift_roster`, 0034). Holding any one of them opens it.
    */
   anyPerm?: string[]
+  /**
+   * גדר על *מי שקורא* ולא על מה שמותר לו, לצד המפתח. מנהל מערכת מחזיק כל
+   * מפתח בהגדרה, ולכן זו הדרך היחידה לומר "המסך הזה שייך לעובד" או "שייך
+   * לקבלן" — אותם פרדיקטים שהתפריט מסנן בהם (`forEmployees`, `forContractors`),
+   * כדי שמה שאינו בתפריט גם לא ייפתח בהקלדת הנתיב.
+   */
+  audience?: (a: NavAudience) => boolean
   open?: true
 }
 
@@ -113,6 +122,7 @@ export interface RouteHandle {
  */
 export function RouteGate({ children }: { children: ReactNode }) {
   const has = useAuth((s) => s.has)
+  const me = useAuth((s) => s.me)
   const matches = useMatches()
 
   const handle = [...matches]
@@ -127,7 +137,8 @@ export function RouteGate({ children }: { children: ReactNode }) {
     return <NoPermissionCard />
   }
   if (handle.open) return <>{children}</>
-  const ok = handle.anyPerm ? handle.anyPerm.some(has) : has(handle.perm!)
+  const held = handle.anyPerm ? handle.anyPerm.some(has) : has(handle.perm!)
+  const ok = held && (handle.audience?.(navAudience(me)) ?? true)
   return ok ? <>{children}</> : <NoPermissionCard />
 }
 

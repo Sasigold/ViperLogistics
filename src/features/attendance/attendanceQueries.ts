@@ -127,6 +127,10 @@ export function useEmployeeShifts(profileId: string | null, from: string, to: st
  * מקריאה ישירה היה מציג "את כולם" בלי חצי מהם.
  *
  * הטווח משפיע: עובד שהושבת נכלל רק אם יש לו שיבוץ בתוכו.
+ *
+ * ומ-0085 הרוסטר הוא של *עובדים*: פרופיל צוות בלי תפקיד צוות — מנהל מערכת,
+ * איש משרד — אינו בו, כי אי אפשר לשבץ אותו וממילא שורתו תישאר ריקה. מי
+ * שמשובץ בטווח נשאר גם בלי תפקיד.
  */
 export function useShiftRoster(from: string, to: string, enabled = true) {
   return useQuery({

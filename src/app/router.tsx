@@ -7,6 +7,7 @@ import LoginPage from '../features/auth/LoginPage'
 import ResetPasswordPage from '../features/auth/ResetPasswordPage'
 import { RequireAuth } from '../features/auth/guards'
 import { PERM } from '../lib/permissions'
+import { forContractors, forEmployees } from './nav'
 import { lazyPage } from '../lib/lazyPage'
 import { ErrorBoundary, Skeleton } from '../components/ui'
 
@@ -112,7 +113,13 @@ export const router = createBrowserRouter([
              סיכום כספי. `portal.view` יכול לגדר אותו רק מפני ש-0071 §1 כיבה
              את ה-default_allowed שלו. */
           { path: '/portal', handle: { perm: PERM.PORTAL_VIEW }, element: page(<PortalPage />) },
-          { path: '/my/staff', handle: { perm: PERM.PORTAL_MANAGE_WORKERS }, element: page(<MyStaffPage />) },
+          /* ‏`audience` ולא מפתח נוסף: המסך שייך לקבלן, ומנהל מערכת מחזיק את
+             כל המפתחות בהגדרה — ראו forContractors ב-nav.ts. */
+          {
+            path: '/my/staff',
+            handle: { perm: PERM.PORTAL_MANAGE_WORKERS, audience: forContractors },
+            element: page(<MyStaffPage />),
+          },
           { path: '/calendar', handle: { perm: PERM.CALENDAR_VIEW }, element: page(<CalendarPage />) },
           { path: '/board', handle: { perm: PERM.BOARD_VIEW }, element: page(<WorkBoardPage />) },
           { path: '/reports', handle: { perm: PERM.REPORTS_VIEW }, element: page(<ReportsPage />) },
@@ -163,10 +170,14 @@ export const router = createBrowserRouter([
           // משתמש שיש לו את המפתח, כולל עובד קבלן ואיש קשר אצל לקוח.
           {
             path: '/my/schedule',
-            handle: { perm: PERM.ATTENDANCE_VIEW_SCHEDULE },
+            handle: { perm: PERM.ATTENDANCE_VIEW_SCHEDULE, audience: forEmployees },
             element: page(<MySchedulePage />),
           },
-          { path: '/my/attendance', handle: { perm: PERM.ATTENDANCE_VIEW_OWN }, element: page(<TimeClockPage />) },
+          {
+            path: '/my/attendance',
+            handle: { perm: PERM.ATTENDANCE_VIEW_OWN, audience: forEmployees },
+            element: page(<TimeClockPage />),
+          },
           {
             path: '/my/notifications',
             handle: { perm: PERM.NOTIFICATIONS_PREFERENCES },

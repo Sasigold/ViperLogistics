@@ -12,11 +12,56 @@ import {
   HardHat,
   LayoutDashboard,
   PartyPopper,
+  Percent,
   Settings,
+  TrendingUp,
   Users,
 } from '../components/ui/icons'
 import type { ComponentType } from 'react'
 import { PERM } from '../lib/permissions'
+import type { MyPermissions } from '../types/domain'
+
+/**
+ * מי המשתמש *הוא*, להבדיל ממה שמותר לו.
+ *
+ * המפתחות עונים על "מה מותר", ולמנהל מערכת הם עונים תמיד כן — `app.has`
+ * מחזיר true לאדמין בהגדרה. זה נכון להרשאות, ולא נכון למסכים ששייכים לאדם
+ * מסוים: לשעון הנוכחות של מי שאינו עובד אין מה להחתים, ולמסך "העובדים שלי"
+ * של מי שאינו קבלן אין סגל להראות. שלושת הדגלים כאן הם מה שמפריד בין השניים,
+ * ולכן הם *מצטרפים* למפתח ולא מחליפים אותו.
+ */
+export interface NavAudience {
+  /** מנהל מערכת — עוקף את טבלת ההרשאות, ולכן צריך גדר שאינה מפתח */
+  isAdmin: boolean
+  /** מוגדר גם כעובד: יש לו תפקיד צוות (עובד / נהג / ראש צוות) */
+  isEmployee: boolean
+  /** קבלן, או עובד שמביא גם סגל משלו (0075) */
+  isContractor: boolean
+}
+
+/** בלי הקשר — הכול פתוח. ברירת המחדל של בדיקות ושל קריאות ישנות. */
+export const ANY_AUDIENCE: NavAudience = { isAdmin: false, isEmployee: true, isContractor: true }
+
+export function navAudience(me: MyPermissions | null): NavAudience {
+  if (!me) return { isAdmin: false, isEmployee: false, isContractor: false }
+  return {
+    isAdmin: me.profile.is_admin,
+    isEmployee: (me.roles ?? []).length > 0,
+    isContractor: !!me.profile.contractor_id || me.profile.user_kind === 'contractor_user',
+  }
+}
+
+/**
+ * מסך אישי של עובד — שעון ומשמרות.
+ *
+ * מנהל מערכת שאינו מוגדר גם כעובד אינו רואה אותם: הוא אינו ברוסטר, אין לו
+ * שיבוצים, והמסכים היו מציגים לו יום ריק לנצח. מי שאינו אדמין ממשיך להיות
+ * מוכרע במפתח בלבד — עובד קבלן, למשל, מחזיק שעון בלי שורת `staff_roles`.
+ */
+export const forEmployees = (a: NavAudience) => !a.isAdmin || a.isEmployee
+
+/** מסך של קבלן, ולא של מי שמחזיק במקרה את המפתח שלו. */
+export const forContractors = (a: NavAudience) => a.isContractor
 
 export interface NavItem {
   to: string
@@ -37,6 +82,11 @@ export interface NavItem {
    * that two entries point at, where the wider one already covers the narrower.
    */
   hiddenBy?: string[]
+  /**
+   * גדר נוספת, על *מי שקורא* ולא על מה שמותר לו. יעד שמכריז עליה מוצג רק
+   * למי שהפרדיקט מחזיר לו true — ראו `forEmployees` / `forContractors`.
+   */
+  audience?: (a: NavAudience) => boolean
   end?: boolean
   /** competes for one of the four slots in the mobile bottom bar */
   primary?: boolean
@@ -70,8 +120,22 @@ export const NAV_SECTIONS: NavSection[] = [
     // רואה בכלל, ולכן הוא יושב לפני הנתונים ולא אחריהם.
     title: 'הנוכחות שלי',
     items: [
-      { to: '/my/schedule', label: 'משמרות', shortLabel: 'משמרות', icon: CalendarClock, perm: PERM.ATTENDANCE_VIEW_SCHEDULE },
-      { to: '/my/attendance', label: 'שעון נוכחות', shortLabel: 'שעון', icon: Clock, perm: PERM.ATTENDANCE_VIEW_OWN },
+      {
+        to: '/my/schedule',
+        label: 'משמרות',
+        shortLabel: 'משמרות',
+        icon: CalendarClock,
+        perm: PERM.ATTENDANCE_VIEW_SCHEDULE,
+        audience: forEmployees,
+      },
+      {
+        to: '/my/attendance',
+        label: 'שעון נוכחות',
+        shortLabel: 'שעון',
+        icon: Clock,
+        perm: PERM.ATTENDANCE_VIEW_OWN,
+        audience: forEmployees,
+      },
       /* אותו מסך של "דוח נוכחות" שלמטה, מצומצם לשורות של המשתמש עצמו — השרת
          כבר מחזיר רק אותן. מי שמחזיק view_all מגיע אליו דרך הרשומה בסקשן
          "נתונים", ומנהל קבלן דרך "נוכחות הסגל שלי" שמתחתיה; אצל שניהם הרשומה
@@ -84,6 +148,7 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: FileText,
         perm: PERM.ATTENDANCE_VIEW_OWN,
         hiddenBy: [PERM.ATTENDANCE_VIEW_ALL, PERM.PORTAL_ATTENDANCE],
+        audience: forEmployees,
       },
       /* הצד השני של אותה הכרעה: הסגל של הקבלן. `attendance_report` כבר תוחם
          אותו לקבלן של הקורא, ולכן זה אותו מסך בהיקף אחר — ומוסתר ממי שמחזיק
@@ -96,7 +161,10 @@ export const NAV_SECTIONS: NavSection[] = [
         perm: PERM.PORTAL_ATTENDANCE,
         hiddenBy: [PERM.ATTENDANCE_VIEW_ALL],
       },
-      { to: '/my/staff', label: 'העובדים שלי', icon: Users, perm: PERM.PORTAL_MANAGE_WORKERS },
+      /* הסגל של הקבלן, ולכן רק לקבלן: המפתח לבדו הראה את המסך גם למנהל
+         מערכת (שעוקף כל מפתח) ולכל איש משרד שקיבל אותו בטעות, ולשניהם אין
+         סגל משלהם — `my_contractor_workers` היה מחזיר להם רשימה ריקה. */
+      { to: '/my/staff', label: 'העובדים שלי', icon: Users, perm: PERM.PORTAL_MANAGE_WORKERS, audience: forContractors },
       { to: '/my/notifications', label: 'התראות', icon: Bell, perm: PERM.NOTIFICATIONS_PREFERENCES },
     ],
   },
@@ -119,6 +187,11 @@ export const NAV_SECTIONS: NavSection[] = [
       },
       { to: '/attendance', label: 'דוח נוכחות', shortLabel: 'נוכחות', icon: Clock, perm: PERM.ATTENDANCE_VIEW_ALL },
       { to: '/reports', label: 'דוחות', shortLabel: 'דוחות', icon: BarChart3, perm: PERM.REPORTS_VIEW },
+      /* שני דפי הרווחיות הם יעדים ולא לשוניות של "דוחות": הם המסכים שנפתחים
+         הכי הרבה בסקשן הזה, והדרך היחידה אליהם הייתה שני קישורים בתוך שורת
+         התבניות של /reports — מקום שצריך לדעת עליו כדי למצוא אותו. */
+      { to: '/reports/task-pnl', label: 'רווחיות לפי משימה', shortLabel: 'רווחיות', icon: Percent, perm: PERM.REPORTS_VIEW },
+      { to: '/reports/profitability', label: 'רווחיות לקוחות', shortLabel: 'לקוחות', icon: TrendingUp, perm: PERM.REPORTS_VIEW },
       { to: '/receipts', label: 'רישום תקבולים', shortLabel: 'תקבולים', icon: Banknote, perm: PERM.FINANCE_RECEIPTS_VIEW },
     ],
   },
@@ -132,15 +205,23 @@ export const NAV_SECTIONS: NavSection[] = [
  * מי רואה רשומה בתפריט. אותה תשובה משרתת את הסרגל, את הבר התחתון ואת
  * ההפניה של `/`, כדי שמסך שהתפריט מציג יהיה גם המסך שהבית שולח אליו.
  */
-export function navItemVisible(item: NavItem, has: (perm: string) => boolean): boolean {
+export function navItemVisible(
+  item: NavItem,
+  has: (perm: string) => boolean,
+  audience: NavAudience = ANY_AUDIENCE,
+): boolean {
   const held = item.anyPerm ? item.anyPerm.some(has) : has(item.perm!)
-  return held && !item.hiddenBy?.some(has)
+  return held && !item.hiddenBy?.some(has) && (item.audience?.(audience) ?? true)
 }
 
 /** הסקשנים שנשארים אחרי הסינון — בלי סקשן שהתרוקן. */
-export function visibleNavSections(has: (perm: string) => boolean, sections = NAV_SECTIONS): NavSection[] {
+export function visibleNavSections(
+  has: (perm: string) => boolean,
+  audience: NavAudience = ANY_AUDIENCE,
+  sections = NAV_SECTIONS,
+): NavSection[] {
   return sections
-    .map((s) => ({ ...s, items: s.items.filter((n) => navItemVisible(n, has)) }))
+    .map((s) => ({ ...s, items: s.items.filter((n) => navItemVisible(n, has, audience)) }))
     .filter((s) => s.items.length > 0)
 }
 

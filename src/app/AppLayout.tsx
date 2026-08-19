@@ -22,7 +22,7 @@ import { RouteGate } from '../features/auth/guards'
 import { NotificationsBell } from '../features/notifications/NotificationsBell'
 import { usePushNavigation, usePushSync } from '../features/notifications/pushQueries'
 import { CommandPalette } from '../features/search/CommandPalette'
-import { NAV_SECTIONS, ROUTE_LABELS, bottomNavItems, navItemVisible, visibleNavSections } from './nav'
+import { NAV_SECTIONS, ROUTE_LABELS, bottomNavItems, navAudience, navItemVisible, visibleNavSections } from './nav'
 import type { NavItem, NavSection } from './nav'
 import { PageTitleProvider, useCurrentPageTitle } from './breadcrumbs'
 import { useOnline } from '../lib/useOnline'
@@ -66,7 +66,7 @@ export default function AppLayout() {
     return () => window.removeEventListener('keydown', h)
   }, [])
 
-  const sections = visibleNavSections(has)
+  const sections = visibleNavSections(has, navAudience(me))
 
   return (
     <PageTitleProvider>
@@ -437,6 +437,7 @@ function Breadcrumbs() {
   const { pathname } = useLocation()
   const detailTitle = useCurrentPageTitle()
   const has = useAuth((s) => s.has)
+  const me = useAuth((s) => s.me)
 
   const segments = pathname.split('/').filter(Boolean)
   /* מסך שיש לו שם משלו בטבלה — גם אם הנתיב שלו מקונן, כמו /my/schedule — הוא
@@ -454,7 +455,7 @@ function Breadcrumbs() {
    */
   const parentOpen =
     NAV_SECTIONS.flatMap((sec) => sec.items).find((n) => n.to === rootPath) ?? null
-  const linkParent = isDetail && (!parentOpen || navItemVisible(parentOpen, has))
+  const linkParent = isDetail && (!parentOpen || navItemVisible(parentOpen, has, navAudience(me)))
 
   return (
     <nav aria-label="מיקום נוכחי" className="min-w-0 flex-1">

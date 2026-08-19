@@ -219,7 +219,7 @@ function PolicyMatrix({ types }: { types: NotificationType[] }) {
     <Card>
       <CardHeader
         title="מי מקבל מה"
-        subtitle="ברירת המחדל לכל קהל, ומה נעול מפני שינוי"
+        subtitle="מה נשלח לכל קהל. אין למשתמש דעה על זה — ההחלטה כאן"
         icon={<Bell size={ICON.md} strokeWidth={STROKE} />}
         actions={
           <SegmentedControl

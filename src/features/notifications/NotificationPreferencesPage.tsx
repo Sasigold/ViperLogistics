@@ -1,4 +1,4 @@
-import { Bell, ICON, Lock, Mail, STROKE, Smartphone, Trash2 } from '../../components/ui/icons'
+import { Bell, Check, ICON, Mail, STROKE, Smartphone, Trash2 } from '../../components/ui/icons'
 import {
   Badge,
   Button,
@@ -10,7 +10,6 @@ import {
   IconButton,
   PageHeader,
   Skeleton,
-  Switch,
   Tooltip,
   fmtRelative,
   useToast,
@@ -19,28 +18,25 @@ import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
 import { errorMessage } from '../../lib/errors'
 import { describeDevice, pushBlockedReason, pushSupported } from '../../lib/push'
-import {
-  CHANNELS,
-  useMyDevices,
-  useMyNotificationSettings,
-  usePushConfig,
-  useSetPreference,
-} from './notificationQueries'
+import { CHANNELS, useMyDevices, useMyNotificationSettings, usePushConfig } from './notificationQueries'
 import { useDisablePush, useEnablePush, useForgetDevice } from './pushQueries'
 import type { NotificationChannel, NotificationSetting } from '../../types/domain'
 
 /**
- * העדפות ההתראות של המשתמש עצמו.
+ * אילו התראות מגיעות אליי — ולמה. מסך קריאה בלבד.
  *
- * המסך יושב תחת /my ולא בהגדרות במכוון: ההגדרות מגודרות ב-settings.view,
- * ועובד שמקבל שיבוצים אינו אמור להחזיק אותו כדי להחליט אם למלא לו את תיבת
- * הדואר. המפתח notifications.preferences הוא default_allowed, ולכן כל מי
- * שיש לו חשבון מגיע לכאן.
+ * ההחלטה מה נשלח שייכת למנהל המערכת, ולו בלבד: הוא קובע אותה פר-קהל
+ * (מטריצת המדיניות) ופר-אדם (חריג אישי), בלשונית ההתראות שבהגדרות. עד 0086
+ * הייתה כאן שכבה נוספת — ההעדפה האישית — וכל עובד יכול היה לכבות לעצמו
+ * שיבוץ למשמרת. זה בדיוק מה שנתבקש להיסגר: התראה שמישהו כיבה לעצמו לפני
+ * חצי שנה היא הסיבה הנפוצה ל"למה הוא לא ידע שהוא משובץ".
  *
- * רשימת הסוגים מגיעה מ-my_notification_settings ולא מקבוע בקובץ הזה. הגרסה
- * הקודמת החזיקה מערך ידני, ובו מתג בשם attendance_reviewed שאף טריגר לא
- * פלט — העדפה שנשמרה ואיש לא קרא. סוג חדש מופיע כאן היום מפני שהוא נרשם
- * בקטלוג, ולא מפני שמישהו זכר לעדכן קובץ TSX.
+ * המסך נשאר, ואינו מתרוקן, משתי סיבות: לדעת מה יגיע אליך זה מידע שימושי
+ * (וגם מונע פניות), ורישום המכשיר ל-push חייב להיעשות מהדפדפן של המשתמש —
+ * זו הרשאת דפדפן ולא העדפה.
+ *
+ * רשימת הסוגים מגיעה מ-my_notification_settings ולא מקבוע בקובץ הזה: סוג
+ * חדש מופיע כאן מפני שהוא נרשם בקטלוג, ולא מפני שמישהו זכר לעדכן TSX.
  */
 export default function NotificationPreferencesPage() {
   return (
@@ -57,9 +53,7 @@ const CHANNEL_ICON: Record<NotificationChannel, typeof Bell> = {
 }
 
 function Preferences() {
-  const toast = useToast()
   const { data: settings = [], isLoading, error, refetch } = useMyNotificationSettings()
-  const save = useSetPreference()
 
   if (isLoading) return <Skeleton className="h-96 w-full max-w-3xl" />
   if (error) return <ErrorState error={error} onRetry={() => void refetch()} />
@@ -76,13 +70,18 @@ function Preferences() {
     (c) => c.key !== 'inapp' && settings.some((s) => !s.channels[c.key].channel_enabled),
   )
 
-  const toggle = (type: string, channel: NotificationChannel, enabled: boolean) => {
-    save.mutate({ type, channel, enabled }, { onError: (e) => toast.error(errorMessage(e)) })
-  }
-
   return (
     <div className="space-y-4">
-      <PageHeader title="התראות" subtitle="באילו ערוצים לקבל אילו התראות" />
+      <PageHeader title="התראות" subtitle="אילו התראות מגיעות אליי, ובאילו ערוצים" />
+
+      <Card className="max-w-3xl">
+        <EmptyState
+          compact
+          art="alert"
+          title="ההתראות נקבעות על ידי מנהל המערכת"
+          description="הרשימה כאן היא מה שיגיע אליך בפועל. לשינוי — פנו למנהל המערכת."
+        />
+      </Card>
 
       {offChannels.length > 0 && (
         <Card className="max-w-3xl">
@@ -90,7 +89,7 @@ function Preferences() {
             compact
             art="alert"
             title={`${offChannels.map((c) => c.label).join(' ו')} אינם פעילים במערכת`}
-            description="מה שתבחרו כאן יישמר ויחול ברגע שמנהל המערכת יפעיל את הערוץ."
+            description="ההתראות בערוצים האלה לא יישלחו עד שמנהל המערכת יפעיל אותם."
           />
         </Card>
       )}
@@ -142,9 +141,7 @@ function Preferences() {
                           label={`${row.label_he} — ${c.label}`}
                           mode={cell.mode}
                           enabled={cell.enabled}
-                          locked={cell.locked}
                           channelOff={!cell.channel_enabled}
-                          onChange={(v) => toggle(row.type, c.key, v)}
                         />
                       </div>
                     )
@@ -160,60 +157,41 @@ function Preferences() {
 }
 
 /**
- * תא בודד.
+ * תא בודד — סימן ולא מתג.
  *
- * `off` אינו מוצג כמתג כבוי אלא כקו: מתג מרמז שאפשר להזיז אותו, וכאן אי
- * אפשר. `forced` מוצג כמתג דלוק ונעול עם הסבר — המשתמש רואה שההתראה תגיע
- * אליו ומי החליט על כך.
+ * מתג מרמז שאפשר להזיז אותו, וכאן אי אפשר: ההחלטה כולה של מנהל המערכת. לכן
+ * שני מצבים בלבד, "מגיע" ו"לא מגיע", וההסבר *למה* יושב ב-tooltip כדי שמי
+ * שמצפה להתראה שאינה מגיעה יידע אם זה הערוץ, המדיניות, או שניהם.
  */
 function ChannelCell({
   label,
   mode,
   enabled,
-  locked,
   channelOff,
-  onChange,
 }: {
   label: string
   mode: string
   enabled: boolean
-  locked: boolean
   channelOff: boolean
-  onChange: (v: boolean) => void
 }) {
-  if (mode === 'off') {
-    return (
-      <Tooltip content="ההתראה הזו כבויה במערכת">
-        <span className="type-body text-ink-tertiary" aria-label={`${label}: כבוי במערכת`}>
-          —
-        </span>
-      </Tooltip>
-    )
-  }
+  const why = channelOff
+    ? 'הערוץ אינו פעיל במערכת'
+    : mode === 'off'
+      ? 'ההתראה הזו כבויה במערכת'
+      : enabled
+        ? 'מנהל המערכת קבע שההתראה הזו נשלחת אליך'
+        : 'מנהל המערכת קבע שההתראה הזו אינה נשלחת אליך'
 
-  const cell = (
-    <Switch
-      checked={enabled}
-      disabled={locked || channelOff}
-      onChange={onChange}
-      aria-label={label}
-    />
+  return (
+    <Tooltip content={why}>
+      <span
+        className={enabled && !channelOff ? 'text-success-text' : 'text-ink-tertiary'}
+        aria-label={`${label}: ${enabled && !channelOff ? 'מגיע אליי' : 'לא מגיע'} — ${why}`}
+      >
+        {enabled && !channelOff ? <Check size={ICON.md} strokeWidth={STROKE} aria-hidden /> : '—'}
+      </span>
+    </Tooltip>
   )
-
-  if (locked) {
-    return (
-      <Tooltip content="מנהל המערכת קבע שההתראה הזו נשלחת תמיד">
-        <span className="inline-flex items-center gap-1">
-          {cell}
-          <Lock size={ICON.xs} strokeWidth={STROKE} aria-hidden className="text-ink-tertiary" />
-        </span>
-      </Tooltip>
-    )
-  }
-  if (channelOff) {
-    return <Tooltip content="הערוץ אינו פעיל במערכת">{cell}</Tooltip>
-  }
-  return cell
 }
 
 /**

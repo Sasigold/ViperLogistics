@@ -34,11 +34,19 @@ export const AUDIENCES: { key: NotificationAudience; label: string }[] = [
   { key: 'customer_user', label: 'לקוחות' },
 ]
 
+/**
+ * ארבעת המצבים, לפי מה שקורה בפועל.
+ *
+ * מ-0086 אין למשתמש דעה: ההעדפה האישית ירדה מסולם ההכרעה, ולכן `opt_in`
+ * ו-`off` נגמרים באותו מקום, וכך גם `opt_out` ו-`forced`. שני הזוגות נשארים
+ * כי הם ברירות המחדל שבקטלוג (`notification_types`) ומה שכבר שמור בטבלת
+ * המדיניות — התוויות הן שהיו משקרות, לא הערכים.
+ */
 export const MODES: { key: NotificationMode; label: string; hint: string }[] = [
-  { key: 'off', label: 'כבוי', hint: 'לא נשלח, והמשתמש אינו יכול להדליק' },
-  { key: 'opt_in', label: 'כבוי כברירת מחדל', hint: 'המשתמש יכול להדליק לעצמו' },
-  { key: 'opt_out', label: 'דלוק כברירת מחדל', hint: 'המשתמש יכול לכבות לעצמו' },
-  { key: 'forced', label: 'חובה', hint: 'תמיד נשלח, והמשתמש אינו יכול לכבות' },
+  { key: 'off', label: 'לא נשלח', hint: 'ההתראה כבויה לקהל הזה' },
+  { key: 'opt_in', label: 'לא נשלח (כבוי כברירת מחדל)', hint: 'ברירת מחדל כבויה בקטלוג' },
+  { key: 'opt_out', label: 'נשלח (דלוק כברירת מחדל)', hint: 'ברירת מחדל דלוקה בקטלוג' },
+  { key: 'forced', label: 'נשלח תמיד', hint: 'ההתראה נשלחת לקהל הזה' },
 ]
 
 export interface PushConfig {
@@ -67,20 +75,11 @@ export function useMyNotificationSettings() {
   })
 }
 
-export function useSetPreference() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async (v: { type: string; channel: NotificationChannel; enabled: boolean }) => {
-      const { error } = await supabase.rpc('set_notification_preference', {
-        p_type: v.type,
-        p_channel: v.channel,
-        p_enabled: v.enabled,
-      })
-      if (error) throw error
-    },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['notification_settings'] }),
-  })
-}
+/*
+ * ‏`useSetPreference` הוסרה ב-0086 ולא נשארה כאן כקוד מת: ההעדפה האישית
+ * ירדה מסולם ההכרעה, ו-`set_notification_preference` זורק 42501 לכל קורא.
+ * מי שקובע הוא המנהל — `useSavePolicy` לקהל ו-`useSaveOverride` לאדם.
+ */
 
 export function useNotificationTypes() {
   return useQuery({

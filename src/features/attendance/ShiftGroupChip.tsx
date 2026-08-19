@@ -9,13 +9,18 @@
  * מי שיוצא מהמחסן מסומן פעמיים בכוונה: פס מקווקו שגובהו הוא בדיוק הנסיעה
  * מהמחסן לשטח, ואייקון ליד שמו. הפס עונה על "מתי" והאייקון על "מי", ובלי
  * שניהם הקבוצה מראה חלון שמתחיל מוקדם בלי לספר של מי הוא.
+ *
+ * ולמטה — הפס השני, של הנסיעה חזרה. שעת הסיום של המשמרת כללה אותה מאז
+ * ומתמיד (0071: המשמרת מוסיפה את החזרה למחסן פעם אחת), ושום דבר בצ׳יפ לא
+ * אמר זאת: הצ׳יפ נראה כאילו עובדים עד 15:00 בשטח, כשלמעשה יורדים מהעבודה
+ * ב-14:15 ונוסעים. שני הפסים מקיפים את מה שהוא באמת עבודה בשטח.
  */
-import { ICON, Package, STROKE, Users } from '../../components/ui/icons'
+import { ICON, Package, STROKE, Truck, Users } from '../../components/ui/icons'
 import { cx } from '../../components/ui'
 import { chipPaint } from '../../lib/colors'
 import { SHIFT_FS, ShiftChip } from './ShiftChip'
 import { fmtShiftRange, fmtTime } from './shiftFormat'
-import { warehouseLeadPct } from './shiftBoard'
+import { warehouseBands } from './shiftBoard'
 import type { ShiftGroup } from './shiftBoard'
 
 /** הצללה מקווקוות על גבי צבע הלקוח — "זה עדיין אותה משמרת, אבל בדרך". */
@@ -31,25 +36,27 @@ export function ShiftGroupChip({
   onClick?: () => void
   className?: string
 }) {
-  const { members, lead, onsiteStart, warehouseStart, warehouseName } = group
+  const { members, lead, onsiteStart, onsiteEnd, warehouseStart, warehouseName } = group
 
   if (members.length === 1) {
     return <ShiftChip shift={lead} name={members[0].name} onClick={onClick} className={className} />
   }
 
   const paint = chipPaint(lead.customer_color)
-  const pct = warehouseLeadPct(group)
+  const { lead: leadPct, tail: tailPct } = warehouseBands(group)
   const label = lead.label ?? 'משמרת'
   // כשכולם יוצאים מהמחסן אין ממה להבדיל אותם, ולכן אין פס ואין אייקון לשם
-  const mixed = pct > 0
+  const mixed = leadPct > 0
   const wh = members.filter((m) => m.fromWarehouse)
   const Tag = onClick ? 'button' : 'div'
 
   const title = [
     label,
-    fmtShiftRange(onsiteStart ?? group.start, group.end),
+    fmtShiftRange(onsiteStart ?? group.start, onsiteEnd ?? group.end),
     warehouseStart &&
       `יציאה מ${warehouseName ?? 'המחסן'} ב-${fmtTime(warehouseStart)}: ${wh.map((m) => m.name).join(', ')}`,
+    onsiteEnd &&
+      `נסיעה חזרה ל${warehouseName ?? 'מחסן'} ב-${fmtTime(onsiteEnd)}, סיום ${fmtTime(group.end)}`,
     `${members.length} עובדים: ${members.map((m) => m.name).join(', ')}`,
   ]
     .filter(Boolean)
@@ -75,7 +82,7 @@ export function ShiftGroupChip({
       {mixed && (
         <span
           className="flex shrink-0 items-start gap-1 overflow-hidden border-b border-dashed border-current/50 px-1.5 pt-0.5 leading-tight"
-          style={{ height: `${pct}%`, backgroundImage: STRIPES }}
+          style={{ height: `${leadPct}%`, backgroundImage: STRIPES }}
         >
           <Package size={ICON.xs} strokeWidth={STROKE} className="mt-px shrink-0" />
           <span className="shrink-0 tabular" dir="ltr">
@@ -95,8 +102,10 @@ export function ShiftGroupChip({
         </span>
 
         <span className="flex min-w-0 items-center gap-1 leading-tight opacity-90">
+          {/* החלון שבו באמת עובדים בשטח. הנסיעות משני צדיו הן הפסים, ולכן
+              הכתיבה שלהן גם כאן הייתה אומרת את אותו דבר פעמיים. */}
           <span className="truncate tabular" dir="ltr">
-            {fmtShiftRange(onsiteStart ?? group.start, group.end)}
+            {fmtShiftRange(onsiteStart ?? group.start, onsiteEnd ?? group.end)}
           </span>
           {/* משמרת שכולה יוצאת מהמחסן: אין פס, ולכן הסימון יושב על השעות */}
           {warehouseStart && !mixed && (
@@ -118,6 +127,22 @@ export function ShiftGroupChip({
           ))}
         </span>
       </span>
+
+      {/* הפס התחתון מתחיל בשעה שבה יורדים מהעבודה ונגמר בסוף המשמרת. אותה
+          הצללה בדיוק כמו למעלה — זו אותה נסיעה, בכיוון ההפוך — ולכן שעת
+          הסיום נכתבת בתוכו: היא השעה שבה מגיעים למחסן, לא שעת סוף העבודה. */}
+      {tailPct > 0 && (
+        <span
+          className="flex shrink-0 items-start gap-1 overflow-hidden border-t border-dashed border-current/50 px-1.5 pb-0.5 leading-tight"
+          style={{ height: `${tailPct}%`, backgroundImage: STRIPES }}
+        >
+          <Truck size={ICON.xs} strokeWidth={STROKE} className="mt-px shrink-0" />
+          <span className="shrink-0 tabular" dir="ltr">
+            {fmtTime(group.end)}
+          </span>
+          <span className="truncate opacity-90">חזרה{warehouseName ? ` ל${warehouseName}` : ' למחסן'}</span>
+        </span>
+      )}
     </Tag>
   )
 }
