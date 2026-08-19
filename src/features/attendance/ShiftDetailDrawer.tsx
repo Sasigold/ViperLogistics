@@ -208,10 +208,13 @@ export function ShiftDetailDrawer({
           )}
 
           {totals && (
-            <div className="surface grid grid-cols-3 gap-2 p-3 text-center">
+            /* ארבעה מספרים ולא שלושה: העובד צריך לדעת כמה מהיום הוא עבודה,
+               כמה דרך וכמה המתנה — ולצידם כמה המשמרת נמשכת מקצה לקצה. */
+            <div className="surface grid grid-cols-2 gap-2 p-3 text-center sm:grid-cols-4">
               <Total label="עבודה" value={`${fmtDuration(totals.work_hours)} ש׳`} />
               <Total label="נסיעה" value={`${fmtDuration(totals.travel_hours)} ש׳`} />
               <Total label="המתנה" value={`${fmtDuration(totals.idle_minutes / 60)} ש׳`} />
+              <Total label="סך המשמרת" value={`${fmtDuration(shift.planned_hours)} ש׳`} />
             </div>
           )}
         </div>
@@ -326,7 +329,9 @@ function TaskCard({ task: t, onOpen }: { task: ShiftTaskRow; onOpen: () => void 
       </div>
 
       {t.team && t.team.length > 0 && (
-        <div className="mt-1 truncate type-caption text-ink-tertiary">עם: {t.team.join(', ')}</div>
+        <div className="mt-1 truncate type-caption text-ink-tertiary">
+          עם: {t.team.map((m) => m.name).join(', ')}
+        </div>
       )}
 
       {t.notes && <div className="mt-1.5 rounded-md bg-subtle p-2 type-caption whitespace-pre-wrap">{t.notes}</div>}
@@ -369,7 +374,15 @@ function TaskDetails({ task: t, onBack }: { task: ShiftTaskRow; onBack: () => vo
       'משובצים',
       t.worker_count ? `${t.assigned_count} מתוך ${t.worker_count}` : t.assigned_count || null,
     ],
-    ['עם', t.team?.length ? t.team.join(', ') : null],
+    ['איש קשר', t.contact_name],
+    [
+      'טלפון איש קשר',
+      t.contact_phone ? (
+        <a key="tel" href={`tel:${t.contact_phone}`} dir="ltr" className="text-primary-text hover:underline">
+          {t.contact_phone}
+        </a>
+      ) : null,
+    ],
     ['הערות', t.notes ? <span key="notes" className="whitespace-pre-wrap">{t.notes}</span> : null],
   ]
 
@@ -406,6 +419,32 @@ function TaskDetails({ task: t, onBack }: { task: ShiftTaskRow; onBack: () => vo
             </div>
           ))}
       </dl>
+
+      {/* מי מגיע למחסן ומי לשטח. זו ההבחנה שקובעת מתי כל אחד מתחיל, ולכן
+          היא מוצגת ליד השם ולא נגזרת ממנו — ראש הצוות צריך לדעת את מי הוא
+          פוגש במחסן בשש ואת מי באתר בשבע. */}
+      {t.team && t.team.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="type-overline">הצוות במשימה</div>
+          <div className="flex flex-wrap gap-1.5">
+            {t.team.map((m) => (
+              <span
+                key={m.name}
+                className={cx(
+                  'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 type-caption',
+                  m.work_site === 'warehouse'
+                    ? 'border-warning-border bg-warning-subtle text-warning-text'
+                    : 'border-line bg-subtle',
+                )}
+              >
+                {m.work_site === 'warehouse' && <Package size={ICON.xs} strokeWidth={STROKE} />}
+                {m.name}
+                <span className="opacity-70">{WORK_SITE_LABELS[m.work_site]}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {canOpenEvent && (
         <Button size="sm" block onClick={() => navigate(`/events/${t.event_id}`)}>

@@ -404,3 +404,232 @@ select t_expect_ok('ומהאתר היא מתקבלת', $$
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+-- ===========================================================================
+-- 0083: מה שלא פורסם אינו על הלוח, והמשמרת נקראת כמו יום עבודה
+-- ===========================================================================
+
+-- הדיווח עצמו: טיוטה ש*חשבון העובד* יצר, ושאיש אינו משובץ אליה.
+insert into tasks (id, event_id, customer_id, task_type_id, task_date,
+                   onsite_start_time, hours_count, status_id, worker_count, created_by)
+select '61000000-0000-0000-0000-000000017006', '30000000-0000-0000-0000-000000017018',
+       '10000000-0000-0000-0000-000000000017',
+       (select id from task_types where code = 'setup' limit 1),
+       current_date + 322, '09:00', 2.0,
+       (select id from statuses where entity = 'task' and code = 'draft' and deleted_at is null),
+       1, '20000000-0000-0000-0000-0000000017a1';
+
+\echo '--- טיוטה שהעובד יצר אינה על הלו״ז שלו ---'
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000017a1', false);
+
+select t_eq('העובד אינו רואה טיוטה שחשבונו יצר',
+  (select count(*)::int from tasks where id = '61000000-0000-0000-0000-000000017006'), 0);
+
+select t_eq('וגם לא בלו״ז עצמו',
+  (select count(*)::int from work_board_view where id = '61000000-0000-0000-0000-000000017006'), 0);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- הצד השני של אותה הכרעה: מי שמזין אירוע בלי tasks.edit ואין לו היקף 'own'
+-- ממשיך לראות את הטיוטות שנולדו מהיצירה שלו.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000017a5', 'field-office@vl.test');
+insert into profiles (id, user_id, user_kind, is_admin, full_name) values
+  ('20000000-0000-0000-0000-0000000017a5', '00000000-0000-0000-0000-0000000017a5',
+   'staff', false, 'מזין אירועים בלי עריכת משימות');
+insert into user_permission_grants (profile_id, permission_key, allowed) values
+  ('20000000-0000-0000-0000-0000000017a5', 'events.view', true),
+  ('20000000-0000-0000-0000-0000000017a5', 'tasks.view', true);
+
+update tasks set created_by = '20000000-0000-0000-0000-0000000017a5'
+ where id = '61000000-0000-0000-0000-000000017006';
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000017a5', false);
+select t_eq('מי שאין לו היקף own כן רואה את הטיוטה שיצר',
+  (select count(*)::int from tasks where id = '61000000-0000-0000-0000-000000017006'), 1);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+update tasks set created_by = '20000000-0000-0000-0000-0000000017a1'
+ where id = '61000000-0000-0000-0000-000000017006';
+
+-- ===== המשמרת: שלושה מרכיבים, שלוש שורות ==================================
+
+\echo '--- שעת המחסן אינה נבלעת בזמן המשימה ---'
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000017a1', false);
+
+-- משימה 017001: יציאה מהמחסן 06:00, עבודה בשטח 07:00, שלוש שעות.
+select t_eq('היציאה מהמחסן היא שדה משלה',
+  (select to_char((shift_task_breakdown('20000000-0000-0000-0000-0000000017a1',
+     array['61000000-0000-0000-0000-000000017001']::uuid[])
+     -> 'tasks' -> 0 ->> 'warehouse_start_at')::timestamptz
+     at time zone 'Asia/Jerusalem', 'HH24:MI')), '06:00');
+
+select t_eq('והמשימה מתחילה כשהעבודה מתחילה, לא כשיוצאים',
+  (select to_char((shift_task_breakdown('20000000-0000-0000-0000-0000000017a1',
+     array['61000000-0000-0000-0000-000000017001']::uuid[])
+     -> 'tasks' -> 0 ->> 'start_at')::timestamptz
+     at time zone 'Asia/Jerusalem', 'HH24:MI')), '07:00');
+
+select t_eq('שעות העבודה הן של המשימה בלבד — בלי מחסן ובלי נסיעה',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000017a1',
+     array['61000000-0000-0000-0000-000000017001']::uuid[])
+     -> 'totals' ->> 'work_hours')::numeric, 3.00::numeric);
+
+-- והמשמרת בכללותה עדיין מתחילה במחסן, כמו שהגזירה קובעת
+select t_eq('אך תחילת המשמרת נשארת שעת המחסן',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000017a1',
+     array['61000000-0000-0000-0000-000000017001']::uuid[]) -> 'shift' ->> 'start')::timestamptz,
+  (select shift_start from app.planned_shifts('20000000-0000-0000-0000-0000000017a1',
+     current_date + 320, current_date + 320)));
+
+-- מי שמגיע לשטח אין לו יציאה מהמחסן כלל
+select t_eq('למי שמגיע לשטח אין שעת מחסן',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000017a1',
+     array['61000000-0000-0000-0000-000000017002']::uuid[])
+     -> 'tasks' -> 0 ->> 'warehouse_start_at'), null::text);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+\echo '--- איש קשר ונקודת התחלה של הצוות: לראש הצוות בלבד ---'
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000017a3', false);
+
+select t_eq('ראש הצוות רואה את איש הקשר מתוך המשימה',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000017a3',
+     array['61000000-0000-0000-0000-000000017001']::uuid[])
+     -> 'tasks' -> 0 ->> 'contact_name'), 'איש הקשר של הלקוח');
+
+select t_eq('ואת הטלפון',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000017a3',
+     array['61000000-0000-0000-0000-000000017001']::uuid[])
+     -> 'tasks' -> 0 ->> 'contact_phone'), '050-1700017');
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000017a1', false);
+select t_eq('ועובד מן השורה אינו רואה אותו',
+  (shift_task_breakdown('20000000-0000-0000-0000-0000000017a1',
+     array['61000000-0000-0000-0000-000000017001']::uuid[])
+     -> 'tasks' -> 0 ->> 'contact_name'), null::text);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- ===========================================================================
+-- 0084: איחור, השלמה, תוספות ומיקום במילים
+-- ===========================================================================
+
+\echo '--- ההשלמה מתקצרת באיחור ---'
+
+-- הדוגמה מהדרישה: מובטחות 6 שעות, המשמרת ב-10:00, הגיע ב-10:15, סיים ב-12:00.
+-- עבד 1:45; התקרה יורדת ל-5:45; ולכן ההשלמה היא 4:00 והתשלום 5:45.
+select t_eq('התקרה יורדת בדיוק בגובה האיחור',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":1.75,"min_hours":6,"hourly_rate":50,"dow":1,"late_minutes":15}'::jsonb)
+    ->> 'topup_target')::numeric, 5.75::numeric);
+
+select t_eq('ולכן ההשלמה היא 4:00',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":1.75,"min_hours":6,"hourly_rate":50,"dow":1,"late_minutes":15}'::jsonb)
+    ->> 'topup_hours')::numeric, 4.00::numeric);
+
+select t_eq('והמשולם הוא 5:45',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":1.75,"min_hours":6,"hourly_rate":50,"dow":1,"late_minutes":15}'::jsonb)
+    ->> 'paid_hours')::numeric, 5.75::numeric);
+
+select t_eq('בלי איחור התקרה נשארת מלאה',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":1.75,"min_hours":6,"hourly_rate":50,"dow":1,"late_minutes":0}'::jsonb)
+    ->> 'paid_hours')::numeric, 6.00::numeric);
+
+-- איחור גדול מהמובטח אינו יכול להוריד את התשלום מתחת למה שנעבד
+select t_eq('איחור ענק אינו גוזל שעות שנעבדו',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":1.75,"min_hours":6,"hourly_rate":50,"dow":1,"late_minutes":600}'::jsonb)
+    ->> 'paid_hours')::numeric, 1.75::numeric);
+
+\echo '--- ומעל הסף היא נשמטת כליל ---'
+select t_eq('איחור מעל הסף מבטל את ההשלמה',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":1.75,"min_hours":6,"hourly_rate":50,"dow":1,
+      "late_minutes":31,"late_forfeit_minutes":30}'::jsonb)
+    ->> 'topup_hours')::numeric, 0::numeric);
+
+select t_eq('והשורה מסומנת ככזו שנשמטה',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":1.75,"min_hours":6,"hourly_rate":50,"dow":1,
+      "late_minutes":31,"late_forfeit_minutes":30}'::jsonb)
+    ->> 'topup_forfeited')::boolean, true);
+
+select t_eq('בדיוק על הסף היא עדיין ניתנת',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":1.75,"min_hours":6,"hourly_rate":50,"dow":1,
+      "late_minutes":30,"late_forfeit_minutes":30}'::jsonb)
+    ->> 'topup_hours')::numeric, 3.75::numeric);
+
+\echo '--- התוספות הן כסף ולא שעות ---'
+select t_eq('תוספת ראש צוות ותוספת קבועה נכנסות לסך',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":8,"hourly_rate":50,"dow":1,"lead_bonus":120,"shift_bonus":30}'::jsonb)
+    ->> 'total')::numeric, 550::numeric);
+
+select t_eq('ואינן מזיזות את השעות',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":8,"hourly_rate":50,"dow":1,"lead_bonus":120,"shift_bonus":30}'::jsonb)
+    ->> 'paid_hours')::numeric, 8::numeric);
+
+select t_eq('`bonus` הוא סך מה שאינו שעות',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":8,"hourly_rate":50,"dow":1,"bonus":100,"lead_bonus":120,"shift_bonus":30}'::jsonb)
+    ->> 'bonus')::numeric, 250::numeric);
+
+select t_eq('ושלושתם שורות נפרדות בפירוט',
+  (select count(*)::int from jsonb_array_elements(
+     app.attendance_calc(app.attendance_config('attendance.overtime'),
+       '{"hours":8,"hourly_rate":50,"dow":1,"bonus":100,"lead_bonus":120,"shift_bonus":30}'::jsonb)
+       -> 'lines') l
+    where l ->> 'key' in ('bonus', 'lead_bonus', 'shift_bonus')), 3);
+
+select t_eq('סכום השורות שווה לסך גם עם התוספות',
+  (select round(sum((l ->> 'amount')::numeric), 2)
+     from jsonb_array_elements(app.attendance_calc(app.attendance_config('attendance.overtime'),
+       '{"hours":11,"min_hours":12,"hourly_rate":50,"dow":1,"late_minutes":20,
+         "bonus":100,"lead_bonus":120,"shift_bonus":30}'::jsonb) -> 'lines') l),
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":11,"min_hours":12,"hourly_rate":50,"dow":1,"late_minutes":20,
+      "bonus":100,"lead_bonus":120,"shift_bonus":30}'::jsonb) ->> 'total')::numeric);
+
+\echo '--- ודיווח ידני נושא מיקום במילים ---'
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000017a3', false);
+
+select t_expect_fail('דיווח בלי מיקום כניסה נדחה', $$
+  select attendance_submit_entry(now() - interval '3 days',
+                                 now() - interval '3 days' + interval '4 hours',
+                                 null, '', 'אתר')$$);
+
+select t_expect_ok('ועם שני המיקומים הוא מתקבל', $$
+  select attendance_submit_entry(now() - interval '3 days',
+                                 now() - interval '3 days' + interval '4 hours',
+                                 null, 'מחסן ראשון לציון', 'היכל התרבות')$$);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('המיקום נשמר על הרשומה',
+  (select clock_in_place from attendance_entries
+    where profile_id = '20000000-0000-0000-0000-0000000017a3' and source = 'manual'
+    order by created_at desc limit 1), 'מחסן ראשון לציון');
+
+select t_eq('וגם מיקום היציאה',
+  (select clock_out_place from attendance_entries
+    where profile_id = '20000000-0000-0000-0000-0000000017a3' and source = 'manual'
+    order by created_at desc limit 1), 'היכל התרבות');

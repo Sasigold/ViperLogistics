@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { useMutation } from '@tanstack/react-query'
-import { format } from 'date-fns'
+import { endOfMonth, format, startOfMonth } from 'date-fns'
 import {
+  Banknote,
   Calendar,
   CalendarClock,
   Clock,
@@ -33,6 +34,7 @@ import {
   Skeleton,
   Textarea,
   cx,
+  fmtMoney,
   useConfirm,
   useToast,
 } from '../../components/ui'
@@ -40,10 +42,11 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
-import { fmtDate } from '../../lib/dates'
+import { fmtDate, toISODate } from '../../lib/dates'
 import { HIGHLIGHT_CLASS, useDeepLinkHighlight } from '../../lib/deepLink'
 import {
   useAttendanceInvalidate,
+  useAttendanceReport,
   useMyClockStatus,
   useSubmitAttendanceEntry,
 } from './attendanceQueries'
@@ -442,6 +445,8 @@ function TimeClock() {
         {/* דיווחים ממתינים להסכמה במידה וקיימים */}
         {reports.length > 0 && <MyReportsCard reports={reports} />}
 
+        <MyPayCard />
+
         {/* המסך הזה מראה את היום; החודש כולו — שעות, ש״נ והיעדרויות — נמצא
             בדוח, ומכאן הוא במרחק לחיצה גם כשהתפריט התחתון מלא. */}
         <Link
@@ -577,6 +582,50 @@ function toLocalInput(iso: string | null | undefined): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/**
+ * השכר של החודש, בשעון עצמו.
+ *
+ * ‏`attendance_report` כבר מחזיר את הסכומים לשורות של הקורא עצמו כשהוא מחזיק
+ * `attendance.view_own_pay` — ומשמיט אותם לגמרי כשלא. לכן אין כאן שאלת
+ * הרשאה שנייה: אם `totals.total` חזר, מותר לו לראות אותו, וזו אותה הכרעה
+ * בדיוק שהשרת עשה. מה שממתין לאישור אינו נספר בו, כמו בדוח.
+ */
+function MyPayCard() {
+  const from = toISODate(startOfMonth(new Date()))
+  const to = toISODate(endOfMonth(new Date()))
+  const { data } = useAttendanceReport({ from, to })
+  const totals = data?.totals
+  if (!totals || totals.total == null) return null
+
+  return (
+    <Card>
+      <CardHeader
+        title="השכר שלי החודש"
+        subtitle="שעות שאושרו בלבד"
+        icon={<Banknote size={ICON.md} strokeWidth={STROKE} />}
+      />
+      <CardBody>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div>
+            <div className="type-overline">שעות</div>
+            <div className="type-subtitle tabular">{fmtDuration(totals.paid_hours ?? 0)} ש׳</div>
+          </div>
+          <div>
+            <div className="type-overline">תוספות</div>
+            <div className="type-subtitle tabular" dir="ltr">{fmtMoney(totals.bonus ?? 0)}</div>
+          </div>
+          <div>
+            <div className="type-overline">לתשלום</div>
+            <div className="type-subtitle tabular font-bold text-success-text" dir="ltr">
+              {fmtMoney(totals.total)}
+            </div>
+          </div>
+        </div>
+      </CardBody>
+    </Card>
+  )
+}
+
 function SelfReportModal({ status, onClose }: { status?: ClockStatus; onClose: () => void }) {
   const toast = useToast()
   const submit = useSubmitAttendanceEntry()
@@ -587,6 +636,8 @@ function SelfReportModal({ status, onClose }: { status?: ClockStatus; onClose: (
     clockIn: toLocalInput(shift?.shift_start),
     clockOut: toLocalInput(shift?.shift_end),
     note: '',
+    inPlace: '',
+    outPlace: '',
   }))
 
   const save = () => {
@@ -594,8 +645,20 @@ function SelfReportModal({ status, onClose }: { status?: ClockStatus; onClose: (
       toast.error('חובה להזין שעת התחלה ושעת סיום')
       return
     }
+    // השרת דוחה דיווח בלי מיקום; הבדיקה כאן היא כדי שההודעה תגיע לפני
+    // הנסיעה הלוך-חזור, ולא במקומה.
+    if (!form.inPlace.trim() || !form.outPlace.trim()) {
+      toast.error('חובה לציין מיקום כניסה ומיקום יציאה')
+      return
+    }
     submit.mutate(
-      { clockIn: form.clockIn, clockOut: form.clockOut, note: form.note },
+      {
+        clockIn: form.clockIn,
+        clockOut: form.clockOut,
+        note: form.note,
+        inPlace: form.inPlace,
+        outPlace: form.outPlace,
+      },
       {
         onSuccess: () => {
           toast.success('הדיווח נשלח לאישור', {
@@ -644,6 +707,24 @@ function SelfReportModal({ status, onClose }: { status?: ClockStatus; onClose: (
               dir="ltr"
               value={form.clockOut}
               onChange={(e) => setForm((f) => ({ ...f, clockOut: e.target.value }))}
+            />
+          </Field>
+        </div>
+        {/* אין כאן GPS לאמת מולו, ולכן המיקום נכתב במילים — וזה מה שהמנהל
+            מאשר לפיו. שני השדות חובה, בשרת ובמסך. */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="מיקום כניסה" required>
+            <Input
+              value={form.inPlace}
+              placeholder="למשל: המחסן בראשון"
+              onChange={(e) => setForm((f) => ({ ...f, inPlace: e.target.value }))}
+            />
+          </Field>
+          <Field label="מיקום יציאה" required>
+            <Input
+              value={form.outPlace}
+              placeholder="למשל: אולמי הגן"
+              onChange={(e) => setForm((f) => ({ ...f, outPlace: e.target.value }))}
             />
           </Field>
         </div>

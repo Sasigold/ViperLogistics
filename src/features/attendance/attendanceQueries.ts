@@ -242,11 +242,20 @@ export function useAttendanceReport(f: ReportFilters, enabled = true) {
 export function useSubmitAttendanceEntry() {
   const invalidate = useAttendanceInvalidate()
   return useMutation({
-    mutationFn: async (v: { clockIn: string; clockOut: string; note?: string | null }) => {
+    mutationFn: async (v: {
+      clockIn: string
+      clockOut: string
+      note?: string | null
+      /** חובה בשרת: לדיווח ידני אין GPS, והמלל הוא מה שהמנהל מאשר לפיו (0084) */
+      inPlace: string
+      outPlace: string
+    }) => {
       const { data, error } = await supabase.rpc('attendance_submit_entry', {
         p_clock_in: new Date(v.clockIn).toISOString(),
         p_clock_out: new Date(v.clockOut).toISOString(),
         p_note: v.note || null,
+        p_in_place: v.inPlace,
+        p_out_place: v.outPlace,
       })
       if (error) throw error
       return data as { entry_id: string; hours: number }

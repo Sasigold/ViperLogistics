@@ -63,7 +63,9 @@ export function AttendanceEntryDrawer({
    */
   const seesMoney = row?.pay?.bonus !== undefined
 
-  const [form, setForm] = useState({ clockIn: '', clockOut: '', note: '', bonus: '', bonusNote: '' })
+  const [form, setForm] = useState({
+    clockIn: '', clockOut: '', note: '', bonus: '', bonusNote: '', inPlace: '', outPlace: '',
+  })
 
   useEffect(() => {
     if (!row) return
@@ -73,6 +75,8 @@ export function AttendanceEntryDrawer({
       note: row.manager_note ?? '',
       bonus: row.pay?.bonus ? String(row.pay.bonus) : '',
       bonusNote: row.bonus_note ?? '',
+      inPlace: row.clock_in_place ?? '',
+      outPlace: row.clock_out_place ?? '',
     })
   }, [row])
 
@@ -90,6 +94,8 @@ export function AttendanceEntryDrawer({
           p_clock_in: new Date(form.clockIn).toISOString(),
           p_clock_out: form.clockOut ? new Date(form.clockOut).toISOString() : null,
           p_manager_note: form.note || null,
+          p_in_place: form.inPlace,
+          p_out_place: form.outPlace,
         })
         if (error) throw error
       }
@@ -246,6 +252,30 @@ export function AttendanceEntryDrawer({
                 />
               </Field>
             </div>
+
+            {/* המיקום במילים. הוא נכתב בדיווח ידני — שבו אין GPS לאמת מולו —
+                ולכן הוא מוצג לכל מי שפותח את הרשומה ונערך בידי מי שמתקן
+                אותה. בהחתמת שעון הוא ריק, ואז אין מה להראות. */}
+            {(row.source === 'manual' || row.clock_in_place || row.clock_out_place) && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="מיקום כניסה">
+                  <Input
+                    value={form.inPlace}
+                    disabled={!canEdit}
+                    placeholder="למשל: המחסן בראשון"
+                    onChange={(e) => setForm((f) => ({ ...f, inPlace: e.target.value }))}
+                  />
+                </Field>
+                <Field label="מיקום יציאה">
+                  <Input
+                    value={form.outPlace}
+                    disabled={!canEdit}
+                    placeholder="למשל: אולמי הגן"
+                    onChange={(e) => setForm((f) => ({ ...f, outPlace: e.target.value }))}
+                  />
+                </Field>
+              </div>
+            )}
 
             {/* המדידה המקורית נשמרת בנפרד, כך שתיקון של מנהל אינו מוחק את
                 מה שהשעון ראה בפועל. */}

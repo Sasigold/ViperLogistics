@@ -931,6 +931,9 @@ export interface ShiftTaskRow {
   work_site: WorkSite
   warehouse_id: string | null
   warehouse_name: string | null
+  /** היציאה מהמחסן. null למי שמגיע לשטח, ולמשימה בלי שעת מחסן (0083) */
+  warehouse_start_at: string | null
+  /** תחילת העבודה בשטח. מאז 0083 זו המשימה עצמה, בלי המחסן שלפניה */
   start_at: string
   onsite_start_at: string
   end_at: string
@@ -946,8 +949,11 @@ export interface ShiftTaskRow {
   my_role: StaffRole | null
   worker_count: number | null
   assigned_count: number
-  /** null למי שאין לו board.view_staffing */
-  team: string[] | null
+  /** null למי שאין לו board.view_staffing. מאז 0083 גם נקודת ההתחלה של כל אחד */
+  team: { name: string; work_site: WorkSite }[] | null
+  /** איש הקשר של הלקוח — למי שהשדה פתוח לו, או לראש הצוות של האירוע (0083) */
+  contact_name: string | null
+  contact_phone: string | null
   notes: string | null
 }
 
@@ -995,11 +1001,21 @@ export interface PayBreakdown {
   overtime_hours: number
   topup_hours: number
   is_rest_day: boolean
+  /** דקות האיחור מול המשמרת המתוכננת, ומה שהן עשו להשלמה (0084) */
+  late_minutes?: number
+  /** התקרה אחרי ניכוי האיחור. null כשההשלמה נשמטה, או כשאין השלמה כלל. */
+  topup_target?: number | null
+  /** האיחור עבר את הסף שהוגדר לעובד, ולכן אין השלמה בכלל */
+  topup_forfeited?: boolean
   /** השדות האלה מושמטים מהאובייקט למי שאינו רשאי לראות כסף */
   hourly_rate?: number | null
   rate_hours?: number
-  /** בונוס למשמרת. כלול ב-total ואינו נוסף עליו. */
+  /** סך מה שאינו שעות. כלול ב-total ואינו נוסף עליו. */
   bonus?: number
+  /** שלושת המקורות שמרכיבים את `bonus` (0084) */
+  bonus_manual?: number
+  bonus_lead?: number
+  bonus_shift?: number
   total?: number | null
   lines?: PayLine[]
 }
@@ -1036,6 +1052,9 @@ export interface AttendanceEntry {
   flags: string[]
   employee_note: string | null
   manager_note: string | null
+  /** מיקום במילים, מדיווח ידני שאין לו GPS לאמת מולו (0084) */
+  clock_in_place: string | null
+  clock_out_place: string | null
   edited_at: string | null
 }
 
@@ -1065,6 +1084,9 @@ export interface AttendanceReportRow {
   flags: string[]
   employee_note: string | null
   manager_note: string | null
+  /** מיקום במילים, מדיווח ידני. ניתן לעריכה בידי מי שמתקן את הרשומה (0084) */
+  clock_in_place: string | null
+  clock_out_place: string | null
   edited_at: string | null
   /** האם שעות נוספות חלות על העובד הזה — ההגדרה האפקטיבית שלו, לא כמה עשה */
   overtime_enabled: boolean
@@ -1095,6 +1117,12 @@ export interface WorkerPaySettings {
   hourly_rate: number | null
   overtime_enabled: boolean
   min_hours_per_shift: number | null
+  /** תוספת בשקלים לכל משימה במשמרת שבה העובד רשום כראש צוות (0084) */
+  team_lead_bonus: number | null
+  /** תוספת קבועה בשקלים לכל משמרת (0084) */
+  shift_bonus: number | null
+  /** איחור מעל כך דקות מבטל את ההשלמה כליל. null = היא רק מתקצרת. */
+  late_topup_forfeit_minutes: number | null
   travel_paid: boolean
   /** null בכל אחד מאלה = לך לפי ההגדרה הגלובלית */
   clock_enabled: boolean | null

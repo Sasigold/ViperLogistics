@@ -667,21 +667,25 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3
 
 select t_expect_ok('עובד מדווח משמרת שלא הוחתמה', $$
   select attendance_submit_entry(now() - interval '2 days',
-                                 now() - interval '2 days' + interval '6 hours', 'נגמרה הסוללה')$$);
+                                 now() - interval '2 days' + interval '6 hours', 'נגמרה הסוללה',
+                                 'המחסן בראשון', 'אולמי הגן')$$);
 
 select t_expect_fail('דיווח בלי שעת סיום נדחה', $$
-  select attendance_submit_entry(now() - interval '4 days', null, null)$$);
+  select attendance_submit_entry(now() - interval '4 days', null, null, 'מחסן', 'אתר')$$);
 
 select t_expect_fail('דיווח על משמרת שטרם הסתיימה נדחה', $$
-  select attendance_submit_entry(now() + interval '1 hour', now() + interval '5 hours', null)$$);
+  select attendance_submit_entry(now() + interval '1 hour', now() + interval '5 hours', null,
+                                 'מחסן', 'אתר')$$);
 
 select t_expect_fail('דיווח מעבר לחלון האחורה נדחה', $$
   select attendance_submit_entry(now() - interval '40 days',
-                                 now() - interval '40 days' + interval '5 hours', null)$$);
+                                 now() - interval '40 days' + interval '5 hours', null,
+                                 'מחסן', 'אתר')$$);
 
 select t_expect_fail('דיווח שחופף לשעות שכבר נרשמו נדחה', $$
   select attendance_submit_entry(now() - interval '2 days' + interval '2 hours',
-                                 now() - interval '2 days' + interval '8 hours', null)$$);
+                                 now() - interval '2 days' + interval '8 hours', null,
+                                 'מחסן', 'אתר')$$);
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
@@ -810,7 +814,8 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3
 
 select t_expect_ok('דיווח נוסף, על יום אחר', $$
   select attendance_submit_entry(now() - interval '5 days',
-                                 now() - interval '5 days' + interval '4 hours', 'שכחתי')$$);
+                                 now() - interval '5 days' + interval '4 hours', 'שכחתי',
+                                 'מחסן ראשי', 'גני התערוכה')$$);
 
 -- כל עוד הדיווח ממתין הוא שייך לעובד; אחרי שהוכרע הוא רשומת נוכחות ככל אחרת
 select t_expect_ok('עובד מושך דיווח שממתין לאישור', $$
@@ -825,7 +830,8 @@ select t_expect_fail('אבל אינו יכול למחוק רשומה מאושר�
 
 select t_expect_ok('דיווח שלישי, כדי לבדוק דחייה', $$
   select attendance_submit_entry(now() - interval '6 days',
-                                 now() - interval '6 days' + interval '3 hours', null)$$);
+                                 now() - interval '6 days' + interval '3 hours', null,
+                                 'מחסן', 'אתר')$$);
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
@@ -862,14 +868,15 @@ select t_eq('גם לא בסיכום',
 -- רשומה שנדחתה אינה חוסמת דיווח מתוקן על אותן שעות
 select t_expect_ok('אפשר לדווח שוב על שעות שנדחו', $$
   select attendance_submit_entry(now() - interval '6 days',
-                                 now() - interval '6 days' + interval '3 hours', 'דיווח מתוקן')$$);
+                                 now() - interval '6 days' + interval '3 hours', 'דיווח מתוקן',
+                                 'מחסן', 'אתר')$$);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
 \echo '--- anon ---'
 set role anon;
 select t_expect_fail('anon אינו יכול לדווח משמרת',
-  $$select attendance_submit_entry(now() - interval '1 day', now(), null)$$);
+  $$select attendance_submit_entry(now() - interval '1 day', now(), null, 'מחסן', 'אתר')$$);
 select t_expect_fail('anon אינו יכול להחתים שעון',
   $$select attendance_clock_in(null, null, null, null)$$);
 select t_expect_fail('anon אינו יכול לשלוף דוח',

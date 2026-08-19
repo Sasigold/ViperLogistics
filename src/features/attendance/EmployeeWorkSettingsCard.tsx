@@ -38,6 +38,9 @@ export function EmployeeWorkSettingsCard({ profileId }: { profileId: string }) {
         hourly_rate: null,
         overtime_enabled: true,
         min_hours_per_shift: null,
+        team_lead_bonus: null,
+        shift_bonus: null,
+        late_topup_forfeit_minutes: null,
         travel_paid: true,
         clock_enabled: null,
         requires_location: null,
@@ -75,7 +78,10 @@ export function EmployeeWorkSettingsCard({ profileId }: { profileId: string }) {
                 onChange={(e) => set({ hourly_rate: num(e.target.value) })}
               />
             </Field>
-            <Field label="השלמה לשעות" hint="משמרת קצרה מזה משולמת כאילו נמשכה כך">
+            <Field
+              label="השלמה לשעות"
+              hint="משמרת קצרה מזה משולמת כאילו נמשכה כך. איחור מקצר את התקרה בגובהו"
+            >
               <Input
                 type="number"
                 dir="ltr"
@@ -85,6 +91,44 @@ export function EmployeeWorkSettingsCard({ profileId }: { profileId: string }) {
                 placeholder="ללא"
                 value={form.min_hours_per_shift ?? ''}
                 onChange={(e) => set({ min_hours_per_shift: num(e.target.value) })}
+              />
+            </Field>
+            {/* הסף שמעליו האיחור אינו "כמה דקות" אלא החלטה: ההשלמה נשמטת
+                כליל ולא רק מתקצרת. ריק = היא תמיד רק מתקצרת. */}
+            <Field
+              label="איחור שמבטל את ההשלמה"
+              hint="בדקות. ריק = ההשלמה רק מתקצרת בגובה האיחור"
+            >
+              <Input
+                type="number"
+                dir="ltr"
+                min={0}
+                step={5}
+                placeholder="ללא"
+                value={form.late_topup_forfeit_minutes ?? ''}
+                onChange={(e) => set({ late_topup_forfeit_minutes: num(e.target.value) })}
+              />
+            </Field>
+            <Field label="תוספת ראש צוות" hint="לכל משימה במשמרת שבה הוא רשום כראש צוות">
+              <Input
+                type="number"
+                dir="ltr"
+                min={0}
+                step={10}
+                placeholder="ללא"
+                value={form.team_lead_bonus ?? ''}
+                onChange={(e) => set({ team_lead_bonus: num(e.target.value) })}
+              />
+            </Field>
+            <Field label="תוספת קבועה למשמרת" hint="סכום שמתווסף לכל משמרת של העובד">
+              <Input
+                type="number"
+                dir="ltr"
+                min={0}
+                step={10}
+                placeholder="ללא"
+                value={form.shift_bonus ?? ''}
+                onChange={(e) => set({ shift_bonus: num(e.target.value) })}
               />
             </Field>
             <Field label="זכאי לשעות נוספות">

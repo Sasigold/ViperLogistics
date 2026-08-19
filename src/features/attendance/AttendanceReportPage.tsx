@@ -286,11 +286,15 @@ export function AttendanceReport({
    * שלו — ולא מספר שהוא מקבל דרך הפורטל.
    */
   const showOutcome = canSeeAll
-  const canEdit = has(PERM.ATTENDANCE_EDIT_ENTRY)
   const canAdd = has(PERM.ATTENDANCE_MANUAL_ENTRY)
-  const canApprove = has(PERM.ATTENDANCE_APPROVE_ENTRY)
-  const canBonus = has(PERM.ATTENDANCE_MANAGE_BONUS)
-  const canOpenRow = canEdit || canApprove || canBonus
+  /**
+   * מי פותח שורה — כולם. עד כאן רק מי שיכול *לשנות* אותה, ולכן העובד, שהמסך
+   * הזה הוא הדוח שלו, לא יכול היה לפתוח את המשמרת שלו ולראות ממה היא מורכבת.
+   * המגירה עצמה כבר מציירת כל שדה כ-`disabled` למי שאין לו מפתח עריכה, ואת
+   * כפתורי האישור והבונוס היא מסתירה — ולכן הפתיחה אינה צריכה מפתח משלה,
+   * ומפתח כזה רק היה מכפיל את ההכרעה בשני מקומות.
+   */
+  const canOpenRow = true
 
   const toast = useToast()
 
@@ -797,12 +801,17 @@ export function AttendanceReport({
             tone="#7c3aed"
           />
         )}
-        <SummaryTile
-          icon={<PieChart size={ICON.xl} strokeWidth={STROKE} />}
-          label="שעות חסרות"
-          value={fmtDurationHHMM(missingHours)}
-          tone="#f59e0b"
-        />
+        {/* אותה הכרעה של `showOutcome`: "חסר" הוא מדידה מול המתוכנן, ולכן
+            הוא של מי שמאשר את המשמרת — לא של מי שעבד אותה. הוא נשמט כאן
+            מאותה סיבה ש"מתוך" נשמט מהאריח שמעליו. */}
+        {showOutcome && (
+          <SummaryTile
+            icon={<PieChart size={ICON.xl} strokeWidth={STROKE} />}
+            label="שעות חסרות"
+            value={fmtDurationHHMM(missingHours)}
+            tone="#f59e0b"
+          />
+        )}
         {showMoney && showBonus && (
           <SummaryTile
             icon={<Banknote size={ICON.xl} strokeWidth={STROKE} />}
@@ -959,7 +968,7 @@ export function AttendanceReport({
                   </span>
                 </>
               )}
-              {missingHours > 0 && (
+              {showOutcome && missingHours > 0 && (
                 <>
                   <span className="text-ink-tertiary" aria-hidden>|</span>
                   <span className="tabular text-error-text">{fmtDurationHHMM(missingHours)} שעות חסרות</span>
