@@ -184,6 +184,11 @@ export interface ShiftGroup {
   end: string
   /** תחילת העבודה בשטח — של מי שאינו יוצא מהמחסן. null כשכולם יוצאים ממנו */
   onsiteStart: string | null
+  /**
+   * סוף העבודה בשטח — הרגע שממנו והלאה נוסעים חזרה למחסן. null כשאיש
+   * בקבוצה אינו חוזר לשם, ואז `end` הוא גם סוף העבודה.
+   */
+  onsiteEnd: string | null
   /** היציאה המוקדמת מהמחסן. null כשאיש בקבוצה אינו מתחיל שם */
   warehouseStart: string | null
   warehouseName: string | null
@@ -203,6 +208,29 @@ const shiftGroupKey = (s: PlannedShift) =>
     : `${s.shift_start}|${s.shift_end}|${s.label ?? ''}`
 
 const soloKey = (s: PlannedShift) => `${s.profile_id}|${s.work_date}|${s.seq}`
+
+/**
+ * מתי נגמרת העבודה עצמה, כשחלק מהקבוצה עוד נוסע אחריה חזרה למחסן.
+ *
+ * ‏`shift_end` של מי שיצא מהמחסן כולל את הנסיעה חזרה, ו-`travel_hours` הוא
+ * בדיוק אותה נסיעה — לו, ו-0 למי שהגיע ישירות לשטח וסיים בשטח (0079 §4).
+ * חיסור אחד מחזיר את השעה שבה יורדים מהעבודה, וזו השעה שהפס התחתון בצ׳יפ
+ * מתחיל בה.
+ *
+ * הגדול מבין החברים ולא הקטן: בקבוצה כולם חולקים את אותן משימות, ולכן זהו
+ * אותו רגע לכולם — והמקסימום הוא מה ששומר על הפס בתוך החלון גם כשמשמרת
+ * חריגה נכנסה לקבוצה בטעות.
+ */
+function onsiteEnd(members: ShiftGroupMember[]): string | null {
+  let latest: number | null = null
+  for (const m of members) {
+    const travel = m.shift.travel_hours ?? 0
+    if (travel <= 0) continue
+    const at = ms(m.shift.shift_end) - travel * 3_600_000
+    if (latest === null || at > latest) latest = at
+  }
+  return latest === null ? null : new Date(latest).toISOString()
+}
 
 /**
  * המשמרות של כולם, מקובצות לפי מי עובד באותה משמרת.
@@ -247,6 +275,7 @@ export function groupShifts(
         members[0].shift.shift_end,
       ),
       onsiteStart: field[0]?.shift.shift_start ?? null,
+      onsiteEnd: onsiteEnd(members),
       warehouseStart: wh[0]?.shift.shift_start ?? null,
       warehouseName: wh.find((m) => m.shift.warehouse_name)?.shift.warehouse_name ?? null,
     })
@@ -271,6 +300,39 @@ export function warehouseLeadPct(g: ShiftGroup): number {
   const lead = ms(g.onsiteStart) - ms(g.start)
   if (span <= 0 || lead <= 0) return 0
   return Math.min(MAX_LEAD_PCT, (lead / span) * 100)
+}
+
+/**
+ * והפס התחתון: הנסיעה חזרה למחסן, מסוף העבודה ועד סוף המשמרת.
+ *
+ * הוא אינו תלוי בהרכב הקבוצה, בשונה מהעליון: הנסיעה חזרה נמדדת מהמשמרת
+ * עצמה (`travel_hours`) ולא מהפרש בין שני אנשים, ולכן גם משמרת שכולה יוצאת
+ * מהמחסן — זו שאין לה פס עליון — מקבלת פס תחתון. זה בדיוק הפער שדווח: שעת
+ * הסיום שבצ׳יפ כללה מאז ומתמיד את הנסיעה, ושום דבר בו לא אמר זאת.
+ */
+export function warehouseReturnPct(g: ShiftGroup): number {
+  if (!g.onsiteEnd) return 0
+  const span = ms(g.end) - ms(g.start)
+  const tail = ms(g.end) - ms(g.onsiteEnd)
+  if (span <= 0 || tail <= 0) return 0
+  return Math.min(MAX_LEAD_PCT, (tail / span) * 100)
+}
+
+/**
+ * שני הפסים יחד, אחרי שמוודאים שנשאר גוף לצ׳יפ.
+ *
+ * כל אחד מהם כבר חסום ב-MAX_LEAD_PCT בנפרד, אבל משמרת קצרה עם נסיעה ארוכה
+ * לשני הכיוונים יכולה להגיע ל-120% ולמחוק את שמות העובדים שביניהם. כשהסכום
+ * חורג, שניהם מצטמצמים באותו יחס — כך שהיחס *ביניהם* נשמר, וזה מה שהעין
+ * קוראת מהצ׳יפ.
+ */
+export function warehouseBands(g: ShiftGroup): { lead: number; tail: number } {
+  const lead = warehouseLeadPct(g)
+  const tail = warehouseReturnPct(g)
+  const total = lead + tail
+  if (total <= MAX_LEAD_PCT) return { lead, tail }
+  const k = MAX_LEAD_PCT / total
+  return { lead: lead * k, tail: tail * k }
 }
 
 /** כמה מסננים פעילים — למונה שעל כפתור הסינון. */

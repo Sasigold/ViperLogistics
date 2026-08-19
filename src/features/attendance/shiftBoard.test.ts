@@ -11,6 +11,8 @@ import {
   rangeTotals,
   activeBoardFilters,
   warehouseLeadPct,
+  warehouseReturnPct,
+  warehouseBands,
   MAX_LEAD_PCT,
   STAFF_ONLY,
 } from './shiftBoard'
@@ -374,6 +376,123 @@ describe('warehouseLeadPct', () => {
   it('בלי יוצא מחסן אין פס בכלל', () => {
     const g = groupShifts([shift({ profile_id: 'p1', work_date: '2026-08-12' })], names)[0]
     expect(warehouseLeadPct(g)).toBe(0)
+  })
+})
+
+/**
+ * הפס התחתון. הדיווח שפתח אותו: "יש סימון על תחילת העבודה במחסן, אבל סוף
+ * הזמן במחסן לא נראה שונה" — שעת הסיום כללה מאז ומתמיד את הנסיעה חזרה, ושום
+ * דבר בצ׳יפ לא אמר זאת.
+ */
+describe('warehouseReturnPct', () => {
+  const names = new Map([
+    ['p1', 'דני כהן'],
+    ['p2', 'יוסי לוי'],
+  ])
+
+  /** יוצא מהמחסן ב-06:00, עובד עד 15:00 ונוסע חזרה שעה — סיום 16:00 */
+  const returner = (travel_hours: number) =>
+    shift({
+      profile_id: 'p1',
+      work_date: '2026-08-12',
+      task_ids: ['t1'],
+      work_site: 'warehouse',
+      warehouse_name: 'מחסן רמלה',
+      shift_start: '2026-08-12T06:00:00+03:00',
+      shift_end: '2026-08-12T16:00:00+03:00',
+      travel_hours,
+    })
+
+  it('הסיום בשטח הוא סוף המשמרת פחות הנסיעה חזרה', () => {
+    const g = groupShifts(
+      [returner(1), shift({ profile_id: 'p2', work_date: '2026-08-12', task_ids: ['t1'] })],
+      names,
+    )[0]
+    expect(new Date(g.onsiteEnd!).getTime()).toBe(new Date('2026-08-12T15:00:00+03:00').getTime())
+    // שעה מתוך חלון של עשר (06:00–16:00)
+    expect(warehouseReturnPct(g)).toBeCloseTo(10, 5)
+  })
+
+  it('משמרת שכולה יוצאת מהמחסן — אין פס עליון, ובכל זאת יש תחתון', () => {
+    const g = groupShifts([returner(1), { ...returner(1), profile_id: 'p2' }], names)[0]
+    expect(warehouseLeadPct(g)).toBe(0)
+    expect(warehouseReturnPct(g)).toBeCloseTo(10, 5)
+  })
+
+  it('בלי נסיעה חזרה אין סיום נפרד ואין פס', () => {
+    const g = groupShifts(
+      [
+        shift({ profile_id: 'p1', work_date: '2026-08-12', task_ids: ['t1'] }),
+        shift({ profile_id: 'p2', work_date: '2026-08-12', task_ids: ['t1'] }),
+      ],
+      names,
+    )[0]
+    expect(g.onsiteEnd).toBeNull()
+    expect(warehouseReturnPct(g)).toBe(0)
+  })
+
+  it('גם הפס התחתון חסום, כדי שלא יבלע את הצ׳יפ', () => {
+    // "נסיעה" של תשע שעות מתוך חלון של עשר
+    const g = groupShifts([returner(9)], names)[0]
+    expect(warehouseReturnPct(g)).toBe(MAX_LEAD_PCT)
+  })
+})
+
+describe('warehouseBands', () => {
+  const names = new Map([
+    ['p1', 'דני כהן'],
+    ['p2', 'יוסי לוי'],
+  ])
+
+  it('כששני הפסים נכנסים, אף אחד מהם אינו זז', () => {
+    const g = groupShifts(
+      [
+        shift({ profile_id: 'p2', work_date: '2026-08-12', task_ids: ['t1'] }),
+        shift({
+          profile_id: 'p1',
+          work_date: '2026-08-12',
+          task_ids: ['t1'],
+          work_site: 'warehouse',
+          shift_start: '2026-08-12T06:00:00+03:00',
+          shift_end: '2026-08-12T16:00:00+03:00',
+          travel_hours: 1,
+        }),
+      ],
+      names,
+    )[0]
+    const { lead, tail } = warehouseBands(g)
+    expect(lead).toBeCloseTo(10, 5)
+    expect(tail).toBeCloseTo(10, 5)
+  })
+
+  it('וכשהם חורגים יחד, שניהם מצטמצמים באותו יחס', () => {
+    /* חלון 06:00–16:00. העבודה עצמה 09:00–11:00: חצי מהחלון נסיעה הלוך
+       (30%) וחצי חזור (50%) — 80% יחד, שנחתכים ל-60 בשמירת היחס 3:5. */
+    const g = groupShifts(
+      [
+        shift({
+          profile_id: 'p2',
+          work_date: '2026-08-12',
+          task_ids: ['t1'],
+          shift_start: '2026-08-12T09:00:00+03:00',
+          shift_end: '2026-08-12T11:00:00+03:00',
+        }),
+        shift({
+          profile_id: 'p1',
+          work_date: '2026-08-12',
+          task_ids: ['t1'],
+          work_site: 'warehouse',
+          shift_start: '2026-08-12T06:00:00+03:00',
+          shift_end: '2026-08-12T16:00:00+03:00',
+          travel_hours: 5,
+        }),
+      ],
+      names,
+    )[0]
+    const { lead, tail } = warehouseBands(g)
+    expect(lead + tail).toBeCloseTo(MAX_LEAD_PCT, 5)
+    expect(lead).toBeCloseTo(MAX_LEAD_PCT * (3 / 8), 5)
+    expect(tail).toBeCloseTo(MAX_LEAD_PCT * (5 / 8), 5)
   })
 })
 
