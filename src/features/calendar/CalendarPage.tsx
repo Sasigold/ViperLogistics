@@ -183,6 +183,13 @@ export default function CalendarPage() {
   // judges against events.change_date — gate the UI by the same key
   const canEdit = has(PERM.CALENDAR_DRAG)
   const canOpenEvent = has(PERM.EVENTS_VIEW)
+  /**
+   * מי שמסנן. עובד שטח רואה בלוח את מה ששובץ אליו — ‏RLS כבר צמצמה אותו
+   * לזה — וסרגל שמציע לו לסנן בין לקוח אחד לסטטוס אחד הוא ארבע פקדים מעל
+   * חודש של חמישה אירועים. בלי המפתח הלוח מוצג כפי שהוא: בלי שורת הסינון,
+   * בלי הצ׳יפים, ובלי הפריט "סינון לפי..." בתפריט ההקשר.
+   */
+  const canFilter = has(PERM.CALENDAR_FILTER)
 
   const { data: customers = [] } = useCustomers()
   const { data: statuses = [] } = useStatuses('event')
@@ -460,13 +467,17 @@ export default function CalendarPage() {
               },
             ]
           : []),
-        {
-          key: 'filter',
-          label: `סינון לפי ${ev.customers?.name ?? 'לקוח'}`,
-          icon: <Filter size={ICON.sm} />,
-          disabled: !ev.customer_id,
-          onClick: () => setFilters((f) => ({ ...f, customer: ev.customer_id ?? '' })),
-        },
+        ...(canFilter
+          ? [
+              {
+                key: 'filter',
+                label: `סינון לפי ${ev.customers?.name ?? 'לקוח'}`,
+                icon: <Filter size={ICON.sm} />,
+                disabled: !ev.customer_id,
+                onClick: () => setFilters((f) => ({ ...f, customer: ev.customer_id ?? '' })),
+              },
+            ]
+          : []),
         {
           key: 'copy',
           label: 'העתקת פרטי האירוע',
@@ -578,7 +589,7 @@ export default function CalendarPage() {
         </Tooltip>
       )
     },
-    [openMenu, navigate, toast, isMobile, customers.length, canOpenEvent],
+    [openMenu, navigate, toast, isMobile, customers.length, canOpenEvent, canFilter],
   )
 
   /* ── filter controls, shared by the desktop panel and the mobile sheet ─── */
@@ -692,21 +703,23 @@ export default function CalendarPage() {
           )}
         </Popover>
       )}
-      <Button
-        size="sm"
-        variant={activeFilters.length > 0 ? 'outlined' : 'secondary'}
-        onClick={() => setFiltersOpen((v) => !v)}
-        aria-expanded={filtersOpen}
-      >
-        <Filter size={ICON.sm} strokeWidth={STROKE} />
-        סינון
-        {activeFilters.length > 0 && (
-          <span className="inline-flex size-4 items-center justify-center rounded-full bg-primary type-caption font-bold tabular text-on-primary">
-            {activeFilters.length}
-          </span>
-        )}
-      </Button>
-      {has(PERM.CALENDAR_SAVE_FILTERS) && (
+      {canFilter && (
+        <Button
+          size="sm"
+          variant={activeFilters.length > 0 ? 'outlined' : 'secondary'}
+          onClick={() => setFiltersOpen((v) => !v)}
+          aria-expanded={filtersOpen}
+        >
+          <Filter size={ICON.sm} strokeWidth={STROKE} />
+          סינון
+          {activeFilters.length > 0 && (
+            <span className="inline-flex size-4 items-center justify-center rounded-full bg-primary type-caption font-bold tabular text-on-primary">
+              {activeFilters.length}
+            </span>
+          )}
+        </Button>
+      )}
+      {canFilter && has(PERM.CALENDAR_SAVE_FILTERS) && (
         <IconButton
           label="שמירת הסינון הנוכחי"
           size="sm"
@@ -725,7 +738,7 @@ export default function CalendarPage() {
     </>
   )
 
-  const headerExtras = (
+  const headerExtras = !canFilter ? null : (
     <>
       {/* active-filter chips stay visible even when the panel is folded */}
       {activeFilters.length > 0 && (
@@ -790,7 +803,7 @@ export default function CalendarPage() {
       )}
 
       <Modal
-        open={filtersOpen && isMobile}
+        open={canFilter && filtersOpen && isMobile}
         onClose={() => setFiltersOpen(false)}
         title="סינון אירועים"
         description={`${filtered.length} אירועים מוצגים`}

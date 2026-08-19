@@ -32,12 +32,17 @@ export const PERM = {
   ATTENDANCE_EXPORT: 'attendance.export',
   BOARD_VIEW: 'board.view',
   BOARD_VIEW_STAFFING: 'board.view_staffing',
+  /* שני הכלים שמעל הלו״ז שאינם "לצפות בו": לסנן, ולפתוח כרטיס משימה. בלי
+     השני, לחיצה על משימה מובילה לדף האירוע — ראו 0079. */
+  BOARD_FILTER: 'board.filter',
+  BOARD_OPEN_TASK: 'board.open_task',
   BOARD_INLINE_EDIT: 'board.inline_edit',
   BOARD_BULK_EDIT: 'board.bulk_edit',
   BOARD_EXPORT: 'board.export',
   BOARD_COLUMNS: 'board.columns',
   CALENDAR_VIEW: 'calendar.view',
   CALENDAR_DRAG: 'calendar.drag',
+  CALENDAR_FILTER: 'calendar.filter',
   CALENDAR_SAVE_FILTERS: 'calendar.save_filters',
   CONTRACTORS_VIEW: 'contractors.view',
   CONTRACTORS_CREATE: 'contractors.create',

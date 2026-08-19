@@ -655,53 +655,66 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
               </Field>
 
               {/*
-                שטח או מחסן, פר-משובץ. השדה קובע את שעת ההתחלה של המשמרת
-                שלו: מי שיוצא מהמחסן מתחיל ב"תחילה במחסן" ומי שמגיע לאתר
-                ב"תחילה בשטח". בלי שעת מחסן על המשימה אין להבחנה משמעות,
-                ולכן הפאנל מוסתר.
-              */}
-              {form.warehouse_start_time && (
-                <Field
-                  label="מחסן יציאה"
-                  hint="דריסה למשימה הזו בלבד. ריק = המחסן של הלקוח"
-                >
-                  <Select
-                    value={form.warehouse_id ?? ''}
-                    onChange={(e) => set({ warehouse_id: e.target.value || null })}
-                    disabled={!canChangeLocation}
-                  >
-                    <option value="">המחסן של הלקוח</option>
-                    {warehouses
-                      .filter((w) => w.is_active || w.id === form.warehouse_id)
-                      .map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name}
-                        </option>
-                      ))}
-                  </Select>
-                </Field>
-              )}
+                שטח או מחסן, פר-משובץ. השדה קובע שני דברים במשמרת של אותו
+                אדם: מאיפה הוא מתחיל — "תחילה במחסן" למי שיוצא מהמחסן,
+                "תחילה בשטח" לכל השאר — ומול מה נמדד המיקום בהחתמת הכניסה.
+                הוא גם מה שקובע אם נספרת לו נסיעה חזרה למחסן בסוף המשמרת.
 
-              {form.warehouse_start_time && assignments.length > 0 && (
-                <div className="space-y-2 rounded-lg border border-line-subtle bg-subtle/50 p-3">
-                  <p className="type-overline">נקודת התחלה</p>
-                  {assignments.map((a) => (
-                    <div key={`${a.profile_id}:${a.role}`} className="flex items-center gap-2">
-                      <span className="w-32 shrink-0 truncate type-body">{nameOf(a.profile_id)}</span>
-                      <SegmentedControl
-                        items={[
-                          { key: 'field' as WorkSite, label: 'שטח' },
-                          { key: 'warehouse' as WorkSite, label: 'מחסן' },
-                        ]}
-                        value={a.work_site}
-                        onChange={(work_site) =>
-                          canAssign[a.role] &&
-                          setAssignments((prev) => prev.map((x) => (x === a ? { ...x, work_site } : x)))
-                        }
-                      />
-                    </div>
-                  ))}
-                </div>
+                עד כאן הפאנל הופיע רק כשהייתה למשימה שעת מחסן, ולכן במשימות
+                של לקוח שאין לו שעה כזו פשוט לא היה איך לומר "האנשים האלה
+                באים למחסן". אין סיבה לתלות: בלי שעת מחסן המשמרת מתחילה בשעת
+                השטח, וזה בדיוק מה שהגזירה עושה (0023).
+              */}
+              {assignments.length > 0 && (
+                <>
+                  <Field
+                    label="מחסן יציאה"
+                    hint="דריסה למשימה הזו בלבד. ריק = המחסן של הלקוח"
+                  >
+                    <Select
+                      value={form.warehouse_id ?? ''}
+                      onChange={(e) => set({ warehouse_id: e.target.value || null })}
+                      disabled={!canChangeLocation}
+                    >
+                      <option value="">המחסן של הלקוח</option>
+                      {warehouses
+                        .filter((w) => w.is_active || w.id === form.warehouse_id)
+                        .map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.name}
+                          </option>
+                        ))}
+                    </Select>
+                  </Field>
+
+                  <div className="space-y-2 rounded-lg border border-line-subtle bg-subtle/50 p-3">
+                    <p className="type-overline">נקודת התחלה</p>
+                    {assignments.map((a) => (
+                      <div key={`${a.profile_id}:${a.role}`} className="flex items-center gap-2">
+                        <span className="w-32 shrink-0 truncate type-body">{nameOf(a.profile_id)}</span>
+                        <SegmentedControl
+                          items={[
+                            { key: 'field' as WorkSite, label: 'שטח' },
+                            { key: 'warehouse' as WorkSite, label: 'מחסן' },
+                          ]}
+                          value={a.work_site}
+                          onChange={(work_site) =>
+                            canAssign[a.role] &&
+                            setAssignments((prev) => prev.map((x) => (x === a ? { ...x, work_site } : x)))
+                          }
+                        />
+                      </div>
+                    ))}
+                    {/* המשמרת של מי שיוצא מהמחסן מתחילה בשעת המחסן — וכשאין
+                        כזו, בשעת השטח. אמירה ולא חסימה: יש מקרים שבהם באמת
+                        מתאספים במחסן בשעת השטח. */}
+                    {!form.warehouse_start_time && assignments.some((a) => a.work_site === 'warehouse') && (
+                      <p className="type-caption text-ink-tertiary">
+                        אין למשימה "תחילה במחסן", ולכן המשמרת של מי שיוצא מהמחסן מתחילה בשעת השטח.
+                      </p>
+                    )}
+                  </div>
+                </>
               )}
 
               {byRole('driver').length > 0 && (

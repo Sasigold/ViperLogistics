@@ -185,6 +185,16 @@ OUT="$OUT
 $OUT15"
 
 echo
+echo "== field worker suite =="
+# 17 מקימה לקוח, מחסן, אירוע, שני פרופילים ושתי משימות משלה ואינה נשענת על אף
+# חבילה קודמת. היא רצה אחרונה כי היא מוסיפה משימות ושיבוצים שאינם מנוקים,
+# והמשמרות שלה יושבות ב-current_date+320 כדי שלא ייתפסו בטווח של אף חבילה.
+OUT16=$($PSQL -d vl -f "$HERE/17_worker_view.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT16"
+OUT="$OUT
+$OUT16"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

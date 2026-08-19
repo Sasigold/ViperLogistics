@@ -263,7 +263,14 @@ select t_eq('צוות: אין pricing.revenue',                 app.has('pricing
 select t_eq('צוות: אין customers.view',                  app.has('customers.view'), false);
 select t_eq('צוות: אין users.view (עובדים)',             app.has('users.view'), false);
 select t_eq('צוות: אין reports.view (דוחות)',            app.has('reports.view'), false);
-select t_eq('צוות: אין events.view (עמוד אירועים)',      app.has('events.view'), false);
+-- ‏0079 פתח לתפקיד "עובד" את events.view — עמוד האירוע הוא מה שהעובד פותח
+-- מהלו״ז. מה שנשאר סגור הוא כל השאר במודול, ובכלל זה מפתחות שנרשמו אחרי
+-- 0011 והיו נדלקים לו בהיסק מ-events.view.
+select t_eq('עובד: events.view נפתח (0079)',              app.has('events.view'), true);
+select t_eq('אך לא יומן הפעילות של האירוע',               app.has('events.activity_log'), false);
+select t_eq('ולא המפרט',                                  app.has('events.specs_view'), false);
+select t_eq('ולא עריכה',                                  app.has('events.edit'), false);
+select t_eq('ולא ייצוא',                                  app.has('events.export'), false);
 
 \echo '--- אבל מסכי הצוות פתוחים ---'
 select t_eq('צוות: calendar.view',            app.has('calendar.view'), true);

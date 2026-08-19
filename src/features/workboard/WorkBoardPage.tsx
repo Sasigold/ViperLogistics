@@ -177,6 +177,25 @@ function loadPrefs(): Prefs {
 }
 
 /**
+ * הלוח כפי שהוא מוצג למי שאין לו את בורר התצוגה (`board.columns`) — עובד
+ * שטח, בעיקר. אלה אינן "ברירות מחדל אחרות" אלא *התצוגה*: בלי בורר אין דרך
+ * לצאת ממנה, ולכן היא נבחרה להיות זו שקוראים בה יום עבודה ולא זו שמתכננים
+ * בה חודש — טבלה בכל רוחב מסך, גוון לכל אירוע, ימים ריקים גלויים כדי שיום
+ * פנוי ייקרא כיום פנוי, צפיפות מינימלית, ומיון לפי שעה בתוך היום.
+ *
+ * ‏`localStorage` אינו נקרא ואינו נכתב במצב הזה: העדפה שנשמרה בדפדפן הזה
+ * בתפקיד אחר הייתה משנה מסך שאין בו כפתור להחזיר אותה.
+ */
+const FIXED_VIEW: Required<Prefs> = {
+  hidden: DEFAULT_HIDDEN_FIELDS,
+  view: 'grid',
+  colorBy: 'event',
+  emptyDays: true,
+  density: 'minimal',
+  sort: 'time',
+}
+
+/**
  * `gapAfter` marks the last column of a day. The gap is carried inside that
  * column's measured size rather than drawn as a column of its own, so the
  * virtualizer's offsets and the day bands' — which we compute ourselves —
@@ -286,6 +305,16 @@ export default function WorkBoardPage() {
   const { has } = useAuth()
   const canInline = has(PERM.BOARD_INLINE_EDIT)
   const canOpenEvent = has(PERM.EVENTS_VIEW)
+  /**
+   * שלושת הכלים שמעל הלוח, שאינם "לצפות בו" (0079).
+   *
+   * ‏`canFilter` הוא שורת הסינון והחיפוש; `canTune` הוא בורר התצוגה ובורר
+   * השדות, ובלעדיו הלוח נעול על `FIXED_VIEW`; ו-`canOpenTask` הוא כרטיס
+   * המשימה — מסך עריכה, ולכן מי שאינו עורך מגיע ממנו לדף האירוע במקום.
+   */
+  const canFilter = has(PERM.BOARD_FILTER)
+  const canTune = has(PERM.BOARD_COLUMNS)
+  const canOpenTask = has(PERM.BOARD_OPEN_TASK)
   const navigate = useNavigate()
   /**
    * Resolved per cell rather than once for the board: a field carries the key
@@ -326,12 +355,20 @@ export default function WorkBoardPage() {
     taskId: params.get('task'),
   })
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
-  const [hidden, setHidden] = useState<Set<string>>(new Set(prefs.current.hidden ?? DEFAULT_HIDDEN_FIELDS))
-  const [density, setDensity] = useState<Density>(prefs.current.density ?? 'comfortable')
-  const [sortBy, setSortBy] = useState<SortKey>(prefs.current.sort ?? 'time')
-  const [colorBy, setColorBy] = useState<ColorBy>(prefs.current.colorBy ?? 'event')
-  const [showEmptyDays, setShowEmptyDays] = useState(prefs.current.emptyDays ?? true)
-  const [viewMode, setViewMode] = useState<ViewMode>(prefs.current.view ?? 'auto')
+  /* ‏`canTune` נקרא פעם אחת, באתחול: הרשאה אינה משתנה תוך כדי צפייה במסך,
+     ושינוי שלה מגיע ממילא עם `refreshOwnCapabilities` שמרענן את כל העץ. */
+  const [hidden, setHidden] = useState<Set<string>>(
+    new Set(canTune ? (prefs.current.hidden ?? DEFAULT_HIDDEN_FIELDS) : FIXED_VIEW.hidden),
+  )
+  const [density, setDensity] = useState<Density>(
+    canTune ? (prefs.current.density ?? 'comfortable') : FIXED_VIEW.density,
+  )
+  const [sortBy, setSortBy] = useState<SortKey>(canTune ? (prefs.current.sort ?? 'time') : FIXED_VIEW.sort)
+  const [colorBy, setColorBy] = useState<ColorBy>(canTune ? (prefs.current.colorBy ?? 'event') : FIXED_VIEW.colorBy)
+  const [showEmptyDays, setShowEmptyDays] = useState(
+    canTune ? (prefs.current.emptyDays ?? true) : FIXED_VIEW.emptyDays,
+  )
+  const [viewMode, setViewMode] = useState<ViewMode>(canTune ? (prefs.current.view ?? 'auto') : FIXED_VIEW.view)
   /** "go to today" asked for a range that isn't loaded yet — scroll once it is */
   const [jumpPending, setJumpPending] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
@@ -342,6 +379,7 @@ export default function WorkBoardPage() {
   const toast = useToast()
 
   useEffect(() => {
+    if (!canTune) return
     try {
       localStorage.setItem(
         PREFS_KEY,
@@ -350,7 +388,7 @@ export default function WorkBoardPage() {
     } catch {
       /* view preferences are not worth failing over */
     }
-  }, [hidden, density, sortBy, colorBy, showEmptyDays, viewMode])
+  }, [canTune, hidden, density, sortBy, colorBy, showEmptyDays, viewMode])
 
   const { data: customers = [] } = useCustomers()
   const { data: statuses = EMPTY } = useStatuses('task')
@@ -434,7 +472,6 @@ export default function WorkBoardPage() {
   const fields = useMemo(() => available.filter((f) => !hidden.has(f.key)), [available, hidden])
   const metrics = DENSITY[density]
   const headerH = DAY_HEAD_H + metrics.head
-  const canSeeCustomers = has(PERM.CUSTOMERS_VIEW)
   /** cards below `lg` unless the reader has said otherwise */
   const asCards = viewMode === 'auto' ? isMobile : viewMode === 'cards'
   /* A phone holding the grid is already asking a lot of a small screen; the
@@ -657,12 +694,24 @@ export default function WorkBoardPage() {
     if (dateParam) setMonth(startOfMonth(parseISO(dateParam)))
   }, [dateParam])
   useEffect(() => {
-    if (taskParam) setDrawer({ open: true, taskId: taskParam })
-  }, [taskParam])
+    if (taskParam && canOpenTask) setDrawer({ open: true, taskId: taskParam })
+  }, [taskParam, canOpenTask])
 
-  const openTask = useCallback((id: string) => setDrawer({ open: true, taskId: id }), [])
   /** stable, because TaskHeader is memoised on a shallow prop compare */
   const openEvent = useCallback((id: string) => void navigate(`/events/${id}`), [navigate])
+  /**
+   * מה קורה בלחיצה על משימה. כרטיס המשימה הוא מסך עריכה, ולכן מי שאין לו
+   * `board.open_task` מגיע במקומו לדף האירוע — המקום היחיד שבו הוא באמת
+   * צריך לקרוא את מה שסביב המשימה. משימה עצמאית (בלי אירוע) פשוט אינה
+   * לחיצה עבורו.
+   */
+  const openTask = useCallback(
+    (row: WorkBoardRow) => {
+      if (canOpenTask) return setDrawer({ open: true, taskId: row.id })
+      if (canOpenEvent && row.event_id) openEvent(row.event_id)
+    },
+    [canOpenTask, canOpenEvent, openEvent],
+  )
   /** an empty day's only affordance: start the day that isn't there yet */
   const newTaskOn = useCallback((dayKey: string) => setDrawer({ open: true, taskId: null, date: dayKey }), [])
   const hoverGroup = useCallback((key: string | null) => setActiveGroup(key), [])
@@ -853,23 +902,27 @@ export default function WorkBoardPage() {
                   has five other controls in it, and search is the one thing
                   here nobody uses twice in a row — so it folds into its icon
                   and opens over the toolbar when it is actually wanted. */}
-              <Input
-                className="hidden w-36 sm:block lg:w-40"
-                inputSize="sm"
-                placeholder="חיפוש..."
-                value={filters.q}
-                onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
-                aria-label="חיפוש חופשי"
-              />
-              <IconButton
-                label={searchOpen ? 'סגירת החיפוש' : 'חיפוש'}
-                size="sm"
-                className="sm:hidden"
-                variant={filters.q ? 'outlined' : undefined}
-                onClick={() => setSearchOpen((v) => !v)}
-              >
-                <Search size={ICON.sm} strokeWidth={STROKE} />
-              </IconButton>
+              {canFilter && (
+                <>
+                  <Input
+                    className="hidden w-36 sm:block lg:w-40"
+                    inputSize="sm"
+                    placeholder="חיפוש..."
+                    value={filters.q}
+                    onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))}
+                    aria-label="חיפוש חופשי"
+                  />
+                  <IconButton
+                    label={searchOpen ? 'סגירת החיפוש' : 'חיפוש'}
+                    size="sm"
+                    className="sm:hidden"
+                    variant={filters.q ? 'outlined' : undefined}
+                    onClick={() => setSearchOpen((v) => !v)}
+                  >
+                    <Search size={ICON.sm} strokeWidth={STROKE} />
+                  </IconButton>
+                </>
+              )}
 
               {/* icon only on purpose: this scrolls to today's column, while
                   the month title beside it jumps to today's *month* */}
@@ -877,126 +930,132 @@ export default function WorkBoardPage() {
                 <CalendarCheck size={ICON.sm} strokeWidth={STROKE} />
               </IconButton>
 
-              <Button
-                size="sm"
-                variant={showFilters || activeFilterCount > 0 ? 'outlined' : 'secondary'}
-                onClick={() => setShowFilters((v) => !v)}
-                className="shrink-0"
-              >
-                <Filter size={ICON.sm} strokeWidth={STROKE} />
-                <span className="hidden sm:inline">סינון</span>
-                {activeFilterCount > 0 && (
-                  <span className="inline-flex size-4 items-center justify-center rounded-full bg-primary type-caption font-bold tabular text-on-primary text-[10px]">
-                    {activeFilterCount}
-                  </span>
-                )}
-                {showFilters ? <ChevronUp size={ICON.xs} /> : <ChevronDown size={ICON.xs} />}
-              </Button>
-
-              <Popover
-                trigger={({ toggle, ...aria }) => (
-                  <Button size="sm" variant="ghost" onClick={toggle} {...aria}>
-                    <SlidersHorizontal size={ICON.sm} strokeWidth={STROKE} />
-                    <span className="hidden sm:inline">תצוגה</span>
-                  </Button>
-                )}
-              >
-                {() => (
-                  <div className="w-60 p-1.5">
-                    <MenuLabel>סוג תצוגה</MenuLabel>
-                    <SegmentedControl
-                      block
-                      items={VIEW_MODES.map((v) => ({ key: v.key, label: v.label }))}
-                      value={viewMode}
-                      onChange={setViewMode}
-                    />
-                    <p className="px-0.5 pt-1 type-caption text-ink-tertiary">
-                      {viewMode === 'auto'
-                        ? 'טבלה במסך רחב, כרטיסים במסך צר'
-                        : viewMode === 'grid'
-                          ? 'הטבלה המלאה בכל גודל מסך — במובייל נגללת לצדדים'
-                          : 'כרטיסים לפי ימים בכל גודל מסך'}
-                    </p>
-                    <MenuLabel>צביעה לפי</MenuLabel>
-                    <SegmentedControl
-                      block
-                      items={COLOR_BY_OPTIONS.map((o) => ({ key: o.key, label: o.label }))}
-                      value={colorBy}
-                      onChange={setColorBy}
-                    />
-                    <p className="px-0.5 pt-1 type-caption text-ink-tertiary">
-                      {colorBy === 'event'
-                        ? 'משימות של אותו אירוע נצבעות באותו גוון ומוצגות זו לצד זו'
-                        : colorBy === 'customer'
-                          ? 'כל לקוח בצבע שלו'
-                          : 'ללא צביעה — רק הסטטוס צבוע'}
-                    </p>
-                    <div className="mt-2 px-0.5">
-                      <Checkbox
-                        label="הצגת ימים ריקים"
-                        checked={showEmptyDays}
-                        onChange={setShowEmptyDays}
-                      />
-                    </div>
-                    <MenuLabel>צפיפות</MenuLabel>
-                    <SegmentedControl block items={DENSITY_OPTIONS} value={density} onChange={setDensity} />
-                    <MenuLabel>מיון בתוך היום</MenuLabel>
-                    <SegmentedControl
-                      block
-                      items={SORTS.map((s) => ({ key: s.key, label: s.label }))}
-                      value={sortBy}
-                      onChange={setSortBy}
-                    />
-                    <div className="mt-2 flex gap-1.5 px-0.5">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        block
-                        onClick={() => setCollapsedDays(new Set(bands.filter((b) => b.count > 0).map((b) => b.dayKey)))}
-                      >
-                        קפל הכל
-                      </Button>
-                      <Button size="sm" variant="ghost" block onClick={() => setCollapsedDays(new Set())}>
-                        פרוס הכל
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </Popover>
-
-              <Popover
-                trigger={({ toggle, ...aria }) => (
-                  <Button size="sm" variant="ghost" onClick={toggle} {...aria}>
-                    <Columns3 size={ICON.sm} strokeWidth={STROKE} />
-                    <span className="hidden sm:inline">שדות</span>
-                    <span className="tabular text-ink-tertiary text-xs">
-                      {fields.length}/{available.length}
+              {canFilter && (
+                <Button
+                  size="sm"
+                  variant={showFilters || activeFilterCount > 0 ? 'outlined' : 'secondary'}
+                  onClick={() => setShowFilters((v) => !v)}
+                  className="shrink-0"
+                >
+                  <Filter size={ICON.sm} strokeWidth={STROKE} />
+                  <span className="hidden sm:inline">סינון</span>
+                  {activeFilterCount > 0 && (
+                    <span className="inline-flex size-4 items-center justify-center rounded-full bg-primary type-caption font-bold tabular text-on-primary text-[10px]">
+                      {activeFilterCount}
                     </span>
-                  </Button>
-                )}
-              >
-                {() => (
-                  <div className="max-h-80 w-56 overflow-y-auto">
-                    <MenuLabel>שורות מוצגות</MenuLabel>
-                    {available.map((f) => (
-                      <div key={f.key} className="px-2.5 py-1.5">
+                  )}
+                  {showFilters ? <ChevronUp size={ICON.xs} /> : <ChevronDown size={ICON.xs} />}
+                </Button>
+              )}
+
+              {canTune && (
+                <Popover
+                  trigger={({ toggle, ...aria }) => (
+                    <Button size="sm" variant="ghost" onClick={toggle} {...aria}>
+                      <SlidersHorizontal size={ICON.sm} strokeWidth={STROKE} />
+                      <span className="hidden sm:inline">תצוגה</span>
+                    </Button>
+                  )}
+                >
+                  {() => (
+                    <div className="w-60 p-1.5">
+                      <MenuLabel>סוג תצוגה</MenuLabel>
+                      <SegmentedControl
+                        block
+                        items={VIEW_MODES.map((v) => ({ key: v.key, label: v.label }))}
+                        value={viewMode}
+                        onChange={setViewMode}
+                      />
+                      <p className="px-0.5 pt-1 type-caption text-ink-tertiary">
+                        {viewMode === 'auto'
+                          ? 'טבלה במסך רחב, כרטיסים במסך צר'
+                          : viewMode === 'grid'
+                            ? 'הטבלה המלאה בכל גודל מסך — במובייל נגללת לצדדים'
+                            : 'כרטיסים לפי ימים בכל גודל מסך'}
+                      </p>
+                      <MenuLabel>צביעה לפי</MenuLabel>
+                      <SegmentedControl
+                        block
+                        items={COLOR_BY_OPTIONS.map((o) => ({ key: o.key, label: o.label }))}
+                        value={colorBy}
+                        onChange={setColorBy}
+                      />
+                      <p className="px-0.5 pt-1 type-caption text-ink-tertiary">
+                        {colorBy === 'event'
+                          ? 'משימות של אותו אירוע נצבעות באותו גוון ומוצגות זו לצד זו'
+                          : colorBy === 'customer'
+                            ? 'כל לקוח בצבע שלו'
+                            : 'ללא צביעה — רק הסטטוס צבוע'}
+                      </p>
+                      <div className="mt-2 px-0.5">
                         <Checkbox
-                          label={f.label}
-                          checked={!hidden.has(f.key)}
-                          onChange={(on) =>
-                            setHidden((h) => {
-                              const n = new Set(h)
-                              if (on) n.delete(f.key)
-                              else n.add(f.key)
-                              return n
-                            })
-                          }
+                          label="הצגת ימים ריקים"
+                          checked={showEmptyDays}
+                          onChange={setShowEmptyDays}
                         />
                       </div>
-                    ))}
-                  </div>
-                )}
-              </Popover>
+                      <MenuLabel>צפיפות</MenuLabel>
+                      <SegmentedControl block items={DENSITY_OPTIONS} value={density} onChange={setDensity} />
+                      <MenuLabel>מיון בתוך היום</MenuLabel>
+                      <SegmentedControl
+                        block
+                        items={SORTS.map((s) => ({ key: s.key, label: s.label }))}
+                        value={sortBy}
+                        onChange={setSortBy}
+                      />
+                      <div className="mt-2 flex gap-1.5 px-0.5">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          block
+                          onClick={() => setCollapsedDays(new Set(bands.filter((b) => b.count > 0).map((b) => b.dayKey)))}
+                        >
+                          קפל הכל
+                        </Button>
+                        <Button size="sm" variant="ghost" block onClick={() => setCollapsedDays(new Set())}>
+                          פרוס הכל
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </Popover>
+              )}
+
+              {canTune && (
+                <Popover
+                  trigger={({ toggle, ...aria }) => (
+                    <Button size="sm" variant="ghost" onClick={toggle} {...aria}>
+                      <Columns3 size={ICON.sm} strokeWidth={STROKE} />
+                      <span className="hidden sm:inline">שדות</span>
+                      <span className="tabular text-ink-tertiary text-xs">
+                        {fields.length}/{available.length}
+                      </span>
+                    </Button>
+                  )}
+                >
+                  {() => (
+                    <div className="max-h-80 w-56 overflow-y-auto">
+                      <MenuLabel>שורות מוצגות</MenuLabel>
+                      {available.map((f) => (
+                        <div key={f.key} className="px-2.5 py-1.5">
+                          <Checkbox
+                            label={f.label}
+                            checked={!hidden.has(f.key)}
+                            onChange={(on) =>
+                              setHidden((h) => {
+                                const n = new Set(h)
+                                if (on) n.delete(f.key)
+                                else n.add(f.key)
+                                return n
+                              })
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Popover>
+              )}
 
               {has(PERM.TASKS_CREATE) && (
                 <Button size="sm" variant="primary" onClick={() => setDrawer({ open: true, taskId: null })}>
@@ -1007,7 +1066,7 @@ export default function WorkBoardPage() {
             </div>
           </div>
 
-          {searchOpen && (
+          {canFilter && searchOpen && (
             <div className="surface flex items-center gap-1.5 p-2 rounded-xl sm:hidden">
               <Input
                 className="flex-1"
@@ -1032,7 +1091,7 @@ export default function WorkBoardPage() {
           )}
 
           {/* Secondary Collapsible Filters Row */}
-          {showFilters && (
+          {canFilter && showFilters && (
             <div className="surface flex flex-wrap items-center gap-2 p-2 rounded-xl text-sm transition-all duration-150">
               {lookupFilters}
               {activeFilterCount > 0 && (
@@ -1054,7 +1113,11 @@ export default function WorkBoardPage() {
             <EmptyState
               art="calendar"
               title="אין משימות בטווח שנבחר"
-              description="שנה את טווח התאריכים או נקה את הסינון כדי לראות משימות"
+              description={
+                canFilter
+                  ? 'שנה את טווח התאריכים או נקה את הסינון כדי לראות משימות'
+                  : 'אין משימות בחודש הזה. אפשר לדפדף לחודש אחר בכותרת'
+              }
               action={
                 has(PERM.TASKS_CREATE) && (
                   <Button variant="primary" size="sm" onClick={() => setDrawer({ open: true, taskId: null })}>
@@ -1202,8 +1265,8 @@ export default function WorkBoardPage() {
                             <TaskHeader
                               row={col.row}
                               groupKey={col.groupKey}
-                              showCustomer={canSeeCustomers}
                               canOpenEvent={canOpenEvent}
+                              canOpenTask={canOpenTask}
                               onOpen={openTask}
                               onOpenEvent={openEvent}
                               onHover={hoverGroup}
@@ -1305,7 +1368,7 @@ function MobileBoard({
   today: string
   holidays: Map<string, Holiday>
   canCreate: boolean
-  onOpen: (id: string) => void
+  onOpen: (row: WorkBoardRow) => void
   onToggleDay: (dayKey: string) => void
   onNewTask: (dayKey: string) => void
 }) {
@@ -1434,7 +1497,7 @@ const MobileTaskCard = memo(function MobileTaskCard({
   row: WorkBoardRow
   tone: GroupTone | null
   overdue: boolean
-  onOpen: (id: string) => void
+  onOpen: (row: WorkBoardRow) => void
 }) {
   const label = row.end_client_name || row.title || row.customer_name || row.task_type_name
   const time = fmtTime(row.onsite_start_time) || fmtTime(row.warehouse_start_time)
@@ -1454,7 +1517,7 @@ const MobileTaskCard = memo(function MobileTaskCard({
         className="w-1 shrink-0 rounded-full"
         style={{ background: tone?.solid ?? row.customer_color ?? 'var(--vl-border-strong)' }}
       />
-      <button onClick={() => onOpen(row.id)} className="min-w-0 flex-1 space-y-0.5 text-start">
+      <button onClick={() => onOpen(row)} className="min-w-0 flex-1 space-y-0.5 text-start">
         <span className="flex items-center gap-1.5">
           {time ? (
             <span className={cx('shrink-0 type-button tabular', overdue ? 'text-error-text' : 'text-ink')} dir="ltr">
@@ -1514,29 +1577,31 @@ const MobileTaskCard = memo(function MobileTaskCard({
 const TaskHeader = memo(function TaskHeader({
   row,
   groupKey,
-  showCustomer,
   canOpenEvent,
+  canOpenTask,
   onOpen,
   onOpenEvent,
   onHover,
 }: {
   row: WorkBoardRow
   groupKey: string
-  /** the customer's identity is a permission; without it the header falls back */
-  showCustomer: boolean
   canOpenEvent: boolean
-  onOpen: (id: string) => void
+  /** בלי המפתח אין לחיצה כפולה, וההמתנה שמאפשרת אותה נחסכת */
+  canOpenTask: boolean
+  onOpen: (row: WorkBoardRow) => void
   onOpenEvent: (eventId: string) => void
   onHover: (key: string | null) => void
 }) {
-  const label = showCustomer
-    ? (row.customer_name ?? 'ללא לקוח')
-    : row.end_client_name || row.title || row.task_type_name
+  /* שם הלקוח *במערכת* הוא מה שהכותרת אומרת — עד 0079 הוא היה מוסתר ממי שאין
+     לו `customers.view`, והכותרת נפלה לשם לקוח האירוע שממילא מוצג בשורה
+     שמתחתיה. עכשיו הוא מגיע עם השורה עצמה לכל מי שרואה את המשימה, ולכן
+     הנפילה נשארת רק למשימה שאין לה לקוח כלל. */
+  const label = row.customer_name ?? row.end_client_name ?? row.title ?? row.task_type_name
   /* The fill is the customer's own colour, straight from settings, so a
      regular can find their customer's columns without reading a word. The
      label flips between near-black and white by the fill's luminance —
      `color-mix(…, black N%)` only holds over a tint, never over a solid. */
-  const fill = (showCustomer && row.customer_color) || NEUTRAL
+  const fill = row.customer_color || NEUTRAL
   /* A task with no event, or a reader who may not open one, opens no event —
      the second press still opens the task, which is the point of the name. */
   const eventId = canOpenEvent ? row.event_id : null
@@ -1547,10 +1612,15 @@ const TaskHeader = memo(function TaskHeader({
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => void (pending.current && clearTimeout(pending.current)), [])
   const onName = () => {
+    /* בלי כרטיס משימה אין לחיצה שנייה לחכות לה, וההמתנה הייתה נקראת כתקיעה */
+    if (!canOpenTask) {
+      if (eventId) onOpenEvent(eventId)
+      return
+    }
     if (pending.current) {
       clearTimeout(pending.current)
       pending.current = null
-      onOpen(row.id)
+      onOpen(row)
       return
     }
     pending.current = setTimeout(() => {
@@ -1570,9 +1640,20 @@ const TaskHeader = memo(function TaskHeader({
           five-pixel target against the edge of a column the reader is dragging
           past, and every graze of it opened the task for editing — the name
           itself still opens it on a double press. */}
-      <Tooltip content={eventId ? `${label} — לחיצה לאירוע, לחיצה כפולה למשימה` : `${label} — לחיצה כפולה למשימה`}>
+      <Tooltip
+        content={
+          !canOpenTask
+            ? eventId
+              ? `${label} — לחיצה לאירוע`
+              : label
+            : eventId
+              ? `${label} — לחיצה לאירוע, לחיצה כפולה למשימה`
+              : `${label} — לחיצה כפולה למשימה`
+        }
+      >
         <button
           onClick={onName}
+          disabled={!canOpenTask && !eventId}
           className={cx(
             'min-w-0 max-w-full touch-manipulation truncate text-center type-caption font-bold',
             /* the underline promises the event page — without one to go to,

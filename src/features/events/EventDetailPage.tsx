@@ -148,6 +148,12 @@ export default function EventDetailPage() {
      not staff. An always-blank column reads as a broken table rather than as
      one that isn't theirs, so the key decides whether it exists. */
   const showStaffing = has(PERM.BOARD_VIEW_STAFFING)
+  /**
+   * כרטיס המשימה הוא מסך עריכה, ואותו מפתח ששולט בו בלו״ז שולט בו גם כאן
+   * (0079). בלעדיו שורת המשימה נשארת מה שהיא — מידע — ואינה מציעה לחיצה
+   * שתיפתח למסך שאין בו מה לשנות.
+   */
+  const canOpenTask = has(PERM.BOARD_OPEN_TASK)
 
   const columns = useMemo<Column<WorkBoardRow>[]>(
     () => [
@@ -282,6 +288,22 @@ export default function EventDetailPage() {
 
   const { event, contact, suppliers } = data
 
+  /**
+   * מי הלקוח *במערכת*, כפי שהמנהל רואה אותו — עכשיו גם למי שאינו פותח את
+   * מודול הלקוחות.
+   *
+   * שני מקורות ולא אחד: ההטמעה ‏`customers(...)` בשאילתת האירוע עוברת תחת
+   * ‏`customers_select`, שדורשת `customers.view`, ולכן היא ריקה לעובד שטח.
+   * ‏`work_board_view` נושא את אותה זהות בדיוק — שם וצבע — למי שרואה את
+   * המשימה (0079), ולכן משימה של האירוע היא הנפילה הטבעית: מי שהגיע לכאן
+   * בלי המפתח הגיע דרך שיבוץ, כלומר יש לו לפחות אחת.
+   */
+  const customer = event.customers ??
+    (() => {
+      const named = tasks.find((t) => t.customer_name)
+      return named ? { name: named.customer_name!, color: named.customer_color } : null
+    })()
+
   const remove = async () => {
     if (
       !(await confirm('למחוק את האירוע וכל המשימות שלו? ניתן לשחזר מסל המיחזור.', {
@@ -327,17 +349,15 @@ export default function EventDetailPage() {
   const show = showsEventField
 
   const info: [string, React.ReactNode][] = [
-    ...(has(PERM.CUSTOMERS_VIEW)
-      ? ([[
-          'לקוח במערכת',
-          event.customers ? (
-            <span key="customer" className="inline-flex items-center gap-1.5">
-              <span className="size-2.5 rounded-full" style={{ background: event.customers.color }} />
-              {event.customers.name}
-            </span>
-          ) : null,
-        ]] as [string, React.ReactNode][])
-      : []),
+    [
+      'לקוח במערכת',
+      customer ? (
+        <span key="customer" className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full" style={{ background: customer.color ?? undefined }} />
+          {customer.name}
+        </span>
+      ) : null,
+    ],
     ['שם לקוח האירוע', event.end_client_name],
     ...(show('event_number') ? ([['מספר אירוע', event.event_number]] as [string, React.ReactNode][]) : []),
     /* השדה נבנה רק כשיש כתובת — אלמנט הוא תמיד "לא ריק" מבחינת הפילטר למטה,
@@ -399,6 +419,18 @@ export default function EventDetailPage() {
         }
         subtitle={
           <span className="flex flex-wrap items-center gap-x-3">
+            {/* הכותרת היא שם לקוח האירוע — מי שהזמין בפועל — ומתחתיה הלקוח
+                *במערכת*, כי שני אירועים באותו שם קצה יכולים להיות של שני
+                לקוחות, וזה ההקשר שהעובד בשטח צריך לפני כל היתר. */}
+            {customer && (
+              <span className="inline-flex items-center gap-1.5 font-medium text-ink-secondary">
+                <span
+                  className="size-2 shrink-0 rounded-full"
+                  style={{ background: customer.color ?? undefined }}
+                />
+                {customer.name}
+              </span>
+            )}
             <span>{fmtDateLong(event.event_date)}</span>
             {event.event_number && <span className="tabular">· אירוע #{event.event_number}</span>}
             {event.location_text && (
@@ -688,8 +720,11 @@ export default function EventDetailPage() {
                       return (
                         <div
                           key={t.id}
-                          onClick={() => setTaskDrawer({ open: true, taskId: t.id })}
-                          className="group relative flex flex-col justify-between rounded-xl border border-line-subtle bg-surface p-4 transition-all duration-200 hover:border-primary/50 hover:shadow-md cursor-pointer"
+                          onClick={canOpenTask ? () => setTaskDrawer({ open: true, taskId: t.id }) : undefined}
+                          className={cx(
+                            'group relative flex flex-col justify-between rounded-xl border border-line-subtle bg-surface p-4 transition-all duration-200',
+                            canOpenTask && 'cursor-pointer hover:border-primary/50 hover:shadow-md',
+                          )}
                         >
                           <div className="space-y-3">
                             {/* Card Top Row: Task Type / Code Badge + Status */}
@@ -772,9 +807,11 @@ export default function EventDetailPage() {
                             ) : (
                               <span />
                             )}
-                            <span className="type-caption text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">
-                              פרטים ←
-                            </span>
+                            {canOpenTask && (
+                              <span className="type-caption text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">
+                                פרטים ←
+                              </span>
+                            )}
                           </div>
                         </div>
                       )
@@ -791,7 +828,7 @@ export default function EventDetailPage() {
                     onRetry={() => void refetchTasks()}
                     dense
                     storageKey="event-tasks"
-                    onRowClick={(t) => setTaskDrawer({ open: true, taskId: t.id })}
+                    onRowClick={canOpenTask ? (t) => setTaskDrawer({ open: true, taskId: t.id }) : undefined}
                     defaultSort={{ key: 'date', dir: 'asc' }}
                   />
                 )}
