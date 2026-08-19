@@ -373,6 +373,17 @@
 | עמודות — צפייה | תצוגות `*_secure` שנוצרות מ-`field_registry`, מיסוך `work_board_view`, ו-`event_activity_feed` שמשמיט שינויים בשדות שאסור לקורא לראות |
 | פעולות | `app.require(key)` בתוך ה-RPCs |
 
+**‏`is_admin` אינו GRANT.** שכבת ההרשאות של האפליקציה יושבת *מעל* הרשאות
+Postgres ואינה מחליפה אותן, ולכן פונקציית `public` שהיא **security invoker**
+חייבת שהקורא יוכל להריץ גם כל עוזר ב-`app` שהיא קוראת לו — אחרת התוצאה היא
+`permission denied for function …` (42501) לכל משתמש, מנהל מערכת כולל.
+זה מה שהשבית את "רווחיות לפי משימה" מיום שנכתבה: `public.task_pnl` הוא
+invoker במכוון (ספירת ה-`truncated` חייבת לראות את מה שהקורא רואה), ו-0070
+שלל מ-`authenticated` את ההרצה של `app.task_pnl_rows` שהוא קורא לו. ‏0087
+מחזיר את ההענקה, כמו ש-0044 עושה לעוזרים של `customer_profitability`.
+בדיקה שרצה בזהות superuser לא יכולה לגלות את זה — GRANTs נעקפים שם — ולכן
+0087 נושא בהערותיו את השאילתה שמאתרת את הדפוס בכל המסד.
+
 **מנהל מערכת אינו עובד, ואינו מוגבל בהיקף נתונים.** במסד הוא שורת `staff` עם
 `profiles.is_admin`, וכך זה נשאר: `user_kind` מכריע עשרות פוליסות, את
 `permission_roles.user_kind` ואת `kind_permission_defaults`, וערך אנום רביעי

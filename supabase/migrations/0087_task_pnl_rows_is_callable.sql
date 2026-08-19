@@ -1,0 +1,54 @@
+-- 0087: "רווחיות לפי משימה" נפלה על הרשאת הרצה, לא על הרשאת מערכת
+--
+-- הדיווח חזר גם אחרי 0085: הדף מציג "שגיאה בטעינת הדוח — אין לך הרשאה לבצע
+-- את הפעולה הזו". ההודעה הזו היא המיפוי הגנרי של קוד 42501 ב-`errors.ts`,
+-- כלומר Postgres סירב — ולא `raise` מתוך ה-RPC, שהיה מגיע למסך בעברית שלו
+-- ("אין הרשאה לדוחות") ולא כהודעה גנרית. וגם לא הדחייה הרכה
+-- (`{rows: null, denied}`), שאינה שגיאה בכלל.
+--
+-- מה שקרה בפועל:
+--
+--   • `public.task_pnl` הוא **security invoker** במכוון (0070 §4): ספירת
+--     ה-`truncated` שבתוכו חייבת לראות בדיוק את מה שהקורא רואה.
+--   • ולכן כל קריאה שהוא עושה נבדקת בהרשאות של *הקורא*.
+--   • ‏0070:354 הרצה `revoke execute on function app.task_pnl_rows(...) from
+--     anon, authenticated, public` — כלומר שלל מ-`authenticated` את הזכות
+--     להריץ בדיוק את העוזר שהוא חייב לקרוא לו.
+--
+-- התוצאה: `permission denied for function task_pnl_rows` בכל קריאה מהאפליקציה,
+-- לכל משתמש — כולל מנהל מערכת, כי `is_admin` הוא שכבת ההרשאות של האפליקציה
+-- ואינו GRANT של Postgres. הדף לא עבד לאיש מעולם; הוא נבדק רק בזהות שהיא
+-- superuser, שעוקפת GRANTs.
+--
+-- ‏0059 עשה את זה נכון על אותו מבנה בדיוק: `public.customer_profitability`
+-- הוא invoker, והעוזרים שלו (`app.margin_by_customer`, `app.margin_summary`)
+-- מוענקים ל-`authenticated` ב-0044:160-162. זו הסיבה שדף רווחיות הלקוחות
+-- עבד ודף המשימות לא.
+--
+-- החשיפה שההענקה פותחת היא אפס-חדש: סכימת `app` אינה חשופה ב-PostgREST (רק
+-- `public`), ולכן `app.task_pnl_rows` אינה נתיב REST בפני עצמה; הדלת היחידה
+-- אליה היא `public.task_pnl`, ששלושת השערים שלו — `reports.view`, צרור
+-- הרווח והיקף הנתונים — נבדקים לפני שהוא נקרא. זה בדיוק המבנה של 0044.
+--
+-- ‏`anon` נשאר בחוץ, כפי שהיה.
+
+grant execute on function app.task_pnl_rows(date, date, uuid, uuid, int) to authenticated;
+
+-- שמירת דרך: מ-0087 והלאה, פונקציית `public` שהיא invoker ואינה יכולה
+-- להריץ עוזר ב-`app` שהיא קוראת לו היא באג — ולא ניתן לגלות אותו בבדיקה
+-- שרצה כ-superuser. השאילתה שמצאה את המקרה הזה, לתיעוד:
+--
+--   with pub as (
+--     select p.oid, p.proname, p.prosrc from pg_proc p
+--       join pg_namespace n on n.oid = p.pronamespace
+--      where n.nspname = 'public' and not p.prosecdef
+--        and has_function_privilege('authenticated', p.oid, 'EXECUTE')),
+--   helpers as (
+--     select p.oid, p.proname from pg_proc p
+--       join pg_namespace n on n.oid = p.pronamespace
+--      where n.nspname = 'app'
+--        and not has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+--   select pub.proname, h.proname from pub join helpers h
+--     on pub.prosrc ~* ('app\.' || h.proname || '\s*\(');
+--
+-- היא מחזירה אפס שורות אחרי המיגרציה הזו.
