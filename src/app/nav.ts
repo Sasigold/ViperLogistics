@@ -103,7 +103,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'נתונים',
     items: [
-      { to: '/events', label: 'אירועים', icon: PartyPopper, perm: PERM.EVENTS_VIEW, primary: true },
+      { to: '/events', label: 'אירועים', icon: PartyPopper, perm: PERM.EVENTS_LIST, primary: true },
       { to: '/customers', label: 'לקוחות', icon: Building2, perm: PERM.CUSTOMERS_VIEW },
       { to: '/users', label: 'עובדים', icon: Users, perm: PERM.USERS_VIEW },
       { to: '/contractors', label: 'קבלנים', icon: HardHat, perm: PERM.CONTRACTORS_VIEW },

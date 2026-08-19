@@ -127,7 +127,9 @@ export const router = createBrowserRouter([
             element: page(<TaskPnlPage />),
           },
           { path: '/receipts', handle: { perm: PERM.FINANCE_RECEIPTS_VIEW }, element: page(<ReceiptsPage />) },
-          { path: '/events', handle: { perm: PERM.EVENTS_VIEW }, element: page(<EventsPage />) },
+          /* הרשימה והדף אינם אותו מפתח: עובד שטח פותח אירוע שהוא משובץ אליו,
+             ואין לו מה לעשות בקטלוג של כולם (0080). */
+          { path: '/events', handle: { perm: PERM.EVENTS_LIST }, element: page(<EventsPage />) },
           { path: '/events/:id', handle: { perm: PERM.EVENTS_VIEW }, element: page(<EventDetailPage />) },
           { path: '/customers', handle: { perm: PERM.CUSTOMERS_VIEW }, element: page(<CustomersPage />) },
           { path: '/customers/:id', handle: { perm: PERM.CUSTOMERS_VIEW }, element: page(<CustomerDetailPage />) },

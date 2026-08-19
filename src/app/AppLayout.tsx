@@ -22,7 +22,7 @@ import { RouteGate } from '../features/auth/guards'
 import { NotificationsBell } from '../features/notifications/NotificationsBell'
 import { usePushNavigation, usePushSync } from '../features/notifications/pushQueries'
 import { CommandPalette } from '../features/search/CommandPalette'
-import { ROUTE_LABELS, bottomNavItems, visibleNavSections } from './nav'
+import { NAV_SECTIONS, ROUTE_LABELS, bottomNavItems, navItemVisible, visibleNavSections } from './nav'
 import type { NavItem, NavSection } from './nav'
 import { PageTitleProvider, useCurrentPageTitle } from './breadcrumbs'
 import { useOnline } from '../lib/useOnline'
@@ -436,6 +436,7 @@ function BackButton() {
 function Breadcrumbs() {
   const { pathname } = useLocation()
   const detailTitle = useCurrentPageTitle()
+  const has = useAuth((s) => s.has)
 
   const segments = pathname.split('/').filter(Boolean)
   /* מסך שיש לו שם משלו בטבלה — גם אם הנתיב שלו מקונן, כמו /my/schedule — הוא
@@ -445,6 +446,15 @@ function Breadcrumbs() {
   const rootPath = exact ? pathname : segments.length === 0 ? '/' : `/${segments[0]}`
   const rootLabel = exact ?? ROUTE_LABELS[rootPath] ?? rootPath
   const isDetail = !exact && segments.length > 1
+  /**
+   * ‏השובל מוביל אל האב רק כשהאב באמת נפתח. מסך פרטים יכול להיות מגודר
+   * במפתח אחד והרשימה שמעליו באחר — עובד שטח פותח אירוע (`events.view`)
+   * ואינו פותח את הקטלוג (`events.list`, 0080) — וקישור שמוביל ל"אין לך
+   * הרשאה" גרוע מטקסט שאינו מוביל לשום מקום.
+   */
+  const parentOpen =
+    NAV_SECTIONS.flatMap((sec) => sec.items).find((n) => n.to === rootPath) ?? null
+  const linkParent = isDetail && (!parentOpen || navItemVisible(parentOpen, has))
 
   return (
     <nav aria-label="מיקום נוכחי" className="min-w-0 flex-1">
@@ -452,7 +462,7 @@ function Breadcrumbs() {
         {/* on a phone the trail collapses to the deepest crumb — the parent is
             one tap away in the bottom bar, so spelling it out only steals width */}
         <li className={cx('min-w-0', isDetail && 'hidden sm:block')}>
-          {isDetail ? (
+          {linkParent ? (
             <Link
               to={rootPath}
               className="truncate rounded type-body text-ink-tertiary transition-colors hover:text-ink focus-visible:outline-none focus-visible:focus-ring"
@@ -460,7 +470,14 @@ function Breadcrumbs() {
               {rootLabel}
             </Link>
           ) : (
-            <span className="truncate type-body font-semibold text-ink">{rootLabel}</span>
+            <span
+              className={cx(
+                'truncate type-body',
+                isDetail ? 'text-ink-tertiary' : 'font-semibold text-ink',
+              )}
+            >
+              {rootLabel}
+            </span>
           )}
         </li>
         {isDetail && (

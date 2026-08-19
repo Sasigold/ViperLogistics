@@ -42,7 +42,12 @@ const CONTRACTOR_WORKER = [
   PERM.NOTIFICATIONS_PREFERENCES,
 ]
 
-const STAFF_WORKER = CONTRACTOR_WORKER
+/**
+ * עובד צוות מן השורה. מ-0079 הוא מחזיק `events.view` — דף האירוע שהוא משובץ
+ * אליו — אבל לא את `events.list`, ולכן "אירועים" אינו בתפריט שלו. זה בדיוק
+ * הפיצול ש-0080 עשה, וזו הפרסונה שמוכיחה אותו.
+ */
+const STAFF_WORKER = [...CONTRACTOR_WORKER, PERM.EVENTS_VIEW]
 
 /**
  * מנהל אצל הלקוח, אחרי 0074. פרסונה שלא הייתה כאן — וזו הסיבה שאיש לא ראה
@@ -56,6 +61,9 @@ const CUSTOMER_MANAGER = [
   PERM.BOARD_VIEW_STAFFING,
   PERM.TASKS_VIEW,
   PERM.EVENTS_VIEW,
+  /* נגזר מ-`events.view` ואינו חסום לו, ולכן השרת פותר אותו true. הרשימות
+     כאן הן מה ש-`app.has` החזיר, ולא מה שהוענק במפורש. */
+  PERM.EVENTS_LIST,
   PERM.PRICING_VIEW,
   PERM.FINANCE_CUSTOMER_SPEND,
   PERM.NOTIFICATIONS_PREFERENCES,
@@ -154,6 +162,11 @@ describe('מה רואה כל פרסונה', () => {
 
   it('ועובד קבלן רואה בדיוק מה שעובד צוות רואה', () => {
     expect(destinations(CONTRACTOR_WORKER).sort()).toEqual(destinations(STAFF_WORKER).sort())
+  })
+
+  it('דף האירוע פתוח לעובד הצוות, ורשימת האירועים אינה בתפריט שלו', () => {
+    expect(STAFF_WORKER).toContain(PERM.EVENTS_VIEW)
+    expect(destinations(STAFF_WORKER)).not.toContain('/events')
   })
 
   it('מנהל אצל הלקוח — הדשבורד, האירועים והלו״ז שלו, בלי דוחות ובלי נוכחות', () => {

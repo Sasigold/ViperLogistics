@@ -120,11 +120,24 @@ function toEntries(rows: EventActivity[]): Entry[] {
   return out
 }
 
-export function EventActivityLog({ eventId, className }: { eventId: string; className?: string }) {
+export function EventActivityLog({
+  eventId,
+  canNote,
+  className,
+}: {
+  eventId: string
+  /**
+   * תיעוד מותר גם למי שאינו מחזיק את המפתח אבל הוא ראש הצוות של האירוע
+   * הזה (0080). הקורא מכריע את זה, כי זו עובדה על האירוע ולא על המשתמש;
+   * הפוליסה על `event_activity` בודקת בדיוק את אותו דבר בשרת.
+   */
+  canNote?: boolean
+  className?: string
+}) {
   const { has, me } = useAuth()
   const qc = useQueryClient()
   const [draft, setDraft] = useState('')
-  const canWrite = has(PERM.EVENTS_ACTIVITY_NOTE)
+  const canWrite = has(PERM.EVENTS_ACTIVITY_NOTE) || !!canNote
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['event_activity', eventId],

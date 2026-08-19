@@ -21,7 +21,6 @@ import {
   Users,
 } from '../../components/ui/icons'
 import {
-  AvatarGroup,
   Badge,
   Button,
   Card,
@@ -67,7 +66,7 @@ export default function EventDetailPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const toast = useToast()
-  const { has, canViewField, showsEventField } = useAuth()
+  const { has, me, canViewField, showsEventField } = useAuth()
   const { confirm, dialog } = useConfirm()
   const [editOpen, setEditOpen] = useState(false)
   const [specsOpen, setSpecsOpen] = useState(false)
@@ -154,6 +153,8 @@ export default function EventDetailPage() {
    * שתיפתח למסך שאין בו מה לשנות.
    */
   const canOpenTask = has(PERM.BOARD_OPEN_TASK)
+  /** סכומי כסף הם מפתח, ולא "מה שיש בנתונים": בלעדיו הכרטיס אינו קיים */
+  const canSeePricing = has(PERM.PRICING_VIEW)
 
   const columns = useMemo<Column<WorkBoardRow>[]>(
     () => [
@@ -202,9 +203,15 @@ export default function EventDetailPage() {
             ...(t.drivers ?? []).map((d) => d.name),
             ...(t.contractor_worker_list ?? []).map((w) => w.name),
           ]
+          /* שמות מלאים ולא ראשי תיבות: מי שקורא את המסך הזה בשטח צריך לדעת
+             את מי הוא פוגש, ו-"א.כ." אינו עונה על זה. */
           return names.length ? (
-            <span className="flex items-center gap-1.5">
-              <AvatarGroup names={names} max={3} size="xs" />
+            <span className="flex flex-wrap items-center gap-1">
+              {names.map((n) => (
+                <span key={n} className="rounded bg-subtle px-1.5 py-px type-caption text-ink-secondary">
+                  {n}
+                </span>
+              ))}
               <span className="type-caption tabular text-ink-tertiary">
                 {names.length}/{t.worker_count || '—'}
               </span>
@@ -304,6 +311,16 @@ export default function EventDetailPage() {
       return named ? { name: named.customer_name!, color: named.customer_color } : null
     })()
 
+  /**
+   * ראש הצוות של האירוע הזה — לא מפתח במרשם אלא תפקיד על השורה: אותו אדם
+   * הוא ראש צוות באירוע אחד ועובד מן השורה בבא (0080). הוא נגזר מהמשימות
+   * שכבר נשלפו, ולכן אין כאן שאילתה נוספת; השרת מכריע את אותו דבר בעצמו
+   * ב-`app.is_event_team_lead`, וכאן זה רק מה שמצויר.
+   */
+  const isEventLead = !!me?.profile.id && tasks.some((t) => t.team_lead_id === me.profile.id)
+  const canSeeLog = has(PERM.EVENTS_ACTIVITY_LOG) || isEventLead
+  const canSeeContact = canViewField('event', 'contact_phone') || isEventLead
+
   const remove = async () => {
     if (
       !(await confirm('למחוק את האירוע וכל המשימות שלו? ניתן לשחזר מסל המיחזור.', {
@@ -373,7 +390,7 @@ export default function EventDetailPage() {
       : []),
     ...(show('volume_m') ? ([['נפח במטר', event.volume_m]] as [string, React.ReactNode][]) : []),
     ...(show('truck_count') ? ([['כמות משאיות', event.truck_count]] as [string, React.ReactNode][]) : []),
-    ...(canViewField('event', 'contact_phone')
+    ...(canSeeContact
       ? ([
           ['איש קשר', contact?.contact_name],
           [
@@ -555,7 +572,7 @@ export default function EventDetailPage() {
           {/* Redesigned Tasks Section */}
           <div className="space-y-4">
             {/* Tasks Summary KPI Bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className={cx('grid grid-cols-2 gap-3', canSeePricing ? 'sm:grid-cols-4' : 'sm:grid-cols-3')}>
               <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
                 <span className="type-caption text-ink-tertiary">סך משימות</span>
                 <div className="flex items-baseline gap-2 mt-1">
@@ -581,14 +598,18 @@ export default function EventDetailPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
-                <span className="type-caption text-ink-tertiary">סך תמחור</span>
-                <div className="flex items-center gap-1.5 mt-1" dir="ltr">
-                  <span className="type-title text-lg font-bold text-success-text">
-                    {pricing ? fmtMoney(pricing.total) : '—'}
-                  </span>
+              {/* לא "—" למי שאינו רשאי לראות כסף: משבצת ריקה נקראת כמחיר
+                  שלא הוזן, וזו אמירה על האירוע ולא על הקורא. */}
+              {canSeePricing && (
+                <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
+                  <span className="type-caption text-ink-tertiary">סך תמחור</span>
+                  <div className="flex items-center gap-1.5 mt-1" dir="ltr">
+                    <span className="type-title text-lg font-bold text-success-text">
+                      {pricing ? fmtMoney(pricing.total) : '—'}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Tasks Container Card */}
@@ -796,8 +817,15 @@ export default function EventDetailPage() {
                           {/* Card Footer: Team Assigned Avatars */}
                           <div className="mt-4 pt-2.5 border-t border-line-subtle flex items-center justify-between">
                             {names.length > 0 ? (
-                              <div className="flex items-center gap-2">
-                                <AvatarGroup names={names} max={4} size="xs" />
+                              <div className="flex flex-wrap items-center gap-1">
+                                {names.map((n) => (
+                                  <span
+                                    key={n}
+                                    className="rounded bg-subtle px-1.5 py-px type-caption text-ink-secondary"
+                                  >
+                                    {n}
+                                  </span>
+                                ))}
                                 <span className="type-caption tabular text-ink-tertiary">
                                   {names.length}/{t.worker_count || '—'} עובדים
                                 </span>
@@ -838,9 +866,9 @@ export default function EventDetailPage() {
         </div>
 
         {/* Left Sidebar Column - Full Height Activity Log (in RTL, lg:col-span-5 xl:col-span-4) */}
-        {has(PERM.EVENTS_ACTIVITY_LOG) && (
+        {canSeeLog && (
           <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-4 h-[calc(100vh-2rem)] flex flex-col">
-            <EventActivityLog eventId={event.id} className="h-full shadow-xs" />
+            <EventActivityLog eventId={event.id} canNote={isEventLead} className="h-full shadow-xs" />
           </div>
         )}
       </div>

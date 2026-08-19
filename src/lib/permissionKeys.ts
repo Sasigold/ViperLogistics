@@ -82,6 +82,9 @@ export const PERM = {
   DASHBOARD_BUILD_WIDGET: 'dashboard.build_widget',
   DASHBOARD_SHARE_WIDGET: 'dashboard.share_widget',
   EVENTS_VIEW: 'events.view',
+  /* דף האירוע ורשימת האירועים אינם אותו מסך ואינם אותו קהל: לעובד שטח יש
+     אירוע אחד לפתוח, ולא קטלוג לדפדף בו — ראו 0080. */
+  EVENTS_LIST: 'events.list',
   EVENTS_CREATE: 'events.create',
   EVENTS_EDIT: 'events.edit',
   EVENTS_DELETE: 'events.delete',

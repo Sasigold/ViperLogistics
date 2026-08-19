@@ -191,3 +191,216 @@ select t_eq('ושם הלקוח בפירוק זהה לזה שבלו״ז',
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+-- ===========================================================================
+-- 0080: הגבולות של הצוות, והתפקיד של ראש הצוות באירוע
+-- ===========================================================================
+
+-- עוד שני אנשים באותו קהל: ראש צוות *באירוע* (תפקיד השיבוץ, לא תפקיד
+-- ההרשאה — שניהם מחזיקים את אותו "עובד"), ועובד שמשובץ לשטח בלבד.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000017a3', 'field-lead@vl.test'),
+  ('00000000-0000-0000-0000-0000000017a4', 'field-onsite@vl.test');
+
+insert into profiles (id, user_id, user_kind, is_admin, full_name) values
+  ('20000000-0000-0000-0000-0000000017a3', '00000000-0000-0000-0000-0000000017a3',
+   'staff', false, 'ראש צוות באירוע'),
+  ('20000000-0000-0000-0000-0000000017a4', '00000000-0000-0000-0000-0000000017a4',
+   'staff', false, 'עובד שמגיע לשטח');
+
+insert into profile_roles (profile_id, role_id)
+select p, id from permission_roles r,
+  unnest(array['20000000-0000-0000-0000-0000000017a3'::uuid,
+               '20000000-0000-0000-0000-0000000017a4'::uuid]) p
+where r.key = 'worker';
+
+insert into task_assignments (task_id, profile_id, role, work_site) values
+  ('61000000-0000-0000-0000-000000017001', '20000000-0000-0000-0000-0000000017a3', 'team_lead', 'warehouse'),
+  ('61000000-0000-0000-0000-000000017002', '20000000-0000-0000-0000-0000000017a4', 'worker', 'field');
+
+insert into event_contacts (event_id, contact_name, contact_phone) values
+  ('30000000-0000-0000-0000-000000000017', 'איש הקשר של הלקוח', '050-1700017');
+
+-- אירוע שני, שהמשימה בו היא **טיוטה**: העובד משובץ אליה, וזה בדיוק המצב
+-- שבו הוא ראה אותו בלוח השנה עד 0080.
+insert into events (id, customer_id, end_client_name, event_date,
+                    location_text, location_lat, location_lng) values
+  ('30000000-0000-0000-0000-000000000018', '10000000-0000-0000-0000-000000000017',
+   'אירוע שעוד לא פורסם', current_date + 322, 'תל אביב', 32.0853, 34.7818);
+
+insert into tasks (id, event_id, customer_id, task_type_id, task_date,
+                   onsite_start_time, hours_count, status_id, worker_count)
+select '61000000-0000-0000-0000-000000017003', '30000000-0000-0000-0000-000000000018',
+       '10000000-0000-0000-0000-000000000017',
+       (select id from task_types where code = 'setup' limit 1),
+       current_date + 322, '09:00', 2.0,
+       (select id from statuses where entity = 'task' and code = 'draft' and deleted_at is null),
+       1;
+
+insert into task_assignments (task_id, profile_id, role, work_site) values
+  ('61000000-0000-0000-0000-000000017003', '20000000-0000-0000-0000-0000000017a1', 'worker', 'field');
+
+-- ===== 4. רק מה שפורסם — גם באירוע ולא רק במשימה ==========================
+
+\echo '--- טיוטה אינה מזמינה את האירוע ללוח השנה ---'
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000017a1', false);
+
+select t_eq('העובד אינו רואה את המשימה שבטיוטה',
+  (select count(*)::int from tasks where id = '61000000-0000-0000-0000-000000017003'), 0);
+
+select t_eq('וגם לא את האירוע שלה — זה מה ש-0080 סוגר',
+  (select count(*)::int from events where id = '30000000-0000-0000-0000-000000000018'), 0);
+
+select t_eq('אבל את האירוע שמשימותיו פורסמו הוא כן רואה',
+  (select count(*)::int from events where id = '30000000-0000-0000-0000-000000000017'), 1);
+
+select t_eq('ואת שתי המשימות שלו בו',
+  (select count(*)::int from work_board_view
+    where event_id = '30000000-0000-0000-0000-000000000017'), 2);
+
+\echo '--- דף רשימת האירועים נסגר, דף האירוע נשאר ---'
+select t_eq('אין לעובד events.list', app.has('events.list'), false);
+select t_eq('אך events.view נשאר',   app.has('events.view'), true);
+
+\echo '--- והדלת שנפתחה ב-0079 נסגרה: event_visible אינה "כל אירוע" ---'
+select t_eq('האירוע שהוא משובץ אליו גלוי לו',
+  app.event_visible('30000000-0000-0000-0000-000000000017'), true);
+select t_eq('והאירוע שאינו שלו — לא',
+  app.event_visible('30000000-0000-0000-0000-000000000018'), false);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- ===== 5. ראש הצוות של האירוע =============================================
+
+\echo '--- עובד מן השורה: בלי יומן ובלי איש קשר ---'
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000017a1', false);
+
+select t_eq('העובד אינו רואה את יומן האירוע',
+  (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-000000000017'), 0);
+
+select t_eq('ואינו רואה את איש הקשר',
+  (select count(*)::int from event_contacts
+    where event_id = '30000000-0000-0000-0000-000000000017'), 0);
+
+select t_rows('ואינו יכול לתעד', $$
+  insert into event_activity (event_id, kind, actor_profile_id, note)
+  values ('30000000-0000-0000-0000-000000000017', 'note',
+          '20000000-0000-0000-0000-0000000017a1', 'לא אמור להיכתב')$$, 0);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+\echo '--- ראש הצוות של האירוע: יומן, תיעוד ואיש קשר ---'
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000017a3', false);
+
+select t_eq('הוא מזוהה כראש צוות באירוע',
+  app.is_event_team_lead('30000000-0000-0000-0000-000000000017'), true);
+
+select t_expect_ok('והוא מתעד', $$
+  insert into event_activity (event_id, kind, actor_profile_id, note)
+  values ('30000000-0000-0000-0000-000000000017', 'note',
+          '20000000-0000-0000-0000-0000000017a3', 'הצוות יצא מהמחסן בזמן')$$);
+
+select t_eq('ורואה את מה שכתב',
+  (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-000000000017' and kind = 'note'), 1);
+
+select t_eq('ורואה את שם איש הקשר',
+  (select contact_name from event_contacts
+    where event_id = '30000000-0000-0000-0000-000000000017'), 'איש הקשר של הלקוח');
+
+select t_eq('ואת הטלפון',
+  (select contact_phone from event_contacts
+    where event_id = '30000000-0000-0000-0000-000000000017'), '050-1700017');
+
+select t_eq('אבל הוא אינו ראש צוות באירוע שאינו שלו',
+  app.is_event_team_lead('30000000-0000-0000-0000-000000000018'), false);
+
+-- המסך מכריע את אותה שאלה מ-`team_lead_id` שבלו״ז, בלי שאילתה נוספת, ולכן
+-- העמודה הזו חייבת להגיע אליו מלאה — ‏`ta_select` היא שמתירה אותה.
+select t_eq('והלו״ז מחזיר לו את עצמו כראש הצוות של המשימה',
+  (select team_lead_id from work_board_view where id = '61000000-0000-0000-0000-000000017001'),
+  '20000000-0000-0000-0000-0000000017a3');
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- ===== 6. יציאה מהמחסן ====================================================
+--
+-- המחסן (32.05, 34.77) והאתר (32.0853, 34.7818) מרוחקים כ-4 ק״מ זה מזה,
+-- כלומר הרבה מעבר לרדיוס. זה מה שהופך את הבדיקה לחד-משמעית.
+--
+-- המשמרות של החבילה יושבות ב-current_date+320, ו-`app.shift_at` מחפשת יום
+-- אחד לכל צד מ-`now()` — ולכן לשעון נדרש אירוע של **היום**, אחרת אין מול מה
+-- למדוד והבדיקה עוברת בלי שנגעה בכלום.
+
+insert into events (id, customer_id, end_client_name, event_date,
+                    location_text, location_lat, location_lng) values
+  ('30000000-0000-0000-0000-000000017019', '10000000-0000-0000-0000-000000000017',
+   'אירוע השעון', current_date, 'תל אביב', 32.0853, 34.7818);
+
+insert into tasks (id, event_id, customer_id, task_type_id, task_date,
+                   warehouse_start_time, onsite_start_time, hours_count,
+                   travel_hours, status_id, worker_count)
+select v.id, '30000000-0000-0000-0000-000000017019',
+       '10000000-0000-0000-0000-000000000017',
+       (select id from task_types where code = 'setup' limit 1),
+       current_date, v.wh, v.onsite, v.hrs, 0.5,
+       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null),
+       1
+from (values
+  ('61000000-0000-0000-0000-000000017004'::uuid, '06:00'::time, '07:00'::time, 3.0::numeric),
+  ('61000000-0000-0000-0000-000000017005'::uuid, null::time,    '08:00'::time, 2.0::numeric)
+) as v(id, wh, onsite, hrs);
+
+insert into task_assignments (task_id, profile_id, role, work_site) values
+  ('61000000-0000-0000-0000-000000017004', '20000000-0000-0000-0000-0000000017a1', 'worker', 'warehouse'),
+  ('61000000-0000-0000-0000-000000017005', '20000000-0000-0000-0000-0000000017a4', 'worker', 'field');
+
+insert into worker_pay_settings (profile_id, hourly_rate, requires_location, location_radius_m)
+values ('20000000-0000-0000-0000-0000000017a1', 50, true, 300),
+       ('20000000-0000-0000-0000-0000000017a4', 50, true, 300)
+on conflict (profile_id) do update
+   set requires_location = true, location_radius_m = 300;
+
+insert into attendance_entries (profile_id, work_date, clock_in_at) values
+  ('20000000-0000-0000-0000-0000000017a1', current_date, now() - interval '4 hours'),
+  ('20000000-0000-0000-0000-0000000017a4', current_date, now() - interval '4 hours');
+
+-- שתי המשמרות אכן נגזרו להיום, אחרת כל מה שמתחת בודק "אין מול מה למדוד"
+select t_eq('למי שיוצא מהמחסן יש משמרת היום, והיא מתחילה במחסן',
+  (select work_site from app.planned_shifts('20000000-0000-0000-0000-0000000017a1',
+     current_date, current_date)), 'warehouse');
+select t_eq('ולמי שמגיע לשטח — משמרת שמתחילה בשטח',
+  (select work_site from app.planned_shifts('20000000-0000-0000-0000-0000000017a4',
+     current_date, current_date)), 'field');
+
+\echo '--- מי שיצא מהמחסן מחתים יציאה במחסן ---'
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000017a1', false);
+
+-- זה הדיווח עצמו: עד 0080 היציאה נמדדה מול האתר בלבד, והעובד שעמד במחסן
+-- שאליו חזר נחסם.
+select t_expect_ok('יציאה מנקודת המחסן מתקבלת', $$
+  select attendance_clock_out(32.05, 34.77, 10)$$);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+\echo '--- ומי שמגיע לשטח עדיין נמדד מול השטח בלבד ---'
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000017a4', false);
+
+select t_expect_fail('יציאה מהמחסן נדחית למי שכלל לא יצא ממנו', $$
+  select attendance_clock_out(32.05, 34.77, 10)$$);
+
+select t_expect_ok('ומהאתר היא מתקבלת', $$
+  select attendance_clock_out(32.0853, 34.7818, 10)$$);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
