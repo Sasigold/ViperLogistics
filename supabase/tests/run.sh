@@ -195,6 +195,16 @@ OUT="$OUT
 $OUT16"
 
 echo
+echo "== team scope suite =="
+# 18 מקימה לקוח, אירוע, ארבעה פרופילים ושלוש משימות משלה ואינה נשענת על אף
+# חבילה קודמת. היא רצה אחרונה כי היא סופרת את משימות האירוע שלה, ומשאירה
+# אחריה משימות ושיבוצים שאינם מנוקים. האירוע יושב ב-current_date+330.
+OUT17=$($PSQL -d vl -f "$HERE/18_team_scope.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT17"
+OUT="$OUT
+$OUT17"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
