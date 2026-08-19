@@ -128,7 +128,7 @@ export const router = createBrowserRouter([
           },
           { path: '/receipts', handle: { perm: PERM.FINANCE_RECEIPTS_VIEW }, element: page(<ReceiptsPage />) },
           /* הרשימה והדף אינם אותו מפתח: עובד שטח פותח אירוע שהוא משובץ אליו,
-             ואין לו מה לעשות בקטלוג של כולם (0080). */
+             ואין לו מה לעשות בקטלוג של כולם (0082). */
           { path: '/events', handle: { perm: PERM.EVENTS_LIST }, element: page(<EventsPage />) },
           { path: '/events/:id', handle: { perm: PERM.EVENTS_VIEW }, element: page(<EventDetailPage />) },
           { path: '/customers', handle: { perm: PERM.CUSTOMERS_VIEW }, element: page(<CustomersPage />) },

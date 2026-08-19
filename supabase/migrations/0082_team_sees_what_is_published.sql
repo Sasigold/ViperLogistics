@@ -1,4 +1,4 @@
--- 0080: מה שהצוות רואה — ומה שראש הצוות רואה מעבר לזה
+-- 0082: מה שהצוות רואה — ומה שראש הצוות רואה מעבר לזה
 --
 -- שישה דיווחים, כולם על אותו קהל: `user_kind = 'staff'` בתפקיד שטח — עובד,
 -- נהג, ראש צוות. חמישה מהם הם גבולות ראייה, ואחד הוא באג בשעון.
@@ -40,7 +40,7 @@ returns boolean language sql stable set search_path = public as $$
 $$;
 
 comment on function app.event_visible(uuid) is
-  'האם הקורא רואה את האירוע. invoker במכוון (0080): התשובה היא בדיוק '
+  'האם הקורא רואה את האירוע. invoker במכוון (0082): התשובה היא בדיוק '
   'events_select, כולל היקפי השורות, ולא העתק שלה שמתיישן.';
 
 -- ===== 2. רשימת האירועים היא מפתח נפרד מדף האירוע =========================
@@ -59,8 +59,8 @@ select app.register_permission('events.list', 'events',
   array['staff', 'customer_user', 'contractor_user']::user_kind[],
   'events.view', 15);
 
--- שלושת תפקידי השטח. נהג וראש צוות ממילא חסומים היום דרך `events.view`,
--- והשורה כאן היא מה שמחזיק אותם חסומים אם וכאשר הוא ייפתח להם גם.
+-- שלושת תפקידי השטח, ולא רק "עובד": מאז 0080 שלושתם מחזיקים את
+-- `events.view`, ולכן בלי השורות האלה הרשימה הייתה נפתחת לשלושתם.
 insert into role_permissions (role_id, permission_key, allowed)
 select r.id, 'events.list', false
 from permission_roles r
@@ -93,7 +93,10 @@ returns boolean language sql stable security definer set search_path = public as
                                 and s.deleted_at is null limit 1)))
 $$;
 
--- זהה ל-0067 פרט לשני המקומות שבהם תת-השאילתה על השיבוץ הוחלפה בפונקציה.
+-- זהה ל-0081 פרט לשני המקומות שבהם תת-השאילתה על השיבוץ הוחלפה בפונקציה:
+-- שם היא נשאלה "האם אני משובץ", וכאן "האם אני משובץ למשימה שאני רשאי
+-- לראות". ‏0081 כבר הוציא את `created_by` מזרוע ה-scope_own לקהל ה-staff,
+-- וזה נשאר כפי שהוא.
 drop policy events_select on events;
 create policy events_select on events for select to authenticated using (
   (select app.is_admin())
@@ -107,8 +110,9 @@ create policy events_select on events for select to authenticated using (
     and ((select app.scope_date_to('events')) is null
          or event_date <= (select app.scope_date_to('events')))
     and (not (select app.scope_own('events'))
-         or created_by = (select app.profile_id())
-         or (select app.on_event_as_staff(events.id)))
+         or (select app.on_event_as_staff(events.id))
+         or ((select app.user_kind()) <> 'staff'
+             and created_by = (select app.profile_id())))
     and (
       ((select app.user_kind()) = 'staff' and ((select app.has('events.view'))
          or (select app.on_event_as_staff(events.id))))
