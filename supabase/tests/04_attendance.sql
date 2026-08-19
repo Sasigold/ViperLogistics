@@ -998,39 +998,54 @@ select t_eq('וההתראה עצמה נכתבה כרגיל',
     where recipient_id = '20000000-0000-0000-0000-0000000000f3'
       and type = 'task_assigned' and body = 'בדיקה')::int, 1);
 
--- העדפה פר-סוג גוברת על הכללית
+/*
+ * ‏0086: להעדפה האישית אין יותר קול.
+ *
+ * עד אז שלוש השורות האלה היו מכבות את המייל, ועכשיו הן שורות מתות: הסולם
+ * נעצר במדיניות (0046 §7, דרגות 4–6). מי שרוצה לכבות למישהו ספציפי עושה זאת
+ * ב-notification_policy_overrides — וזה נבדק בחבילה 07.
+ */
 insert into notification_preferences (profile_id, channel, type, enabled) values
   ('20000000-0000-0000-0000-0000000000f3', 'email', 'task_assigned', false);
 
-select t_eq('סוג שהמשתמש כיבה אינו נשלח',
-  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_assigned'), false);
-
-select t_eq('אבל סוג אחר ממשיך להישלח',
-  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_changed'), true);
+select t_eq('סוג שהמשתמש כיבה לעצמו — נשלח בכל זאת',
+  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_assigned'), true);
 
 insert into notification_preferences (profile_id, channel, type, enabled) values
   ('20000000-0000-0000-0000-0000000000f3', 'email', null, false);
 
-select t_eq('כיבוי כללי חוסם סוג שלא הוגדר לו כלום',
-  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_changed'), false);
+select t_eq('וגם כיבוי כללי שלו אינו עוצר דבר',
+  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_changed'), true);
 
-update notification_preferences set enabled = true
- where profile_id = '20000000-0000-0000-0000-0000000000f3' and channel = 'email' and type = 'task_assigned';
+-- מה שכן עוצר: חריג אישי שקבע מנהל
+insert into notification_policy_overrides (profile_id, type, channel, mode) values
+  ('20000000-0000-0000-0000-0000000000f3', 'task_assigned', 'email', 'off');
 
-select t_eq('והעדפה לסוג גוברת על הכללי גם לכיוון ההפוך',
+select t_eq('חריג אישי של מנהל — לא נשלח',
+  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_assigned'), false);
+
+select t_eq('וסוג אחר ממשיך להישלח',
+  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_changed'), true);
+
+delete from notification_policy_overrides
+ where profile_id = '20000000-0000-0000-0000-0000000000f3';
+
+select t_eq('ומחיקת החריג מחזירה את המדיניות לשלוט',
   app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_assigned'), true);
 
--- השתקה גלובלית של סוג גוברת על העדפת המשתמש
+-- השתקה גלובלית של סוג גוברת על הכול
 update app_settings
    set value = jsonb_set(value, '{muted_types}', '["task_assigned"]'::jsonb)
  where key = 'notifications.email';
 
-select t_eq('סוג מושתק גלובלית אינו נשלח גם למי שביקש אותו',
+select t_eq('סוג מושתק גלובלית אינו נשלח לאיש',
   app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_assigned'), false);
 
 update app_settings
    set value = jsonb_set(value, '{muted_types}', '[]'::jsonb)
  where key = 'notifications.email';
+
+-- שתי שורות ההעדפה נשארות בטבלה בכוונה: הן מה שבדיקת ה-RLS שלמטה מחפשת.
 
 -- מי שאין לו כתובת אינו מייצר שורת משלוח תלויה
 update profiles set email = null where id = '20000000-0000-0000-0000-0000000000f4';
@@ -1045,9 +1060,9 @@ set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
 select t_eq('עובד אינו רואה את יומן המשלוח',
   (select count(*) from notification_deliveries)::int, 0);
-select t_eq('אבל כן רואה את ההעדפות של עצמו',
-  (select count(*) > 0 from notification_preferences
-    where profile_id = '20000000-0000-0000-0000-0000000000f3'), true);
+-- 0086: גם לא את טבלת ההעדפות. אין לו בה מה לעשות — ההחלטה של המנהל.
+select t_eq('וגם לא את טבלת ההעדפות',
+  (select count(*) from notification_preferences)::int, 0);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
@@ -1322,6 +1337,40 @@ select t_eq('עובד מושבת עם שיבוץ בטווח כן מופיע, ו�
 select t_eq('ובטווח שאין לו בו כלום הוא נעלם',
   (select count(*) from jsonb_array_elements(shift_roster(current_date + 60, current_date + 60)) r
     where r ->> 'id' = '20000000-0000-0000-0000-0000000000f7')::int, 0);
+
+/*
+ * ‏0085: הרוסטר הוא של עובדים, לא של כל מי שנרשם כ-staff.
+ *
+ * מנהל הנוכחות עצמו הוא הדוגמה: אין לו תפקיד צוות, אי אפשר לשבץ אותו
+ * (בוררי השיבוץ מסננים לפי staff_roles), ובכל זאת הייתה לו שורה קבועה
+ * בלוח. זה בדיוק מה שקורה גם למנהל המערכת, שנפתח כשורת צוות.
+ */
+select t_eq('מי שאין לו תפקיד צוות ואין לו שיבוץ — אינו ברוסטר',
+  (select count(*) from jsonb_array_elements(shift_roster(current_date + 30, current_date + 30)) r
+    where r ->> 'id' = '20000000-0000-0000-0000-0000000000f4')::int, 0);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+insert into staff_roles (profile_id, role) values
+  ('20000000-0000-0000-0000-0000000000f4', 'team_lead');
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f4', false);
+
+select t_eq('ומשהוצמד לו תפקיד צוות הוא נכנס, גם בלי שיבוץ',
+  (select count(*) from jsonb_array_elements(shift_roster(current_date + 30, current_date + 30)) r
+    where r ->> 'id' = '20000000-0000-0000-0000-0000000000f4')::int, 1);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+delete from staff_roles where profile_id = '20000000-0000-0000-0000-0000000000f4';
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f4', false);
+
+-- ועובד שכן משובץ בטווח נשאר בלוח גם בלי תפקיד צוות: משמרת שקיימת חייבת
+-- להיראות, וזה אותו נימוק שבגללו עובד מושבת עם שיבוץ נשאר.
+select t_eq('ומי שמשובץ בטווח נשאר, תפקיד או לא',
+  (select count(*) from jsonb_array_elements(shift_roster(current_date + 30, current_date + 30)) r
+    where r ->> 'id' = '20000000-0000-0000-0000-0000000000f3')::int, 1);
 
 -- ---- team_shifts ----
 select t_eq('המנהל מקבל את המשמרות של עובד הצוות ושל עובד הקבלן גם יחד',

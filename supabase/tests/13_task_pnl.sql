@@ -37,7 +37,8 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000013a7', 'pnl.nocustomers@vl.test'),
   ('00000000-0000-0000-0000-0000000013b1', 'pnl.w1@vl.test'),
   ('00000000-0000-0000-0000-0000000013b2', 'pnl.w2@vl.test'),
-  ('00000000-0000-0000-0000-0000000013b3', 'pnl.w3@vl.test');
+  ('00000000-0000-0000-0000-0000000013b3', 'pnl.w3@vl.test'),
+  ('00000000-0000-0000-0000-0000000013a8', 'pnl.admin@vl.test');
 
 insert into customers (id, name) values
   ('10000000-0000-0000-0000-000000000013', 'לקוח רווחיות משימות');
@@ -65,7 +66,10 @@ insert into profiles (id, user_id, user_kind, is_admin, full_name) values
   ('20000000-0000-0000-0000-0000000013b2', '00000000-0000-0000-0000-0000000013b2',
    'staff', false, 'עובד עם תעריף 40'),
   ('20000000-0000-0000-0000-0000000013b3', '00000000-0000-0000-0000-0000000013b3',
-   'staff', false, 'עובד ללא תעריף');
+   'staff', false, 'עובד ללא תעריף'),
+  -- מנהל מערכת. אין לו מענקים בכלל — `app.has` מחזיר לו true על כל מפתח.
+  ('20000000-0000-0000-0000-0000000013a8', '00000000-0000-0000-0000-0000000013a8',
+   'staff', true, 'מנהל מערכת עם היקף מיותם');
 
 -- w3 בכוונה בלי שורת worker_pay_settings — זו הדמות של "משמרת ללא תעריף"
 insert into worker_pay_settings (profile_id, hourly_rate) values
@@ -133,6 +137,10 @@ insert into user_permission_grants (profile_id, permission_key, allowed) values
 
 insert into permission_scopes (profile_id, resource, scope_type, scope_values) values
   ('20000000-0000-0000-0000-0000000013a6', 'tasks', 'customers',
+   array['10000000-0000-0000-0000-000000000013']::uuid[]),
+  -- a8 הוא מנהל מערכת שיש עליו בדיוק אותה שורת היקף. עד 0085 היא הספיקה כדי
+  -- לסגור בפניו את הדוח, אף שכל פוליסת RLS במערכת מדלגת עליה בשבילו.
+  ('20000000-0000-0000-0000-0000000013a8', 'tasks', 'customers',
    array['10000000-0000-0000-0000-000000000013']::uuid[]);
 
 -- התאריכים, מעוגנים ליום שני. dfrom/dto מקיפים את כל ארבעת הימים ואינם
@@ -372,6 +380,23 @@ select t_eq('רואה שעות בלי צרור הרווח — נדחה ברכו�
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000013a6', false);
 select t_eq('היקף נתונים מצומצם — נדחה',
   (t13all() -> 'rows') = 'null'::jsonb, true);
+
+/*
+ * ‏0085 §3: למנהל מערכת אין היקף נתונים.
+ *
+ * a8 נושא בדיוק את שורת ההיקף של a6, ובכל זאת רואה את הדוח במלואו — כי
+ * ‏`app.scope_rows` שותקת בשבילו, בדיוק כפי ש-`app.has` מחזיר לו true. זו
+ * הייתה הסיבה ל"למה כמנהל מערכת אין לי הרשאה לרווחיות לפי משימה": די היה
+ * בתפקיד ישן שנושא היקף (worker/driver/team_lead נושאים 'own' על tasks מאז
+ * 0011) כדי לסגור בפניו את כל שערי הכספים.
+ */
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000013a8', false);
+select t_eq('מנהל מערכת עם שורת היקף — רואה בכל זאת',
+  (t13all() -> 'rows') = 'null'::jsonb, false);
+select t_eq('ואותן שבע שורות שרואה הקורא המלא',
+  jsonb_array_length(t13all() -> 'rows'), 7);
+select t_eq('וגם `app.scope_rows` עצמה שותקת בשבילו',
+  (select count(*)::int from app.scope_rows('tasks')), 0);
 
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000013a5', false);
 select t_expect_fail('בלי reports.view — דלת סגורה, לא null',

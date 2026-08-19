@@ -4,7 +4,7 @@ import { Card, EmptyState, Skeleton } from '../components/ui'
 import { useAuth } from '../state/auth'
 import { PERM } from '../lib/permissions'
 import { lazyPage } from '../lib/lazyPage'
-import { NAV_SECTIONS, navItemVisible } from './nav'
+import { NAV_SECTIONS, navAudience, navItemVisible } from './nav'
 
 const DashboardPage = lazyPage(() => import('../features/dashboard/DashboardPage'))
 
@@ -35,7 +35,9 @@ export default function HomeRoute() {
   }
 
   // `to !== '/'` keeps the dashboard entry from redirecting this route to itself
-  const first = NAV_SECTIONS.flatMap((s) => s.items).find((n) => n.to !== '/' && navItemVisible(n, has))
+  const first = NAV_SECTIONS.flatMap((s) => s.items).find(
+    (n) => n.to !== '/' && navItemVisible(n, has, navAudience(me)),
+  )
   if (first) return <Navigate to={first.to} replace />
 
   return (

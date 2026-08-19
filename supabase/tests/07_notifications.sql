@@ -63,19 +63,19 @@ select t_eq('ערוץ דלוק, בלי העדפות — נשלח',
 select t_eq('ו-should_email מסכים איתו',
   app.should_email('20000000-0000-0000-0000-0000000000f1', 'task_assigned'), true);
 
+/*
+ * ‏0086: ההעדפה האישית ירדה מהסולם. שתי השורות האלה נכתבות, ואינן מכריעות
+ * דבר — ההחלטה היא של המנהל, פר-קהל או פר-אדם.
+ */
 insert into notification_preferences (profile_id, channel, type, enabled) values
   ('20000000-0000-0000-0000-0000000000f1', 'email', 'task_assigned', false);
-select t_eq('סוג שהמשתמש כיבה אינו נשלח',
-  app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'task_assigned', 'email'), false);
-select t_eq('אבל סוג אחר ממשיך',
-  app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'task_changed', 'email'), true);
+select t_eq('סוג שהמשתמש כיבה לעצמו — נשלח בכל זאת',
+  app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'task_assigned', 'email'), true);
 
 insert into notification_preferences (profile_id, channel, type, enabled) values
   ('20000000-0000-0000-0000-0000000000f1', 'email', null, false);
-select t_eq('כיבוי כללי חוסם סוג שלא הוגדר לו כלום',
-  app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'task_changed', 'email'), false);
-select t_eq('והעדפה לסוג גוברת על הכללי',
-  app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'task_assigned', 'email'), false);
+select t_eq('וגם כיבוי כללי שלו אינו חוסם',
+  app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'task_changed', 'email'), true);
 
 update app_settings set value = jsonb_set(value, '{muted_types}', '["task_changed"]'::jsonb)
  where key = 'notifications.email';
@@ -137,30 +137,44 @@ select t_eq('מנהל: חובה לפי מדיניות הקהל',
 
 -- ===== 4. הכפייה שנתבקשה ============================================
 
-\echo '--- נעול וכבוי גוברים על המשתמש ---'
+\echo '--- המנהל מכריע, גם נגד מה שהמשתמש ביקש בעבר ---'
 
--- המשתמש מבקש במפורש לקבל. המנהל אמר שלא.
+-- המשתמש ביקש במפורש לקבל. המנהל אמר שלא.
 insert into notification_preferences (profile_id, channel, type, enabled) values
   ('20000000-0000-0000-0000-0000000000f1', 'email', 'attendance_submitted', true);
 select t_eq('off גובר על משתמש שביקש כן',
   app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'attendance_submitted', 'email'), false);
 
--- המשתמש מבקש במפורש לא לקבל. המנהל אמר שכן.
+-- המשתמש ביקש במפורש לא לקבל. המנהל אמר שכן.
 insert into notification_preferences (profile_id, channel, type, enabled) values
   ('20000000-0000-0000-0000-000000000001', 'email', 'attendance_submitted', false);
 select t_eq('forced גובר על משתמש שביקש לא',
   app.notification_enabled('20000000-0000-0000-0000-000000000001', 'attendance_submitted', 'email'), true);
 
--- opt_in: כבוי עד שמבקשים
+/*
+ * ‏0086: opt_in הוא "לא נשלח" ו-opt_out הוא "נשלח", ובקשת המשתמש אינה
+ * משנה אף אחד מהם. עד אז הייתה זו נקודת הכניסה היחידה של המשתמש לסולם.
+ */
 insert into notification_policies (audience, type, channel, mode) values
   ('staff', 'event_created', 'email', 'opt_in')
 on conflict (audience, type, channel) do update set mode = excluded.mode;
-select t_eq('opt_in כבוי בלי העדפה',
+select t_eq('opt_in — לא נשלח',
   app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'event_created', 'email'), false);
 insert into notification_preferences (profile_id, channel, type, enabled) values
   ('20000000-0000-0000-0000-0000000000f1', 'email', 'event_created', true);
-select t_eq('ונדלק כשמבקשים',
+select t_eq('וגם כשהמשתמש ביקש — עדיין לא נשלח',
+  app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'event_created', 'email'), false);
+update notification_policies set mode = 'opt_out'
+ where audience = 'staff' and type = 'event_created' and channel = 'email';
+select t_eq('ו-opt_out נשלח, גם למי שכיבה לעצמו',
+  app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'event_created', 'email'),
+  true);
+update notification_preferences set enabled = false
+ where profile_id = '20000000-0000-0000-0000-0000000000f1' and type = 'event_created';
+select t_eq('...וזה נכון גם אחרי שהוא כיבה במפורש',
   app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'event_created', 'email'), true);
+delete from notification_policies
+ where audience = 'staff' and type = 'event_created' and channel = 'email';
 
 -- ===== 5. חריג אישי גובר על הקהל ====================================
 
@@ -296,27 +310,26 @@ select t_eq('...ובכללם אין את שני הסוגים של המנהל',
   (select count(*)::int from jsonb_array_elements(my_notification_settings()) e
     where e ->> 'type' in ('event_created', 'attendance_submitted')), 0);
 
-select t_expect_fail('וגם כתיבה ישירה עליהם נדחית', $$
+/*
+ * ‏0086: אין העדפה אישית, ולכן אין גם כתיבה — לא לסוג נעול, לא לסוג פתוח,
+ * ולא לסוג שאינו קיים. המסך קורא בלבד, והשרת אומר את אותו דבר.
+ */
+select t_expect_fail('כתיבת העדפה נדחית — סוג שאינו של הקהל שלי', $$
   select set_notification_preference('attendance_submitted', 'email', true)$$);
-
-select t_eq('task_assigned מסומן נעול בפעמון',
-  (select (e -> 'channels' -> 'inapp' ->> 'locked')::boolean
-     from jsonb_array_elements(my_notification_settings()) e
-    where e ->> 'type' = 'task_assigned'), true);
-
-select t_expect_fail('שינוי העדפה על סוג נעול נדחה בקול', $$
-  select set_notification_preference('task_assigned', 'inapp', false)$$);
-
-select t_expect_ok('אבל על ערוץ פתוח עובד', $$
+select t_expect_fail('...וגם על ערוץ שהיה פתוח עד 0086', $$
   select set_notification_preference('task_assigned', 'email', false)$$);
+select t_expect_fail('...וגם על סוג שאינו קיים', $$
+  select set_notification_preference('no_such_type', 'email', true)$$);
 
-select t_eq('וההעדפה נכנסה לתוקף',
+select t_eq('כל תא מסומן נעול — ההחלטה אינה של המשתמש',
+  (select bool_and((e -> 'channels' -> ch ->> 'locked')::boolean)
+     from jsonb_array_elements(my_notification_settings()) e,
+          unnest(array['inapp','email','push']) ch), true);
+
+select t_eq('וההעדפה שנשמרה בעבר אינה מכריעה',
   (select (e -> 'channels' -> 'email' ->> 'enabled')::boolean
      from jsonb_array_elements(my_notification_settings()) e
-    where e ->> 'type' = 'task_assigned'), false);
-
-select t_expect_fail('סוג שאינו קיים נדחה', $$
-  select set_notification_preference('no_such_type', 'email', true)$$);
+    where e ->> 'type' = 'task_assigned'), true);
 
 select t_expect_fail('עובד אינו מריץ את סטטיסטיקת המכשירים', $$
   select notification_push_stats()$$);
@@ -358,6 +371,13 @@ select t_eq('ואינו רואה את המטריצה בכלל',
   (select count(*)::int from notification_policies), 0);
 select t_eq('ולא את החריגים',
   (select count(*)::int from notification_policy_overrides), 0);
+/* ‏0086: גם לא את ההעדפות — לא את של אחרים, וגם לא את של עצמו. אין לו מה
+   לעשות בהן, ומסך ההתראות שלו קורא הכול דרך my_notification_settings. */
+select t_eq('ולא את טבלת ההעדפות',
+  (select count(*)::int from notification_preferences), 0);
+select t_rows('ואינו כותב לעצמו העדפה בדלת האחורית', $$
+  insert into notification_preferences (profile_id, channel, type, enabled)
+  values ('20000000-0000-0000-0000-0000000007a1','email','task_assigned',false)$$, 0);
 select t_eq('אבל כן את הקטלוג — הוא צריך אותו למסך',
   (select count(*) > 0 from notification_types), true);
 
