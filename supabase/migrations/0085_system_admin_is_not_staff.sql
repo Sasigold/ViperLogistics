@@ -64,11 +64,14 @@ begin
     from profiles p
     left join contractors c on c.id = p.contractor_id and c.deleted_at is null
    where p.deleted_at is null
-     -- עובד קבלן נכנס דרך שורת הסגל שלו, ועובד חברה דרך תפקיד הצוות שלו
-     and (p.contractor_worker_id is not null or app.is_staff_member(p.id) or exists (
-           select 1 from task_assignments a
-             join tasks t on t.id = a.task_id and t.deleted_at is null
-            where a.profile_id = p.id and t.task_date between p_from and p_to))
+     -- עובד קבלן נכנס דרך שורת הסגל שלו; עובד חברה דרך תפקיד הצוות שלו, או
+     -- דרך שיבוץ בפועל בטווח. איש קשר אצל לקוח אינו נכנס בשום דרך, כמו קודם.
+     and (p.contractor_worker_id is not null
+          or (p.user_kind = 'staff'
+              and (app.is_staff_member(p.id) or exists (
+                    select 1 from task_assignments a
+                      join tasks t on t.id = a.task_id and t.deleted_at is null
+                     where a.profile_id = p.id and t.task_date between p_from and p_to))))
      and (p.is_active or exists (
            select 1 from task_assignments a
              join tasks t on t.id = a.task_id and t.deleted_at is null
