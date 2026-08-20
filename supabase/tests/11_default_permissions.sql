@@ -268,9 +268,13 @@ select t_eq('צוות: אין reports.view (דוחות)',            app.has('re
 -- 0011 והיו נדלקים לו בהיסק מ-events.view.
 select t_eq('עובד: events.view נפתח (0079)',              app.has('events.view'), true);
 select t_eq('אך לא יומן הפעילות של האירוע',               app.has('events.activity_log'), false);
-select t_eq('ולא המפרט',                                  app.has('events.specs_view'), false);
 select t_eq('ולא עריכה',                                  app.has('events.edit'), false);
 select t_eq('ולא ייצוא',                                  app.has('events.export'), false);
+-- המפרט הוא היוצא מן הכלל מאז 0102: שורת הדחייה הגורפת של 0079 נמחקה, והמפתח
+-- פתוח בברירת המחדל של המרשם — מי שנוסע לאירוע קורא את המסמך שצריך לבצע.
+select t_eq('והמפרט דווקא כן (0102)',                     app.has('events.specs_view'), true);
+-- ...ובלי שהעלאה נפתחה איתו
+select t_eq('אבל לא העלאת מפרט',                          app.has('events.specs_manage'), false);
 
 \echo '--- אבל מסכי הצוות פתוחים ---'
 select t_eq('צוות: calendar.view',            app.has('calendar.view'), true);
