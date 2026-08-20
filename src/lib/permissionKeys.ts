@@ -138,6 +138,7 @@ export const PERM = {
   PORTAL_ASSIGN_WORKERS: 'portal.assign_workers',
   PORTAL_VIEW_FINANCIALS: 'portal.view_financials',
   PORTAL_MANAGE_WORKERS: 'portal.manage_workers',
+  PORTAL_APPROVE_ATTENDANCE: 'portal.approve_attendance',
   NOTIFICATIONS_PREFERENCES: 'notifications.preferences',
   NOTIFICATIONS_MANAGE: 'notifications.manage',
   SETTINGS_VIEW: 'settings.view',

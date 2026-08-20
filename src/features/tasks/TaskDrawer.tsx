@@ -29,6 +29,7 @@ import {
   Skeleton,
   Textarea,
   cx,
+  fmtMoney,
   useConfirm,
   useToast,
 } from '../../components/ui'
@@ -146,7 +147,12 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       return {
         task: t.data as TaskRow,
         assignments: (a.data ?? []) as Assignment[],
-        terms: terms.data as { price: number; paid_at: string | null } | null,
+        terms: terms.data as {
+          price: number
+          price_per_worker: number | null
+          work_site: WorkSite
+          paid_at: string | null
+        } | null,
         pricing: (pricing.data as TaskPricing) ?? null,
         contractorWorkers: ((cw.data ?? []) as { contractor_worker_id: string }[]).map(
           (r) => r.contractor_worker_id,
@@ -158,6 +164,8 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   const [form, setForm] = useState<Partial<TaskRow>>({})
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [price, setPrice] = useState<string>('')
+  const [pricePerWorker, setPricePerWorker] = useState<string>('')
+  const [contractorWorkSite, setContractorWorkSite] = useState<WorkSite>('field')
   const [customerPrice, setCustomerPrice] = useState<string>('')
   const [touched, setTouched] = useState(false)
 
@@ -176,11 +184,17 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       setForm(existing.task)
       setAssignments(existing.assignments)
       setPrice(existing.terms?.price != null ? String(existing.terms.price) : '')
+      setPricePerWorker(
+        existing.terms?.price_per_worker != null ? String(existing.terms.price_per_worker) : '',
+      )
+      setContractorWorkSite(existing.terms?.work_site ?? 'field')
       setCustomerPrice(existing.pricing?.price != null ? String(existing.pricing.price) : '')
     } else if (!taskId) {
       setForm({ task_date: new Date().toISOString().slice(0, 10), worker_count: 0, ...initial })
       setAssignments([])
       setPrice('')
+      setPricePerWorker('')
+      setContractorWorkSite('field')
       setCustomerPrice('')
     }
   }, [open, taskId, existing, initial])
@@ -286,10 +300,22 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
           )
         if (error) throw error
       }
-      // contractor price
-      if (base.contractor_id && price !== '') {
-        const { error } = await supabase.from('task_contractor_terms').update({ price: Number(price) }).eq('task_id', id)
-        if (error) throw error
+      // תנאי הקבלן: נקודת התחלה, תעריף-לעובד, ומחיר שטוח רק כשאין תעריף-לעובד
+      // (במצב תעריף-לעובד המחיר מחושב בשרת מספירת העובדים ששובצו, 0091).
+      if (base.contractor_id) {
+        const termsPatch: Record<string, unknown> = {}
+        if (canDelegate) termsPatch.work_site = contractorWorkSite
+        if (canEditPricing) {
+          termsPatch.price_per_worker = pricePerWorker === '' ? null : Number(pricePerWorker)
+          if (!perWorkerPricing && price !== '') termsPatch.price = Number(price)
+        }
+        if (Object.keys(termsPatch).length) {
+          const { error } = await supabase
+            .from('task_contractor_terms')
+            .update(termsPatch)
+            .eq('task_id', id)
+          if (error) throw error
+        }
       }
       // מחיר ללקוח. נכתב רק כשהוא באמת השתנה, כי כל כתיבה נועלת את המחיר
       // מפני חישוב מחדש — שמירה של המגירה בלי שנגעו בשדה לא אמורה לנעול.
@@ -377,10 +403,21 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   const typeError = touched && !form.task_type_id ? 'חובה לבחור סוג משימה' : undefined
   const dateError = touched && !form.task_date ? 'חובה לבחור תאריך' : undefined
 
-  /* staffing progress — the single number a dispatcher checks most often */
-  const assignedCount = byRole('worker').length + byRole('driver').length
+  /* staffing progress — the single number a dispatcher checks most often.
+     עובדי הקבלן נספרים כאן כמאיישים: משימה שהואצלה לקבלן והוא איישָׁ אותה
+     אינה "חסרה", גם אם אין לה task_assignments משלה (0091). */
+  const assignedCount =
+    byRole('worker').length + byRole('driver').length + chosenContractorWorkers.length
   const needed = form.worker_count ?? 0
   const understaffed = needed > 0 && assignedCount < needed
+
+  /* תמחור הקבלן: התעריף-לעובד האפקטיבי הוא דריסת המשימה, ואם ריקה — ברירת
+     המחדל של הקבלן. כשקיים תעריף כזה, מחיר המשימה מחושב בשרת (מספר העובדים
+     ששובצו × התעריף), ולכן שדה "מחיר לקבלן" מוצג לקריאה בלבד. */
+  const selectedContractor = contractors.find((c) => c.id === form.contractor_id)
+  const effectiveWorkerRate =
+    pricePerWorker !== '' ? Number(pricePerWorker) : selectedContractor?.price_per_worker ?? null
+  const perWorkerPricing = effectiveWorkerRate != null
 
   return (
     <Drawer
@@ -850,7 +887,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                 subtitle="הקבלן רואה את המשימה בלוח שלו ומשבץ אליה את עובדיו"
                 icon={<HardHat size={ICON.md} strokeWidth={STROKE} />}
               />
-              <CardBody>
+              <CardBody className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="קבלן">
                     <Select
@@ -868,18 +905,60 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                         ))}
                     </Select>
                   </Field>
-                  {form.contractor_id && canViewPricing && (
-                    <Field label="מחיר לקבלן (₪)">
-                      <Input
-                        type="number"
-                        min="0"
-                        value={price}
-                        onChange={(e) => setPrice(e.target.value)}
-                        disabled={!canEditPricing}
+                  {/* נקודת ההתחלה שהמשרד קובע לקבלן. חלה אוטומטית על עובדיו (0091). */}
+                  {form.contractor_id && (
+                    <Field label="נקודת התחלה של הקבלן">
+                      <SegmentedControl
+                        value={contractorWorkSite}
+                        onChange={(v) => canDelegate && setContractorWorkSite(v as WorkSite)}
+                        items={[
+                          { key: 'field' as WorkSite, label: 'שטח' },
+                          { key: 'warehouse' as WorkSite, label: 'מחסן' },
+                        ]}
                       />
                     </Field>
                   )}
                 </div>
+
+                {form.contractor_id && canViewPricing && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {/* התעריף-לעובד: ריק = ברירת המחדל של הקבלן. כשקיים, המחיר
+                        מחושב בשרת לפי מספר העובדים ששובצו בפועל (0091). */}
+                    <Field
+                      label="מחיר לעובד (₪)"
+                      hint={
+                        selectedContractor?.price_per_worker != null
+                          ? `ריק = ברירת מחדל של הקבלן (${fmtMoney(selectedContractor.price_per_worker)})`
+                          : 'ריק = תמחור לפי מחיר משימה קבוע'
+                      }
+                    >
+                      <Input
+                        type="number"
+                        min="0"
+                        value={pricePerWorker}
+                        placeholder={selectedContractor?.price_per_worker?.toString() ?? ''}
+                        onChange={(e) => setPricePerWorker(e.target.value)}
+                        disabled={!canEditPricing}
+                      />
+                    </Field>
+                    <Field
+                      label="מחיר לקבלן (₪)"
+                      hint={
+                        perWorkerPricing
+                          ? `מחושב: ${assignedCount} עובדים × ${fmtMoney(effectiveWorkerRate ?? 0)}`
+                          : undefined
+                      }
+                    >
+                      <Input
+                        type="number"
+                        min="0"
+                        value={perWorkerPricing ? String(effectiveWorkerRate! * assignedCount) : price}
+                        onChange={(e) => setPrice(e.target.value)}
+                        disabled={!canEditPricing || perWorkerPricing}
+                      />
+                    </Field>
+                  </div>
+                )}
               </CardBody>
             </Card>
           )}

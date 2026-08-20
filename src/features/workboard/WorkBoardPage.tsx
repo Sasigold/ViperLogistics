@@ -302,7 +302,10 @@ function useAssignmentUpdate() {
 }
 
 export default function WorkBoardPage() {
-  const { has } = useAuth()
+  const { has, me } = useAuth()
+  /* מנהל הקבלן: עמודת "קבלן" מיותרת לו — אם הוא רואה את המשימה, היא שלו.
+     במקומה הלוח מציג לו את "כמות עובדים" שהוא צריך להביא (0091). */
+  const isContractor = !!me?.profile.contractor_id || me?.profile.user_kind === 'contractor_user'
   const canInline = has(PERM.BOARD_INLINE_EDIT)
   const canOpenEvent = has(PERM.EVENTS_VIEW)
   /**
@@ -468,7 +471,13 @@ export default function WorkBoardPage() {
    * exactly the rows that could come back — a picker listing "צוות" for someone
    * who can never see it would be offering a switch wired to nothing.
    */
-  const available = useMemo(() => BOARD_FIELDS.filter((f) => !f.viewPerm || has(f.viewPerm)), [has])
+  const available = useMemo(
+    () =>
+      BOARD_FIELDS.filter(
+        (f) => (!f.viewPerm || has(f.viewPerm)) && !(isContractor && f.key === 'contractor'),
+      ),
+    [has, isContractor],
+  )
   const fields = useMemo(() => available.filter((f) => !hidden.has(f.key)), [available, hidden])
   const metrics = DENSITY[density]
   const headerH = DAY_HEAD_H + metrics.head

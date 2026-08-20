@@ -122,6 +122,24 @@ export default function EventDetailPage() {
     }
   }, [tasks])
 
+  /* מנהל הקבלן רואה כמה הוא מקבל על האירוע: סכום התשלום על משימותיו, מתוך
+     `contractor_price` שה-view כבר הגביל לתמחור שהוא רשאי לראות ולמשימות
+     שהואצלו לקבלן שלו (0091). מוצג רק לקבלן — למשרד יש כרטיס תמחור הלקוח. */
+  const isContractor = !!me?.profile.contractor_id
+  const contractorPay = useMemo(() => {
+    if (!isContractor) return null
+    const rows = tasks.filter((t) => t.contractor_price != null)
+    if (!rows.length) return null
+    return {
+      rows: rows.map((t) => ({
+        id: t.id,
+        label: t.title || t.task_type_name,
+        price: Number(t.contractor_price),
+      })),
+      total: rows.reduce((sum, t) => sum + Number(t.contractor_price), 0),
+    }
+  }, [tasks, isContractor])
+
   const filteredTasks = useMemo(() => {
     if (activeTab === 'setup') return tasks.filter((t) => t.task_type_code === 'setup')
     if (activeTab === 'teardown') return tasks.filter((t) => t.task_type_code === 'teardown')
@@ -564,6 +582,34 @@ export default function EventDetailPage() {
                       {pricing.unpriced} משימות ללא מחיר עדיין
                     </p>
                   )}
+                </CardBody>
+              </Card>
+            )}
+
+            {contractorPay && (
+              <Card>
+                <CardHeader
+                  title="התשלום שלך"
+                  subtitle="כמה אתה מקבל על האירוע"
+                  icon={<Banknote size={ICON.md} strokeWidth={STROKE} />}
+                />
+                <CardBody>
+                  <dl className="divide-y divide-line-subtle">
+                    {contractorPay.rows.map((r) => (
+                      <div key={r.id} className="flex items-start justify-between gap-3 py-2 first:pt-0">
+                        <dt className="min-w-0 shrink type-caption text-ink-tertiary">{r.label}</dt>
+                        <dd dir="ltr" className="shrink-0 tabular-nums type-body font-medium">
+                          {fmtMoney(r.price)}
+                        </dd>
+                      </div>
+                    ))}
+                    <div className="flex items-baseline justify-between gap-3 pt-2">
+                      <dt className="type-body font-semibold">סך הכול</dt>
+                      <dd dir="ltr" className="tabular-nums type-title font-semibold text-success-text">
+                        {fmtMoney(contractorPay.total)}
+                      </dd>
+                    </div>
+                  </dl>
                 </CardBody>
               </Card>
             )}
