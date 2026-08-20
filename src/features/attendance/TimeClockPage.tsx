@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { useMutation } from '@tanstack/react-query'
-import { endOfMonth, format, startOfMonth } from 'date-fns'
+import { format } from 'date-fns'
 import {
-  Banknote,
   Calendar,
   CalendarClock,
   Clock,
@@ -34,7 +33,6 @@ import {
   Skeleton,
   Textarea,
   cx,
-  fmtMoney,
   useConfirm,
   useToast,
 } from '../../components/ui'
@@ -42,11 +40,10 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
-import { fmtDate, toISODate } from '../../lib/dates'
+import { fmtDate } from '../../lib/dates'
 import { HIGHLIGHT_CLASS, useDeepLinkHighlight } from '../../lib/deepLink'
 import {
   useAttendanceInvalidate,
-  useAttendanceReport,
   useMyClockStatus,
   useSubmitAttendanceEntry,
 } from './attendanceQueries'
@@ -445,7 +442,9 @@ function TimeClock() {
         {/* דיווחים ממתינים להסכמה במידה וקיימים */}
         {reports.length > 0 && <MyReportsCard reports={reports} />}
 
-        <MyPayCard />
+        {/* השכר אינו מוצג בשעון — מקומו בדוח הנוכחות (`/attendance`), שמרכז
+            שעות, ש״נ ושכר. השעון עוסק בהחתמה של היום בלבד, והקישור למטה מוביל
+            לדוח שבו העובד רואה את השכר החודשי שלו. */}
 
         {/* המסך הזה מראה את היום; החודש כולו — שעות, ש״נ והיעדרויות — נמצא
             בדוח, ומכאן הוא במרחק לחיצה גם כשהתפריט התחתון מלא. */}
@@ -580,50 +579,6 @@ function toLocalInput(iso: string | null | undefined): string {
   const d = new Date(iso)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-/**
- * השכר של החודש, בשעון עצמו.
- *
- * ‏`attendance_report` כבר מחזיר את הסכומים לשורות של הקורא עצמו כשהוא מחזיק
- * `attendance.view_own_pay` — ומשמיט אותם לגמרי כשלא. לכן אין כאן שאלת
- * הרשאה שנייה: אם `totals.total` חזר, מותר לו לראות אותו, וזו אותה הכרעה
- * בדיוק שהשרת עשה. מה שממתין לאישור אינו נספר בו, כמו בדוח.
- */
-function MyPayCard() {
-  const from = toISODate(startOfMonth(new Date()))
-  const to = toISODate(endOfMonth(new Date()))
-  const { data } = useAttendanceReport({ from, to })
-  const totals = data?.totals
-  if (!totals || totals.total == null) return null
-
-  return (
-    <Card>
-      <CardHeader
-        title="השכר שלי החודש"
-        subtitle="שעות שאושרו בלבד"
-        icon={<Banknote size={ICON.md} strokeWidth={STROKE} />}
-      />
-      <CardBody>
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <div>
-            <div className="type-overline">שעות</div>
-            <div className="type-subtitle tabular">{fmtDuration(totals.paid_hours ?? 0)} ש׳</div>
-          </div>
-          <div>
-            <div className="type-overline">תוספות</div>
-            <div className="type-subtitle tabular" dir="ltr">{fmtMoney(totals.bonus ?? 0)}</div>
-          </div>
-          <div>
-            <div className="type-overline">לתשלום</div>
-            <div className="type-subtitle tabular font-bold text-success-text" dir="ltr">
-              {fmtMoney(totals.total)}
-            </div>
-          </div>
-        </div>
-      </CardBody>
-    </Card>
-  )
 }
 
 function SelfReportModal({ status, onClose }: { status?: ClockStatus; onClose: () => void }) {
