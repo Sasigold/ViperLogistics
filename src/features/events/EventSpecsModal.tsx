@@ -68,11 +68,20 @@ export function EventSpecsModal({
   open: boolean
   onClose: () => void
 }) {
-  const { has } = useAuth()
+  const { has, me } = useAuth()
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
   const isPhone = useIsPhone()
   const canManage = has(PERM.EVENTS_SPECS_MANAGE)
+  /**
+   * מי משווה שתי גרסאות.
+   *
+   * הצפייה היא של כל מי שרואה את האירוע (0102) — היא המסמך שצריך לבצע.
+   * ההשוואה היא שאלה אחרת: "מה השתנה מול מה שסוכם" הוא דיון מול הלקוח, ולכן
+   * הוא של מנהל המערכת ושל הלקוח עצמו. זו שאלה על *מי* ולא על מפתח: אין כאן
+   * נתון שנחשף — שתי הגרסאות גלויות לשניהם ממילא — אלא כלי שאין לו קהל שלישי.
+   */
+  const canCompare = !!me?.profile.is_admin || me?.profile.user_kind === 'customer_user'
 
   const { data: specs = [], isLoading, error, refetch } = useEventSpecs(eventId, open)
   const remove = useRemoveSpec(eventId)
@@ -95,6 +104,9 @@ export function EventSpecsModal({
 
   const right = live.find((s) => s.id === rightId) ?? active ?? null
   const left = live.find((s) => s.id === leftId) ?? null
+  /* מי שאין לו השוואה רואה תמיד את הגרסה הפעילה: הבורר מוסתר, וגם ה-state
+     אינו יכול להשאיר אותו על מצב שאין לו דרך לצאת ממנו. */
+  const view = canCompare ? mode : 'view'
 
   async function onRemove(spec: EventSpec) {
     const ok = await confirm(`להסיר את גרסה ${spec.version} של המפרט?`, {
@@ -126,7 +138,7 @@ export function EventSpecsModal({
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          {live.length > 0 && (
+          {live.length > 0 && canCompare && (
             <SegmentedControl<Mode>
               value={mode}
               onChange={setMode}
@@ -171,11 +183,11 @@ export function EventSpecsModal({
           />
         )}
 
-        {live.length > 0 && mode === 'view' && right && (
+        {live.length > 0 && view === 'view' && right && (
           <SpecPane spec={right} versions={live} onPick={setRightId} />
         )}
 
-        {live.length > 0 && mode === 'compare' && right && left && (
+        {live.length > 0 && view === 'compare' && right && left && (
           <div className={cx('grid gap-4', isPhone ? 'grid-cols-1' : 'grid-cols-2')}>
             {/* בעברית הקריאה מימין לשמאל, ולכן החדשה נפתחת מימין. התווית נגזרת
                 מהגרסאות עצמן ולא מהצד, כדי שהיא תישאר נכונה אחרי שהמשתמש יחליף

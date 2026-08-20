@@ -311,6 +311,15 @@ export function WorkersTab({
   const toast = useToast()
   const has = useAuth((s) => s.has)
   const mayManage = canManage ?? has(PERM.CONTRACTORS_MANAGE_WORKERS)
+  /**
+   * מה שהקבלן עושה בסגל שלו, ומה שנשאר של המשרד.
+   *
+   * ‏`portal.manage_workers` פותח לו את המסך: לראות מי בסגל ולהוסיף עובד.
+   * מעקב האיחורים והסרה מהסגל אינם שם — הראשון קובע על מי חל קנס האיחור
+   * *שלו* (0091), והשני מוחק שורה שנוכחות ותשלומים מצביעים עליה. שניהם
+   * נשארים מאחורי המפתח המשרדי.
+   */
+  const mayManageTerms = has(PERM.CONTRACTORS_MANAGE_WORKERS)
   // יצירת חשבון היא פעולה של המשרד, לא של הקבלן — ולכן מפתח users ולא portal.
   const canCreateLogin = has(PERM.USERS_CREATE_LOGIN) && has(PERM.USERS_CREATE)
   const { confirm, dialog } = useConfirm()
@@ -441,7 +450,7 @@ export function WorkersTab({
                     {[w.phone, w.id_number].filter(Boolean).join(' · ') || '—'}
                   </p>
                 </div>
-                {mayManage && (
+                {mayManageTerms && (
                   <Switch
                     checked={w.lateness_tracked}
                     onChange={(on) => toggleLateness.mutate({ id: w.id, on })}
@@ -470,7 +479,7 @@ export function WorkersTab({
                     </Button>
                   )
                 )}
-                {mayManage && (
+                {mayManageTerms && (
                   <IconButton label={`הסרת ${w.full_name}`} size="sm" onClick={() => void remove(w)} className="hover:text-error">
                     <Trash2 size={ICON.sm} strokeWidth={STROKE} />
                   </IconButton>
