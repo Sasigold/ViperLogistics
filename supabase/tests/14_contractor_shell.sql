@@ -130,8 +130,14 @@ select t_eq('מנהל קבלן: אין events.list (הקטלוג)',  app.has('ev
 select t_eq('מנהל קבלן: אין events.export',        app.has('events.export'), false);
 select t_eq('מנהל קבלן: יומן האירוע נפתח',          app.has('events.activity_log'), true);
 select t_eq('מנהל קבלן: והוא כותב בו',              app.has('events.activity_note'), true);
-select t_eq('מנהל קבלן: הגדרות שכר ושעון לסגל שלו', app.has('portal.worker_settings'), true);
+-- ‏0106: הגדרות השכר והשעון של הסגל חזרו למשרד. מה שנשאר לקבלן במסך "העובדים
+-- שלי" הוא לראות את הרשימה ולהוסיף עובד.
+select t_eq('מנהל קבלן: אין הגדרות שכר ושעון לסגל', app.has('portal.worker_settings'), false);
 select t_eq('מנהל קבלן: אין attendance.manage_pay המשרדי', app.has('attendance.manage_pay'), false);
+-- וכלי התכנון שמעל הלו״ז אינם שלו (0106), כמו אצל עובד השטח מאז 0079
+select t_eq('מנהל קבלן: אין בורר תצוגה בלו״ז',    app.has('board.columns'), false);
+select t_eq('מנהל קבלן: ואין שורת סינון',          app.has('board.filter'), false);
+select t_eq('מנהל קבלן: אבל הלוח עצמו נשאר',       app.has('board.view'), true);
 select t_eq('מנהל קבלן: אין dashboard.view',       app.has('dashboard.view'), false);
 select t_eq('מנהל קבלן: אין customers.view',       app.has('customers.view'), false);
 select t_eq('מנהל קבלן: אין users.view',           app.has('users.view'), false);
@@ -181,6 +187,8 @@ select t_eq('עובד קבלן: ולא את הטלפון',
   app.can_view_field('event', 'contact_phone'), false);
 select t_eq('עובד קבלן: אינו כותב ביומן האירוע',   app.has('events.activity_note'), false);
 select t_eq('עובד קבלן: ואינו קובע הגדרות לאיש',   app.has('portal.worker_settings'), false);
+select t_eq('עובד קבלן: אין בורר תצוגה בלו״ז',     app.has('board.columns'), false);
+select t_eq('עובד קבלן: ואין שורת סינון',           app.has('board.filter'), false);
 
 \echo '--- §5: הרשימה המאוחדת של מי שניתן לשבץ ---'
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000014a1', false);
@@ -306,22 +314,42 @@ select t_eq('ו-calendar.view כמוהו',
      join permission_roles r on r.id = rp.role_id
     where r.key = 'contractor_manager' and rp.permission_key = 'calendar.view'), true);
 
-\echo '--- §6: הגדרות שכר ושעון לסגל של הקבלן (0103) ---'
--- הכתיבה עוברת ב-RPC ולא בטבלה: הטריגר הגנרי על העמודות דורש מפתח משרדי
--- לתעריף, ו-`portal.worker_settings` אינו כזה. ההיקף נבדק בגוף הפונקציה.
+\echo '--- §6: הגדרות שכר ושעון אינן של הקבלן (0106) ---'
+-- ‏0103 פתח לו אותן, ו-0106 מחזיר אותן למשרד: הקבלן רואה את הסגל ומוסיף
+-- עובד, ותו לא. ה-RPC והזרוע בפוליסה נשארו — שניהם נשענים על המפתח, ולכן מי
+-- שאינו מחזיק אותו נדחה בשניהם, ואפשר להעניק אותו במסך ההרשאות בלי מיגרציה.
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000014a1', false);
 
-select t_expect_ok('מנהל קבלן קובע תעריף לעובד מהסגל שלו', $$
+select t_expect_fail('מנהל קבלן אינו קובע תעריף לעובד מהסגל שלו', $$
+  select portal_set_worker_settings('20000000-0000-0000-0000-0000000014a3',
+                                    '{"hourly_rate": 55}'::jsonb) $$);
+select t_eq('ולא נכתבה שורת הגדרות',
+  (select count(*)::int from worker_pay_settings
+    where profile_id = '20000000-0000-0000-0000-0000000014a3'), 0);
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000014a2', false);
+select t_expect_fail('וגם עובד קבלן אינו קובע לעצמו', $$
+  select portal_set_worker_settings('20000000-0000-0000-0000-0000000014a2',
+                                    '{"hourly_rate": 99}'::jsonb) $$);
+reset role;
+-- ‏`app.guard_permission_grant` (0014) מדלגת רק כשאין JWT כלל, ולכן הטענה
+-- שנשארה מההתחזות הקודמת הייתה חוסמת את ההענקה שלמטה.
+select set_config('request.jwt.claim.sub', '', false);
+
+-- והמפתח, כשמעניקים אותו במפורש, עדיין פותח את שני הצדדים — הכתיבה והקריאה.
+insert into user_permission_grants (profile_id, permission_key, allowed)
+values ('20000000-0000-0000-0000-0000000014a1', 'portal.worker_settings', true)
+on conflict (profile_id, permission_key) do update set allowed = true;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000014a1', false);
+select t_expect_ok('מענק אישי מחזיר את היכולת', $$
   select portal_set_worker_settings('20000000-0000-0000-0000-0000000014a3',
                                     '{"hourly_rate": 55, "overtime_enabled": false}'::jsonb) $$);
 select t_eq('...והתעריף נשמר',
   (select hourly_rate::text from worker_pay_settings
     where profile_id = '20000000-0000-0000-0000-0000000014a3'), '55.00');
-select t_eq('...וגם מה שנשלח לצדו',
-  (select overtime_enabled from worker_pay_settings
-    where profile_id = '20000000-0000-0000-0000-0000000014a3'), false);
-
 -- עדכון חלקי: מפתח שלא נשלח שומר על ערכו
 select t_expect_ok('שמירה שנייה נוגעת רק במה שנשלח', $$
   select portal_set_worker_settings('20000000-0000-0000-0000-0000000014a3',
@@ -329,21 +357,15 @@ select t_expect_ok('שמירה שנייה נוגעת רק במה שנשלח', $$
 select t_eq('התעריף לא נמחק',
   (select hourly_rate::text from worker_pay_settings
     where profile_id = '20000000-0000-0000-0000-0000000014a3'), '55.00');
-
-select t_expect_fail('ואינו קובע דבר לעובד של קבלן אחר', $$
+select t_expect_fail('ועדיין אינו קובע דבר לעובד של קבלן אחר', $$
   select portal_set_worker_settings('20000000-0000-0000-0000-0000000014a4',
                                     '{"hourly_rate": 55}'::jsonb) $$);
-
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000014a2', false);
-select t_expect_fail('ועובד קבלן אינו קובע לעצמו', $$
-  select portal_set_worker_settings('20000000-0000-0000-0000-0000000014a2',
-                                    '{"hourly_rate": 99}'::jsonb) $$);
-
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000014a1', false);
-select t_eq('והמנהל קורא את ההגדרות של הסגל שלו',
-  (select count(*)::int from worker_pay_settings
-    where profile_id = '20000000-0000-0000-0000-0000000014a3'), 1);
 reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+delete from user_permission_grants
+ where profile_id = '20000000-0000-0000-0000-0000000014a1'
+   and permission_key = 'portal.worker_settings';
 
 \echo '--- §7: מנהל קבלן שהוא גם עובד (0104) ---'
 -- שני התפקידים על אותו אדם. תפקיד העובד סוגר במפורש את מודול הפורטל, ומנהל
