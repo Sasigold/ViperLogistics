@@ -107,7 +107,16 @@ select t_eq('מנהל קבלן: portal.attendance',      app.has('portal.attenda
 select t_eq('מנהל קבלן: calendar.view',       app.has('calendar.view'), true);
 select t_eq('מנהל קבלן: board.view',          app.has('board.view'), true);
 select t_eq('מנהל קבלן: board.view_staffing', app.has('board.view_staffing'), true);
-select t_eq('מנהל קבלן: אין events.view (עמוד האירועים)', app.has('events.view'), false);
+-- ‏0072 סגר לו את events.view כדי לחסום את הקטלוג ב-/events; ‏0082 הוציא את
+-- הקטלוג למפתח משלו, ו-0103 מחזיר לו את דף האירוע עצמו — שם יושבים היומן
+-- והמפרט. הקטלוג והייצוא, ששניהם נגזרים ממנו, נשארים סגורים במפורש.
+select t_eq('מנהל קבלן: events.view (דף האירוע, 0103)', app.has('events.view'), true);
+select t_eq('מנהל קבלן: אין events.list (הקטלוג)',  app.has('events.list'), false);
+select t_eq('מנהל קבלן: אין events.export',        app.has('events.export'), false);
+select t_eq('מנהל קבלן: יומן האירוע נפתח',          app.has('events.activity_log'), true);
+select t_eq('מנהל קבלן: והוא כותב בו',              app.has('events.activity_note'), true);
+select t_eq('מנהל קבלן: הגדרות שכר ושעון לסגל שלו', app.has('portal.worker_settings'), true);
+select t_eq('מנהל קבלן: אין attendance.manage_pay המשרדי', app.has('attendance.manage_pay'), false);
 select t_eq('מנהל קבלן: אין dashboard.view',       app.has('dashboard.view'), false);
 select t_eq('מנהל קבלן: אין customers.view',       app.has('customers.view'), false);
 select t_eq('מנהל קבלן: אין users.view',           app.has('users.view'), false);
@@ -118,8 +127,12 @@ select t_eq('מנהל קבלן: אין board.inline_edit',    app.has('board.inl
 select t_eq('מנהל קבלן: אין tasks.edit',           app.has('tasks.edit'), false);
 select t_eq('מנהל קבלן: אין tasks.publish',        app.has('tasks.publish'), false);
 select t_eq('מנהל קבלן: אין calendar.drag',        app.has('calendar.drag'), false);
+-- ‏0103: הדחייה על איש הקשר יושבת על קהל הקבלן, וההיתר חוזר על תפקיד המנהל —
+-- ‏`can_view_field` קורא תפקיד לפני קהל, ולכן המנהל גובר על העובד.
+select t_eq('מנהל קבלן: רואה את איש הקשר של הלקוח',
+  app.can_view_field('event', 'contact_phone'), true);
 
-\echo '--- ולוח השנה שלו לא איבד הקשר כשנסגר events.view ---'
+\echo '--- והמפתח אינו מרחיב את מה שהוא רואה: הזרוע שלו נשענת על portal.view ---'
 select t_eq('מנהל קבלן עדיין רואה את האירוע שיש בו משימה שלו',
   (select count(*)::int from events where id = '30000000-0000-0000-0000-000000000014'), 1);
 
@@ -146,21 +159,30 @@ select t_eq('עובד קבלן: אין portal.view',          app.has('portal.vi
 select t_eq('עובד קבלן: אין portal.attendance',    app.has('portal.attendance'), false);
 select t_eq('עובד קבלן: אין attendance.view_all',  app.has('attendance.view_all'), false);
 select t_eq('עובד קבלן: אין contractors.view',     app.has('contractors.view'), false);
+-- ‏0103: איש הקשר של הלקוח אינו שלו — לא במגירת המשמרת ולא בשום מקום אחר
+select t_eq('עובד קבלן: אינו רואה את שם איש הקשר',
+  app.can_view_field('event', 'contact_name'), false);
+select t_eq('עובד קבלן: ולא את הטלפון',
+  app.can_view_field('event', 'contact_phone'), false);
+select t_eq('עובד קבלן: אינו כותב ביומן האירוע',   app.has('events.activity_note'), false);
+select t_eq('עובד קבלן: ואינו קובע הגדרות לאיש',   app.has('portal.worker_settings'), false);
 
 \echo '--- §5: הרשימה המאוחדת של מי שניתן לשבץ ---'
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000014a1', false);
 
-select t_eq('הרשימה מחזירה את שורת הרוסטר ואת החשבון שנרשם במשרד',
-  (select count(*)::int from jsonb_array_elements(contractor_assignable_workers())), 2);
+-- שלושה מ-0103: שורת הרוסטר, החשבון שנרשם במשרד, והמנהל עצמו — קבלן קטן הוא
+-- לרוב גם העובד הראשון של עצמו, ומי שרק מנהל פשוט לא נבחר מהרשימה.
+select t_eq('הרשימה מחזירה את שורת הרוסטר, את החשבון מהמשרד ואת המנהל',
+  (select count(*)::int from jsonb_array_elements(contractor_assignable_workers())), 3);
 select t_eq('...והחשבון מהמשרד מגיע בלי worker_id',
   (select count(*)::int from jsonb_array_elements(contractor_assignable_workers()) e
     where e->>'full_name' = 'עובד שנרשם במשרד' and e->>'worker_id' is null), 1);
 select t_eq('...ושורת הרוסטר מגיעה עם worker_id',
   (select e->>'worker_id' from jsonb_array_elements(contractor_assignable_workers()) e
     where e->>'full_name' = 'עובד מהרוסטר'), '12000000-0000-0000-0000-00000000014a');
-select t_eq('מנהל הקבלן עצמו אינו ברשימה',
+select t_eq('מנהל הקבלן עצמו ברשימה, ויכול לשבץ את עצמו (0103)',
   (select count(*)::int from jsonb_array_elements(contractor_assignable_workers()) e
-    where e->>'full_name' = 'מנהל קבלן א'), 0);
+    where e->>'full_name' = 'מנהל קבלן א'), 1);
 select t_eq('ואיש מקבלן אחר אינו ברשימה',
   (select count(*)::int from jsonb_array_elements(contractor_assignable_workers()) e
     where e->>'full_name' = 'עובד של קבלן ב'), 0);
@@ -173,7 +195,7 @@ select t_eq('העברת קבלן אחר כארגומנט מוחזרת לקבלן
     where e->>'full_name' = 'עובד של קבלן ב'), 0);
 select t_eq('...והוא עדיין מקבל את שלו',
   (select count(*)::int from jsonb_array_elements(
-     contractor_assignable_workers('11000000-0000-0000-0000-00000000014b'))), 2);
+     contractor_assignable_workers('11000000-0000-0000-0000-00000000014b'))), 3);
 
 \echo '--- שיבוץ שורת רוסטר קיימת ---'
 select t_expect_ok('מנהל קבלן משבץ עובד מהרוסטר', $$
@@ -268,6 +290,45 @@ select t_eq('ו-calendar.view כמוהו',
   (select allowed from role_permissions rp
      join permission_roles r on r.id = rp.role_id
     where r.key = 'contractor_manager' and rp.permission_key = 'calendar.view'), true);
+
+\echo '--- §6: הגדרות שכר ושעון לסגל של הקבלן (0103) ---'
+-- הכתיבה עוברת ב-RPC ולא בטבלה: הטריגר הגנרי על העמודות דורש מפתח משרדי
+-- לתעריף, ו-`portal.worker_settings` אינו כזה. ההיקף נבדק בגוף הפונקציה.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000014a1', false);
+
+select t_expect_ok('מנהל קבלן קובע תעריף לעובד מהסגל שלו', $$
+  select portal_set_worker_settings('20000000-0000-0000-0000-0000000014a3',
+                                    '{"hourly_rate": 55, "overtime_enabled": false}'::jsonb) $$);
+select t_eq('...והתעריף נשמר',
+  (select hourly_rate::text from worker_pay_settings
+    where profile_id = '20000000-0000-0000-0000-0000000014a3'), '55.00');
+select t_eq('...וגם מה שנשלח לצדו',
+  (select overtime_enabled from worker_pay_settings
+    where profile_id = '20000000-0000-0000-0000-0000000014a3'), false);
+
+-- עדכון חלקי: מפתח שלא נשלח שומר על ערכו
+select t_expect_ok('שמירה שנייה נוגעת רק במה שנשלח', $$
+  select portal_set_worker_settings('20000000-0000-0000-0000-0000000014a3',
+                                    '{"min_hours_per_shift": 4}'::jsonb) $$);
+select t_eq('התעריף לא נמחק',
+  (select hourly_rate::text from worker_pay_settings
+    where profile_id = '20000000-0000-0000-0000-0000000014a3'), '55.00');
+
+select t_expect_fail('ואינו קובע דבר לעובד של קבלן אחר', $$
+  select portal_set_worker_settings('20000000-0000-0000-0000-0000000014a4',
+                                    '{"hourly_rate": 55}'::jsonb) $$);
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000014a2', false);
+select t_expect_fail('ועובד קבלן אינו קובע לעצמו', $$
+  select portal_set_worker_settings('20000000-0000-0000-0000-0000000014a2',
+                                    '{"hourly_rate": 99}'::jsonb) $$);
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000014a1', false);
+select t_eq('והמנהל קורא את ההגדרות של הסגל שלו',
+  (select count(*)::int from worker_pay_settings
+    where profile_id = '20000000-0000-0000-0000-0000000014a3'), 1);
+reset role;
 
 \echo '--- §4: קישור ההתראה אינו מפצל עוד לפי סוג משתמש ---'
 select t_eq('משימה מובילה ללוח גם לקבלן',

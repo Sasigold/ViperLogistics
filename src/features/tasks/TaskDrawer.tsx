@@ -7,6 +7,7 @@ import {
   HardHat,
   ICON,
   MapPin,
+  Paperclip,
   RefreshCw,
   STROKE,
   Trash2,
@@ -49,6 +50,8 @@ import {
   useTrucks,
 } from '../../lib/queries'
 import { Breakdown } from '../customers/PricingTab'
+import { EventSpecsModal } from '../events/EventSpecsModal'
+import { useEventSpecs } from '../events/specQueries'
 import { TaskPnlCard } from '../reports/TaskPnlCard'
 import { useWarehouses } from '../attendance/attendanceQueries'
 import type {
@@ -131,6 +134,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   const canAssignContractor = has(PERM.PORTAL_ASSIGN_WORKERS) || has(PERM.CONTRACTORS_ASSIGN_WORKERS)
   /* אי-התייצבות נקבעת ע״י מנהל/משרד (contractors.assign_workers), לא ע״י הקבלן. */
   const canMarkNoShow = has(PERM.CONTRACTORS_ASSIGN_WORKERS)
+  const canViewSpecs = has(PERM.EVENTS_SPECS_VIEW)
 
   const { data: taskTypes = [] } = useTaskTypes()
   const { data: statuses = [] } = useStatuses('task')
@@ -184,6 +188,31 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   const [touched, setTouched] = useState(false)
   /* איזה קבלן נבחר בבורר ה"הוסף האצלה" לפני הלחיצה על הוספה. */
   const [addContractor, setAddContractor] = useState<string>('')
+
+  const [specsOpen, setSpecsOpen] = useState(false)
+  /**
+   * המפרט של האירוע שהמשימה שייכת אליו.
+   *
+   * הרשימה נטענת עם המגירה ולא עם המודאל, כי המונה על הכפתור הוא מה שאומר אם
+   * יש בכלל מה לפתוח — ובאותו מפתח שאילתה שהמודאל משתמש בו, כך שהפתיחה מיידית.
+   * שם האירוע נשלף רק כשהמודאל נפתח: הוא כותרת, ולא סיבה לשאילתה נוספת בכל
+   * פתיחה של משימה.
+   */
+  const specEventId = form.event_id ?? null
+  const { data: specs = [] } = useEventSpecs(specEventId ?? '', open && !!specEventId && canViewSpecs)
+  const { data: specEvent } = useQuery({
+    queryKey: ['events', 'specHeader', specEventId],
+    enabled: specsOpen && !!specEventId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('events')
+        .select('end_client_name, event_date')
+        .eq('id', specEventId!)
+        .single()
+      if (error) throw error
+      return data as { end_client_name: string | null; event_date: string }
+    },
+  })
 
   /* ‏0096: שורת terms לכל קבלן שהואצל אליו המשימה. */
   const terms = existing?.terms ?? []
@@ -457,6 +486,14 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       }
     >
       {dialog}
+      {specEventId && canViewSpecs && (
+        <EventSpecsModal
+          eventId={specEventId}
+          eventTitle={specEvent?.end_client_name || (specEvent ? fmtDate(specEvent.event_date) : '')}
+          open={specsOpen}
+          onClose={() => setSpecsOpen(false)}
+        />
+      )}
       {taskId && isLoading ? (
         <div className="space-y-4">
           <Skeleton className="h-20 w-full" />
@@ -467,7 +504,23 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
         <div className="space-y-4">
           {/* ── what ─────────────────────────────────────────────────────── */}
           <Card>
-            <CardHeader title="מהות המשימה" icon={<Briefcase size={ICON.md} strokeWidth={STROKE} />} />
+            <CardHeader
+              title="מהות המשימה"
+              icon={<Briefcase size={ICON.md} strokeWidth={STROKE} />}
+              /* המפרט של האירוע, מתוך המשימה. דף האירוע אינו נפתח לכולם —
+                 מנהל קבלן ועובד קבלן מגיעים ללו״ז ולא ל-/events/:id — והמגירה
+                 היא המקום היחיד שבו הם רואים משימה שיש לה אירוע. מ-0102
+                 הצפייה במפרט נגזרת מהאירוע, ולכן מה שנשאר הוא לתת לה דלת. */
+              actions={
+                specEventId && canViewSpecs ? (
+                  <Button size="sm" onClick={() => setSpecsOpen(true)}>
+                    <Paperclip size={ICON.sm} strokeWidth={STROKE} />
+                    מפרט
+                    {specs.length > 0 && <Badge tone="primary">{specs.length}</Badge>}
+                  </Button>
+                ) : undefined
+              }
+            />
             <CardBody className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="סוג משימה" required error={typeError}>

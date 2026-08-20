@@ -25,8 +25,11 @@ const triParse = (v: string): boolean | null => (v === '' ? null : v === 'true')
 export function EmployeeWorkSettingsCard({ profileId }: { profileId: string }) {
   const toast = useToast()
   const has = useAuth((s) => s.has)
-  const canPay = has(PERM.ATTENDANCE_MANAGE_PAY)
-  const canClock = has(PERM.ATTENDANCE_MANAGE_CLOCK)
+  /* מנהל קבלן מגיע לכאן עם מפתח אחד לשני הסקשנים: הוא קובע לעובדיו גם תעריף
+     וגם שעון, וההיקף שלו — הסגל של הקבלן שלו — נאכף בשרת ולא כאן (0103). */
+  const canOwnStaff = has(PERM.PORTAL_WORKER_SETTINGS)
+  const canPay = has(PERM.ATTENDANCE_MANAGE_PAY) || canOwnStaff
+  const canClock = has(PERM.ATTENDANCE_MANAGE_CLOCK) || canOwnStaff
   const { data, isLoading } = useWorkerPaySettings(profileId)
   const save = useSaveWorkerPaySettings(profileId)
 

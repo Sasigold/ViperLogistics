@@ -94,7 +94,9 @@ select t_eq('הנהג פותח את דף האירוע', app.has('events.view'), 
 -- ההכרעה של 0079 נשמרת: לראות את האירוע, לא לערוך אותו ולא לקרוא את יומנו
 select t_eq('אך אינו עורך אותו',       app.has('events.edit'), false);
 select t_eq('ואינו קורא את היומן',      app.has('events.activity_log'), false);
-select t_eq('ואינו רואה את המפרט',      app.has('events.specs_view'), false);
+-- ‏0102 הוציא את המפרט מהדחייה הגורפת: מי שנוסע לאירוע קורא את המסמך שלו
+select t_eq('ואת המפרט הוא כן רואה',    app.has('events.specs_view'), true);
+select t_eq('אך אינו מעלה אותו',        app.has('events.specs_manage'), false);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 

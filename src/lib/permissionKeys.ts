@@ -139,6 +139,9 @@ export const PERM = {
   PORTAL_VIEW_FINANCIALS: 'portal.view_financials',
   PORTAL_MANAGE_WORKERS: 'portal.manage_workers',
   PORTAL_APPROVE_ATTENDANCE: 'portal.approve_attendance',
+  /* הגדרות שכר ושעון לסגל של הקבלן (0103). מפתח נפרד מהמשרדי
+     `attendance.manage_pay`, שמתיר לכתוב את ההגדרות של כל אדם במערכת. */
+  PORTAL_WORKER_SETTINGS: 'portal.worker_settings',
   NOTIFICATIONS_PREFERENCES: 'notifications.preferences',
   NOTIFICATIONS_MANAGE: 'notifications.manage',
   SETTINGS_VIEW: 'settings.view',
