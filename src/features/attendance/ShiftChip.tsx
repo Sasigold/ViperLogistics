@@ -65,7 +65,7 @@ export function ShiftChip({
           {fmtShiftRange(shift.shift_start, shift.shift_end)}
         </span>
         {shift.work_site === 'warehouse' && (
-          <MapPin size={ICON.xs} strokeWidth={STROKE} className="shrink-0" aria-label="יוצא מהמחסן" />
+          <MapPin size={ICON.xs} strokeWidth={STROKE} className="shrink-0" aria-label="הגעה למחסן" />
         )}
         {/* התאום של הסימון שמימין: שם — יוצאים מהמחסן, כאן — חוזרים אליו,
             והשעה שבצ׳יפ היא שעת ההגעה למחסן ולא סוף העבודה */}
