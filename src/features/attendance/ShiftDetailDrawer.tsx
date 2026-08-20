@@ -42,6 +42,16 @@ const NEUTRAL = '#64748b'
 const hhmm = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', hour12: false }) : ''
 
+/**
+ * כל משאיות המשימה, ולא רק אחת: משימה יכולה להיות משובצת ליותר ממשאית אחת
+ * (0035), ומי שקורא את המשמרת צריך לראות את כולן. `truck_list` הוא המקור;
+ * `truck_name` הוא הנפילה חזרה לטקסט חופשי כשאין משאיות מהמאגר.
+ */
+const truckNames = (t: Pick<ShiftTaskRow, 'truck_list' | 'truck_name'>): string | null =>
+  t.truck_list && t.truck_list.length > 0
+    ? t.truck_list.map((tr) => tr.name).join(', ')
+    : t.truck_name
+
 export function ShiftDetailDrawer({
   shift,
   employeeName,
@@ -114,7 +124,7 @@ export function ShiftDetailDrawer({
             {startsAtWarehouse && (
               <Badge tone="warning">
                 <Package size={ICON.sm} strokeWidth={STROKE} />
-                {warehouseName ? `יוצא מ${warehouseName}` : 'יוצא מהמחסן'}
+                {warehouseName ? `הגעה ל${warehouseName}` : 'הגעה למחסן'}
               </Badge>
             )}
           </div>
@@ -159,10 +169,13 @@ export function ShiftDetailDrawer({
               <span aria-hidden className="absolute inset-y-2 start-[7px] w-px bg-line" />
 
               {startsAtWarehouse && (
+                /* תחילת המשמרת היא ההגעה למחסן, לא היציאה ממנו — וזו גם השעה
+                   שמולה נמדדת ההחתמה. השעה נלקחת מ-`warehouse_start_at`
+                   (ההגעה למחסן) ולא מ-`start_at` (תחילת העבודה בשטח). */
                 <RailNode
                   icon={<Package size={ICON.xs} strokeWidth={STROKE} />}
-                  time={hhmm(tasks[0]?.start_at ?? shift.shift_start)}
-                  text={warehouseName ? `יציאה מ${warehouseName}` : 'יציאה מהמחסן'}
+                  time={hhmm(tasks[0]?.warehouse_start_at ?? data?.shift.start ?? shift.shift_start)}
+                  text={warehouseName ? `הגעה ל${warehouseName}` : 'הגעה למחסן'}
                 />
               )}
 
@@ -318,7 +331,7 @@ function TaskCard({ task: t, onOpen }: { task: ShiftTaskRow; onOpen: () => void 
             <LocationText value={t.location_text} />
           </Chip>
         )}
-        {t.truck_name && <Chip icon={<Truck size={ICON.xs} strokeWidth={STROKE} />}>{t.truck_name}</Chip>}
+        {truckNames(t) && <Chip icon={<Truck size={ICON.xs} strokeWidth={STROKE} />}>{truckNames(t)}</Chip>}
         {t.my_role && (
           <Chip icon={<User size={ICON.xs} strokeWidth={STROKE} />}>{ASSIGNMENT_ROLE_LABELS[t.my_role]}</Chip>
         )}
@@ -367,7 +380,7 @@ function TaskDetails({ task: t, onBack }: { task: ShiftTaskRow; onBack: () => vo
     ],
     ['משך', t.hours_count != null ? `${fmtDuration(t.hours_count)} ש׳` : null],
     ['מיקום', t.location_text ? <LocationText key="loc" value={t.location_text} /> : null],
-    ['משאית', t.truck_name],
+    [(t.truck_list?.length ?? 0) > 1 ? 'משאיות' : 'משאית', truckNames(t)],
     ['אופן ביצוע', t.execution_method_name],
     ['התפקיד שלי', t.my_role ? ASSIGNMENT_ROLE_LABELS[t.my_role] : null],
     [
@@ -398,7 +411,7 @@ function TaskDetails({ task: t, onBack }: { task: ShiftTaskRow; onBack: () => vo
         {t.work_site === 'warehouse' && (
           <Badge tone="warning">
             <Package size={ICON.sm} strokeWidth={STROKE} />
-            {t.warehouse_name ? `יוצא מ${t.warehouse_name}` : 'יוצא מהמחסן'}
+            {t.warehouse_name ? `הגעה ל${t.warehouse_name}` : 'הגעה למחסן'}
           </Badge>
         )}
         {t.gap_minutes != null && t.gap_minutes > 0 && (

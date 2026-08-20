@@ -943,7 +943,10 @@ export interface ShiftTaskRow {
   gap_minutes: number | null
   status_name: string | null
   status_color: string | null
+  /** המשאית של העובד עצמו, או הראשית — לתאימות ולטקסט חופשי. ראו truck_list. */
   truck_name: string | null
+  /** כל משאיות המשימה לפי סדר. null כשאין משאיות משובצות (אז יש truck_name). */
+  truck_list: { id: string; name: string }[] | null
   execution_method_name: string | null
   /** null לעובד קבלן, שאין לו שורת task_assignments ולכן אין לו תפקיד */
   my_role: StaffRole | null
