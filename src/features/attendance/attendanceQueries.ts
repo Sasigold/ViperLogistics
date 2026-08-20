@@ -326,9 +326,22 @@ export function useWorkerPaySettings(profileId?: string | null) {
 
 export function useSaveWorkerPaySettings(profileId?: string | null) {
   const qc = useQueryClient()
+  const has = useAuth((s) => s.has)
   return useMutation({
     mutationFn: async (patch: Partial<WorkerPaySettings>) => {
       if (!profileId) throw new Error('חסר מזהה עובד')
+      /* מנהל קבלן כותב דרך ה-RPC ולא בטבלה: הטריגר הגנרי על העמודות (0012)
+         דורש מפתח משרדי לכל שדה שכר, והוא אינו מכיר את הזרוע של הקבלן.
+         `portal_set_worker_settings` (0103) מכריזה על ההיקף שלה — הסגל של
+         הקבלן הקורא — ומדליקה `app.system_write` סביב הכתיבה עצמה. */
+      if (!has(PERM.ATTENDANCE_MANAGE_PAY) && !has(PERM.ATTENDANCE_MANAGE_CLOCK)) {
+        const { error } = await supabase.rpc('portal_set_worker_settings', {
+          p_profile_id: profileId,
+          p_settings: patch,
+        })
+        if (error) throw error
+        return
+      }
       const { error } = await supabase
         .from('worker_pay_settings')
         .upsert({ profile_id: profileId, ...patch }, { onConflict: 'profile_id' })

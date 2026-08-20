@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Banknote, Briefcase, Clock, ICON, Plus, STROKE, Trash2, User, Wallet } from '../../components/ui/icons'
+import {
+  Banknote,
+  Briefcase,
+  Clock,
+  ICON,
+  Plus,
+  STROKE,
+  SlidersHorizontal,
+  Trash2,
+  User,
+  Wallet,
+} from '../../components/ui/icons'
 import {
   Avatar,
   Badge,
@@ -32,6 +43,7 @@ import { supabase, invokeFunction } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { useContractorAssignableWorkers, useContractorWorkers } from '../../lib/queries'
 import { fmtDate, fmtMoney } from '../../lib/dates'
+import { EmployeeWorkSettingsCard } from '../attendance/EmployeeWorkSettingsCard'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
@@ -321,6 +333,19 @@ export function WorkersTab({
     () => new Set(assignable.filter((a) => a.has_login && a.worker_id).map((a) => a.worker_id as string)),
     [assignable],
   )
+  /* שורת סגל → חשבון. הגדרות השכר והשעון יושבות על `profile_id`, ולכן הן
+     קיימות רק לעובד שיש לו התחברות — למי שאין, אין שעון ואין שורת שכר. */
+  const profileOf = useMemo(
+    () =>
+      new Map(
+        assignable
+          .filter((a) => a.worker_id && a.profile_id)
+          .map((a) => [a.worker_id as string, a.profile_id as string]),
+      ),
+    [assignable],
+  )
+  const canSettings = has(PERM.ATTENDANCE_MANAGE_PAY) || has(PERM.ATTENDANCE_MANAGE_CLOCK) || has(PERM.PORTAL_WORKER_SETTINGS)
+  const [settingsFor, setSettingsFor] = useState<{ name: string; profileId: string } | null>(null)
 
   const add = useMutation({
     mutationFn: async () => {
@@ -423,6 +448,18 @@ export function WorkersTab({
                     label="מעקב איחורים"
                   />
                 )}
+                {/* הגדרות שכר ושעון של העובד — לעובד שיש לו חשבון. במשרד זה
+                    המפתח המשרדי; אצל הקבלן `portal.worker_settings`, שההיקף
+                    שלו הוא הסגל שלו בלבד ונאכף בשרת (0103). */}
+                {canSettings && profileOf.has(w.id) && (
+                  <IconButton
+                    label={`הגדרות שכר ושעון ל${w.full_name}`}
+                    size="sm"
+                    onClick={() => setSettingsFor({ name: w.full_name, profileId: profileOf.get(w.id)! })}
+                  >
+                    <SlidersHorizontal size={ICON.sm} strokeWidth={STROKE} />
+                  </IconButton>
+                )}
                 {hasLogin.has(w.id) ? (
                   <Badge tone="success">שעון נוכחות</Badge>
                 ) : (
@@ -450,6 +487,17 @@ export function WorkersTab({
           onClose={() => setClockFor(null)}
           onDone={() => void qc.invalidateQueries({ queryKey: ['profiles'] })}
         />
+      )}
+      {settingsFor && (
+        <Modal
+          open
+          onClose={() => setSettingsFor(null)}
+          size="lg"
+          title={`הגדרות שכר ושעון — ${settingsFor.name}`}
+          footer={<Button onClick={() => setSettingsFor(null)}>סגירה</Button>}
+        >
+          <EmployeeWorkSettingsCard profileId={settingsFor.profileId} />
+        </Modal>
       )}
     </Card>
   )
