@@ -596,7 +596,10 @@ function TasksTab({ contractorId }: { contractorId: string }) {
       const { error } = await supabase
         .from('task_contractor_terms')
         .update(paid ? { paid_at: new Date().toISOString(), paid_amount: row?.price ?? 0 } : { paid_at: null, paid_amount: null })
+        /* ‏0096: למשימה יכולות להיות כמה שורות terms — מסמנים תשלום רק על
+           השורה של הקבלן הזה, לא על כל הקבלנים במשימה. */
         .eq('task_id', taskId)
+        .eq('contractor_id', contractorId)
       if (error) throw error
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['contractor_terms'] }),
@@ -605,7 +608,11 @@ function TasksTab({ contractorId }: { contractorId: string }) {
 
   const updatePrice = useMutation({
     mutationFn: async ({ taskId, price }: { taskId: string; price: number }) => {
-      const { error } = await supabase.from('task_contractor_terms').update({ price }).eq('task_id', taskId)
+      const { error } = await supabase
+        .from('task_contractor_terms')
+        .update({ price })
+        .eq('task_id', taskId)
+        .eq('contractor_id', contractorId)
       if (error) throw error
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['contractor_terms'] }),

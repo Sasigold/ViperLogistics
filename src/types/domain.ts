@@ -481,6 +481,34 @@ export interface AssignmentPerson {
   work_site?: 'field' | 'warehouse'
 }
 
+/**
+ * שורת terms של קבלן במשימה (0096). משימה יכולה לשאת כמה כאלה — אחת לכל קבלן
+ * שהואצל אליו — כל אחת עם המחיר, התעריף-לעובד, כמות העובדים ונקודת ההתחלה שלה.
+ */
+export interface TaskContractorTerms {
+  task_id: string
+  contractor_id: string
+  price: number | null
+  price_per_worker: number | null
+  contractor_worker_count: number | null
+  work_site: WorkSite
+  paid_at: string | null
+  paid_amount: number | null
+  price_parts: ContractorPriceParts | null
+  created_at: string
+}
+
+/** תמצית שורת terms כפי ש-work_board_view מרכיב אותה ל-contractor_list. */
+export interface TaskContractorTermsSummary {
+  contractor_id: string
+  name: string
+  /** null כשלמשתמש אין contractors.view_pricing. */
+  price: number | null
+  price_per_worker: number | null
+  work_site: WorkSite | null
+  worker_count: number | null
+}
+
 export interface WorkBoardRow {
   id: string
   event_id: string | null
@@ -530,19 +558,29 @@ export interface WorkBoardRow {
   team_lead_name: string | null
   workers: AssignmentPerson[] | null
   drivers: AssignmentPerson[] | null
-  contractor_worker_list: { id: string; name: string; work_site?: 'field' | 'warehouse' }[] | null
+  contractor_worker_list:
+    | { id: string; name: string; contractor_id: string; work_site?: 'field' | 'warehouse' }[]
+    | null
   /** null גם כשקיים מחיר, אם למשתמש אין pricing.view — הקבלן תמיד כאן. */
   customer_price: number | null
   price_is_manual: boolean | null
   price_breakdown: PriceBreakdown | null
-  /** התשלום לקבלן על המשימה. null למי שאין לו contractors.view_pricing (0091). */
+  /**
+   * התשלום לקבלן על המשימה. null למי שאין לו contractors.view_pricing (0091).
+   * לקורא-קבלן זהו המחיר שלו; למשרד — סכום כל הקבלנים במשימה (0096).
+   */
   contractor_price: number | null
-  /** התעריף-לעובד שנקבע למשימה זו (דריסה לברירת המחדל של הקבלן). null = יורש. */
+  /**
+   * המחיר הראשי — נקודת ההתחלה, התעריף-לעובד, וכמות העובדים — של הקבלן ה"נראה"
+   * (הקבלן עצמו לקורא-קבלן, אחרת הראשי). הפירוט המלא לכל הקבלנים ב-contractor_list.
+   */
   contractor_price_per_worker: number | null
   /** נקודת ההתחלה שהמשרד קבע לקבלן; חלה על עובדיו (0091). */
   contractor_work_site: 'field' | 'warehouse' | null
   /** כמה עובדים הקבלן צריך להביא (0095). */
   contractor_worker_count: number | null
+  /** כל הקבלנים המואצלים למשימה (0096). ריק/‏null כשאין קבלן. */
+  contractor_list: TaskContractorTermsSummary[] | null
   travel_hours: number | null
   requires_team_lead: boolean | null
 }

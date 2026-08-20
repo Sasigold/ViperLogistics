@@ -282,6 +282,33 @@ export function useContractorWorkerAssign() {
 }
 
 /**
+ * האצלת משימה לקבלן וביטולה (0096).
+ *
+ * מאז שלמשימה יכולים להיות כמה קבלנים, ההאצלה אינה עוד כתיבה ל-
+ * `tasks.contractor_id` אלא הוספה/הסרה של שורת `task_contractor_terms` דרך RPC:
+ * ‏`contractor_delegate` מוסיף שורה (ומריץ תמחור), `contractor_undelegate`
+ * מסיר אותה יחד עם עובדי אותו קבלן במשימה. שתיהן דורשות `tasks.delegate`.
+ */
+export function useContractorDelegate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { taskId: string; contractorId: string; on: boolean }) => {
+      const { error } = await supabase.rpc(v.on ? 'contractor_delegate' : 'contractor_undelegate', {
+        p_task_id: v.taskId,
+        p_contractor_id: v.contractorId,
+      })
+      if (error) throw error
+    },
+    onSettled: (_d, _e, v) => {
+      void qc.invalidateQueries({ queryKey: ['workboard'] })
+      void qc.invalidateQueries({ queryKey: ['tasks', 'one', v.taskId] })
+      void qc.invalidateQueries({ queryKey: ['tasks'] })
+      void qc.invalidateQueries({ queryKey: ['contractor_assignable'] })
+    },
+  })
+}
+
+/**
  * מחשבוני התמחור של לקוח, אחד לכל סוג משימה.
  *
  * customer_pricing_rules חסומה ב-RLS למי שאין לו pricing.manage_rules או

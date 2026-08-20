@@ -423,7 +423,6 @@ export default function WorkBoardPage() {
       if (filters.customer) q = q.eq('customer_id', filters.customer)
       if (filters.status) q = q.eq('status_id', filters.status)
       if (filters.type) q = q.eq('task_type_id', filters.type)
-      if (filters.contractor) q = q.eq('contractor_id', filters.contractor)
       if (filters.q.trim())
         q = q.or(
           `title.ilike.%${filters.q}%,end_client_name.ilike.%${filters.q}%,event_number.ilike.%${filters.q}%,location_text.ilike.%${filters.q}%,customer_name.ilike.%${filters.q}%`,
@@ -434,18 +433,25 @@ export default function WorkBoardPage() {
     },
   })
 
-  /* פילטר עובד ספציפי מסונן בצד הלקוח: הוא נבדק מול מערכי ה-jsonb של המשובצים
-     (עובדים/נהגים/ראש צוות), ולא מול עמודה פשוטה שאפשר לגדר עליה בשרת. */
+  /* פילטרים שמסוננים בצד הלקוח:
+     — עובד ספציפי: נבדק מול מערכי ה-jsonb של המשובצים (עובדים/נהגים/ראש צוות),
+       ולא מול עמודה פשוטה שאפשר לגדר עליה בשרת.
+     — קבלן ספציפי: מאז ריבוי הקבלנים (0096) המשימה נושאת רשימת קבלנים, ולא
+       עמודה יחידה — הסינון על `contractor_list` תופס גם קבלן משני, ש-
+       ‏`tasks.contractor_id` (הראשי בלבד) היה מפספס. */
   const rows = useMemo(() => {
-    if (!filters.worker) return rawRows
     const w = filters.worker
+    const ct = filters.contractor
+    if (!w && !ct) return rawRows
     return rawRows.filter(
       (r) =>
-        (r.workers ?? []).some((p) => p.profile_id === w) ||
-        (r.drivers ?? []).some((p) => p.profile_id === w) ||
-        r.team_lead_id === w,
+        (!w ||
+          (r.workers ?? []).some((p) => p.profile_id === w) ||
+          (r.drivers ?? []).some((p) => p.profile_id === w) ||
+          r.team_lead_id === w) &&
+        (!ct || (r.contractor_list ?? []).some((c) => c.contractor_id === ct)),
     )
-  }, [rawRows, filters.worker])
+  }, [rawRows, filters.worker, filters.contractor])
 
   const lookups = useMemo<BoardLookups>(
     () => ({ statuses, trucks, methods, contractors, staff, canAssignContractor }),

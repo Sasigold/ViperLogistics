@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Checkbox, Popover, StatusPill, Tooltip, cx } from '../../components/ui'
+import { Checkbox, Popover, StatusPill, Tooltip, cx, useToast } from '../../components/ui'
 import { fmtHours, fmtTime } from '../../lib/dates'
 import { shortAddress } from '../../lib/address'
 import type {
@@ -13,7 +13,8 @@ import type {
   WorkBoardRow,
 } from '../../types/domain'
 import { PERM } from '../../lib/permissions'
-import { useContractorAssignableWorkers } from '../../lib/queries'
+import { useContractorAssignableWorkers, useContractorDelegate } from '../../lib/queries'
+import { errorMessage } from '../../lib/errors'
 
 export interface BoardLookups {
   statuses: Status[]
@@ -514,22 +515,38 @@ function StatusCell({ row, canEdit, can, patch, lookups }: CellContext) {
   )
 }
 
-function ContractorCell({ row, canEdit, patch, lookups }: CellContext) {
+/**
+ * תא הקבלן — רב-בחירה מאז 0096: משימה יכולה לשאת כמה קבלנים. הוספה/הסרה עוברות
+ * ב-RPC (delegate/undelegate) ולא בכתיבה ל-`tasks.contractor_id`, שהוא כיום רק
+ * שיקוף הקבלן הראשי. `contractor_list` הוא מקור האמת לרשימה ולסימונים; ניהול
+ * מלא (תמחור, כמות עובדים, שיבוץ עובדי קבלן משני) נעשה בכרטיס המשימה.
+ */
+function ContractorCell({ row, canEdit, lookups }: CellContext) {
+  const toast = useToast()
+  const delegate = useContractorDelegate()
+  const delegated = row.contractor_list ?? []
+  const delegatedIds = new Set(delegated.map((c) => c.contractor_id))
+  const names = delegated.map((c) => c.name).join(', ')
   return (
     <PickCell
       canEdit={canEdit}
-      view={row.contractor_name ? <Clip>{row.contractor_name}</Clip> : <Muted />}
+      view={names ? <Clip>{names}</Clip> : <Muted />}
       empty="אין קבלנים פעילים"
       groups={[
         {
           key: 'contractors',
-          multi: false,
+          multi: true,
           options: lookups.contractors
-            .filter((c) => c.is_active || c.id === row.contractor_id)
-            .map((c) => ({ id: c.id, label: c.name, checked: c.id === row.contractor_id })),
+            .filter((c) => c.is_active || delegatedIds.has(c.id))
+            .map((c) => ({ id: c.id, label: c.name, checked: delegatedIds.has(c.id) })),
         },
       ]}
-      onToggle={(_g, id, on) => patch(row, { contractor_id: on ? id : null })}
+      onToggle={(_g, id, on) =>
+        delegate.mutate(
+          { taskId: row.id, contractorId: id, on },
+          { onError: (e) => toast.error(errorMessage(e)) },
+        )
+      }
     />
   )
 }
