@@ -70,6 +70,8 @@ export interface Contractor {
   transport_only_price: number | null
   /** קנס לאיחור של עובד שסומן למעקב (0091). */
   lateness_penalty: number | null
+  /** דקות חסד לפני שאיחור נחשב לקנס (0092). null = 0. */
+  lateness_grace_minutes: number | null
   /** קנס לאי-התייצבות של עובד (0091). */
   no_show_penalty: number | null
   is_active: boolean
@@ -120,6 +122,8 @@ export interface ExecutionMethod {
   id: string
   name: string
   sort_order: number
+  /** משימה באופן ביצוע זה מתומחרת לקבלן לפי מחיר ההובלה, במקום הבסיס (0092). */
+  is_transport_only: boolean
   is_active: boolean
   deleted_at: string | null
 }

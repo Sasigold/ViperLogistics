@@ -297,6 +297,17 @@ function MethodsTab() {
     onError: (e) => toast.error(errorMessage(e)),
   })
 
+  /* אופן ביצוע שמסומן "הובלה בלבד" גורם לתמחור הקבלן להשתמש במחיר ההובלה
+     במקום מחיר הבסיס (0092). */
+  const setTransport = useMutation({
+    mutationFn: async ({ methodId, on }: { methodId: string; on: boolean }) => {
+      const { error } = await supabase.from('execution_methods').update({ is_transport_only: on }).eq('id', methodId)
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['execution_methods'] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
   return (
     <Card>
       {dialog}
@@ -325,6 +336,9 @@ function MethodsTab() {
                   <th className="sticky bg-inherit px-4 py-2 text-start type-table-head" style={{ insetInlineStart: 0 }}>
                     אופן ביצוע
                   </th>
+                  <th className="px-2 py-2 text-center type-table-head">
+                    <span className="block max-w-24 truncate">הובלה בלבד</span>
+                  </th>
                   {types.map((t) => (
                     <th key={t.id} className="px-2 py-2 text-center type-table-head">
                       <span className="block max-w-24 truncate">{t.name}</span>
@@ -341,6 +355,14 @@ function MethodsTab() {
                   >
                     <td className="sticky bg-inherit px-4 py-2 type-body font-medium" style={{ insetInlineStart: 0 }}>
                       {m.name}
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      <span className="inline-flex">
+                        <Checkbox
+                          checked={m.is_transport_only}
+                          onChange={(v) => setTransport.mutate({ methodId: m.id, on: v })}
+                        />
+                      </span>
                     </td>
                     {types.map((t) => {
                       const on = mapping.some((x) => x.task_type_id === t.id && x.execution_method_id === m.id)

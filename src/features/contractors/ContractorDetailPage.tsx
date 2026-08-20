@@ -126,7 +126,7 @@ function DetailsTab({ contractor }: { contractor: Contractor }) {
         [
           'name', 'contact_name', 'phone', 'email', 'notes', 'default_task_price',
           'price_per_worker', 'warehouse_arrival_surcharge', 'transport_only_price',
-          'lateness_penalty', 'no_show_penalty', 'is_active',
+          'lateness_penalty', 'lateness_grace_minutes', 'no_show_penalty', 'is_active',
         ] as const
       ).some((k) => form[k] !== contractor[k]),
     [form, contractor],
@@ -148,6 +148,7 @@ function DetailsTab({ contractor }: { contractor: Contractor }) {
           warehouse_arrival_surcharge: form.warehouse_arrival_surcharge,
           transport_only_price: form.transport_only_price,
           lateness_penalty: form.lateness_penalty,
+          lateness_grace_minutes: form.lateness_grace_minutes,
           no_show_penalty: form.no_show_penalty,
           is_active: form.is_active,
         })
@@ -214,6 +215,20 @@ function DetailsTab({ contractor }: { contractor: Contractor }) {
               <MoneyField label="קנס איחור" hint="חל רק על עובדים שסומנו למעקב איחורים"
                 value={form.lateness_penalty} disabled={!canEdit}
                 onChange={(v) => setForm((f) => ({ ...f, lateness_penalty: v }))} />
+              <Field label="דקות חסד לאיחור" hint="איחור עד כאן לא נקנס">
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.lateness_grace_minutes ?? ''}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      lateness_grace_minutes: e.target.value === '' ? null : Number(e.target.value),
+                    }))
+                  }
+                  disabled={!canEdit}
+                />
+              </Field>
               <MoneyField label="קנס אי-התייצבות" value={form.no_show_penalty} disabled={!canEdit}
                 onChange={(v) => setForm((f) => ({ ...f, no_show_penalty: v }))} />
             </div>
