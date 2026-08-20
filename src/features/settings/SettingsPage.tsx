@@ -738,6 +738,7 @@ const RECYCLE_TABLES = [
   { value: 'profiles', label: 'משתמשים' },
   { value: 'suppliers', label: 'ספקים' },
   { value: 'trucks', label: 'משאיות' },
+  { value: 'vehicle_document_kinds', label: 'סוגי מסמכי רכב' },
   { value: 'task_types', label: 'סוגי משימות' },
   { value: 'execution_methods', label: 'אופני ביצוע' },
   { value: 'statuses', label: 'סטטוסים' },

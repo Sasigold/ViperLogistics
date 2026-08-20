@@ -224,6 +224,20 @@
 
 ## חוב טכני שראוי לסגור בדרך
 
+- **מחיקה רכה ב-UPDATE ישיר נכשלת עבור מי שאינו אדמין, בכל טבלה שה-select
+  שלה מסתיר `deleted_at` שאינו null.** התגלה תוך כדי בניית 0088: Postgres
+  בודק UPDATE לא רק מול ה-`with check` של פוליסת הכתיבה, אלא גם מול ה-`using`
+  של פוליסת ה-select — על **השורה החדשה**. כשה-select חוסם שורה מחוקה
+  ממי שאינו אדמין (`is_admin() or deleted_at is null`), אותו משתמש בעצמו
+  אינו יכול להפוך אליה את השורה: ה-UPDATE נופל על "new row violates row-level
+  security policy", אפילו שה-`with check` של פוליסת הכתיבה מתיר את זה מפורשות.
+  **נשחזר ואומת ישירות מול `receipts_update`/`receipts_read` (0068) — מנהל
+  תקבולים לא-אדמין עם `finance.receipts_manage` מלא אינו יכול למחוק תקבול
+  דרך הכפתור ב-`ReceiptsPage.tsx`, שמבצע בדיוק `.update({deleted_at:...})`
+  ישירות.** זו כנראה תקלה קיימת בייצור שלא התגלתה. הפתרון בכל מקום אחר ברפו
+  (`soft_delete`, `remove_event_spec`, `remove_vehicle_document`) הוא RPC
+  ‏`security definer`, שרץ בזהות בעל הטבלה ואינו כפוף ל-RLS כלל — וזה גם
+  הפתרון היחיד האמיתי כאן. `receipts` היא היחידה ברפו שסוטה מהדפוס הזה.
 - **`supabase/functions/notify-dispatch/index.ts` אינו מסונכרן עם הפרודקשן.**
   הקובץ עצמו מצהיר על כך בשורות 22-27: הגרסה החיה משתמשת ב-`npm:web-push`
   ובקריאת סוד דרך RPC, וזו שב-repo ב-`jsr:@negrel/webpush` ובמשתנה סביבה.

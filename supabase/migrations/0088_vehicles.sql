@@ -632,7 +632,14 @@ create policy vdk_select on vehicle_document_kinds for select to authenticated u
   and ((select app.is_admin())
        or ((select app.user_kind()) = 'staff'
            and ((select app.has('fleet.view')) or (select app.has('fleet.settings'))))));
-create policy vdk_write on vehicle_document_kinds for all to authenticated
+-- שתי פוליסות נפרדות ולא `for all`, בכוונה: `for all` הייתה חלה גם על
+-- select, ומכיוון ש-Postgres מאחד פוליסות פרמיסיביות באותו פועל ב-OR, מי
+-- שמחזיק fleet.settings היה רואה גם שורות מחוקות — בדיוק המקום שבו הפוליסה
+-- הזו הייתה עוקפת בשקט את `deleted_at is null` של vdk_select. אותה מלכודת
+-- קיימת ב-vfc_write למטה, ותוקנה שם באותה צורה.
+create policy vdk_insert on vehicle_document_kinds for insert to authenticated
+  with check ((select app.is_admin()) or (select app.has('fleet.settings')));
+create policy vdk_update on vehicle_document_kinds for update to authenticated
   using      ((select app.is_admin()) or (select app.has('fleet.settings')))
   with check ((select app.is_admin()) or (select app.has('fleet.settings')));
 
@@ -663,7 +670,10 @@ create policy vfc_select on vehicle_fuel_cards for select to authenticated using
   ((select app.is_admin()) or deleted_at is null)
   and ((select app.is_admin())
        or ((select app.user_kind()) = 'staff' and (select app.has('fleet.view_fuel_card')))));
-create policy vfc_write on vehicle_fuel_cards for all to authenticated
+-- שתי פוליסות נפרדות ולא `for all`, מאותה סיבה שכתובה ב-vdk למעלה.
+create policy vfc_insert on vehicle_fuel_cards for insert to authenticated
+  with check ((select app.is_admin()) or (select app.has('fleet.manage_fuel_card')));
+create policy vfc_update on vehicle_fuel_cards for update to authenticated
   using      ((select app.is_admin()) or (select app.has('fleet.manage_fuel_card')))
   with check ((select app.is_admin()) or (select app.has('fleet.manage_fuel_card')));
 
@@ -955,9 +965,12 @@ $$;
 revoke execute on function public.fleet_expiry_summary() from anon, public;
 
 -- ===== 10. סל המיחזור ======================================================
--- הגוף מועתק מ-0014:242 — ההגדרה החיה — בתוספת ענף אחד. מפתח אחד לשני
+-- הגוף מועתק מ-0014:242 — ההגדרה החיה — בתוספת שני ענפים. מפתח אחד לשני
 -- הכיוונים, כמו trucks ו-suppliers: אין `fleet.restore` נפרד, כי מי שמורשה
--- להוציא רכב מהרשימה מורשה גם להחזיר אותו.
+-- להוציא רכב מהרשימה מורשה גם להחזיר אותו. אותו דבר לגבי `vehicle_document_kinds`
+-- מול `fleet.settings` — הטאב "סוגי מסמכי רכב" בהגדרות קורא ל-soft_delete על
+-- הטבלה הזו בדיוק (כמו trucks/task_types/statuses), ובלי הענף כאן כל לחיצת
+-- מחיקה שם הייתה נופלת על 'טבלה לא נתמכת'.
 --
 -- ‏vehicle_documents אינו כאן במכוון. להסרת מסמך יש כבר נתיב אחד —
 -- remove_vehicle_document — ושחזור נעשה מכרטיס הרכב, בדיוק כמו גרסת מפרט
@@ -977,6 +990,7 @@ begin
     when 'suppliers'          then 'customers.manage_suppliers'
     when 'trucks'             then 'settings.trucks'
     when 'vehicles'           then 'fleet.delete'
+    when 'vehicle_document_kinds' then 'fleet.settings'
     when 'task_types'         then 'settings.task_types'
     when 'execution_methods'  then 'settings.execution_methods'
     when 'statuses'           then 'settings.statuses'

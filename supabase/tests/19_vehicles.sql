@@ -46,10 +46,12 @@ insert into user_permission_grants (profile_id, permission_key, allowed) values
   ('20000000-0000-0000-0000-0000000019a1', 'fleet.drivers_manage', true),
   ('20000000-0000-0000-0000-0000000019a1', 'fleet.view_fuel_card', true),
   ('20000000-0000-0000-0000-0000000019a1', 'fleet.manage_fuel_card', true),
+  ('20000000-0000-0000-0000-0000000019a1', 'fleet.settings', true),
   ('20000000-0000-0000-0000-0000000019a2', 'fleet.view', true),
   ('20000000-0000-0000-0000-0000000019a2', 'fleet.docs_view', true),
   ('20000000-0000-0000-0000-0000000019a2', 'fleet.docs_manage', false),
   ('20000000-0000-0000-0000-0000000019a2', 'fleet.view_fuel_card', false),
+  ('20000000-0000-0000-0000-0000000019a2', 'fleet.settings', false),
   ('20000000-0000-0000-0000-0000000019a3', 'fleet.view', false),
   ('20000000-0000-0000-0000-0000000019a3', 'fleet.docs_view', false);
 
@@ -295,6 +297,37 @@ select t_eq('ובמקומו מסכה',
   (select new_data ->> 'pin_code' from audit_log
     where table_name = 'vehicle_fuel_cards' and action = 'UPDATE'), '***');
 
+/* מחיקה רכה חייבת להיעלם גם ממי שמחזיק fleet.manage_fuel_card, ולא רק ממי
+   שאין לו fleet.view_fuel_card. `vfc_write` היה בעבר `for all`, ו-Postgres
+   מאחד פוליסות פרמיסיביות באותו פועל ב-OR — כלומר ה-USING של הכתיבה (שאינו
+   בודק deleted_at) היה פותח select גם על שורה מחוקה למי שמחזיק את מפתח
+   הכתיבה. הפיצול ל-vfc_insert/vfc_update (0088 §7) הוא מה שסוגר את זה,
+   ואותה בדיקה בדיוק תפסה את התקלה המקבילה ב-vehicle_document_kinds.
+
+   המחיקה עצמה מבוצעת כאן כאדמין, ולא כמנהל הצי — לא לצורך הבדיקה, אלא כי
+   Postgres בודק UPDATE נגד ה-USING של פוליסת ה-select גם על השורה *החדשה*,
+   לא רק נגד ה-with check של פוליסת הכתיבה. מנהל הצי שהופך את deleted_at
+   ל-not null היה נופל על vfc_select (deleted_at is null) באמצע ה-UPDATE שלו
+   עצמו — בדיוק המכשול ש-0077/0088 פותרים במסמכים ובנהגים על ידי הפניית
+   המחיקה ל-RPC ‏security definer, שרץ בזהות הבעלים ואינו כפוף ל-RLS בכלל.
+   כרטיס הדלק אינו נמחק דרך המסך (אין כפתור כזה), ולכן אין לו RPC משלו — מה
+   שנבדק כאן הוא רק שמסך שכן יראה שורה מחוקה (למשל דרך ה-Dashboard) לא דולף
+   אותה למי שמחזיק רק את מפתח הכתיבה. */
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000019a4', false);
+update vehicle_fuel_cards set deleted_at = now()
+ where vehicle_id = '40000000-0000-0000-0000-000000000019';
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000019a1', false);
+select t_eq('מנהל הצי אינו רואה כרטיס שהוסר, גם שהוא מחזיק manage_fuel_card',
+  (select count(*)::int from vehicle_fuel_cards), 0);
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000019a4', false);
+select t_eq('אדמין כן רואה אותו',
+  (select count(*)::int from vehicle_fuel_cards
+    where vehicle_id = '40000000-0000-0000-0000-000000000019'), 1);
+update vehicle_fuel_cards set deleted_at = null
+ where vehicle_id = '40000000-0000-0000-0000-000000000019';
+
 -- ===== 6. הסוויפ ===========================================================
 
 \echo '--- התראות פקיעה ---'
@@ -428,6 +461,33 @@ select t_expect_ok('ואותו מפתח מחזיר אותו',
   $$select soft_delete('vehicles', '40000000-0000-0000-0000-00000000001a', true)$$);
 select t_eq('הרכב חזר',
   (select count(*)::int from vehicles where id = '40000000-0000-0000-0000-00000000001a'), 1);
+
+/* הכפתור ב-VehicleDocKindsTab (הגדרות) קורא ל-soft_delete בדיוק על השם הזה,
+   כמו trucks/task_types/statuses. בלי ענף בטבלת ה-case הוא היה נופל תמיד
+   על 'טבלה לא נתמכת' — זו הבדיקה שתופסת את זה.
+
+   שורה ייעודית עם id ידוע, ולא אחת מהזריעה: אחרי מחיקה רכה הפוליסה
+   (vdk_select) מסתירה אותה ממי שאינו אדמין, ו-id שנשלף ב-SELECT היה חוזר
+   null בדיוק ברגע שצריך אותו לשחזור. אותה סיבה שבגללה בדיקת הרכב למעלה
+   משתמשת ב-uuid קבוע ולא ב-SELECT אחרי המחיקה. */
+insert into vehicle_document_kinds (id, key, name) values
+  ('70000000-0000-0000-0000-000000000019', 'test_kind_019', 'סוג לבדיקה');
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000019a2', false);
+select t_expect_fail('צופה בלי fleet.settings אינו מוחק סוג מסמך',
+  $$select soft_delete('vehicle_document_kinds', '70000000-0000-0000-0000-000000000019')$$);
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000019a1', false);
+select t_expect_ok('מנהל הצי מוחק סוג מסמך',
+  $$select soft_delete('vehicle_document_kinds', '70000000-0000-0000-0000-000000000019')$$);
+select t_eq('והוא יורד מהקטלוג',
+  (select count(*)::int from vehicle_document_kinds
+    where id = '70000000-0000-0000-0000-000000000019'), 0);
+select t_expect_ok('ואותו מפתח מחזיר אותו',
+  $$select soft_delete('vehicle_document_kinds', '70000000-0000-0000-0000-000000000019', true)$$);
+select t_eq('הסוג חזר',
+  (select count(*)::int from vehicle_document_kinds
+    where id = '70000000-0000-0000-0000-000000000019'), 1);
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
