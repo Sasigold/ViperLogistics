@@ -109,7 +109,6 @@ export function useRealtimeSync() {
 
   useEffect(() => {
     if (!me) return
-    const myProfileId = me.profile.id
     const channels: RealtimeChannel[] = []
     // ההצטרפות הראשונה אינה "התאוששות": רק חיבור שנשבר ונרפא גורר רענון מלא.
     const wasBroken = new Map<string, boolean>()
@@ -135,9 +134,9 @@ export function useRealtimeSync() {
     }
 
     const onSignal = (signal: SyncSignal) => {
-      // שינוי שאני יצרתי כבר ריענן את עצמו בנתיב המוטציה; רענון שני רק היה
-      // מטלטל את הלוח באמצע עריכה.
-      if (signal.actor && signal.actor === myProfileId) return
+      // גם שינוי שאני יצרתי עובר כאן: הטאב שביצע אותו אמנם התרענן כבר בנתיב
+      // המוטציה (והרענון הנוסף, המקופל, כמעט זול), אבל טאב או מכשיר אחר של
+      // אותו חשבון אין לו דרך אחרת לשמוע — האות אינו מבחין בין טאבים.
       const p = pendingRef.current
       if (signal.entity === 'task') {
         p.tasks = true
