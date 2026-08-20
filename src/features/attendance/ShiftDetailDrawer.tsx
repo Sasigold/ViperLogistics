@@ -35,7 +35,7 @@ import {
   fmtShiftRange,
 } from './shiftFormat'
 import type { ShiftGroupMember } from './shiftBoard'
-import type { PlannedShift, ShiftTaskRow } from '../../types/domain'
+import type { PlannedShift, ShiftTaskRow, StaffRole } from '../../types/domain'
 
 const NEUTRAL = '#64748b'
 
@@ -51,6 +51,10 @@ const truckNames = (t: Pick<ShiftTaskRow, 'truck_list' | 'truck_name'>): string 
   t.truck_list && t.truck_list.length > 0
     ? t.truck_list.map((tr) => tr.name).join(', ')
     : t.truck_name
+
+/** כל התפקידים של העובד במשימה: "נהג + עובד" (0094). */
+const roleLabel = (roles: StaffRole[] | null | undefined): string | null =>
+  roles && roles.length > 0 ? roles.map((r) => ASSIGNMENT_ROLE_LABELS[r]).join(' + ') : null
 
 export function ShiftDetailDrawer({
   shift,
@@ -89,6 +93,11 @@ export function ShiftDetailDrawer({
   const warehouseName = data?.shift.warehouse_name ?? shift.warehouse_name
   const travel = totals?.travel_hours ?? shift.travel_hours ?? 0
   const selected = tasks.find((t) => t.task_id === openTaskId) ?? null
+  /* ‏0094: בלו״ז האישי, עובד שמגיע לשטח אינו רואה את זמן ההגעה למחסן — אלא אם
+     הוא ראש צוות. למנהל שצופה בעובד (employeeName קיים) מוצג הכול. */
+  const iAmTeamLead = tasks.some((t) => (t.my_role ?? []).includes('team_lead'))
+  const showWarehouseArrival =
+    startsAtWarehouse && (employeeName != null || iAmTeamLead || tasks[0]?.work_site === 'warehouse')
 
   return (
     <Drawer
@@ -121,7 +130,7 @@ export function ShiftDetailDrawer({
             <Badge tone="neutral">
               {tasks.length || shift.task_ids.length} {tasks.length === 1 ? 'משימה' : 'משימות'}
             </Badge>
-            {startsAtWarehouse && (
+            {showWarehouseArrival && (
               <Badge tone="warning">
                 <Package size={ICON.sm} strokeWidth={STROKE} />
                 {warehouseName ? `הגעה ל${warehouseName}` : 'הגעה למחסן'}
@@ -168,7 +177,7 @@ export function ShiftDetailDrawer({
               {/* פס אחד ומוחלט, כדי שהוא לא ייקטע בין הפריטים */}
               <span aria-hidden className="absolute inset-y-2 start-[7px] w-px bg-line" />
 
-              {startsAtWarehouse && (
+              {showWarehouseArrival && (
                 /* תחילת המשמרת היא ההגעה למחסן, לא היציאה ממנו — וזו גם השעה
                    שמולה נמדדת ההחתמה. השעה נלקחת מ-`warehouse_start_at`
                    (ההגעה למחסן) ולא מ-`start_at` (תחילת העבודה בשטח). */
@@ -332,8 +341,8 @@ function TaskCard({ task: t, onOpen }: { task: ShiftTaskRow; onOpen: () => void 
           </Chip>
         )}
         {truckNames(t) && <Chip icon={<Truck size={ICON.xs} strokeWidth={STROKE} />}>{truckNames(t)}</Chip>}
-        {t.my_role && (
-          <Chip icon={<User size={ICON.xs} strokeWidth={STROKE} />}>{ASSIGNMENT_ROLE_LABELS[t.my_role]}</Chip>
+        {roleLabel(t.my_role) && (
+          <Chip icon={<User size={ICON.xs} strokeWidth={STROKE} />}>{roleLabel(t.my_role)}</Chip>
         )}
         {t.assigned_count > 1 && (
           <Chip icon={<Users size={ICON.xs} strokeWidth={STROKE} />}>{t.assigned_count} משובצים</Chip>
@@ -382,7 +391,7 @@ function TaskDetails({ task: t, onBack }: { task: ShiftTaskRow; onBack: () => vo
     ['מיקום', t.location_text ? <LocationText key="loc" value={t.location_text} /> : null],
     [(t.truck_list?.length ?? 0) > 1 ? 'משאיות' : 'משאית', truckNames(t)],
     ['אופן ביצוע', t.execution_method_name],
-    ['התפקיד שלי', t.my_role ? ASSIGNMENT_ROLE_LABELS[t.my_role] : null],
+    ['התפקיד שלי', roleLabel(t.my_role)],
     [
       'משובצים',
       t.worker_count ? `${t.assigned_count} מתוך ${t.worker_count}` : t.assigned_count || null,

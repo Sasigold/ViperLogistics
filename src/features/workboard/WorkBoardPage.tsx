@@ -59,7 +59,7 @@ import type { Holiday } from '../../lib/hebrewHolidays'
 import { TaskDrawer } from '../tasks/TaskDrawer'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
-import { BOARD_FIELDS, DEFAULT_HIDDEN_FIELDS } from './boardFields'
+import { BOARD_FIELDS } from './boardFields'
 import type { BoardLookups } from './boardFields'
 import { COLOR_BY_OPTIONS, buildTones, clusterDay, isOverdue } from './grouping'
 import type { Cluster, ColorBy, GroupTone } from './grouping'
@@ -187,7 +187,7 @@ function loadPrefs(): Prefs {
  * בתפקיד אחר הייתה משנה מסך שאין בו כפתור להחזיר אותה.
  */
 const FIXED_VIEW: Required<Prefs> = {
-  hidden: DEFAULT_HIDDEN_FIELDS,
+  hidden: [],
   view: 'grid',
   colorBy: 'event',
   emptyDays: true,
@@ -352,7 +352,7 @@ export default function WorkBoardPage() {
   })
   const from = toISODate(month)
   const to = toISODate(endOfMonth(month))
-  const [filters, setFilters] = useState({ customer: '', status: '', type: '', contractor: '', q: '' })
+  const [filters, setFilters] = useState({ customer: '', status: '', type: '', contractor: '', worker: '', q: '' })
   const [drawer, setDrawer] = useState<{ open: boolean; taskId: string | null; date?: string }>({
     open: !!params.get('task'),
     taskId: params.get('task'),
@@ -361,17 +361,17 @@ export default function WorkBoardPage() {
   /* ‏`canTune` נקרא פעם אחת, באתחול: הרשאה אינה משתנה תוך כדי צפייה במסך,
      ושינוי שלה מגיע ממילא עם `refreshOwnCapabilities` שמרענן את כל העץ. */
   const [hidden, setHidden] = useState<Set<string>>(
-    new Set(canTune ? (prefs.current.hidden ?? DEFAULT_HIDDEN_FIELDS) : FIXED_VIEW.hidden),
+    new Set(canTune ? (prefs.current.hidden ?? FIXED_VIEW.hidden) : FIXED_VIEW.hidden),
   )
   const [density, setDensity] = useState<Density>(
-    canTune ? (prefs.current.density ?? 'comfortable') : FIXED_VIEW.density,
+    canTune ? (prefs.current.density ?? FIXED_VIEW.density) : FIXED_VIEW.density,
   )
-  const [sortBy, setSortBy] = useState<SortKey>(canTune ? (prefs.current.sort ?? 'time') : FIXED_VIEW.sort)
-  const [colorBy, setColorBy] = useState<ColorBy>(canTune ? (prefs.current.colorBy ?? 'event') : FIXED_VIEW.colorBy)
+  const [sortBy, setSortBy] = useState<SortKey>(canTune ? (prefs.current.sort ?? FIXED_VIEW.sort) : FIXED_VIEW.sort)
+  const [colorBy, setColorBy] = useState<ColorBy>(canTune ? (prefs.current.colorBy ?? FIXED_VIEW.colorBy) : FIXED_VIEW.colorBy)
   const [showEmptyDays, setShowEmptyDays] = useState(
-    canTune ? (prefs.current.emptyDays ?? true) : FIXED_VIEW.emptyDays,
+    canTune ? (prefs.current.emptyDays ?? FIXED_VIEW.emptyDays) : FIXED_VIEW.emptyDays,
   )
-  const [viewMode, setViewMode] = useState<ViewMode>(canTune ? (prefs.current.view ?? 'auto') : FIXED_VIEW.view)
+  const [viewMode, setViewMode] = useState<ViewMode>(canTune ? (prefs.current.view ?? FIXED_VIEW.view) : FIXED_VIEW.view)
   /** "go to today" asked for a range that isn't loaded yet — scroll once it is */
   const [jumpPending, setJumpPending] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
@@ -405,7 +405,7 @@ export default function WorkBoardPage() {
   const staffing = useAssignmentUpdate()
   const contractorAssign = useContractorWorkerAssign()
 
-  const { data: rows = EMPTY, isLoading, error: rowsError, refetch: refetchRows } = useQuery({
+  const { data: rawRows = EMPTY, isLoading, error: rowsError, refetch: refetchRows } = useQuery({
     queryKey: ['workboard', 'range', from, to, filters],
     queryFn: async () => {
       let q = supabase
@@ -433,6 +433,19 @@ export default function WorkBoardPage() {
       return data as WorkBoardRow[]
     },
   })
+
+  /* פילטר עובד ספציפי מסונן בצד הלקוח: הוא נבדק מול מערכי ה-jsonb של המשובצים
+     (עובדים/נהגים/ראש צוות), ולא מול עמודה פשוטה שאפשר לגדר עליה בשרת. */
+  const rows = useMemo(() => {
+    if (!filters.worker) return rawRows
+    const w = filters.worker
+    return rawRows.filter(
+      (r) =>
+        (r.workers ?? []).some((p) => p.profile_id === w) ||
+        (r.drivers ?? []).some((p) => p.profile_id === w) ||
+        r.team_lead_id === w,
+    )
+  }, [rawRows, filters.worker])
 
   const lookups = useMemo<BoardLookups>(
     () => ({ statuses, trucks, methods, contractors, staff, canAssignContractor }),
@@ -787,7 +800,7 @@ export default function WorkBoardPage() {
 
   const workingDays = useMemo(() => bands.filter((b) => b.count > 0).length, [bands])
   const activeFilterCount = Object.values(filters).filter(Boolean).length
-  const resetFilters = () => setFilters({ customer: '', status: '', type: '', contractor: '', q: '' })
+  const resetFilters = () => setFilters({ customer: '', status: '', type: '', contractor: '', worker: '', q: '' })
 
   /* ── filter controls ──────────────────────────────────────────────────────
      One definition, two homes: a single toolbar row on desktop, and a dialog
@@ -875,6 +888,21 @@ export default function WorkBoardPage() {
           <option value="">כל הקבלנים</option>
           {contractors.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </Select>
+      )}
+      {/* פילטר עובד ספציפי — מסונן בצד הלקוח מול המשובצים למשימה (0094). */}
+      {staff.length > 0 && (
+        <Select
+          className="w-full lg:w-36"
+          selectSize="sm"
+          value={filters.worker}
+          onChange={(e) => setFilters((f) => ({ ...f, worker: e.target.value }))}
+          aria-label="עובד"
+        >
+          <option value="">כל העובדים</option>
+          {staff.map((p) => (
+            <option key={p.id} value={p.id}>{p.full_name}</option>
           ))}
         </Select>
       )}

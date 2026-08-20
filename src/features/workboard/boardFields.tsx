@@ -585,13 +585,35 @@ function TeamCell({ row, canEdit, can, assign, lookups }: CellContext) {
   )
   const chosenWorkerIds = contractorWorkers.map((w) => w.id)
 
+  /* אותו אדם ששובץ גם כעובד וגם כנהג מופיע פעם אחת, עם שני האייקונים (0094).
+     איחוד לפי profile_id; עובד קבלן נשאר נפרד (מרחב זהות אחר). */
+  const staffMap = new Map<
+    string,
+    { name: string; roles: Set<'worker' | 'driver'>; site?: 'field' | 'warehouse'; truck?: string | null }
+  >()
+  for (const w of row.workers ?? []) {
+    const e = staffMap.get(w.profile_id) ?? { name: w.name, roles: new Set(), site: w.work_site }
+    e.roles.add('worker')
+    staffMap.set(w.profile_id, e)
+  }
+  for (const d of row.drivers ?? []) {
+    const e = staffMap.get(d.profile_id) ?? { name: d.name, roles: new Set(), site: d.work_site }
+    e.roles.add('driver')
+    if (d.truck_name) e.truck = d.truck_name
+    staffMap.set(d.profile_id, e)
+  }
   const people = [
-    ...(row.workers ?? []).map((w) => ({ key: `w:${w.profile_id}`, name: w.name, mark: '', site: w.work_site })),
-    ...(row.drivers ?? []).map((d) => ({
-      key: `d:${d.profile_id}`,
-      name: d.truck_name ? `${d.name} · ${d.truck_name}` : d.name,
-      mark: '🚚',
-      site: d.work_site,
+    ...[...staffMap.entries()].map(([id, e]) => ({
+      key: `s:${id}`,
+      name: e.truck ? `${e.name} · ${e.truck}` : e.name,
+      /* עובד רגיל נשאר בלי אייקון; ריבוי תפקידים מציג נהג+עובד. */
+      mark:
+        e.roles.size > 1
+          ? ['driver', 'worker'].filter((r) => e.roles.has(r as 'worker' | 'driver')).map((r) => (r === 'driver' ? '🚚' : '🦺')).join('')
+          : e.roles.has('driver')
+            ? '🚚'
+            : '',
+      site: e.site,
     })),
     ...contractorWorkers.map((w) => ({ key: `c:${w.id}`, name: w.name, mark: '👷', site: w.work_site })),
   ]
@@ -822,6 +844,18 @@ export const BOARD_FIELDS: BoardField[] = [
     editPerm: PERM.TASKS_DELEGATE,
     label: 'קבלן',
     render: (ctx) => <ContractorCell {...ctx} />,
+  },
+  {
+    /* כמה עובדים הקבלן צריך להביא — לקריאה בלבד בלו״ז; נקבע בהאצלה (0095). */
+    key: 'contractor_worker_count',
+    viewPerm: PERM.BOARD_VIEW_STAFFING,
+    label: 'עובדים להביא',
+    render: ({ row }) =>
+      row.contractor_worker_count != null ? (
+        <Clip className="tabular">{row.contractor_worker_count}</Clip>
+      ) : (
+        <Muted />
+      ),
   },
   {
     key: 'status',

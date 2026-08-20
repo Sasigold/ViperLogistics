@@ -78,6 +78,19 @@ export interface Contractor {
   deleted_at: string | null
 }
 
+/** פירוט חישוב מחיר הקבלן למשימה, מ-task_contractor_terms.price_parts (0093). */
+export interface ContractorPriceParts {
+  base: number
+  surcharge: number
+  worker_count: number
+  transport: boolean
+  late_count: number
+  late_penalty_each: number
+  noshow_count: number
+  noshow_penalty_each: number
+  penalty_total: number
+}
+
 export interface ContractorWorker {
   id: string
   contractor_id: string
@@ -528,6 +541,8 @@ export interface WorkBoardRow {
   contractor_price_per_worker: number | null
   /** נקודת ההתחלה שהמשרד קבע לקבלן; חלה על עובדיו (0091). */
   contractor_work_site: 'field' | 'warehouse' | null
+  /** כמה עובדים הקבלן צריך להביא (0095). */
+  contractor_worker_count: number | null
   travel_hours: number | null
   requires_team_lead: boolean | null
 }
@@ -1097,8 +1112,9 @@ export interface ShiftTaskRow {
   /** כל משאיות המשימה לפי סדר. null כשאין משאיות משובצות (אז יש truck_name). */
   truck_list: { id: string; name: string }[] | null
   execution_method_name: string | null
-  /** null לעובד קבלן, שאין לו שורת task_assignments ולכן אין לו תפקיד */
-  my_role: StaffRole | null
+  /** כל התפקידים של העובד במשימה, מסודרים ראש צוות > נהג > עובד (0094).
+   *  null/ריק לעובד קבלן, שאין לו שורת task_assignments ולכן אין לו תפקיד. */
+  my_role: StaffRole[] | null
   worker_count: number | null
   assigned_count: number
   /** null למי שאין לו board.view_staffing. מאז 0083 גם נקודת ההתחלה של כל אחד */

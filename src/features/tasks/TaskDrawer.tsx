@@ -27,6 +27,7 @@ import {
   SegmentedControl,
   Select,
   Skeleton,
+  Switch,
   Textarea,
   cx,
   fmtMoney,
@@ -51,6 +52,7 @@ import { TaskPnlCard } from '../reports/TaskPnlCard'
 import { useWarehouses } from '../attendance/attendanceQueries'
 import type {
   AssignmentConflict,
+  ContractorPriceParts,
   PriceBreakdown,
   StaffRole,
   TaskPricing,
@@ -141,22 +143,24 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
         supabase.from('task_assignments').select('*').eq('task_id', taskId),
         supabase.from('task_contractor_terms').select('*').eq('task_id', taskId).maybeSingle(),
         supabase.from('task_pricing').select('*').eq('task_id', taskId).maybeSingle(),
-        supabase.from('task_contractor_workers').select('contractor_worker_id').eq('task_id', taskId),
+        supabase.from('task_contractor_workers').select('contractor_worker_id, no_show').eq('task_id', taskId),
       ])
       if (t.error) throw t.error
+      const cwRows = (cw.data ?? []) as { contractor_worker_id: string; no_show: boolean }[]
       return {
         task: t.data as TaskRow,
         assignments: (a.data ?? []) as Assignment[],
         terms: terms.data as {
           price: number
           price_per_worker: number | null
+          contractor_worker_count: number | null
           work_site: WorkSite
           paid_at: string | null
+          price_parts: ContractorPriceParts | null
         } | null,
         pricing: (pricing.data as TaskPricing) ?? null,
-        contractorWorkers: ((cw.data ?? []) as { contractor_worker_id: string }[]).map(
-          (r) => r.contractor_worker_id,
-        ),
+        contractorWorkers: cwRows.map((r) => r.contractor_worker_id),
+        contractorNoShow: new Set(cwRows.filter((r) => r.no_show).map((r) => r.contractor_worker_id)),
       }
     },
   })
@@ -165,6 +169,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [price, setPrice] = useState<string>('')
   const [pricePerWorker, setPricePerWorker] = useState<string>('')
+  const [contractorCount, setContractorCount] = useState<string>('')
   const [contractorWorkSite, setContractorWorkSite] = useState<WorkSite>('field')
   const [customerPrice, setCustomerPrice] = useState<string>('')
   const [touched, setTouched] = useState(false)
@@ -172,7 +177,26 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   /* שיבוץ עובדי הקבלן נכתב מיד ולא נשמר עם הטופס, ולכן הוא נקרא מהשאילתה
      ולא מוחזק ב-state: הרענון שאחרי הכתיבה הוא מה שמצייר את התוצאה. */
   const chosenContractorWorkers = existing?.contractorWorkers ?? []
+  const chosenNoShow = existing?.contractorNoShow ?? new Set<string>()
+  const priceParts = existing?.terms?.price_parts ?? null
+  /* אי-התייצבות נקבעת ע״י מנהל/משרד (contractors.assign_workers), לא ע״י הקבלן. */
+  const canMarkNoShow = has(PERM.CONTRACTORS_ASSIGN_WORKERS)
   const contractorAssign = useContractorWorkerAssign()
+  const noShowMut = useMutation({
+    mutationFn: async ({ workerId, on }: { workerId: string; on: boolean }) => {
+      const { error } = await supabase.rpc('contractor_mark_no_show', {
+        p_task_id: taskId,
+        p_worker_id: workerId,
+        p_on: on,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['tasks', 'one', taskId] })
+      void qc.invalidateQueries({ queryKey: ['workboard'] })
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
   const { data: assignableWorkers = [] } = useContractorAssignableWorkers(
     canAssignContractor && open ? (form.contractor_id ?? null) : null,
   )
@@ -188,6 +212,11 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
         existing.terms?.price_per_worker != null ? String(existing.terms.price_per_worker) : '',
       )
       setContractorWorkSite(existing.terms?.work_site ?? 'field')
+      setContractorCount(
+        existing.terms?.contractor_worker_count != null
+          ? String(existing.terms.contractor_worker_count)
+          : '',
+      )
       setCustomerPrice(existing.pricing?.price != null ? String(existing.pricing.price) : '')
     } else if (!taskId) {
       setForm({ task_date: new Date().toISOString().slice(0, 10), worker_count: 0, ...initial })
@@ -195,6 +224,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       setPrice('')
       setPricePerWorker('')
       setContractorWorkSite('field')
+      setContractorCount('')
       setCustomerPrice('')
     }
   }, [open, taskId, existing, initial])
@@ -304,7 +334,10 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       // (במצב תעריף-לעובד המחיר מחושב בשרת מספירת העובדים ששובצו, 0091).
       if (base.contractor_id) {
         const termsPatch: Record<string, unknown> = {}
-        if (canDelegate) termsPatch.work_site = contractorWorkSite
+        if (canDelegate) {
+          termsPatch.work_site = contractorWorkSite
+          termsPatch.contractor_worker_count = contractorCount === '' ? null : Number(contractorCount)
+        }
         if (canEditPricing) {
           termsPatch.price_per_worker = pricePerWorker === '' ? null : Number(pricePerWorker)
           if (!perWorkerPricing && price !== '') termsPatch.price = Number(price)
@@ -407,7 +440,10 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
      עובדי הקבלן נספרים כאן כמאיישים: משימה שהואצלה לקבלן והוא איישָׁ אותה
      אינה "חסרה", גם אם אין לה task_assignments משלה (0091). */
   const assignedCount =
-    byRole('worker').length + byRole('driver').length + chosenContractorWorkers.length
+    byRole('worker').length +
+    byRole('driver').length +
+    byRole('team_lead').length +
+    chosenContractorWorkers.length
   const needed = form.worker_count ?? 0
   const understaffed = needed > 0 && assignedCount < needed
 
@@ -918,6 +954,19 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                       />
                     </Field>
                   )}
+                  {/* כמה עובדים הקבלן צריך להביא — תקרת השיבוץ, בלתי תלויה
+                      בכמות המשימה (0093/0095). */}
+                  {form.contractor_id && (
+                    <Field label="עובדים להביא" hint="תקרת השיבוץ של הקבלן">
+                      <Input
+                        type="number"
+                        min="0"
+                        value={contractorCount}
+                        onChange={(e) => setContractorCount(e.target.value)}
+                        disabled={!canDelegate}
+                      />
+                    </Field>
+                  )}
                 </div>
 
                 {form.contractor_id && canViewPricing && (
@@ -959,6 +1008,47 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                     </Field>
                   </div>
                 )}
+
+                {/* פירוט תמחור וקנסות למנהל (0093/0094). */}
+                {form.contractor_id && canViewPricing && priceParts && (
+                  <div className="space-y-1 rounded-xl border border-line-subtle bg-subtle/30 p-3 type-caption text-ink-secondary">
+                    <div className="type-body font-medium text-ink">פירוט תמחור וקנסות</div>
+                    <div className="flex justify-between">
+                      <span>בסיס{priceParts.transport ? ' (הובלה)' : ''}</span>
+                      <span dir="ltr" className="tabular">{fmtMoney(priceParts.base)}</span>
+                    </div>
+                    {priceParts.surcharge > 0 && (
+                      <div className="flex justify-between">
+                        <span>תוספת מחסן</span>
+                        <span dir="ltr" className="tabular">{fmtMoney(priceParts.surcharge)}</span>
+                      </div>
+                    )}
+                    {priceParts.late_count > 0 && (
+                      <div className="flex justify-between text-error-text">
+                        <span>קנס איחור ({priceParts.late_count})</span>
+                        <span dir="ltr" className="tabular">
+                          −{fmtMoney(priceParts.late_count * priceParts.late_penalty_each)}
+                        </span>
+                      </div>
+                    )}
+                    {priceParts.noshow_count > 0 && (
+                      <div className="flex justify-between text-error-text">
+                        <span>קנס אי-התייצבות ({priceParts.noshow_count})</span>
+                        <span dir="ltr" className="tabular">
+                          −{fmtMoney(priceParts.noshow_count * priceParts.noshow_penalty_each)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between border-t border-line-subtle pt-1 type-body font-semibold text-ink">
+                      <span>סך לתשלום</span>
+                      <span dir="ltr" className="tabular">
+                        {fmtMoney(
+                          Math.max(0, priceParts.base + priceParts.surcharge - priceParts.penalty_total),
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </CardBody>
             </Card>
           )}
@@ -983,7 +1073,8 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                 <MultiSelect
                   options={assignableWorkers.map((w) => ({
                     id: w.worker_id ? `w:${w.worker_id}` : `p:${w.profile_id}`,
-                    label: w.has_login ? `${w.full_name} · חשבון` : w.full_name,
+                    /* לאיזה קבלן העובד שייך, ולא "חשבון" (0094). */
+                    label: selectedContractor ? `${w.full_name} · ${selectedContractor.name}` : w.full_name,
                   }))}
                   values={assignableWorkers
                     .filter((w) => w.worker_id && chosenContractorWorkers.includes(w.worker_id))
@@ -1005,6 +1096,30 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                 />
                 {assignableWorkers.length === 0 && (
                   <p className="mt-1 type-caption text-ink-tertiary">אין עדיין עובדים בסגל של הקבלן.</p>
+                )}
+
+                {/* סימון אי-התייצבות למנהל/משרד (0093). מפעיל את קנס אי-ההתייצבות. */}
+                {canMarkNoShow && chosenContractorWorkers.length > 0 && (
+                  <div className="mt-3 space-y-1.5 border-t border-line-subtle pt-3">
+                    <div className="type-overline">נוכחות עובדי הקבלן</div>
+                    {assignableWorkers
+                      .filter((w) => w.worker_id && chosenContractorWorkers.includes(w.worker_id))
+                      .map((w) => (
+                        <label
+                          key={w.worker_id}
+                          className="flex items-center justify-between gap-2 type-caption"
+                        >
+                          <span className="truncate">{w.full_name}</span>
+                          <span className="inline-flex items-center gap-1.5 text-ink-secondary">
+                            לא התייצב
+                            <Switch
+                              checked={chosenNoShow.has(w.worker_id!)}
+                              onChange={(on) => noShowMut.mutate({ workerId: w.worker_id!, on })}
+                            />
+                          </span>
+                        </label>
+                      ))}
+                  </div>
                 )}
               </CardBody>
             </Card>

@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type {
   InputHTMLAttributes,
   ReactNode,
@@ -480,6 +481,30 @@ function useDismiss(open: boolean, close: () => void) {
 const POPOVER =
   'absolute z-40 mt-1 w-full origin-top animate-scale-in overflow-hidden rounded-lg border border-line bg-raised shadow-lg'
 
+/* פופאובר שצף מעל הכול דרך portal, כדי שלא ייחתך במגירה/כרטיס עם overflow.
+   המיקום מחושב מריבוע העוגן (fixed), ומתעדכן בגלילה ובשינוי גודל. */
+const POPOVER_FIXED =
+  'fixed z-[60] origin-top animate-scale-in overflow-hidden rounded-lg border border-line bg-raised shadow-lg'
+
+function useAnchoredPos(open: boolean, anchor: React.RefObject<HTMLElement | null>) {
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!open) return
+    const update = () => {
+      const r = anchor.current?.getBoundingClientRect()
+      if (r) setPos({ top: r.bottom + 4, left: r.left, width: r.width })
+    }
+    update()
+    window.addEventListener('scroll', update, true)
+    window.addEventListener('resize', update)
+    return () => {
+      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', update)
+    }
+  }, [open, anchor])
+  return pos
+}
+
 /* ===== MultiSelect ======================================================== */
 
 export function MultiSelect({
@@ -504,7 +529,26 @@ export function MultiSelect({
   const [active, setActive] = useState(0)
   const listId = useId()
   const f = useFieldProps({})
-  const ref = useDismiss(open, () => setOpen(false))
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const pos = useAnchoredPos(open, triggerRef)
+  /* דחייה שמכירה גם את הפאנל שצף ב-portal מחוץ ל-DOM של הרכיב. */
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (!triggerRef.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
 
   const filtered = useMemo(
     () => options.filter((o) => o.label.toLowerCase().includes(q.trim().toLowerCase())),
@@ -538,9 +582,10 @@ export function MultiSelect({
   }
 
   return (
-    <div ref={ref} className={cx('relative', className)}>
+    <div className={cx('relative', className)}>
       <button
         type="button"
+        ref={triggerRef}
         id={f.id}
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
@@ -589,8 +634,12 @@ export function MultiSelect({
         />
       </button>
 
-      {open && (
-        <div className={POPOVER}>
+      {open && pos && createPortal(
+        <div
+          ref={panelRef}
+          className={POPOVER_FIXED}
+          style={{ top: pos.top, left: pos.left, width: pos.width }}
+        >
           <div className="border-b border-line-subtle p-1.5">
             <Input
               inputSize="sm"
@@ -625,7 +674,8 @@ export function MultiSelect({
               )
             })}
           </ul>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
