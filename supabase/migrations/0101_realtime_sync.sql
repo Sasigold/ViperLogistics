@@ -162,12 +162,15 @@ begin
   return null;
 end $$;
 
+drop trigger if exists tasks_sync_ins on tasks;
 create trigger tasks_sync_ins after insert on tasks
   referencing new table as new_rows
   for each statement execute function app.tasks_sync_ins();
+drop trigger if exists tasks_sync_upd on tasks;
 create trigger tasks_sync_upd after update on tasks
   referencing old table as old_rows new table as new_rows
   for each statement execute function app.tasks_sync_upd();
+drop trigger if exists tasks_sync_del on tasks;
 create trigger tasks_sync_del after delete on tasks
   referencing old table as old_rows
   for each statement execute function app.tasks_sync_del();
@@ -225,12 +228,15 @@ begin
   return null;
 end $$;
 
+drop trigger if exists events_sync_ins on events;
 create trigger events_sync_ins after insert on events
   referencing new table as new_rows
   for each statement execute function app.events_sync_ins();
+drop trigger if exists events_sync_upd on events;
 create trigger events_sync_upd after update on events
   referencing old table as old_rows new table as new_rows
   for each statement execute function app.events_sync_upd();
+drop trigger if exists events_sync_del on events;
 create trigger events_sync_del after delete on events
   referencing old table as old_rows
   for each statement execute function app.events_sync_del();
@@ -281,12 +287,15 @@ begin
   return null;
 end $$;
 
+drop trigger if exists ta_sync_ins on task_assignments;
 create trigger ta_sync_ins after insert on task_assignments
   referencing new table as new_rows
   for each statement execute function app.assignments_sync();
+drop trigger if exists ta_sync_upd on task_assignments;
 create trigger ta_sync_upd after update on task_assignments
   referencing old table as old_rows new table as new_rows
   for each statement execute function app.assignments_sync();
+drop trigger if exists ta_sync_del on task_assignments;
 create trigger ta_sync_del after delete on task_assignments
   referencing old table as old_rows
   for each statement execute function app.assignments_sync();
@@ -330,12 +339,15 @@ begin
   return null;
 end $$;
 
+drop trigger if exists tcw_sync_ins on task_contractor_workers;
 create trigger tcw_sync_ins after insert on task_contractor_workers
   referencing new table as new_rows
   for each statement execute function app.tcw_sync();
+drop trigger if exists tcw_sync_upd on task_contractor_workers;
 create trigger tcw_sync_upd after update on task_contractor_workers
   referencing old table as old_rows new table as new_rows
   for each statement execute function app.tcw_sync();
+drop trigger if exists tcw_sync_del on task_contractor_workers;
 create trigger tcw_sync_del after delete on task_contractor_workers
   referencing old table as old_rows
   for each statement execute function app.tcw_sync();
@@ -373,12 +385,15 @@ begin
   return null;
 end $$;
 
+drop trigger if exists tct_sync_ins on task_contractor_terms;
 create trigger tct_sync_ins after insert on task_contractor_terms
   referencing new table as new_rows
   for each statement execute function app.tct_sync();
+drop trigger if exists tct_sync_upd on task_contractor_terms;
 create trigger tct_sync_upd after update on task_contractor_terms
   referencing old table as old_rows new table as new_rows
   for each statement execute function app.tct_sync();
+drop trigger if exists tct_sync_del on task_contractor_terms;
 create trigger tct_sync_del after delete on task_contractor_terms
   referencing old table as old_rows
   for each statement execute function app.tct_sync();
@@ -395,6 +410,7 @@ create trigger tct_sync_del after delete on task_contractor_terms
 --     (ולא היקף 'own': מי שרואה רק את שיבוציו נשאר בערוץ האישי).
 --   * ערוץ קבלן — סימטרי.
 --   * sync:staff — אדמין, או סגל בלי 'own' ובלי היקף לקוחות/קבלנים: הסדרנים.
+drop policy if exists sync_topics_read on realtime.messages;
 create policy sync_topics_read on realtime.messages
 for select to authenticated using (
   realtime.messages.extension = 'broadcast' and (
