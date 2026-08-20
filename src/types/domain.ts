@@ -60,7 +60,18 @@ export interface Contractor {
   phone: string | null
   email: string | null
   notes: string | null
+  /** מחיר בסיס למשימה. */
   default_task_price: number | null
+  /** ברירת מחדל: הסכום שהקבלן מקבל לכל עובד. null = תמחור לפי מחיר-משימה שטוח (0091). */
+  price_per_worker: number | null
+  /** תוספת קבועה כשהמשימה מתחילה במחסן (0091). */
+  warehouse_arrival_surcharge: number | null
+  /** מחיר למשימת הובלה בלבד, במקום מחיר הבסיס (0091). */
+  transport_only_price: number | null
+  /** קנס לאיחור של עובד שסומן למעקב (0091). */
+  lateness_penalty: number | null
+  /** קנס לאי-התייצבות של עובד (0091). */
+  no_show_penalty: number | null
   is_active: boolean
   deleted_at: string | null
 }
@@ -72,6 +83,8 @@ export interface ContractorWorker {
   phone: string | null
   id_number: string | null
   user_id: string | null
+  /** האם קנס האיחור של הקבלן חל על העובד הזה (0091). */
+  lateness_tracked: boolean
   is_active: boolean
   deleted_at: string | null
 }
@@ -505,6 +518,12 @@ export interface WorkBoardRow {
   customer_price: number | null
   price_is_manual: boolean | null
   price_breakdown: PriceBreakdown | null
+  /** התשלום לקבלן על המשימה. null למי שאין לו contractors.view_pricing (0091). */
+  contractor_price: number | null
+  /** התעריף-לעובד שנקבע למשימה זו (דריסה לברירת המחדל של הקבלן). null = יורש. */
+  contractor_price_per_worker: number | null
+  /** נקודת ההתחלה שהמשרד קבע לקבלן; חלה על עובדיו (0091). */
+  contractor_work_site: 'field' | 'warehouse' | null
   travel_hours: number | null
   requires_team_lead: boolean | null
 }

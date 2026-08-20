@@ -50,7 +50,9 @@ export function AttendanceEntryDrawer({
   const invalidate = useAttendanceInvalidate()
   const canEdit = has(PERM.ATTENDANCE_EDIT_ENTRY)
   const canDelete = has(PERM.ATTENDANCE_DELETE)
-  const canApprove = has(PERM.ATTENDANCE_APPROVE_ENTRY)
+  // מנהל קבלן מאשר דיווח של הסגל שלו: המפתח המשרדי, או מפתח הפורטל שה-RPC
+  // מגביל לעובדי הקבלן של המאשר בלבד (0091).
+  const canApprove = has(PERM.ATTENDANCE_APPROVE_ENTRY) || has(PERM.PORTAL_APPROVE_ATTENDANCE)
   const canBonus = has(PERM.ATTENDANCE_MANAGE_BONUS)
   const isPending = row?.status === 'pending'
   const review = useReviewAttendanceEntry()

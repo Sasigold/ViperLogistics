@@ -267,7 +267,8 @@ export function useContractorWorkerAssign() {
         p_worker_id: v.workerId ?? null,
         p_profile_id: v.profileId ?? null,
         p_on: v.on,
-        p_work_site: v.workSite ?? 'field',
+        /* null = ירושה מנקודת ההתחלה שהמשרד קבע לקבלן במשימה (0091). */
+        p_work_site: v.workSite ?? null,
       })
       if (error) throw error
     },

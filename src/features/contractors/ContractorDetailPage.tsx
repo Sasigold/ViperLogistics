@@ -122,9 +122,13 @@ function DetailsTab({ contractor }: { contractor: Contractor }) {
 
   const dirty = useMemo(
     () =>
-      (['name', 'contact_name', 'phone', 'email', 'notes', 'default_task_price', 'is_active'] as const).some(
-        (k) => form[k] !== contractor[k],
-      ),
+      (
+        [
+          'name', 'contact_name', 'phone', 'email', 'notes', 'default_task_price',
+          'price_per_worker', 'warehouse_arrival_surcharge', 'transport_only_price',
+          'lateness_penalty', 'no_show_penalty', 'is_active',
+        ] as const
+      ).some((k) => form[k] !== contractor[k]),
     [form, contractor],
   )
 
@@ -140,6 +144,11 @@ function DetailsTab({ contractor }: { contractor: Contractor }) {
           email: form.email,
           notes: form.notes,
           default_task_price: form.default_task_price,
+          price_per_worker: form.price_per_worker,
+          warehouse_arrival_surcharge: form.warehouse_arrival_surcharge,
+          transport_only_price: form.transport_only_price,
+          lateness_penalty: form.lateness_penalty,
+          no_show_penalty: form.no_show_penalty,
           is_active: form.is_active,
         })
         .eq('id', contractor.id)
@@ -179,16 +188,38 @@ function DetailsTab({ contractor }: { contractor: Contractor }) {
               disabled={!canEdit}
             />
           </Field>
-          <Field label="מחיר ברירת מחדל למשימה" hint="בשקלים, משמש כמחיר התחלתי בהאצלת משימה">
-            <Input
-              type="number"
-              min="0"
-              value={form.default_task_price ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, default_task_price: e.target.value === '' ? null : Number(e.target.value) }))}
-              disabled={!canEdit}
-            />
-          </Field>
         </div>
+
+        {/* ── תמחור ─────────────────────────────────────────────────────
+            מחיר בסיס למשימה, תעריף-לעובד, תוספת הגעה למחסן, ומחיר למשימת
+            הובלה בלבד. התעריף-לעובד, כשמוגדר, גובר בהאצלה: המחיר נגזר ממנו
+            כפול מספר העובדים ששובצו (0091). */}
+        {has(PERM.CONTRACTORS_VIEW_PRICING) && (
+          <div className="space-y-3 border-t border-line-subtle pt-4">
+            <div className="type-overline">תמחור</div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <MoneyField label="מחיר בסיס למשימה" value={form.default_task_price} disabled={!canEdit}
+                onChange={(v) => setForm((f) => ({ ...f, default_task_price: v }))} />
+              <MoneyField label="מחיר לעובד" hint="כשמוגדר, מחיר המשימה = מספר העובדים × הסכום"
+                value={form.price_per_worker} disabled={!canEdit}
+                onChange={(v) => setForm((f) => ({ ...f, price_per_worker: v }))} />
+              <MoneyField label="תוספת הגעה למחסן" value={form.warehouse_arrival_surcharge} disabled={!canEdit}
+                onChange={(v) => setForm((f) => ({ ...f, warehouse_arrival_surcharge: v }))} />
+              <MoneyField label="מחיר למשימת הובלה בלבד" value={form.transport_only_price} disabled={!canEdit}
+                onChange={(v) => setForm((f) => ({ ...f, transport_only_price: v }))} />
+            </div>
+
+            <div className="type-overline pt-1">קנסות</div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <MoneyField label="קנס איחור" hint="חל רק על עובדים שסומנו למעקב איחורים"
+                value={form.lateness_penalty} disabled={!canEdit}
+                onChange={(v) => setForm((f) => ({ ...f, lateness_penalty: v }))} />
+              <MoneyField label="קנס אי-התייצבות" value={form.no_show_penalty} disabled={!canEdit}
+                onChange={(v) => setForm((f) => ({ ...f, no_show_penalty: v }))} />
+            </div>
+          </div>
+        )}
+
         <Field label="הערות">
           <Input value={form.notes ?? ''} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} disabled={!canEdit} />
         </Field>
@@ -204,6 +235,33 @@ function DetailsTab({ contractor }: { contractor: Contractor }) {
         <StickySaveBar dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} onReset={() => setForm(contractor)} />
       )}
     </Card>
+  )
+}
+
+/** שדה סכום בשקלים: ריק = null, כדי שאי-הגדרה תישמר כ-null ולא כאפס. */
+function MoneyField({
+  label,
+  hint,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  value: number | null
+  disabled?: boolean
+  onChange: (v: number | null) => void
+}) {
+  return (
+    <Field label={label} hint={hint}>
+      <Input
+        type="number"
+        min="0"
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+        disabled={disabled}
+      />
+    </Field>
   )
 }
 
@@ -273,6 +331,16 @@ export function WorkersTab({
     }
   }
 
+  /* קנס האיחור של הקבלן חל רק על עובדים שסומנו כאן (0091). */
+  const toggleLateness = useMutation({
+    mutationFn: async ({ id, on }: { id: string; on: boolean }) => {
+      const { error } = await supabase.from('contractor_workers').update({ lateness_tracked: on }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['contractor_workers'] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
   return (
     <Card className="max-w-2xl">
       {dialog}
@@ -333,6 +401,13 @@ export function WorkersTab({
                     {[w.phone, w.id_number].filter(Boolean).join(' · ') || '—'}
                   </p>
                 </div>
+                {mayManage && (
+                  <Switch
+                    checked={w.lateness_tracked}
+                    onChange={(on) => toggleLateness.mutate({ id: w.id, on })}
+                    label="מעקב איחורים"
+                  />
+                )}
                 {hasLogin.has(w.id) ? (
                   <Badge tone="success">שעון נוכחות</Badge>
                 ) : (
