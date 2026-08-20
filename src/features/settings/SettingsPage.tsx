@@ -6,6 +6,7 @@ import {
   Boxes,
   ClipboardList,
   Clock,
+  FileText,
   ICON,
   Map,
   Plus,
@@ -40,7 +41,7 @@ import {
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { useExecutionMethods, useStatuses, useTaskTypes, useTrucks } from '../../lib/queries'
+import { useExecutionMethods, useStatuses, useTaskTypes, useTrucks, useVehicleDocumentKinds } from '../../lib/queries'
 import { fmtDateTime } from '../../lib/dates'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
@@ -67,6 +68,7 @@ const TABS = [
   { key: 'execution_methods', label: 'אופני ביצוע', icon: <Boxes size={ICON.sm} />, perm: PERM.SETTINGS_EXECUTION_METHODS },
   { key: 'statuses', label: 'סטטוסים', icon: <Zap size={ICON.sm} />, perm: PERM.SETTINGS_STATUSES },
   { key: 'trucks', label: 'משאיות', icon: <Truck size={ICON.sm} />, perm: PERM.SETTINGS_TRUCKS },
+  { key: 'doc_kinds', label: 'סוגי מסמכי רכב', icon: <FileText size={ICON.sm} />, perm: PERM.FLEET_SETTINGS },
   {
     key: 'zones',
     label: 'אזורי נסיעה',
@@ -98,6 +100,7 @@ export default function SettingsPage() {
         {active === 'execution_methods' && <MethodsTab />}
         {active === 'statuses' && <StatusesTab />}
         {active === 'trucks' && <TrucksTab />}
+        {active === 'doc_kinds' && <VehicleDocKindsTab />}
         {/* customerId=null — האזורים שחלים על כל הלקוחות שאין להם אזור משלהם */}
         {active === 'zones' && <PricingZonesEditor customerId={null} />}
         {active === 'finance' && <FinanceSettingsTab />}
@@ -582,16 +585,160 @@ function TrucksTab() {
   )
 }
 
+/* ===== vehicle document kinds ============================================= */
+
+/**
+ * הקטלוג שממנו נבחר סוג מסמך בכרטיס הרכב (0089 §4).
+ *
+ * `alert_days` אינו קישוט: הוא מה שקובע מתי הסוויפ שולח התראה, ומתי המסך
+ * צובע "פג בקרוב". לכן הוא נערך כאן, פר-סוג — על ביטוח חובה מתריעים חודש
+ * מראש כי החידוש לוקח יום, ועל רישיון מנוף שלושה חודשים כי הוא דורש בדיקה
+ * מתוזמנת.
+ */
+function VehicleDocKindsTab() {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const { confirm, dialog } = useConfirm()
+  const { data: kinds = [], isLoading } = useVehicleDocumentKinds()
+  const [form, setForm] = useState({ name: '', alert_days: '30', default_valid_months: '12' })
+  const del = useSoftDelete('vehicle_document_kinds')
+
+  const invalidate = () => void qc.invalidateQueries({ queryKey: ['vehicle_document_kinds'] })
+
+  const add = useMutation({
+    mutationFn: async () => {
+      const name = form.name.trim()
+      if (!name) throw new Error('חובה להזין שם סוג')
+      // המפתח נגזר מהשם ולא נשאל: הוא מזהה טכני, והמשתמש אינו צריך להמציא אותו.
+      const key = `custom_${crypto.randomUUID().slice(0, 8)}`
+      const { error } = await supabase.from('vehicle_document_kinds').insert({
+        key,
+        name,
+        alert_days: Number(form.alert_days) || 30,
+        default_valid_months: form.default_valid_months.trim() === '' ? null : Number(form.default_valid_months),
+        sort_order: 1000,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('הסוג נוסף')
+      setForm({ name: '', alert_days: '30', default_valid_months: '12' })
+      invalidate()
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  const patch = useMutation({
+    mutationFn: async ({ id, values }: { id: string; values: Record<string, unknown> }) => {
+      const { error } = await supabase.from('vehicle_document_kinds').update(values).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  return (
+    <Card className="max-w-3xl">
+      {dialog}
+      <CardHeader
+        title="סוגי מסמכי רכב"
+        subtitle={`${kinds.length} סוגים · ${kinds.filter((k) => k.is_required).length} מסמכי חובה`}
+        icon={<FileText size={ICON.md} strokeWidth={STROKE} />}
+      />
+      <AddRow onSubmit={() => add.mutate()} pending={add.isPending} disabled={!form.name.trim()}>
+        <Field label="שם הסוג" className="min-w-40 flex-1">
+          <Input inputSize="sm" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+        </Field>
+        <Field label="התראה (ימים)" className="w-32">
+          <Input
+            inputSize="sm"
+            type="number"
+            dir="ltr"
+            value={form.alert_days}
+            onChange={(e) => setForm((f) => ({ ...f, alert_days: e.target.value }))}
+          />
+        </Field>
+        <Field label="תוקף (חודשים)" className="w-32">
+          <Input
+            inputSize="sm"
+            type="number"
+            dir="ltr"
+            value={form.default_valid_months}
+            onChange={(e) => setForm((f) => ({ ...f, default_valid_months: e.target.value }))}
+          />
+        </Field>
+      </AddRow>
+      <CardBody padded={false}>
+        {isLoading ? (
+          <div className="p-4">
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ) : kinds.length === 0 ? (
+          <EmptyState compact art="box" title="אין סוגי מסמכים" description="בלי סוג אי אפשר לרשום מסמך לרכב" />
+        ) : (
+          <ul>
+            {kinds.map((k) => (
+              <li key={k.id} className="flex flex-wrap items-center gap-3 border-b border-line-subtle px-4 py-2.5 last:border-0 hover:bg-hover">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-subtle text-ink-tertiary" aria-hidden>
+                  <FileText size={ICON.sm} strokeWidth={STROKE} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate type-body font-medium">{k.name}</p>
+                  <p className="truncate type-caption text-ink-tertiary">
+                    {k.default_valid_months ? `תוקף ${k.default_valid_months} חודשים · ` : ''}
+                    התראה {k.alert_days} ימים מראש
+                  </p>
+                </div>
+                <Field label="ימים" className="w-24">
+                  <Input
+                    inputSize="sm"
+                    type="number"
+                    dir="ltr"
+                    defaultValue={k.alert_days}
+                    onBlur={(e) => {
+                      const v = Number(e.target.value)
+                      if (Number.isFinite(v) && v !== k.alert_days) patch.mutate({ id: k.id, values: { alert_days: v } })
+                    }}
+                  />
+                </Field>
+                <Checkbox
+                  label="חובה"
+                  checked={k.is_required}
+                  onChange={(v) => patch.mutate({ id: k.id, values: { is_required: v } })}
+                />
+                {!k.is_active && <StatusPill color="#8a93a5">לא פעיל</StatusPill>}
+                <IconButton
+                  label={`מחיקת ${k.name}`}
+                  size="sm"
+                  className="hover:text-error"
+                  onClick={async () => {
+                    if (await confirm(`למחוק את "${k.name}"?`, { title: 'מחיקת סוג מסמך', confirmLabel: 'מחיקה' }))
+                      del.mutate({ table: 'vehicle_document_kinds', id: k.id })
+                  }}
+                >
+                  <Trash2 size={ICON.sm} strokeWidth={STROKE} />
+                </IconButton>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardBody>
+    </Card>
+  )
+}
+
 /* ===== recycle bin ======================================================== */
 
 const RECYCLE_TABLES = [
   { value: 'events', label: 'אירועים' },
+  { value: 'vehicles', label: 'רכבים' },
   { value: 'tasks', label: 'משימות' },
   { value: 'customers', label: 'לקוחות' },
   { value: 'contractors', label: 'קבלנים' },
   { value: 'profiles', label: 'משתמשים' },
   { value: 'suppliers', label: 'ספקים' },
   { value: 'trucks', label: 'משאיות' },
+  { value: 'vehicle_document_kinds', label: 'סוגי מסמכי רכב' },
   { value: 'task_types', label: 'סוגי משימות' },
   { value: 'execution_methods', label: 'אופני ביצוע' },
   { value: 'statuses', label: 'סטטוסים' },

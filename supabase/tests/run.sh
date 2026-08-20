@@ -205,6 +205,17 @@ OUT="$OUT
 $OUT17"
 
 echo
+echo "== fleet suite =="
+# 19 מקימה משאית, שני רכבים וחמישה פרופילים משלה ואינה נשענת על אף חבילה
+# קודמת. היא רצה אחרונה כי היא סופרת פוליסות על storage.objects, כותבת
+# התראות, ומשאירה אחריה רכבים ומסמכים שאינם מנוקים. תאריכי הפקיעה שלה
+# נגזרים מ-current_date, כי כל הבדיקה היא על היחס ליום הנוכחי.
+OUT18=$($PSQL -d vl -f "$HERE/19_vehicles.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT18"
+OUT="$OUT
+$OUT18"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

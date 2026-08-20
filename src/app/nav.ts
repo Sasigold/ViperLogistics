@@ -15,6 +15,7 @@ import {
   Percent,
   Settings,
   TrendingUp,
+  Truck,
   Users,
 } from '../components/ui/icons'
 import type { ComponentType } from 'react'
@@ -175,6 +176,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/customers', label: 'לקוחות', icon: Building2, perm: PERM.CUSTOMERS_VIEW },
       { to: '/users', label: 'עובדים', icon: Users, perm: PERM.USERS_VIEW },
       { to: '/contractors', label: 'קבלנים', icon: HardHat, perm: PERM.CONTRACTORS_VIEW },
+      { to: '/vehicles', label: 'ניהול רכבים', shortLabel: 'רכבים', icon: Truck, perm: PERM.FLEET_VIEW },
       /* shortLabel 'שיבוץ' ולא 'משמרות': מי שרואה את הרשומה הזאת רואה במקביל
          גם את "משמרות" שלמעלה, ושתי רשומות באותו שם הן שתי רשומות שאי אפשר
          לבחור ביניהן. */
@@ -252,6 +254,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/customers': 'לקוחות',
   '/users': 'עובדים',
   '/contractors': 'קבלנים',
+  '/vehicles': 'ניהול רכבים',
   '/attendance': 'דוח נוכחות',
   '/shifts': 'לוח משמרות צוות',
   '/reports': 'דוחות',

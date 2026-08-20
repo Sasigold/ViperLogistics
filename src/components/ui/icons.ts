@@ -105,6 +105,11 @@ export {
   Armchair,
   Receipt,
   HandCoins,
+  // fleet (0089)
+  Fuel,
+  Gauge,
+  IdCard,
+  ShieldCheck,
   Calculator,
   Percent,
   Lock,
