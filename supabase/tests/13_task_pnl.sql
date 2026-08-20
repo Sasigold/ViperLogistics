@@ -164,14 +164,14 @@ delete from tasks where event_id = '30000000-0000-0000-0000-000000000013';
 
 -- שמונה משימות. T5 תימחק רכות בהמשך, אחרי שהמשמרת כבר נוקבת בה.
 insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id,
-                   title, hours_count, worker_count, contractor_id)
+                   title, hours_count, worker_count)
 select v.id, '30000000-0000-0000-0000-000000000013',
        '10000000-0000-0000-0000-000000000013',
        (select id from task_types where code = 'setup' limit 1),
        (select d0 from t13),
        (select id from statuses where entity = 'task' and code = 'assigned'
                                   and deleted_at is null),
-       v.title, v.hours, v.workers, v.contractor::uuid
+       v.title, v.hours, v.workers
 from (values
   ('31000000-0000-0000-0000-000000130001'::uuid, 'T1 שש שעות',       6::numeric, 2, null),
   ('31000000-0000-0000-0000-000000130002'::uuid, 'T2 שעתיים',        2::numeric, 1, null),
@@ -184,6 +184,11 @@ from (values
   ('31000000-0000-0000-0000-000000130008'::uuid, 'T8 רק עובד ללא תעריף', 2::numeric, 1, null)
 ) v(id, title, hours, workers, contractor);
 
+-- ‏0096: ההאצלה היא שורה ב-task_contractor_terms, ו-`tasks.contractor_id` הוא
+-- שיקוף שהטריגר על ה-terms מתחזק. הזריעה כותבת את האמת, לא את השיקוף.
+insert into task_contractor_terms (task_id, contractor_id, price)
+values ('31000000-0000-0000-0000-000000130007', '11000000-0000-0000-0000-000000000013', 0);
+
 insert into task_pricing (task_id, price, is_manual) values
   ('31000000-0000-0000-0000-000000130001', 1000, true),
   ('31000000-0000-0000-0000-000000130002',  400, true),
@@ -194,7 +199,7 @@ insert into task_pricing (task_id, price, is_manual) values
   ('31000000-0000-0000-0000-000000130007', 5000, true),
   ('31000000-0000-0000-0000-000000130008',  600, true);
 
--- שורת התנאים נוצרת בטריגר עם ההאצלה; כאן רק נקבע המחיר.
+-- המחיר על שורת התנאים שנזרעה למעלה.
 update task_contractor_terms set price = 2000
  where task_id = '31000000-0000-0000-0000-000000130007';
 

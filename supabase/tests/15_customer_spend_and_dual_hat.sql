@@ -63,12 +63,15 @@ select '30000000-0000-0000-0000-000000000015', '10000000-0000-0000-0000-00000000
          order by sort_order limit 1);
 
 insert into tasks (id, event_id, customer_id, task_type_id, task_date, onsite_start_time,
-                   hours_count, worker_count, status_id, contractor_id)
+                   hours_count, worker_count, status_id)
 select '60000000-0000-0000-0000-00000000015a', '30000000-0000-0000-0000-000000000015',
        '10000000-0000-0000-0000-000000000015',
        (select id from task_types where code = 'setup' limit 1), current_date, '09:00', 4, 2,
-       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null),
-       '11000000-0000-0000-0000-00000000015a';
+       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null);
+
+-- ההאצלה עוברת בשורת ה-terms (0096), והשיקוף ב-`tasks.contractor_id` נגזר ממנה.
+insert into task_contractor_terms (task_id, contractor_id, price)
+values ('60000000-0000-0000-0000-00000000015a', '11000000-0000-0000-0000-00000000015a', 0);
 
 insert into task_pricing (task_id, price, is_manual)
 values ('60000000-0000-0000-0000-00000000015a', 1250, true);

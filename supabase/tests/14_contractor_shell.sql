@@ -18,6 +18,7 @@
 -- ===========================================================================
 
 insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000014a6', 'c14-dual@vl.test'),
   ('00000000-0000-0000-0000-0000000014a1', 'c14-mgr@vl.test'),
   ('00000000-0000-0000-0000-0000000014a2', 'c14-roster@vl.test'),
   ('00000000-0000-0000-0000-0000000014a3', 'c14-office-hire@vl.test'),
@@ -51,14 +52,20 @@ insert into profiles (id, user_id, user_kind, full_name, contractor_id, contract
    'contractor_user', 'עובד של קבלן ב', '11000000-0000-0000-0000-00000000014b', null),
   -- איש צוות בלי שום מפתח קבלנים
   ('20000000-0000-0000-0000-0000000014a5', '00000000-0000-0000-0000-0000000014a5',
-   'staff', 'איש צוות', null, null);
+   'staff', 'איש צוות', null, null),
+  -- **שני כובעים**: מנהל של קבלן ב שגם עובד אצלו (0104). הוא יושב אצל ב
+  -- בכוונה, כדי שלא ישנה את מניין הסגל של קבלן א שנספר בסעיף 5.
+  ('20000000-0000-0000-0000-0000000014a6', '00000000-0000-0000-0000-0000000014a6',
+   'contractor_user', 'מנהל שגם עובד', '11000000-0000-0000-0000-00000000014b', null);
 
 insert into profile_roles (profile_id, role_id)
 select p.pid, r.id from (values
   ('20000000-0000-0000-0000-0000000014a1'::uuid, 'contractor_manager'),
   ('20000000-0000-0000-0000-0000000014a2'::uuid, 'contractor_worker'),
   ('20000000-0000-0000-0000-0000000014a3'::uuid, 'contractor_worker'),
-  ('20000000-0000-0000-0000-0000000014a5'::uuid, 'worker')
+  ('20000000-0000-0000-0000-0000000014a5'::uuid, 'worker'),
+  ('20000000-0000-0000-0000-0000000014a6'::uuid, 'contractor_manager'),
+  ('20000000-0000-0000-0000-0000000014a6'::uuid, 'contractor_worker')
 ) as p(pid, rkey)
 join permission_roles r on r.key = p.rkey;
 
@@ -66,25 +73,33 @@ insert into events (id, customer_id, event_date, location_lat, location_lng) val
   ('30000000-0000-0000-0000-000000000014', '10000000-0000-0000-0000-000000000014',
    current_date + 5, 32.0853, 34.7818);
 
--- T1 — משימה של קבלן א, עם שעות כדי ש-planned_shifts יוכל לגזור ממנה משמרת
+-- T1 — משימה של קבלן א, עם שעות כדי ש-planned_shifts יוכל לגזור ממנה משמרת.
+-- ההאצלה נזרעת כשורת terms (0096) ולא כעמודה: `tasks.contractor_id` הוא שיקוף
+-- שהטריגר על ה-terms מתחזק, וזריעה שלו לבדו אינה מאצילה דבר.
 insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id,
-                   contractor_id, worker_count, onsite_start_time, hours_count)
+                   worker_count, onsite_start_time, hours_count)
 select '31000000-0000-0000-0000-000000140001', '30000000-0000-0000-0000-000000000014',
        '10000000-0000-0000-0000-000000000014',
        (select id from task_types where code = 'setup' limit 1),
        current_date + 5,
        (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null),
-       '11000000-0000-0000-0000-00000000014a', 3, '08:00', 6;
+       3, '08:00', 6;
+
+insert into task_contractor_terms (task_id, contractor_id, price)
+values ('31000000-0000-0000-0000-000000140001', '11000000-0000-0000-0000-00000000014a', 500);
 
 -- T2 — משימה של קבלן ב
 insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id,
-                   contractor_id, worker_count, onsite_start_time, hours_count)
+                   worker_count, onsite_start_time, hours_count)
 select '31000000-0000-0000-0000-000000140002', '30000000-0000-0000-0000-000000000014',
        '10000000-0000-0000-0000-000000000014',
        (select id from task_types where code = 'setup' limit 1),
        current_date + 5,
        (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null),
-       '11000000-0000-0000-0000-00000000014b', 2, '08:00', 6;
+       2, '08:00', 6;
+
+insert into task_contractor_terms (task_id, contractor_id, price)
+values ('31000000-0000-0000-0000-000000140002', '11000000-0000-0000-0000-00000000014b', 500);
 
 -- ===========================================================================
 \echo '--- §1: מפתחות הפורטל אינם עוד ברירת מחדל לכולם ---'
@@ -328,6 +343,27 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000014a1
 select t_eq('והמנהל קורא את ההגדרות של הסגל שלו',
   (select count(*)::int from worker_pay_settings
     where profile_id = '20000000-0000-0000-0000-0000000014a3'), 1);
+reset role;
+
+\echo '--- §7: מנהל קבלן שהוא גם עובד (0104) ---'
+-- שני התפקידים על אותו אדם. תפקיד העובד סוגר במפורש את מודול הפורטל, ומנהל
+-- הקבלן קיבל את `portal.attendance` מברירת המחדל של הקהל — שכבה שמדברת *אחרי*
+-- התפקידים. התוצאה עד 0104: דחיית העובד ניצחה, והמנהל איבד את דוח העובדים.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000014a6', false);
+
+select t_eq('התפקיד האפקטיבי הוא המנהל בלבד',
+  (select string_agg(r.key, ',') from permission_roles r where r.id = any(app.my_role_ids())),
+  'contractor_manager');
+select t_eq('ולכן דוח העובדים נשאר פתוח לו', app.has('portal.attendance'), true);
+select t_eq('וגם שאר הפורטל',                app.has('portal.view'), true);
+select t_eq('ואישור נוכחות של הסגל',          app.has('portal.approve_attendance'), true);
+-- ומה שהעובד נותן לא נלקח: הוא עדיין מחתים שעון, מדווח ידנית ורואה את שכרו
+select t_eq('הוא עדיין מחתים שעון',           app.has('attendance.clock'), true);
+select t_eq('מדווח נוכחות ידנית',             app.has('attendance.submit_entry'), true);
+select t_eq('ורואה את השכר של עצמו',          app.has('attendance.view_own_pay'), true);
+-- והכובע המנהל גובר גם בשכבת השדות (0103)
+select t_eq('ואיש הקשר גלוי לו כמנהל',        app.can_view_field('event', 'contact_phone'), true);
 reset role;
 
 \echo '--- §4: קישור ההתראה אינו מפצל עוד לפי סוג משתמש ---'

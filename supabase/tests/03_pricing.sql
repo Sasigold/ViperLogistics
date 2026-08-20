@@ -331,10 +331,23 @@ insert into profiles (id, user_id, user_kind, full_name, contractor_id) values
   ('20000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e1',
    'contractor_user', 'איש הקבלן', '40000000-0000-0000-0000-0000000000e1');
 
--- מאצילים לו את משימת ההקמה, כדי שהשורה ב-tasks תהיה גלויה לו
-update tasks set contractor_id = '40000000-0000-0000-0000-0000000000e1'
- where event_id = '30000000-0000-0000-0000-0000000000d1'
-   and task_type_id = (select id from task_types where code = 'setup');
+-- ‏0091 §6ב: מפתחות הפורטל אינם עוד ברירת מחדל לסוג `contractor_user` — חשבון
+-- בלי תפקיד מנהל אינו רואה את המשימות של הקבלן שלו. התפקיד הוא מה שהופך אותו
+-- למי שהבדיקה כאן מדברת עליו: קבלן שרואה את המשימה, ולא את מחיר הלקוח שבה.
+insert into profile_roles (profile_id, role_id)
+select '20000000-0000-0000-0000-0000000000e1', id
+  from permission_roles where key = 'contractor_manager';
+
+-- מאצילים לו את משימת ההקמה, כדי שהשורה ב-tasks תהיה גלויה לו.
+-- ‏0096: ההאצלה היא שורה ב-task_contractor_terms; `tasks.contractor_id` הוא
+-- שיקוף שהטריגר על ה-terms מתחזק, וכתיבה אליו אינה מאצילה דבר (0105 חוסמת
+-- אותה לגמרי).
+insert into task_contractor_terms (task_id, contractor_id, price)
+select t.id, '40000000-0000-0000-0000-0000000000e1', 0
+  from tasks t
+ where t.event_id = '30000000-0000-0000-0000-0000000000d1'
+   and t.task_type_id = (select id from task_types where code = 'setup')
+on conflict (task_id, contractor_id) do nothing;
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000e1', false);
@@ -477,18 +490,28 @@ select t_eq('הסימון אכן נרשם',
    where t.event_id = '30000000-0000-0000-0000-0000000000d1'
      and tct.paid_at is not null), 1::bigint);
 
+-- ההסרה עוברת ב-RPC מאז 0096, והוא זה שבודק את סימון התשלום. הבדיקה נעשית
+-- מתוך התחזות לאדמין, כי `contractor_undelegate` דורש `tasks.delegate`.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+
 select t_expect_fail('אי אפשר להסיר קבלן ממשימה ששולם עליה',
+  $$select contractor_undelegate(
+      (select id from tasks where event_id = '30000000-0000-0000-0000-0000000000d1'
+                              and contractor_id = '40000000-0000-0000-0000-0000000000e1'),
+      '40000000-0000-0000-0000-0000000000e1')$$);
+
+-- ו-0105: העמודה המשוקפת אינה נתיב עוקף — כתיבה ישירה אליה נדחית תמיד
+select t_expect_fail('וגם כתיבה ישירה לעמודה המשוקפת נדחית',
   $$update tasks set contractor_id = null
      where event_id = '30000000-0000-0000-0000-0000000000d1'
        and contractor_id = '40000000-0000-0000-0000-0000000000e1'$$);
 
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
 insert into contractors (id, name) values
   ('40000000-0000-0000-0000-0000000000e2', 'קבלן מחליף');
-
-select t_expect_fail('ואי אפשר להחליף אותו בקבלן אחר',
-  $$update tasks set contractor_id = '40000000-0000-0000-0000-0000000000e2'
-     where event_id = '30000000-0000-0000-0000-0000000000d1'
-       and contractor_id = '40000000-0000-0000-0000-0000000000e1'$$);
 
 update task_contractor_terms
    set paid_at = null, paid_amount = null
@@ -496,10 +519,15 @@ update task_contractor_terms
                    where event_id = '30000000-0000-0000-0000-0000000000d1'
                      and contractor_id = '40000000-0000-0000-0000-0000000000e1');
 
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 select t_expect_ok('אחרי ביטול הסימון ההסרה עוברת',
-  $$update tasks set contractor_id = null
-     where event_id = '30000000-0000-0000-0000-0000000000d1'
-       and contractor_id = '40000000-0000-0000-0000-0000000000e1'$$);
+  $$select contractor_undelegate(
+      (select id from tasks where event_id = '30000000-0000-0000-0000-0000000000d1'
+                              and contractor_id = '40000000-0000-0000-0000-0000000000e1'),
+      '40000000-0000-0000-0000-0000000000e1')$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
 
 select t_eq('ושורת התנאים נמחקה כרגיל',
   (select count(*) from task_contractor_terms tct

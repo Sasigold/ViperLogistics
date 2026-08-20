@@ -86,25 +86,30 @@ insert into task_assignments (task_id, profile_id, role, work_site) values
   ('31000000-0000-0000-0000-000000110001', '20000000-0000-0000-0000-0000000011a8', 'worker', 'field');
 
 -- T2 — משימה שהואצלה לקבלן, פורסמה, ועובד הקבלן רשום עליה
-insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id, contractor_id)
+insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id)
 select '31000000-0000-0000-0000-000000110002', '30000000-0000-0000-0000-000000000011',
        '10000000-0000-0000-0000-000000000011',
        (select id from task_types where code = 'setup' limit 1),
        current_date + 3,
-       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null),
-       '11000000-0000-0000-0000-000000000011';
+       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null);
+
+-- ‏0096: ההאצלה היא שורת terms; `tasks.contractor_id` הוא שיקוף שנגזר ממנה.
+insert into task_contractor_terms (task_id, contractor_id, price)
+values ('31000000-0000-0000-0000-000000110002', '11000000-0000-0000-0000-000000000011', 0);
 
 insert into task_contractor_workers (task_id, contractor_worker_id) values
   ('31000000-0000-0000-0000-000000110002', '12000000-0000-0000-0000-000000000011');
 
 -- T3 — משימה של אותו קבלן, פורסמה, אך עובד הקבלן *אינו* רשום עליה
-insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id, contractor_id)
+insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id)
 select '31000000-0000-0000-0000-000000110003', '30000000-0000-0000-0000-000000000011',
        '10000000-0000-0000-0000-000000000011',
        (select id from task_types where code = 'setup' limit 1),
        current_date + 3,
-       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null),
-       '11000000-0000-0000-0000-000000000011';
+       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null);
+
+insert into task_contractor_terms (task_id, contractor_id, price)
+values ('31000000-0000-0000-0000-000000110003', '11000000-0000-0000-0000-000000000011', 0);
 
 -- ===========================================================================
 \echo '--- מנהל לקוח: עורך אבל לא משבץ, לא מתמחר, לא מפרסם ---'
