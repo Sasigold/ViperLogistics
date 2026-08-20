@@ -216,6 +216,16 @@ OUT="$OUT
 $OUT18"
 
 echo
+echo "== realtime sync suite =="
+# 20 מקימה לקוח, קבלן, אירוע ושישה פרופילים משלה ואינה נשענת על אף חבילה
+# קודמת. היא מרוקנת את realtime.messages בין תרחישים — אף חבילה אחרת אינה
+# קוראת את הטבלה — והאירוע שלה יושב ב-current_date+340, מעבר לכל טווח אחר.
+OUT19=$($PSQL -d vl -f "$HERE/20_realtime_sync.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT19"
+OUT="$OUT
+$OUT19"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
