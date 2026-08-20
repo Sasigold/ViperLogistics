@@ -2,7 +2,7 @@
  * צי הרכב — הלוגיקה שאינה נוגעת ברשת ולא ב-DOM.
  *
  * כל מה שכאן נבדק ב-vehicles.test.ts, ובאותה רוח של specs.ts: הכללים חייבים
- * לשקף את מה שהמסד והדלי אוכפים ב-0088 — אותה רשימת MIME, אותו גבול גודל,
+ * לשקף את מה שהמסד והדלי אוכפים ב-0089 — אותה רשימת MIME, אותו גבול גודל,
  * ואותו חישוב תוקף שה-view `vehicle_document_status` עושה בשרת. הבדיקה כאן
  * אינה אבטחה; היא נימוס, וגם מה שמאפשר להציג צבע בלי הלוך-חזור נוסף.
  */
@@ -16,7 +16,7 @@ import type {
   VehicleStatus,
 } from '../../types/domain'
 
-/** 25MB — אותו ערך שנרשם על הדלי vehicle-docs ב-0088 §8. */
+/** 25MB — אותו ערך שנרשם על הדלי vehicle-docs ב-0089 §8. */
 export const VEHICLE_DOC_MAX_BYTES = 25 * 1024 * 1024
 
 export const VEHICLE_DOC_MIME_TYPES = [
@@ -103,7 +103,7 @@ export function formatPlate(raw: string | null | undefined): string {
 /* ===== תוקף =============================================================== */
 
 /**
- * אותו חישוב בדיוק שה-view עושה בשרת (0088 §4). הוא חוזר לכאן כי המסך צריך
+ * אותו חישוב בדיוק שה-view עושה בשרת (0089 §4). הוא חוזר לכאן כי המסך צריך
  * לצבוע גם שורה שנערכה זה עתה ועוד לא נקראה מחדש; ההסכמה בין השניים נבדקת
  * בחבילת ה-SQL, לא כאן.
  *
@@ -187,7 +187,7 @@ export function validateDocFile(file: { name: string; type: string; size: number
 
 /**
  * הנתיב בדלי. התיקייה הראשונה היא מזהה הרכב — זה החוזה שפוליסת ה-Storage
- * קוראת ממנו (0088 §8), ולכן הוא נבנה כאן ולא נלקח מהמשתמש.
+ * קוראת ממנו (0089 §8), ולכן הוא נבנה כאן ולא נלקח מהמשתמש.
  */
 export function docStoragePath(vehicleId: string, fileName: string, uuid: string): string {
   const ext = fileName.includes('.') ? fileName.split('.').pop()!.toLowerCase().replace(/[^a-z0-9]/g, '') : ''

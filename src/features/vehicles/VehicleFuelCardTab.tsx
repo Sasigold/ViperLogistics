@@ -35,7 +35,7 @@ function toForm(card: VehicleFuelCard | null | undefined): typeof BLANK {
  * כרטיס הדלקן.
  *
  * הטאב כולו חי מאחורי `fleet.view_fuel_card`, ולא רק בהסתרה בלקוח: הכרטיס
- * יושב בטבלה משלו עם RLS משלה (0088 §6), ומי שאין לו את המפתח מקבל אפס
+ * יושב בטבלה משלו עם RLS משלה (0089 §6), ומי שאין לו את המפתח מקבל אפס
  * שורות מהשרת. ההסתרה של ה-PIN כאן היא נגד מבט מעבר לכתף, לא נגד מי שמנסה.
  */
 export function VehicleFuelCardTab({ vehicle }: { vehicle: Vehicle }) {

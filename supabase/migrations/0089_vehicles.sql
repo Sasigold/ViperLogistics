@@ -1,4 +1,4 @@
--- 0088: ניהול רכבים — הרכב כישות, ולא כערך ב-dropdown
+-- 0089: ניהול רכבים — הרכב כישות, ולא כערך ב-dropdown
 --
 -- `trucks` (0002) היא טבלת עזר של שם ומספר רישוי, וכל תפקידה הוא להיות ערך
 -- בשיבוץ משימה. אין בה מקום למסמכי הרכב, אין תאריך טסט או ביטוח, אין כרטיס
@@ -706,7 +706,7 @@ end $$;
 do $$
 begin
   if to_regclass('storage.buckets') is null or to_regclass('storage.objects') is null then
-    raise notice '0088: אין סכמת storage — הדלי והפוליסות מדולגים';
+    raise notice '0089: אין סכמת storage — הדלי והפוליסות מדולגים';
     return;
   end if;
 
@@ -749,7 +749,7 @@ begin
         using (bucket_id = 'vehicle-docs' and app.may_touch_vehicle_doc(name, true))
     $sql$;
   exception when insufficient_privilege then
-    raise warning '0088: אין בעלות על storage.objects — ארבע פוליסות מסמכי הרכב לא נוצרו. יש להגדיר אותן ב-Dashboard → Storage → Policies על הדלי vehicle-docs, עם הביטוי app.may_touch_vehicle_doc(name, <false לקריאה / true לכתיבה>). עד אז RLS דוחה כל גישה לקבצים.';
+    raise warning '0089: אין בעלות על storage.objects — ארבע פוליסות מסמכי הרכב לא נוצרו. יש להגדיר אותן ב-Dashboard → Storage → Policies על הדלי vehicle-docs, עם הביטוי app.may_touch_vehicle_doc(name, <false לקריאה / true לכתיבה>). עד אז RLS דוחה כל גישה לקבצים.';
   end;
 end $$;
 

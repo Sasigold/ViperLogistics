@@ -770,7 +770,7 @@ export const WIDGETS: WidgetDef[] = [
     sections: ['tasks.no_truck'],
     Component: NoTruckWidget,
   },
-  /* צי הרכב (0088/0089). לא usesRange — תוקף מסמך אינו תלוי בטווח שנבחר. */
+  /* צי הרכב (0089/0090). לא usesRange — תוקף מסמך אינו תלוי בטווח שנבחר. */
   {
     id: 'ops.fleet_status',
     title: 'צי הרכב',

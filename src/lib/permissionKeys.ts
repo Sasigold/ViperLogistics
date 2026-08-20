@@ -114,7 +114,7 @@ export const PERM = {
   /* הצד של הלקוח באותו `task_pricing.price` שאיש משרד רואה כהכנסה. מפתח
      נפרד ולא נגזר: משמעותו תלויה במי שואל, ולכן הוא ניתן ולא יורש. */
   FINANCE_CUSTOMER_SPEND: 'finance.customer_spend',
-  /* צי הרכב (0088). `fleet.view` הוא מפתח שורש בכוונה — הוא אינו נגזר
+  /* צי הרכב (0089). `fleet.view` הוא מפתח שורש בכוונה — הוא אינו נגזר
      מ-`settings.trucks`, כי כרטיס הרכב מחזיק מחירי רכישה וליסינג. */
   FLEET_VIEW: 'fleet.view',
   FLEET_CREATE: 'fleet.create',

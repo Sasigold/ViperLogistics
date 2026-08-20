@@ -134,7 +134,7 @@ export default function VehicleDetailPage() {
 
 /* ===== פרטים ============================================================== */
 
-/** מה שנשמר מהטופס. `current_driver_id` אינו כאן — הוא נגזר (0088 §5). */
+/** מה שנשמר מהטופס. `current_driver_id` אינו כאן — הוא נגזר (0089 §5). */
 const EDITABLE = [
   'plate_number', 'name', 'category', 'status', 'make', 'model', 'model_year', 'vin', 'engine_number',
   'color', 'license_class', 'fuel_type', 'gearbox', 'seats', 'gross_weight_kg', 'payload_kg',
@@ -468,7 +468,7 @@ function DetailsTab({ vehicle }: { vehicle: Vehicle }) {
 /**
  * הרכב הוא הנכס; המשאית היא השורה שמשבצים ממנה משימות. הקישור אופציונלי,
  * והרכב הוא מקור האמת — טריגר במסד דוחף ממנו את מספר הרישוי והשם אל המשאית
- * המקושרת (0088 §3), ולכן אין כאן שני ערכים שאפשר להעמיד בסתירה.
+ * המקושרת (0089 §3), ולכן אין כאן שני ערכים שאפשר להעמיד בסתירה.
  */
 function TruckLinkCard({ vehicle, canEdit }: { vehicle: Vehicle; canEdit: boolean }) {
   const toast = useToast()

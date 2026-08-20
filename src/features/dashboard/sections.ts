@@ -44,7 +44,7 @@ export const SECTIONS = [
   'tasks.understaffed',
   'tasks.no_truck',
   'fleet.utilization',
-  // צי הרכב (0089). `fleet.utilization` שמעליו הוא מדד שיגור על `trucks`
+  // צי הרכב (0090). `fleet.utilization` שמעליו הוא מדד שיגור על `trucks`
   // ואינו שייך למודול הזה — שני שמות דומים, שני מקורות שונים.
   'fleet.status',
   'fleet.documents_expiring',

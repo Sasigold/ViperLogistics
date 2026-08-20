@@ -137,7 +137,7 @@
 ### ניהול רכבים
 
 `trucks` הייתה מאז 0002 טבלת עזר של שם ומספר רישוי, וכל תפקידה היה להיות ערך
-ב-dropdown של שיבוץ. ‏0088 מוסיף לצדה את **הרכב כנכס**: `vehicles`, עם מסמכים,
+ב-dropdown של שיבוץ. ‏0089 מוסיף לצדה את **הרכב כנכס**: `vehicles`, עם מסמכים,
 תאריכי פקיעה, בעלות, נהג וכרטיס דלק.
 
 **שתי הטבלאות נשארות שתיים, והרכב הוא מקור האמת.** `vehicles.truck_id` הוא קישור
@@ -196,7 +196,7 @@
 `supabase/functions/fleet-expiry-sweep` (ראו "התפעול המשותף"). מנהל צי יכול גם
 ללחוץ "בדיקת תוקף" במסך — הסוויפ אידמפוטנטי, ולחיצה חוזרת אינה עולה דבר.
 
-הסכמה ב-`0088_vehicles.sql`, סקשני הדשבורד ב-`0089_fleet_dashboard_sections.sql`,
+הסכמה ב-`0089_vehicles.sql`, סקשני הדשבורד ב-`0090_fleet_dashboard_sections.sql`,
 החבילה ב-`supabase/tests/19_vehicles.sql`, הלוגיקה הטהורה ב-
 `src/features/vehicles/vehicles.ts` (נבדקת ב-`vehicles.test.ts`) והמסכים ב-
 `src/features/vehicles/`.
@@ -664,7 +664,7 @@ npm test            # שניהם
 ## מבנה
 
 ```
-supabase/migrations/   # 0001..0089 — סכמה, זריעה, RLS, RPCs, הרשאות, תמחור,
+supabase/migrations/   # 0001..0090 — סכמה, זריעה, RLS, RPCs, הרשאות, תמחור,
                        # נוכחות, דשבורד, דוחות, התראות, הכנסות, רווחיות משימה,
                        # מפרט אירוע (Storage), צי רכב
 supabase/functions/    # admin-users (ניהול חשבונות), geocode-proxy (Nominatim),

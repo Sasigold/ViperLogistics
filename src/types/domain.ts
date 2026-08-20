@@ -141,7 +141,7 @@ export interface Truck {
   deleted_at: string | null
 }
 
-/* ===== צי הרכב (0088) =====================================================
+/* ===== צי הרכב (0089) =====================================================
  *
  * `Truck` שלמעלה היא שורת השיגור — מה שנבחר ב-dropdown של משימה. `Vehicle`
  * הוא הנכס המנוהל: מסמכים, תוקף, בעלות, נהג וכרטיס דלק. הקישור ביניהם הוא
@@ -181,11 +181,11 @@ export interface Vehicle {
   odometer_km: number | null
   odometer_read_at: string | null
   status: VehicleStatus
-  /** נגזרים מטבלת ההצמדות ואינם ניתנים לכתיבה ישירה — ראו 0088 §5. */
+  /** נגזרים מטבלת ההצמדות ואינם ניתנים לכתיבה ישירה — ראו 0089 §5. */
   current_driver_id: string | null
   current_driver_name: string | null
   notes: string | null
-  /** אין `is_active` — `status` הוא התשובה היחידה על זמינות (0088 §2). */
+  /** אין `is_active` — `status` הוא התשובה היחידה על זמינות (0089 §2). */
   deleted_at: string | null
 }
 
@@ -221,7 +221,7 @@ export interface VehicleDocument {
   deleted_at: string | null
 }
 
-/** מצב התוקף כפי שהשרת מחשב אותו — `vehicle_document_status` (0088 §4). */
+/** מצב התוקף כפי שהשרת מחשב אותו — `vehicle_document_status` (0089 §4). */
 export type VehicleDocumentState = 'valid' | 'expiring' | 'expired' | 'no_expiry'
 
 export interface VehicleDocumentStatus extends VehicleDocument {

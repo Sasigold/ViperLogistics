@@ -149,7 +149,7 @@ export const router = createBrowserRouter([
             handle: { perm: PERM.CONTRACTORS_VIEW },
             element: page(<ContractorDetailPage />),
           },
-          /* צי הרכב (0088). שני הנתיבים על אותו מפתח: מי שרואה את הרשימה
+          /* צי הרכב (0089). שני הנתיבים על אותו מפתח: מי שרואה את הרשימה
              רואה גם כרטיס, והלשוניות שבתוכו נחתכות בנפרד לפי המפתח שלהן. */
           { path: '/vehicles', handle: { perm: PERM.FLEET_VIEW }, element: page(<VehiclesPage />) },
           { path: '/vehicles/:id', handle: { perm: PERM.FLEET_VIEW }, element: page(<VehicleDetailPage />) },
