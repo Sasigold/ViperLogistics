@@ -23,8 +23,11 @@ select t_eq('ערוץ המייל כבוי בתחילת החבילה', app.email_
 select t_eq('וגם ערוץ ה-push',
   coalesce((app.attendance_config('notifications.push') ->> 'enabled')::boolean, false), false);
 
-select t_eq('הקטלוג מכיר את תשעת הסוגים',
-  (select count(*)::int from notification_types where is_active), 9);
+-- אחת-עשרה מאז 0088, שהוסיפה את שני סוגי פקיעת מסמכי הרכב. הספירה נשארת
+-- מדויקת ולא הופכת ל-`>= 9`: קטלוג שגדל בלי שאיש שם לב הוא בדיוק מה שהבדיקה
+-- הזו נועדה לתפוס.
+select t_eq('הקטלוג מכיר את אחד-עשר הסוגים',
+  (select count(*)::int from notification_types where is_active), 11);
 
 -- הרוח מ-0030: מתג שהלקוח הציג ושום טריגר לא פלט
 select t_eq('attendance_reviewed אינו בקטלוג',

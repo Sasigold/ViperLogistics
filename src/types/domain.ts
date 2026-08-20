@@ -141,6 +141,132 @@ export interface Truck {
   deleted_at: string | null
 }
 
+/* ===== צי הרכב (0088) =====================================================
+ *
+ * `Truck` שלמעלה היא שורת השיגור — מה שנבחר ב-dropdown של משימה. `Vehicle`
+ * הוא הנכס המנוהל: מסמכים, תוקף, בעלות, נהג וכרטיס דלק. הקישור ביניהם הוא
+ * `Vehicle.truck_id`, אופציונלי ו-1:1, והרכב הוא מקור האמת למספר הרישוי.
+ */
+
+export type VehicleCategory = 'truck' | 'van' | 'car' | 'trailer' | 'forklift' | 'other'
+export type VehicleOwnership = 'owned' | 'leasing' | 'rental'
+export type VehicleStatus = 'active' | 'in_garage' | 'inactive' | 'sold'
+export type VehicleFuelType = 'diesel' | 'gasoline' | 'electric' | 'hybrid' | 'lpg'
+export type VehicleGearbox = 'manual' | 'automatic'
+
+export interface Vehicle {
+  id: string
+  plate_number: string
+  name: string
+  truck_id: string | null
+  make: string | null
+  model: string | null
+  model_year: number | null
+  vin: string | null
+  engine_number: string | null
+  color: string | null
+  category: VehicleCategory
+  license_class: string | null
+  fuel_type: VehicleFuelType | null
+  gearbox: VehicleGearbox | null
+  seats: number | null
+  gross_weight_kg: number | null
+  payload_kg: number | null
+  ownership: VehicleOwnership
+  leasing_company: string | null
+  leasing_monthly_cost: number | null
+  leasing_end_date: string | null
+  purchase_date: string | null
+  purchase_price: number | null
+  odometer_km: number | null
+  odometer_read_at: string | null
+  status: VehicleStatus
+  /** נגזרים מטבלת ההצמדות ואינם ניתנים לכתיבה ישירה — ראו 0088 §5. */
+  current_driver_id: string | null
+  current_driver_name: string | null
+  notes: string | null
+  /** אין `is_active` — `status` הוא התשובה היחידה על זמינות (0088 §2). */
+  deleted_at: string | null
+}
+
+export interface VehicleDocumentKind {
+  id: string
+  key: string
+  name: string
+  default_valid_months: number | null
+  alert_days: number
+  is_required: boolean
+  sort_order: number
+  is_active: boolean
+  deleted_at: string | null
+}
+
+export interface VehicleDocument {
+  id: string
+  vehicle_id: string
+  kind_id: string
+  document_number: string | null
+  issued_at: string | null
+  expires_at: string | null
+  cost: number | null
+  issuer: string | null
+  note: string | null
+  storage_path: string | null
+  file_name: string | null
+  mime_type: string | null
+  size_bytes: number | null
+  created_by: string | null
+  creator_name: string | null
+  created_at: string
+  deleted_at: string | null
+}
+
+/** מצב התוקף כפי שהשרת מחשב אותו — `vehicle_document_status` (0088 §4). */
+export type VehicleDocumentState = 'valid' | 'expiring' | 'expired' | 'no_expiry'
+
+export interface VehicleDocumentStatus extends VehicleDocument {
+  kind_key: string
+  kind_name: string
+  alert_days: number
+  is_required: boolean
+  status: VehicleDocumentState
+  /** ימים עד הפקיעה. שלילי = פג. null כשאין תאריך פקיעה. */
+  days_left: number | null
+}
+
+export interface VehicleDriverAssignment {
+  id: string
+  vehicle_id: string
+  profile_id: string
+  driver_name: string | null
+  from_date: string
+  /** null = ההצמדה הפעילה. יש לכל היותר אחת כזו לרכב. */
+  to_date: string | null
+  note: string | null
+  creator_name: string | null
+  deleted_at: string | null
+}
+
+export interface VehicleFuelCard {
+  id: string
+  vehicle_id: string
+  provider: string | null
+  card_number: string | null
+  pin_code: string | null
+  valid_until: string | null
+  note: string | null
+  deleted_at: string | null
+}
+
+/** מה ש-`fleet_expiry_summary()` מחזיר. */
+export interface FleetExpirySummary {
+  vehicles: number
+  valid: number
+  expiring: number
+  expired: number
+  missing_required: number
+}
+
 export interface Supplier {
   id: string
   customer_id: string

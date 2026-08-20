@@ -41,6 +41,7 @@ import {
   TasksByCustomerWidget,
   WorkerLoadWidget,
 } from './widgets/chartWidgets'
+import { FleetExpiringDocsWidget, FleetStatusWidget } from './widgets/fleetWidgets'
 import {
   ContractorAgingWidget,
   ContractorPaidWidget,
@@ -768,6 +769,30 @@ export const WIDGETS: WidgetDef[] = [
     usesRange: true,
     sections: ['tasks.no_truck'],
     Component: NoTruckWidget,
+  },
+  /* צי הרכב (0088/0089). לא usesRange — תוקף מסמך אינו תלוי בטווח שנבחר. */
+  {
+    id: 'ops.fleet_status',
+    title: 'צי הרכב',
+    description: 'כמה רכבים יש, וכמה מהם במוסך או מושבתים',
+    group: 'ops',
+    icon: icon(Truck),
+    sizes: ['sm'],
+    perms: [PERM.FLEET_VIEW],
+    sections: ['fleet.status'],
+    Component: FleetStatusWidget,
+  },
+  {
+    id: 'ops.fleet_expiring',
+    title: 'מסמכי רכב שפגים',
+    description: 'טסט, ביטוח או רישיון שפג או מתקרב לפקיעה, על פני כל הצי',
+    group: 'ops',
+    icon: icon(AlertTriangle),
+    sizes: ['md', 'lg'],
+    resizableHeight: true,
+    perms: [PERM.FLEET_VIEW, PERM.FLEET_DOCS_VIEW],
+    sections: ['fleet.documents_expiring'],
+    Component: FleetExpiringDocsWidget,
   },
   {
     id: 'ops.fleet_utilization',

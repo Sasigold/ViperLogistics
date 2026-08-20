@@ -28,6 +28,8 @@ const CustomerDetailPage = lazyPage(() => import('../features/customers/Customer
 const UsersPage = lazyPage(() => import('../features/users/UsersPage'))
 const ContractorsPage = lazyPage(() => import('../features/contractors/ContractorsPage'))
 const ContractorDetailPage = lazyPage(() => import('../features/contractors/ContractorDetailPage'))
+const VehiclesPage = lazyPage(() => import('../features/vehicles/VehiclesPage'))
+const VehicleDetailPage = lazyPage(() => import('../features/vehicles/VehicleDetailPage'))
 const PortalPage = lazyPage(() => import('../features/portal/PortalPage'))
 const MyStaffPage = lazyPage(() => import('../features/contractors/MyStaffPage'))
 const SettingsPage = lazyPage(() => import('../features/settings/SettingsPage'))
@@ -147,6 +149,10 @@ export const router = createBrowserRouter([
             handle: { perm: PERM.CONTRACTORS_VIEW },
             element: page(<ContractorDetailPage />),
           },
+          /* צי הרכב (0088). שני הנתיבים על אותו מפתח: מי שרואה את הרשימה
+             רואה גם כרטיס, והלשוניות שבתוכו נחתכות בנפרד לפי המפתח שלהן. */
+          { path: '/vehicles', handle: { perm: PERM.FLEET_VIEW }, element: page(<VehiclesPage />) },
+          { path: '/vehicles/:id', handle: { perm: PERM.FLEET_VIEW }, element: page(<VehicleDetailPage />) },
           /* לוח השיבוץ של הצוות. לא view_own: בשונה מהדוח, אין כאן גרסה
              מצומצמת שמראה לך את עצמך — לזה יש את /my/schedule. שני מפתחות
              ולא אחד, כי `shift_roster` (0034) עונה לשני קהלים מאותה שאילתה:

@@ -21,6 +21,8 @@ import type {
   TaskType,
   Truck,
   UserFormField,
+  Vehicle,
+  VehicleDocumentKind,
 } from '../types/domain'
 
 async function fetchList<T>(table: string, order = 'name'): Promise<T[]> {
@@ -57,6 +59,26 @@ export function useStatuses(entity?: 'task' | 'event') {
 
 export function useTrucks() {
   return useQuery({ queryKey: ['trucks', 'list'], queryFn: () => fetchList<Truck>('trucks') })
+}
+
+/**
+ * צי הרכב (0088). `trucks` שמעליה היא רשימת השיגור; זו היא רשימת הנכסים.
+ * הסדר לפי מספר רישוי ולא לפי שם — כך מחפשים רכב.
+ */
+export function useVehicles(enabled = true) {
+  return useQuery({
+    queryKey: ['vehicles', 'list'],
+    enabled,
+    queryFn: () => fetchList<Vehicle>('vehicles', 'plate_number'),
+  })
+}
+
+/** קטלוג סוגי מסמכי הרכב. משותף לכרטיס הרכב ולטאב ההגדרות. */
+export function useVehicleDocumentKinds() {
+  return useQuery({
+    queryKey: ['vehicle_document_kinds', 'list'],
+    queryFn: () => fetchList<VehicleDocumentKind>('vehicle_document_kinds', 'sort_order'),
+  })
 }
 
 /**

@@ -114,6 +114,18 @@ export const PERM = {
   /* הצד של הלקוח באותו `task_pricing.price` שאיש משרד רואה כהכנסה. מפתח
      נפרד ולא נגזר: משמעותו תלויה במי שואל, ולכן הוא ניתן ולא יורש. */
   FINANCE_CUSTOMER_SPEND: 'finance.customer_spend',
+  /* צי הרכב (0088). `fleet.view` הוא מפתח שורש בכוונה — הוא אינו נגזר
+     מ-`settings.trucks`, כי כרטיס הרכב מחזיק מחירי רכישה וליסינג. */
+  FLEET_VIEW: 'fleet.view',
+  FLEET_CREATE: 'fleet.create',
+  FLEET_EDIT: 'fleet.edit',
+  FLEET_DELETE: 'fleet.delete',
+  FLEET_DOCS_VIEW: 'fleet.docs_view',
+  FLEET_DOCS_MANAGE: 'fleet.docs_manage',
+  FLEET_DRIVERS_MANAGE: 'fleet.drivers_manage',
+  FLEET_VIEW_FUEL_CARD: 'fleet.view_fuel_card',
+  FLEET_MANAGE_FUEL_CARD: 'fleet.manage_fuel_card',
+  FLEET_SETTINGS: 'fleet.settings',
   PRICING_VIEW: 'pricing.view',
   PRICING_EDIT: 'pricing.edit',
   PRICING_MANAGE_RULES: 'pricing.manage_rules',
