@@ -7,6 +7,33 @@ export function fmtDate(d: string | Date | null | undefined): string {
   return format(date, 'dd/MM/yyyy', { locale: he })
 }
 
+/**
+ * שמות ימי השבוע כפי שהם נקראים בעברית, ולא דרך `date-fns`: הלוקאל מחזיר
+ * "יום שלישי" בפורמט אחד ו-"יום ג׳" באחר, והצורה המקוצרת שלו משתנה בין
+ * גרסאות. לו״ז העבודה מציג את היום מעל התאריך בעמודה צרה, ושם ההבדל בין
+ * "יום ג׳" ל-"יום שלישי" הוא ההבדל בין טקסט שנקרא לטקסט שנחתך.
+ */
+const WEEKDAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
+const WEEKDAYS_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳']
+
+const dayIndex = (d: string | Date): number => (typeof d === 'string' ? parseISO(d) : d).getDay()
+
+/** 'יום שלישי' — ושבת היא שבת, בלי "יום" לפניה */
+export function fmtWeekday(d: string | Date | null | undefined): string {
+  if (!d) return ''
+  const i = dayIndex(d)
+  if (Number.isNaN(i)) return ''
+  return i === 6 ? WEEKDAYS[6] : `יום ${WEEKDAYS[i]}`
+}
+
+/** 'יום ג׳' — הצורה שנכנסת לרוחב של עמודת יום בלו״ז */
+export function fmtWeekdayShort(d: string | Date | null | undefined): string {
+  if (!d) return ''
+  const i = dayIndex(d)
+  if (Number.isNaN(i)) return ''
+  return i === 6 ? WEEKDAYS[6] : `יום ${WEEKDAYS_SHORT[i]}`
+}
+
 export function fmtDateLong(d: string | Date | null | undefined): string {
   if (!d) return ''
   const date = typeof d === 'string' ? parseISO(d) : d

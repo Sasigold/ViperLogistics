@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fmtDate, fmtHours, fmtMoney, fmtTime, toISODate } from './dates'
+import { fmtDate, fmtHours, fmtMoney, fmtTime, fmtWeekday, fmtWeekdayShort, toISODate } from './dates'
 
 /**
  * העיצוב כאן הוא המקום היחיד שממיר שעות עשרוניות למה שאדם קורא, והוא מזין
@@ -71,5 +71,36 @@ describe('fmtMoney', () => {
 
   it('renders a shekel amount', () => {
     expect(fmtMoney(400)).toContain('400')
+  })
+})
+
+describe('fmtWeekday', () => {
+  it('names the day above the date in the board', () => {
+    // 09/03/2026 הוא יום שני
+    expect(fmtWeekday('2026-03-09')).toBe('יום שני')
+    expect(fmtWeekday('2026-03-13')).toBe('יום שישי')
+  })
+
+  it('calls Saturday by its name, without "יום" before it', () => {
+    expect(fmtWeekday('2026-03-14')).toBe('שבת')
+    expect(fmtWeekdayShort('2026-03-14')).toBe('שבת')
+  })
+
+  it('shortens to the form a narrow day column can hold', () => {
+    expect(fmtWeekdayShort('2026-03-08')).toBe('יום א׳')
+    expect(fmtWeekdayShort('2026-03-09')).toBe('יום ב׳')
+    expect(fmtWeekdayShort('2026-03-13')).toBe('יום ו׳')
+  })
+
+  it('reads the local day, so a date does not slip near midnight', () => {
+    // parseISO של תאריך-בלבד הוא חצות מקומית; toISOString היה מזיז אותו יום
+    expect(fmtWeekday(new Date(2026, 2, 9, 0, 30))).toBe('יום שני')
+    expect(fmtWeekday(new Date(2026, 2, 9, 23, 30))).toBe('יום שני')
+  })
+
+  it('stays empty for nothing rather than printing Invalid Date', () => {
+    expect(fmtWeekday(null)).toBe('')
+    expect(fmtWeekday(undefined)).toBe('')
+    expect(fmtWeekdayShort('')).toBe('')
   })
 })
