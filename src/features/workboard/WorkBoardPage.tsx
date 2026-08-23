@@ -49,7 +49,7 @@ import {
   useTaskTypes,
   useTrucks,
 } from '../../lib/queries'
-import { fmtDate, fmtMonth, fmtTime, toISODate } from '../../lib/dates'
+import { fmtDate, fmtMonth, fmtTime, fmtWeekday, fmtWeekdayShort, toISODate } from '../../lib/dates'
 import { shortAddress } from '../../lib/address'
 import { NEUTRAL, readableOn } from '../../lib/colors'
 import { useIsMobile } from '../../lib/useMediaQuery'
@@ -71,7 +71,8 @@ import { errorMessage } from '../../lib/errors'
    legend on the inline-start edge is sticky and never scrolls away.       */
 
 const SPINE_W = 46
-const DAY_HEAD_H = 30
+/** שתי שורות: היום בשבוע (והחג, אם יש) מעל התאריך */
+const DAY_HEAD_H = 42
 /** breathing room between one day's run of columns and the next day's */
 const DAY_GAP = 10
 
@@ -552,24 +553,33 @@ export default function WorkBoardPage() {
 
   const tones = useMemo(() => buildTones(rows, colorBy), [rows, colorBy])
 
-  const dayKeys = useMemo(() => {
-    const withRows = [...new Set(rows.map((r) => r.task_date))].sort()
-    if (!showEmptyDays || !from || !to) return withRows
-    const a = parseISO(from)
-    const b = parseISO(to)
-    const span = differenceInCalendarDays(b, a)
-    if (span < 0 || span > MAX_EMPTY_DAY_SPAN) return withRows
-    const all = new Set(eachDayOfInterval({ start: a, end: b }).map(toISODate))
-    for (const d of withRows) all.add(d)
-    return [...all].sort()
-  }, [rows, showEmptyDays, from, to])
+  const daysWithRows = useMemo(() => [...new Set(rows.map((r) => r.task_date))].sort(), [rows])
 
-  /* חגים ומועדים לימים שעל הלוח. ‏`dayKeys` ולא הטווח המבוקש: יום שנשר
-     מהלוח (בלי משימות, כשהימים הריקים מוסתרים) גם לא צריך חג. */
-  const holidays = useMemo(
-    () => (dayKeys.length ? holidaysInRange(dayKeys[0], dayKeys[dayKeys.length - 1]) : new Map<string, Holiday>()),
-    [dayKeys],
-  )
+  /* חגים ומועדים לכל החודש שהלוח מציג — הטווח המבוקש ולא רק הימים שיש בהם
+     משימות, כדי שהלו״ז יראה את מה שלוח השנה רואה. */
+  const holidays = useMemo(() => {
+    const first = from || daysWithRows[0]
+    const last = to || daysWithRows[daysWithRows.length - 1]
+    return first && last ? holidaysInRange(first, last) : new Map<string, Holiday>()
+  }, [from, to, daysWithRows])
+
+  const dayKeys = useMemo(() => {
+    const withRows = daysWithRows
+    const a = from ? parseISO(from) : null
+    const b = to ? parseISO(to) : null
+    const span = a && b ? differenceInCalendarDays(b, a) : -1
+    if (showEmptyDays && a && b && span >= 0 && span <= MAX_EMPTY_DAY_SPAN) {
+      const all = new Set(eachDayOfInterval({ start: a, end: b }).map(toISODate))
+      for (const d of withRows) all.add(d)
+      return [...all].sort()
+    }
+    /* גם כשהימים הריקים מוסתרים, שבתון נשאר על הלוח: יום שאסור לשבץ בו
+       עבודה הוא מידע לתכנון, ולא יום ריק שאין מה לומר עליו. מועד שעובדים
+       בו — חנוכה, פורים, חול המועד — נופל עם שאר הימים הריקים. */
+    const kept = new Set(withRows)
+    for (const h of holidays.values()) if (isDayOff(h)) kept.add(h.date)
+    return [...kept].sort()
+  }, [daysWithRows, showEmptyDays, from, to, holidays])
 
   /* ── group by day, then lay the columns out in reading order ───────────── */
 
@@ -1238,7 +1248,7 @@ export default function WorkBoardPage() {
                         <div
                           key={b.dayKey}
                           className={cx(
-                            'absolute top-0 flex items-center justify-center gap-1.5 overflow-hidden border-b border-s border-line px-2',
+                            'absolute top-0 flex flex-col items-center justify-center overflow-hidden border-b border-s border-line px-2 leading-tight',
                             /* a past day is a past day — the tasks on it carry
                                their own overdue mark, and painting the whole
                                band red turned every old week into a wall */
@@ -1254,34 +1264,50 @@ export default function WorkBoardPage() {
                           )}
                           style={{ insetInlineStart: b.start, width: b.width, height: DAY_HEAD_H }}
                         >
+                          {/* היום בשבוע והחג יושבים בשורה שמעל התאריך. בשורה
+                              אחת עם התאריך שם החג נחתך לאות וחצי בעמודה צרה,
+                              ומי שקורא לו״ז צריך לדעת שהיום הזה הוא שבתון
+                              לפני שהוא סופר עליו משימות. */}
+                          <span className="flex max-w-full items-center gap-1 overflow-hidden">
+                            <span
+                              className={cx(
+                                'shrink-0 type-caption',
+                                quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
+                              )}
+                            >
+                              {fmtWeekdayShort(b.dayKey)}
+                            </span>
+                            {holiday && (
+                              <Tooltip content={`${holiday.name} — ${KIND_LABEL[holiday.kind]}`}>
+                                <span
+                                  className={cx(
+                                    'truncate type-caption',
+                                    isDayOff(holiday) ? 'font-bold text-warning-text' : 'text-ink-secondary',
+                                  )}
+                                >
+                                  {holiday.name}
+                                </span>
+                              </Tooltip>
+                            )}
+                          </span>
                           {/* the date is a label. Folding a day from here was
                               one careless click away from hiding a day's work,
                               and the width menu now covers the same need */}
-                          <span
-                            className={cx(
-                              'truncate type-caption font-bold tabular',
-                              quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
-                            )}
-                          >
-                            {fmtDate(b.dayKey)}
-                          </span>
-                          {isToday && (
-                            <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
-                              היום
+                          <span className="flex max-w-full items-center gap-1.5 overflow-hidden">
+                            <span
+                              className={cx(
+                                'truncate type-caption font-bold tabular',
+                                quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
+                              )}
+                            >
+                              {fmtDate(b.dayKey)}
                             </span>
-                          )}
-                          {holiday && (
-                            <Tooltip content={`${holiday.name} — ${KIND_LABEL[holiday.kind]}`}>
-                              <span
-                                className={cx(
-                                  'truncate type-caption',
-                                  isDayOff(holiday) ? 'font-bold text-warning-text' : 'text-ink-secondary',
-                                )}
-                              >
-                                {holiday.name}
+                            {isToday && (
+                              <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
+                                היום
                               </span>
-                            </Tooltip>
-                          )}
+                            )}
+                          </span>
                         </div>
                       )
                     })}
@@ -1447,29 +1473,45 @@ function MobileBoard({
                     className={cx('shrink-0 transition-transform duration-200', day.collapsed && 'rotate-90 rtl:-rotate-90')}
                   />
                 )}
-                <span
-                  className={cx(
-                    'truncate type-button tabular',
-                    quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
-                  )}
-                >
-                  {fmtDate(day.dayKey)}
-                </span>
-                {isToday && (
-                  <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
-                    היום
-                  </span>
-                )}
-                {holiday && (
-                  <span
-                    className={cx(
-                      'truncate type-caption',
-                      isDayOff(holiday) ? 'font-bold text-warning-text' : 'text-ink-secondary',
+                {/* אותו סדר כמו בטבלה: היום בשבוע והחג מעל, התאריך מתחת */}
+                <span className="flex min-w-0 flex-col leading-tight">
+                  <span className="flex min-w-0 items-center gap-1">
+                    <span
+                      className={cx(
+                        'shrink-0 type-caption',
+                        quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
+                      )}
+                    >
+                      {fmtWeekday(day.dayKey)}
+                    </span>
+                    {holiday && (
+                      <span
+                        className={cx(
+                          'truncate type-caption',
+                          isDayOff(holiday) ? 'font-bold text-warning-text' : 'text-ink-secondary',
+                        )}
+                        title={`${holiday.name} — ${KIND_LABEL[holiday.kind]}`}
+                      >
+                        {holiday.name}
+                      </span>
                     )}
-                  >
-                    {holiday.name}
                   </span>
-                )}
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span
+                      className={cx(
+                        'truncate type-button tabular',
+                        quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
+                      )}
+                    >
+                      {fmtDate(day.dayKey)}
+                    </span>
+                    {isToday && (
+                      <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
+                        היום
+                      </span>
+                    )}
+                  </span>
+                </span>
               </button>
               {/* a quiet day is one line, not a section — a week with four of
                   them shouldn't push the actual work off the screen */}
