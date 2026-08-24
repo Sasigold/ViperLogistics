@@ -222,8 +222,9 @@ export function MyTasksWidget(_props: WidgetProps) {
             {mine.map((t) => (
               <li key={t.id}>
                 <button
-                  onClick={() => openTask(t.id)}
-                  className="flex w-full items-center gap-2.5 border-b border-line-subtle px-4 py-2.5 text-start transition-colors last:border-0 hover:bg-hover"
+                  onClick={() => openTask?.(t.id)}
+                  disabled={!openTask}
+                  className="flex w-full items-center gap-2.5 border-b border-line-subtle px-4 py-2.5 text-start transition-colors last:border-0 hover:bg-hover disabled:cursor-default disabled:hover:bg-transparent"
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate type-body font-medium">

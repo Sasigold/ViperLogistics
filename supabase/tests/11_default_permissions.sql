@@ -128,14 +128,39 @@ select t_eq('מנהל לקוח: אין tasks.assign.worker', app.has('tasks.assi
 select t_eq('מנהל לקוח: אין tasks.delegate',   app.has('tasks.delegate'), false);
 select t_eq('מנהל לקוח: dashboard.view',       app.has('dashboard.view'), true);
 
-select t_expect_ok('מנהל לקוח עורך הערות במשימה', $$
+-- ‏0109 הפך את הכיוון: המפתחות עדיין בידו, אבל מה שהוא עורך בלו״ז נקבע
+-- פר-לקוח בידי מנהל המערכת, וברירת המחדל היא "רואה, אינו עורך". שתי
+-- הטענות שהיו כאן ("עורך הערות", "משנה סטטוס") הן עכשיו החסימה עצמה, ומיד
+-- אחריהן אותה פעולה בדיוק אחרי שהשדה נפתח.
+select t_expect_fail('מנהל לקוח נחסם מעריכת הערות עד שהשדה ייפתח לו', $$
   update tasks set notes = 'הערה מהמנהל' where id = '31000000-0000-0000-0000-000000110001'$$);
 
-select t_expect_ok('מנהל לקוח משנה סטטוס למתוכנן/טיוטה (לא פרסום)', $$
+select t_expect_fail('ומשינוי סטטוס, מאותה סיבה', $$
   update tasks set status_id = (select id from statuses
     where entity = 'task' and code = 'draft' and deleted_at is null)
    where id = '31000000-0000-0000-0000-000000110001'$$);
 
+-- מנהל המערכת פותח את שני השדות ללקוח הזה, והפעולה מצליחה — בלי שאף מפתח
+-- של המנהל השתנה. זו כל הנקודה של 0109.
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+insert into customer_board_fields (customer_id, field_key, state) values
+  ('10000000-0000-0000-0000-000000000011', 'notes',  'editable'),
+  ('10000000-0000-0000-0000-000000000011', 'status', 'editable')
+on conflict (customer_id, field_key) do update set state = excluded.state;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000011a1', false);
+
+select t_expect_ok('ואחרי שמנהל המערכת פתח את "הערות" — הוא עורך', $$
+  update tasks set notes = 'הערה מהמנהל' where id = '31000000-0000-0000-0000-000000110001'$$);
+
+select t_expect_ok('וכך גם סטטוס למתוכנן/טיוטה', $$
+  update tasks set status_id = (select id from statuses
+    where entity = 'task' and code = 'draft' and deleted_at is null)
+   where id = '31000000-0000-0000-0000-000000110001'$$);
+
+-- והפרסום נשאר חסום: הוא נשען על `tasks.publish`, לא על שדה בלו״ז.
 select t_expect_fail('מנהל לקוח נחסם מפרסום (סטטוס "משובץ")', $$
   update tasks set status_id = (select id from statuses
     where entity = 'task' and code = 'assigned' and deleted_at is null)

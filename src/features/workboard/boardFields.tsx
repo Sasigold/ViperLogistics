@@ -1,27 +1,15 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Checkbox, Popover, StatusPill, Tooltip, cx, useToast } from '../../components/ui'
+import { Checkbox, Popover, StatusPill, Tooltip, cx } from '../../components/ui'
 import { fmtHours, fmtTime } from '../../lib/dates'
 import { shortAddress } from '../../lib/address'
-import type {
-  Contractor,
-  ExecutionMethod,
-  Profile,
-  StaffRole,
-  Status,
-  Truck,
-  WorkBoardRow,
-} from '../../types/domain'
+import type { ExecutionMethod, Status, Truck, WorkBoardRow } from '../../types/domain'
 import { PERM } from '../../lib/permissions'
-import { useContractorAssignableWorkers, useContractorDelegate } from '../../lib/queries'
-import { errorMessage } from '../../lib/errors'
 
 export interface BoardLookups {
   statuses: Status[]
   trucks: Truck[]
   methods: ExecutionMethod[]
-  contractors: Contractor[]
-  staff: Profile[]
   /**
    * Whether the reader may pick a delegated contractor's staff.
    *
@@ -32,6 +20,24 @@ export interface BoardLookups {
    * disabled. Resolved once in WorkBoardPage from either assignment key.
    */
   canAssignContractor: boolean
+  /**
+   * לפתוח את הפאנל הממוקד של התא (0108).
+   *
+   * שיבוץ, נקודת התחלה, האצלה, כמות עובדים ותעריף אינם עמודות של המשימה —
+   * הם שלוש טבלאות אחרות — ובורר בתוך תא ברוחב שתי אצבעות ידע לענות רק על
+   * הראשונה שבהן. הפאנל הוא אותו רכיב שהכרטיס המלא מרכיב, ולכן הוא עונה על
+   * כולן בלי להיות הכרטיס — שהוא מעכשיו של מנהל המערכת בלבד.
+   */
+  openPanel: (taskId: string, panel: 'staffing' | 'contractor') => void
+  /**
+   * כמה שורות טקסט שורת ההערות מחזיקה בפועל.
+   *
+   * ‏0079 נתן להערה `grow: 2` — שתי שורות קבועות — והערה ארוכה נחתכה בהן
+   * בלי שדבר על המסך אמר שיש עוד. עכשיו הגובה נגזר מההערה הארוכה ביותר
+   * שעל הלוח, בדיוק כפי ששורת הצוות נגזרת מהצוות הגדול ביותר, והמספר הזה
+   * הוא מה שמחבר בין הגובה שנקבע שם לבין הקיטום שנעשה כאן.
+   */
+  noteLines: number
 }
 
 export interface CellContext {
@@ -40,13 +46,6 @@ export interface CellContext {
   /** any *other* key a cell needs — the team cell spans two assignment rights */
   can: (perm?: string) => boolean
   patch: (row: WorkBoardRow, patch: Record<string, unknown>) => void
-  /**
-   * staffing is a row in task_assignments, not a column on tasks — except for a
-   * delegated contractor's staff, which is a row in task_contractor_workers and
-   * goes through its own RPC. `id` is a profile id for the staff roles, and
-   * `w:<worker>` / `p:<profile>` for `'contractor'`.
-   */
-  assign: (row: WorkBoardRow, role: StaffRole | 'contractor', id: string, on: boolean) => void
   lookups: BoardLookups
 }
 
@@ -140,9 +139,17 @@ function Clip({
       <span
         ref={ref}
         dir={dir}
+        /* the clamp is a number and not a utility class: the notes row sizes
+           itself to the longest note on the board, so how many lines fit is
+           decided at render time rather than in the stylesheet */
+        style={
+          lines > 1
+            ? { display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: lines }
+            : undefined
+        }
         className={cx(
           'block text-center',
-          lines > 1 ? 'line-clamp-2 whitespace-normal break-words' : 'truncate',
+          lines > 1 ? 'overflow-hidden whitespace-pre-wrap break-words' : 'truncate',
           tight ? 'min-w-0 max-w-full px-1' : 'w-full px-1.5 py-0.5',
           clipped && 'cursor-help',
           FS,
@@ -220,9 +227,15 @@ function useArmed(open: () => void) {
 
 /** the editor is mounted by the double click, so it may claim the caret and,
  *  where the platform has one, the picker — both inside that user gesture */
-function openEditor(el: HTMLInputElement | null) {
+function openEditor(el: HTMLInputElement | HTMLTextAreaElement | null) {
   if (!el) return
   el.focus()
+  if (el instanceof HTMLTextAreaElement) {
+    /* פרוזה נערכת מהסוף, לא נבחרת כולה: הערה בת שלוש שורות שהודפסה עליה
+       אות אחת בטעות היא הערה שאבדה. */
+    el.setSelectionRange(el.value.length, el.value.length)
+    return
+  }
   if (el.type === 'time' || el.type === 'date') {
     const picker = el as { showPicker?: () => void }
     try {
@@ -235,13 +248,18 @@ function openEditor(el: HTMLInputElement | null) {
   }
 }
 
-/** Enter commits (via blur), Escape abandons */
-function editorKeys(close: () => void) {
-  return (e: React.KeyboardEvent<HTMLInputElement>) => {
+/**
+ * Enter commits (via blur), Escape abandons.
+ *
+ * ‏`multiline` הופך את Enter לירידת שורה — בהערה, שהיא פרוזה, זה מה ש-Enter
+ * אומר — ומשאיר את השמירה ל-Ctrl/⌘+Enter ולעזיבת התא.
+ */
+function editorKeys(close: () => void, multiline = false) {
+  return (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (e.key === 'Escape') {
       e.preventDefault()
       close()
-    } else if (e.key === 'Enter') {
+    } else if (e.key === 'Enter' && (!multiline || e.ctrlKey || e.metaKey)) {
       e.preventDefault()
       e.currentTarget.blur()
     }
@@ -426,6 +444,31 @@ function PickCell({
   )
 }
 
+/**
+ * תא שהעריכה שלו נפתחת בפאנל ולא בבורר.
+ *
+ * אותה מחווה בדיוק כמו כל תא אחר — לחיצה כפולה — אבל מה שנפתח הוא המסך
+ * שעונה על כל השאלה ולא רק על החלק שנכנס בתפריט: מי משובץ *ומאיפה הוא
+ * מתחיל*, לאיזה קבלן *ובאיזה תעריף וכמה עובדים*.
+ */
+function PanelCell({
+  canEdit,
+  view,
+  onOpen,
+}: {
+  canEdit: boolean
+  view: ReactNode
+  onOpen: () => void
+}) {
+  const armed = useArmed(onOpen)
+  if (!canEdit) return <>{view}</>
+  return (
+    <button type="button" {...armed}>
+      {view}
+    </button>
+  )
+}
+
 /** the trucks a row currently carries, from the view's ordered list */
 function truckNames(row: WorkBoardRow): string[] {
   const list = row.truck_list ?? []
@@ -516,91 +559,53 @@ function StatusCell({ row, canEdit, can, patch, lookups }: CellContext) {
 }
 
 /**
- * תא הקבלן — רב-בחירה מאז 0096: משימה יכולה לשאת כמה קבלנים. הוספה/הסרה עוברות
- * ב-RPC (delegate/undelegate) ולא בכתיבה ל-`tasks.contractor_id`, שהוא כיום רק
- * שיקוף הקבלן הראשי. `contractor_list` הוא מקור האמת לרשימה ולסימונים; ניהול
- * מלא (תמחור, כמות עובדים, שיבוץ עובדי קבלן משני) נעשה בכרטיס המשימה.
+ * תא הקבלן — רב-בחירה מאז 0096: משימה יכולה לשאת כמה קבלנים, ו-`contractor_list`
+ * הוא מקור האמת לרשימה.
+ *
+ * הבורר שהיה כאן ידע לענות רק על "לאיזה קבלן", וזו השאלה הקטנה: מה שנקבע
+ * בהאצלה הוא גם כמה עובדים הוא מביא, מאיזה אתר, באיזה תעריף ומי מהסגל שלו
+ * יוצא. מ-0108 התא נפתח לפאנל שמחזיק את כולן, ולכן גם ההוספה וההסרה עברו
+ * לשם — הן ממילא עברו ב-RPC ‏(delegate/undelegate) ולא בכתיבה ל-
+ * `tasks.contractor_id`, שהוא כיום רק שיקוף הקבלן הראשי.
  */
 function ContractorCell({ row, canEdit, lookups }: CellContext) {
-  const toast = useToast()
-  const delegate = useContractorDelegate()
   const delegated = row.contractor_list ?? []
-  const delegatedIds = new Set(delegated.map((c) => c.contractor_id))
   const names = delegated.map((c) => c.name).join(', ')
   return (
-    <PickCell
+    <PanelCell
       canEdit={canEdit}
       view={names ? <Clip>{names}</Clip> : <Muted />}
-      empty="אין קבלנים פעילים"
-      groups={[
-        {
-          key: 'contractors',
-          multi: true,
-          options: lookups.contractors
-            .filter((c) => c.is_active || delegatedIds.has(c.id))
-            .map((c) => ({ id: c.id, label: c.name, checked: delegatedIds.has(c.id) })),
-        },
-      ]}
-      onToggle={(_g, id, on) =>
-        delegate.mutate(
-          { taskId: row.id, contractorId: id, on },
-          { onError: (e) => toast.error(errorMessage(e)) },
-        )
-      }
+      onOpen={() => lookups.openPanel(row.id, 'contractor')}
     />
   )
 }
 
-/** staff who hold a given role — the same filter the task drawer applies */
-function staffFor(staff: Profile[], role: StaffRole) {
-  return staff.filter((p) => (p.staff_roles ?? []).some((r) => r.role === role))
-}
-
-function TeamLeadCell({ row, canEdit, assign, lookups }: CellContext) {
+function TeamLeadCell({ row, canEdit, lookups }: CellContext) {
   return (
-    <PickCell
+    <PanelCell
       canEdit={canEdit}
       view={row.team_lead_name ? <Clip>{row.team_lead_name}</Clip> : <Muted />}
-      empty="אין עובדים עם תפקיד ראש צוות"
-      groups={[
-        {
-          key: 'leads',
-          multi: false,
-          options: staffFor(lookups.staff, 'team_lead').map((p) => ({
-            id: p.id,
-            label: p.full_name,
-            checked: p.id === row.team_lead_id,
-          })),
-        },
-      ]}
-      onToggle={(_g, id, on) => assign(row, 'team_lead', id, on)}
+      onOpen={() => lookups.openPanel(row.id, 'staffing')}
     />
   )
 }
 
 /**
  * Everyone assigned, by name, one per line — and the place they are assigned
- * from. Workers and drivers are rows in task_assignments, so the picker writes
- * there rather than through the task patch.
+ * from. Staff, drivers and a delegated contractor's crew read as one list,
+ * because in the field they are one crew.
  *
- * A delegated contractor's staff used to be read-only here, on the reasoning
- * that choosing them is a question about that contractor's roster rather than
- * about this cell. That was true while the contractor had a portal of his own
- * to answer it in. With the portal gone, this cell *is* where the question is
- * asked — by the contractor manager for his own tasks, and by the office
- * through `contractors.assign_workers`, which until now had no picker at all.
+ * העריכה נפתחת בפאנל (0108) ולא בבורר שהיה כאן: הבורר ידע לענות רק על "מי",
+ * ומחצית מהשאלה של התא הזה היא "מאיפה" — מי יוצא מהמחסן ומי מגיע לשטח, ומי
+ * מהנהגים נוסע באיזו משאית. שתי אלה קובעות את שעת ההתחלה במשמרת ואת המיקום
+ * שמולו נמדדת ההחתמה, והן מעולם לא נכנסו לתפריט ברוחב תא.
  */
-function TeamCell({ row, canEdit, can, assign, lookups }: CellContext) {
-  const workerIds = (row.workers ?? []).map((w) => w.profile_id)
-  const driverIds = (row.drivers ?? []).map((d) => d.profile_id)
+function TeamCell({ row, canEdit, can, lookups }: CellContext) {
   const canDriver = can(PERM.TASKS_ASSIGN_DRIVER)
   const contractorWorkers = row.contractor_worker_list ?? []
+  /* שיבוץ עובדי קבלן אינו עובר ב-`canEdit`: היא מכפילה ב-`board.inline_edit`,
+     שאין למנהל קבלן — והתא הזה הוא הדבר האחד שהוא כן עורך. */
   const canContractor = lookups.canAssignContractor && !!row.contractor_id
-  /* אחת לכל קבלן ולא אחת לכל שורה — react-query מאחד לפי המפתח. */
-  const { data: assignable = [] } = useContractorAssignableWorkers(
-    canContractor ? row.contractor_id : null,
-  )
-  const chosenWorkerIds = contractorWorkers.map((w) => w.id)
 
   /* אותו אדם ששובץ גם כעובד וגם כנהג מופיע פעם אחת, עם שני האייקונים (0094).
      איחוד לפי profile_id; עובד קבלן נשאר נפרד (מרחב זהות אחר). */
@@ -659,57 +664,10 @@ function TeamCell({ row, canEdit, can, assign, lookups }: CellContext) {
     )
 
   return (
-    <PickCell
+    <PanelCell
       canEdit={canEdit || canDriver || canContractor}
       view={view}
-      empty="אין עובדים לשיבוץ"
-      groups={[
-        {
-          key: 'worker',
-          label: 'עובדים',
-          multi: true,
-          options: canEdit
-            ? staffFor(lookups.staff, 'worker').map((p) => ({
-                id: p.id,
-                label: p.full_name,
-                checked: workerIds.includes(p.id),
-              }))
-            : [],
-        },
-        {
-          key: 'driver',
-          label: 'נהגים',
-          multi: true,
-          options: canDriver
-            ? staffFor(lookups.staff, 'driver').map((p) => ({
-                id: p.id,
-                label: p.full_name,
-                checked: driverIds.includes(p.id),
-              }))
-            : [],
-        },
-        {
-          key: 'contractor',
-          label: 'עובדי הקבלן',
-          multi: true,
-          /* הרשימה מאחדת את הרוסטר הידני עם חשבונות שנרשמו תחת הקבלן ואין להם
-             עדיין שורת סגל; לאלה אין `worker_id`, וה-RPC יוצר להם אותה בשיבוץ. */
-          options: canContractor
-            ? assignable.map((w) => ({
-                id: w.worker_id ? `w:${w.worker_id}` : `p:${w.profile_id}`,
-                label: w.has_login ? `${w.full_name} · חשבון` : w.full_name,
-                checked: !!w.worker_id && chosenWorkerIds.includes(w.worker_id),
-              }))
-            : [],
-          note:
-            canContractor && assignable.length === 0
-              ? 'אין עדיין עובדים בסגל של הקבלן'
-              : !canContractor && contractorWorkers.length > 0
-                ? `${contractorWorkers.length} עובדי קבלן משובצים`
-                : undefined,
-        },
-      ]}
-      onToggle={(group, id, on) => assign(row, group as StaffRole | 'contractor', id, on)}
+      onOpen={() => lookups.openPanel(row.id, 'staffing')}
     />
   )
 }
@@ -885,24 +843,44 @@ export const BOARD_FIELDS: BoardField[] = [
     editPerm: PERM.TASKS_EDIT_NOTES,
     label: 'הערות',
     /* a note is the one field on the board that is prose, and a single line of
-       a 74px column is not enough of it to be worth reading */
+       a 74px column is not enough of it to be worth reading. `grow` is the
+       floor — the board raises the row to the longest note it is showing. */
     grow: 2,
-    render: ({ row, canEdit, patch }) => (
+    render: ({ row, canEdit, patch, lookups }) => (
       <Editable
         canEdit={canEdit}
-        view={row.notes ? <Clip lines={2}>{row.notes}</Clip> : <Muted>{canEdit ? 'הוספת הערה' : undefined}</Muted>}
+        view={
+          row.notes ? (
+            /* הבועה נושאת את ההערה כפי שנכתבה, כולל ירידות שורה, כדי שגם מה
+               שלא נכנס בשורות שעל הלוח ייקרא במלואו */
+            <Clip
+              lines={lookups.noteLines}
+              /* אותה יחידת שורה שהגובה נמדד בה, אחרת השורה האחרונה נחתכת
+                 בשבריר פיקסל — `--vl-board-line` נקבע על מיכל הלוח. */
+              className="leading-[var(--vl-board-line,1rem)]"
+              title={<span className="block whitespace-pre-wrap text-start">{row.notes}</span>}
+            >
+              {row.notes}
+            </Clip>
+          ) : (
+            <Muted>{canEdit ? 'הוספת הערה' : undefined}</Muted>
+          )
+        }
+        /* ‏textarea ולא input: ההערה היא השדה היחיד בלוח שיש בו ירידות שורה,
+           ו-`input` היה מוחק אותן בשקט בכל עריכה — גם כשלא נגעו בהן. */
         edit={(close) => (
-          <input
+          <textarea
             ref={openEditor}
             aria-label="הערות"
+            rows={lookups.noteLines}
             defaultValue={row.notes ?? ''}
-            onKeyDown={editorKeys(close)}
+            onKeyDown={editorKeys(close, true)}
             onBlur={(e) => {
-              const v = e.target.value || null
+              const v = e.target.value.trim() || null
               if (v !== row.notes) patch(row, { notes: v })
               close()
             }}
-            className={cx(INLINE, 'placeholder:text-ink-tertiary')}
+            className={cx(INLINE, 'max-h-full resize-none overflow-auto text-start leading-[var(--vl-board-line,1rem)] placeholder:text-ink-tertiary')}
           />
         )}
       />

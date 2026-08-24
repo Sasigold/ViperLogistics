@@ -7,7 +7,7 @@ import { PERM } from '../../lib/permissions'
 import { lazyPage } from '../../lib/lazyPage'
 import { useAuth } from '../../state/auth'
 import { RequirePermission } from '../auth/guards'
-import { TaskDrawer } from '../tasks/TaskDrawer'
+import { TaskDrawer, useCanOpenTaskCard } from '../tasks/TaskDrawer'
 import { EventFormModal } from '../events/EventFormModal'
 import { DashboardProvider } from './dashboardContext'
 import { RANGE_PRESETS, defaultRange, previousRange } from './dashboardRange'
@@ -47,6 +47,7 @@ const WidgetBuilderDrawer = lazyPage(() =>
  */
 export default function DashboardPage() {
   const has = useAuth((s) => s.has)
+  const canOpenTaskCard = useCanOpenTaskCard()
   const toast = useToast()
   const [range, setRange] = useState<DateRange>(defaultRange)
   const [taskDrawer, setTaskDrawer] = useState<{ open: boolean; id: string | null }>({ open: false, id: null })
@@ -103,11 +104,12 @@ export default function DashboardPage() {
       prev,
       today,
       sections,
-      openTask: (id: string) => setTaskDrawer({ open: true, id }),
-      openNewTask: () => setTaskDrawer({ open: true, id: null }),
+      /* שני אלה פותחים את כרטיס המשימה, והוא של מנהל המערכת (0108). */
+      openTask: canOpenTaskCard ? (id: string) => setTaskDrawer({ open: true, id }) : undefined,
+      openNewTask: canOpenTaskCard ? () => setTaskDrawer({ open: true, id: null }) : undefined,
       openNewEvent: () => setEventModal(true),
     }),
-    [range, prev, today, sections],
+    [range, prev, today, sections, canOpenTaskCard],
   )
 
   /* Every edit goes through `layout.edit`, and every one of them works in id

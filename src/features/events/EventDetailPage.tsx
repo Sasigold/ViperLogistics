@@ -53,7 +53,7 @@ import { fmtDate, fmtDateLong, fmtHours, fmtTime } from '../../lib/dates'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { EventFormModal } from './EventFormModal'
 import { formatCustomValue } from './CustomFieldInput'
-import { TaskDrawer } from '../tasks/TaskDrawer'
+import { TaskDrawer, useCanOpenTaskCard } from '../tasks/TaskDrawer'
 import { EventActivityLog } from './EventActivityLog'
 import { EventSpecsModal } from './EventSpecsModal'
 import { CustomerSignatureModal } from './CustomerSignatureModal'
@@ -189,9 +189,33 @@ export default function EventDetailPage() {
    * (0079). בלעדיו שורת המשימה נשארת מה שהיא — מידע — ואינה מציעה לחיצה
    * שתיפתח למסך שאין בו מה לשנות.
    */
-  const canOpenTask = has(PERM.BOARD_OPEN_TASK)
+  /* ‏0108: כרטיס המשימה — פתיחה ויצירה כאחת — הוא של מנהל המערכת. */
+  const canOpenTaskCard = useCanOpenTaskCard()
+  const canOpenTask = has(PERM.BOARD_OPEN_TASK) && canOpenTaskCard
+  /* משימה חדשה נפתחת באותו כרטיס, ולכן היא הולכת אחריו. */
+  const canCreateTask = has(PERM.TASKS_CREATE) && canOpenTaskCard
   /** סכומי כסף הם מפתח, ולא "מה שיש בנתונים": בלעדיו הכרטיס אינו קיים */
   const canSeePricing = has(PERM.PRICING_VIEW)
+  /**
+   * אישור לביצוע (0109) — של מנהל המערכת, ולא של מפתח.
+   *
+   * ‏`set_event_approved` דוחה כל אחד אחר, וטריגר חוסם כתיבה ישירה לעמודה,
+   * ולכן המתג כאן אינו השער אלא רק הדלת: מי שאינו אדמין פשוט לא רואה אותו.
+   */
+  const isAdmin = !!me?.profile.is_admin
+  const approve = useMutation({
+    mutationFn: async (on: boolean) => {
+      const { error } = await supabase.rpc('set_event_approved', { p_event_id: id, p_on: on })
+      if (error) throw error
+    },
+    onSuccess: (_d, on) => {
+      toast.success(on ? 'האירוע אושר לביצוע' : 'האישור בוטל')
+      void qc.invalidateQueries({ queryKey: ['events'] })
+      void qc.invalidateQueries({ queryKey: ['calendar'] })
+      void qc.invalidateQueries({ queryKey: ['event_activity', id] })
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
 
   const columns = useMemo<Column<WorkBoardRow>[]>(
     () => [
@@ -476,6 +500,14 @@ export default function EventDetailPage() {
           <span className="flex flex-wrap items-center gap-2.5">
             {event.end_client_name || 'אירוע'}
             <StatusPicker event={event} />
+            {/* ‏0109: מה שמנהל המערכת אישר, כל מי שרואה את האירוע קורא —
+                ובראשם הלקוח, שזו כל הסיבה שהסימון קיים. */}
+            {event.approved_at && (
+              <Badge tone="success">
+                <Check size={ICON.xs} strokeWidth={STROKE} />
+                מאושר לביצוע
+              </Badge>
+            )}
           </span>
         }
         subtitle={
@@ -515,6 +547,18 @@ export default function EventDetailPage() {
                 <PencilLine size={ICON.sm} strokeWidth={STROKE} />
                 החתמת לקוח
                 {signatures.length > 0 && <Badge tone="success">נחתם</Badge>}
+              </Button>
+            )}
+            {/* המתג עצמו הוא של מנהל המערכת, וה-RPC דוחה כל אחד אחר (0109). */}
+            {isAdmin && (
+              <Button
+                size="sm"
+                variant={event.approved_at ? 'ghost' : 'primary'}
+                loading={approve.isPending}
+                onClick={() => approve.mutate(!event.approved_at)}
+              >
+                <Check size={ICON.sm} strokeWidth={STROKE} />
+                {event.approved_at ? 'ביטול אישור לביצוע' : 'אישור לביצוע'}
               </Button>
             )}
             {has(PERM.EVENTS_DUPLICATE) && (
@@ -781,7 +825,7 @@ export default function EventDetailPage() {
                     </button>
                   </div>
 
-                  {has(PERM.TASKS_CREATE) && (
+                  {canCreateTask && (
                     <Button size="sm" variant="primary" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
                       <Plus size={ICON.sm} strokeWidth={STROKE} />
                       משימה חדשה
@@ -800,7 +844,7 @@ export default function EventDetailPage() {
                     title="אין משימות להצגה"
                     description="נסה לשנות את הסינון או להוסיף משימה חדשה"
                     action={
-                      has(PERM.TASKS_CREATE) && (
+                      canCreateTask && (
                         <Button size="sm" variant="primary" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
                           <Plus size={ICON.sm} />
                           משימה חדשה

@@ -5,11 +5,13 @@ import {
   Boxes,
   Building2,
   Calculator,
+  ClipboardList,
   Eye,
   EyeOff,
   ICON,
   Mail,
   Package,
+  Pencil,
   Percent,
   Phone,
   Plus,
@@ -20,6 +22,7 @@ import {
   User,
 } from '../../components/ui/icons'
 import {
+  Badge,
   Button,
   Card,
   CardBody,
@@ -33,6 +36,7 @@ import {
   SegmentedControl,
   Select,
   Skeleton,
+  SkeletonTable,
   ErrorState,
   StatusPill,
   Switch,
@@ -46,6 +50,8 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import {
+  useBoardFields,
+  useCustomerBoardConfig,
   useCustomerExecutionMethods,
   useCustomerFormConfig,
   useExecutionMethods,
@@ -59,12 +65,21 @@ import PricingTab from './PricingTab'
 import IncomeSplitTab from './IncomeSplitTab'
 import { useWarehouses } from '../attendance/attendanceQueries'
 import { RequirePermission } from '../auth/guards'
-import type { Customer, CustomFieldType, FieldState, Supplier } from '../../types/domain'
+import type {
+  BoardFieldState,
+  Customer,
+  CustomFieldType,
+  FieldState,
+  Supplier,
+} from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
 const TABS = [
   { key: 'details', label: 'פרטים', icon: <Building2 size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
   { key: 'fields', label: 'שדות טופס', icon: <SlidersHorizontal size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
+  /* ‏0109: הלשונית היחידה שאינה נגזרת ממפתח אלא ממנהל המערכת. `adminOnly`
+     ולא מפתח במרשם — מפתח אפשר להעניק, ו"רק מנהל מערכת" נאמר כדי שלא. */
+  { key: 'board', label: 'שדות הלו״ז', icon: <ClipboardList size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW, adminOnly: true },
   { key: 'methods', label: 'אופני ביצוע', icon: <Boxes size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
   { key: 'suppliers', label: 'ספקים', icon: <Package size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
   { key: 'pricing', label: 'תמחור', icon: <Calculator size={ICON.sm} />, perm: PERM.PRICING_MANAGE_RULES },
@@ -75,7 +90,8 @@ export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('details')
   const { has } = useAuth()
-  const visibleTabs = TABS.filter((t) => has(t.perm))
+  const isAdmin = !!useAuth((st) => st.me)?.profile.is_admin
+  const visibleTabs = TABS.filter((t) => has(t.perm) && (!('adminOnly' in t) || isAdmin))
 
   const { data: customer, isLoading, error, refetch } = useQuery({
     queryKey: ['customers', 'one', id],
@@ -126,6 +142,7 @@ export default function CustomerDetailPage() {
 
         {tab === 'details' && <DetailsTab customer={customer} />}
         {tab === 'fields' && <FieldsTab customerId={customer.id} />}
+        {tab === 'board' && <BoardFieldsTab customerId={customer.id} />}
         {tab === 'methods' && <MethodsTab customerId={customer.id} />}
         {tab === 'suppliers' && <SuppliersTab customerId={customer.id} />}
         {tab === 'pricing' && <PricingTab customer={customer} />}
@@ -339,6 +356,120 @@ function DetailsTab({ customer }: { customer: Customer }) {
 }
 
 /* ===== form field configuration =========================================== */
+
+/**
+ * שדות הלו״ז של לקוח אחד (0109).
+ *
+ * שלוש מדרגות ולא שתיים, וזו כל ההבחנה שהמסך הזה קיים בשבילה: **מוסתר** —
+ * השדה אינו מצויר אצלו כלל; **נראה** — הוא קורא ואינו נוגע; **עריכה** — הוא
+ * גם משנה. עד כאן התשובה נגזרה מהמפתחות של התפקיד, כלומר הייתה זהה לכל
+ * הלקוחות; מעכשיו היא נשאלת פר-לקוח, ומי שעונה עליה הוא מנהל המערכת.
+ *
+ * ההכרעה נאכפת בשרת ולא כאן: `app.enforce_customer_board_edit` דוחה כתיבה
+ * לשדה שאינו `editable`, ולכן שינוי כאן משנה גם את מה שהמסך מצייר וגם את מה
+ * שהשרת מקבל — ואי אפשר להם להיפרד.
+ */
+const BOARD_STATES = [
+  { key: 'hidden' as const, label: 'מוסתר', icon: <EyeOff size={12} /> },
+  { key: 'visible' as const, label: 'נראה', icon: <Eye size={12} /> },
+  { key: 'editable' as const, label: 'עריכה', icon: <Pencil size={12} /> },
+]
+
+function BoardFieldsTab({ customerId }: { customerId: string }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const { data: fields = [], isLoading } = useBoardFields()
+  const { data: config = [] } = useCustomerBoardConfig(customerId)
+  const stateOf = (key: string): BoardFieldState =>
+    config.find((c) => c.field_key === key)?.state ?? 'visible'
+
+  const update = useMutation({
+    mutationFn: async ({ key, state }: { key: string; state: BoardFieldState }) => {
+      const { error } = await supabase
+        .from('customer_board_fields')
+        .upsert({ customer_id: customerId, field_key: key, state })
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['customer_board_fields', customerId] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  const setAll = useMutation({
+    mutationFn: async (state: BoardFieldState) => {
+      const { error } = await supabase.from('customer_board_fields').upsert(
+        fields.map((f) => ({ customer_id: customerId, field_key: f.field_key, state })),
+      )
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['customer_board_fields', customerId] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  const counts = fields.reduce(
+    (acc, f) => {
+      acc[stateOf(f.field_key)]++
+      return acc
+    },
+    { hidden: 0, visible: 0, editable: 0 } as Record<BoardFieldState, number>,
+  )
+
+  if (isLoading) return <SkeletonTable rows={6} cols={2} />
+
+  return (
+    <Card>
+      <CardHeader
+        title="שדות הלו״ז"
+        subtitle="מה הלקוח הזה רואה בלוח העבודה, ומה הוא גם רשאי לשנות"
+        icon={<ClipboardList size={ICON.md} strokeWidth={STROKE} />}
+        actions={
+          <span className="flex flex-wrap items-center gap-1.5">
+            <Badge>{counts.visible} נראים</Badge>
+            <Badge tone="primary">{counts.editable} לעריכה</Badge>
+            {counts.hidden > 0 && <Badge tone="neutral">{counts.hidden} מוסתרים</Badge>}
+          </span>
+        }
+      />
+      <CardBody className="p-0">
+        <p className="border-b border-line-subtle px-4 py-2.5 type-caption text-ink-secondary">
+          שדה ב״עריכה״ נפתח ללקוח גם בשרת. שים לב ששדות שמזיזים כסף — משך, כמות
+          עובדים ואופן ביצוע — מריצים מחדש את חישוב המחיר, ולכן מי שרשאי לשנות
+          אותם משנה גם את מה שהוא ישלם.
+        </p>
+        <ul>
+          {fields.map((f) => (
+            <li
+              key={f.field_key}
+              className="flex items-center gap-3 border-b border-line-subtle px-4 py-2.5 last:border-0"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate type-body font-medium">{f.label_he}</span>
+                {/* שדה בלי עמודה אינו נכתב מהלוח כלל — "עריכה" עליו היא הבטחה
+                    שאין מי שיקיים, ולכן הוא מוצע כמוסתר/נראה בלבד */}
+                {!f.column_name && (
+                  <span className="type-caption text-ink-tertiary">לקריאה בלבד בלוח</span>
+                )}
+              </span>
+              <SegmentedControl
+                items={f.column_name ? BOARD_STATES : BOARD_STATES.filter((x) => x.key !== 'editable')}
+                value={stateOf(f.field_key)}
+                onChange={(state) => update.mutate({ key: f.field_key, state })}
+              />
+            </li>
+          ))}
+        </ul>
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+          <span className="type-caption text-ink-tertiary">החלה על הכול:</span>
+          <Button size="sm" loading={setAll.isPending} onClick={() => setAll.mutate('hidden')}>
+            הכול מוסתר
+          </Button>
+          <Button size="sm" loading={setAll.isPending} onClick={() => setAll.mutate('visible')}>
+            הכול נראה
+          </Button>
+        </div>
+      </CardBody>
+    </Card>
+  )
+}
 
 const FIELD_STATES = [
   { key: 'visible' as const, label: 'מוצג', icon: <Eye size={12} /> },

@@ -236,6 +236,26 @@ OUT="$OUT
 $OUT20"
 
 echo
+echo "== contractor hats & penalties suite =="
+# 22 מקימה קבלן, לקוח, אירוע, משימות ושלוש דמויות משלה ואינה נשענת על אף חבילה
+# קודמת. היא רצה אחרונה כי היא מזריעה שיבוצים ותמחור שאינם מנוקים, והאירוע שלה
+# יושב ב-current_date+360, מעבר לכל טווח אחר.
+OUT21=$($PSQL -d vl -f "$HERE/22_contractor_hats_and_penalties.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT21"
+OUT="$OUT
+$OUT21"
+
+echo
+echo "== customer board & approval suite =="
+# 23 מקימה שני לקוחות, אירועים, משימות וארבע דמויות משלה ואינה נשענת על אף
+# חבילה קודמת. היא רצה אחרונה כי היא מזריעה תמחור וקונפיגורציית שדות שאינם
+# מנוקים, והאירועים שלה יושבים ב-current_date+370.
+OUT22=$($PSQL -d vl -f "$HERE/23_customer_board_and_approval.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT22"
+OUT="$OUT
+$OUT22"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

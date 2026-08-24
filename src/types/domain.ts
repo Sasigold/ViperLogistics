@@ -346,6 +346,29 @@ export interface UserFormField {
   state: FieldState
 }
 
+/**
+ * מה שלקוח עושה עם שדה בלו״ז (0109).
+ *
+ * שלוש מדרגות ולא שתיים: "נראה" אינו "ניתן לעריכה", וזו בדיוק ההבחנה
+ * שמנהל המערכת מבקש לעשות — להראות ללקוח את השעות בלי לתת לו להזיז אותן.
+ */
+export type BoardFieldState = 'hidden' | 'visible' | 'editable'
+
+/** שורה בקטלוג שדות הלו״ז — מזינה את מסך "שדות הלו״ז" בכרטיס הלקוח. */
+export interface BoardFieldDef {
+  field_key: string
+  label_he: string
+  /** העמודה ב-tasks שהשדה כותב. null = לקריאה, נגזר, או נכתב לטבלה אחרת. */
+  column_name: string | null
+  sort_order: number
+}
+
+export interface CustomerBoardField {
+  customer_id: string
+  field_key: string
+  state: BoardFieldState
+}
+
 export interface EventRow {
   id: string
   customer_id: string
@@ -365,6 +388,9 @@ export interface EventRow {
   no_parking: boolean
   porterage: boolean
   supplier_pickup: boolean
+  /** מתי מנהל המערכת אישר את האירוע לביצוע (0109). null = לא אושר. */
+  approved_at: string | null
+  approved_by: string | null
   /** values of this customer's custom form fields, keyed by field_key */
   custom_fields: Record<string, CustomFieldValue>
   created_by: string | null
@@ -916,6 +942,11 @@ export interface MyPermissions {
   scopes: MyScope[]
   /** company form config already intersected with this user's overrides */
   form_config: { field_key: string; state: FieldState }[]
+  /**
+   * מה שהלקוח של הקורא רואה ועורך בלו״ז (0109). ריק לאיש צוות — הלוח שלו
+   * נשלט במפתחות, ולא בקונפיגורציה פר-לקוח.
+   */
+  board_config: { field_key: string; state: BoardFieldState }[]
 }
 
 /**
