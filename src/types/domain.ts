@@ -383,6 +383,7 @@ export type EventActivityKind =
   | 'task_removed'
   | 'spec_added'
   | 'spec_removed'
+  | 'customer_signed'
 
 /**
  * A line of an event's activity log, as `event_activity_feed` returns it: a
@@ -427,6 +428,24 @@ export interface EventSpec {
   uploader_name: string | null
   created_at: string
   deleted_at: string | null
+}
+
+/**
+ * חתימת לקוח על האירוע (0107) — שם החותם והחתימה עצמה כ-data URL. רשומה קבועה:
+ * החתמה חוזרת אינה דורסת אלא מוסיפה שורה, והאחרונה לפי `created_at` היא הפעילה.
+ * זהות המחתים (`signed_by`) נכפית מהשרת.
+ */
+export interface EventSignature {
+  id: string
+  event_id: string
+  /** שם הלקוח כפי שהוקלד בעת ההחתמה */
+  signer_name: string
+  /** data URL של תמונת החתימה (PNG מקנבס) */
+  signature_data: string
+  /** מי החתים בפועל — ראש הצוות, הלקוח, או מנהל המערכת */
+  signed_by: string | null
+  signed_by_name: string | null
+  created_at: string
 }
 
 export interface TaskRow {

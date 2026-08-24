@@ -106,6 +106,10 @@ export const PERM = {
   EVENTS_ACTIVITY_NOTE: 'events.activity_note',
   EVENTS_SPECS_VIEW: 'events.specs_view',
   EVENTS_SPECS_MANAGE: 'events.specs_manage',
+  /* החתמת לקוח (0107). ראש צוות ההקמה והלקוח מגיעים דרך תפקיד/זהות, לא דרך
+     המפתחות האלה — הם פותחים את החתימה גם לרכז משרדי שהוענק לו במפורש. */
+  EVENTS_SIGN_VIEW: 'events.sign_view',
+  EVENTS_SIGN_CAPTURE: 'events.sign_capture',
   FINANCE_INCOME_VIEW: 'finance.income_view',
   FINANCE_INCOME_EDIT: 'finance.income_edit',
   FINANCE_MANAGE_SPLITS: 'finance.manage_splits',
