@@ -346,7 +346,9 @@ Deno.serve(async (req) => {
     .replace(/[\u0591-\u05C7]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-  if (q.length < 2) return json([])
+  // מיושר עם MIN_QUERY_CHARS בצד הלקוח; כאן זו גם הגנת עלות — שאילתת שתי
+  // אותיות שמגיעה ישירות (לא דרך ה-UI) הייתה קריאה בתשלום ל-Google לחינם.
+  if (q.length < 3) return json([])
   // an unbounded query string is just cache keys and upstream bytes
   if (q.length > 200) return json({ error: 'שאילתת חיפוש ארוכה מדי' }, 400)
 
