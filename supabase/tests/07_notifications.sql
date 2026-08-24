@@ -542,34 +542,62 @@ select t_eq('ביטול אישור שקט כלפי הלקוח',
     and recipient_id in ('20000000-0000-0000-0000-0000000000c1',
                          '20000000-0000-0000-0000-0000000000c2')), 2);
 
--- ── לקוח עורך אירוע → מנהלים ─────────────────────────────────────────
+-- ── לקוח עורך אירוע → מנהלים (0112: מזנב update_event, לא מטריגר) ────
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
-update events set notes = 'עדכון מהלקוח' where id = '30000000-0000-0000-0000-000000000712';
+select t_expect_ok('לקוח עורך דרך ה-RPC', $$
+  select update_event('30000000-0000-0000-0000-000000000712',
+                      jsonb_build_object('notes', 'עדכון מהלקוח'))$$);
 select set_config('request.jwt.claim.sub', '', false);
 
 select t_eq('לקוח ערך אירוע — המנהל שומע',
   (select count(*)::int from notifications where type = 'event_updated'
     and recipient_id = '20000000-0000-0000-0000-000000000001'), 1);
 
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
-update events set notes = 'עדכון מהמשרד' where id = '30000000-0000-0000-0000-000000000712';
-select set_config('request.jwt.claim.sub', '', false);
-select t_eq('עריכה של המשרד שקטה',
-  (select count(*)::int from notifications where type = 'event_updated'
-    and recipient_id = '20000000-0000-0000-0000-000000000001'), 1);
-
+-- הבדיקה המרכזית של 0112: עריכה שנוגעת רק בלוויין — בלוק ההקמה — בלי
+-- לשנות את שורת האירוע. טריגר-שורה לא ראה אותה; הזנב כן.
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
-update events set notes = 'עדכון מהמשרד' where id = '30000000-0000-0000-0000-000000000712';
+select t_expect_ok('לקוח עורך רק את בלוק ההקמה', $$
+  select update_event('30000000-0000-0000-0000-000000000712',
+                      jsonb_build_object('setup_worker_count', 7))$$);
 select set_config('request.jwt.claim.sub', '', false);
-select t_eq('עדכון שאינו משנה דבר שקט',
+
+select t_eq('עריכת לוויין בלבד — המנהל שומע גם עליה',
   (select count(*)::int from notifications where type = 'event_updated'
-    and recipient_id = '20000000-0000-0000-0000-000000000001'), 1);
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 2);
+select t_eq('והיומן תיעד את שינוי שדה המשימה',
+  (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-000000000712'
+      and kind = 'changed' and field_key = 'task_worker_count'
+      and new_value = '7'), 1);
+
+-- עריכת המשרד — דרך ה-RPC וגם ישירות על הטבלה (הטריגר איננו) — שקטה
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select t_expect_ok('המשרד עורך דרך ה-RPC', $$
+  select update_event('30000000-0000-0000-0000-000000000712',
+                      jsonb_build_object('notes', 'עדכון מהמשרד'))$$);
+update events set notes = 'עדכון ישיר מהמשרד' where id = '30000000-0000-0000-0000-000000000712';
+select set_config('request.jwt.claim.sub', '', false);
+select t_eq('עריכה של המשרד שקטה, בשני המסלולים',
+  (select count(*)::int from notifications where type = 'event_updated'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 2);
+
+-- שמירה שלא שינתה דבר: היומן לא קיבל שורה, ולכן הגלאי שותק
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
+select t_expect_ok('לקוח שומר בלי לשנות', $$
+  select update_event('30000000-0000-0000-0000-000000000712',
+                      jsonb_build_object('notes', 'עדכון ישיר מהמשרד',
+                                         'setup_worker_count', 7))$$);
+select set_config('request.jwt.claim.sub', '', false);
+select t_eq('שמירה שלא שינתה דבר שקטה',
+  (select count(*)::int from notifications where type = 'event_updated'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 2);
 
 -- ── לקוח מבטל אירוע → מנהלים, פעם אחת ────────────────────────────────
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
-update events set status_id = (select id from statuses
-  where entity = 'event' and code = 'cancelled' and deleted_at is null)
- where id = '30000000-0000-0000-0000-000000000712';
+select t_expect_ok('לקוח מבטל דרך ה-RPC', $$
+  select update_event('30000000-0000-0000-0000-000000000712',
+    jsonb_build_object('status_id', (select id from statuses
+      where entity = 'event' and code = 'cancelled' and deleted_at is null)))$$);
 select set_config('request.jwt.claim.sub', '', false);
 
 select t_eq('לקוח ביטל — המנהל שומע',
@@ -577,7 +605,7 @@ select t_eq('לקוח ביטל — המנהל שומע',
     and recipient_id = '20000000-0000-0000-0000-000000000001'), 1);
 select t_eq('והביטול אינו נספר גם כעריכה',
   (select count(*)::int from notifications where type = 'event_updated'
-    and recipient_id = '20000000-0000-0000-0000-000000000001'), 1);
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 2);
 
 -- ── לקוח מעלה מפרט → מנהלים ──────────────────────────────────────────
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
@@ -767,6 +795,38 @@ select t_eq('ומי שבשטח לא',
   (select count(*)::int from notifications where type = 'task_time_changed'
     and recipient_id in ('20000000-0000-0000-0000-0000000000f1',
                          '20000000-0000-0000-0000-0000000007b1')), 2);
+
+-- 0112: אותם שינויים נרשמו גם ביומן הפעילות של האירוע, בפורמט קריא
+select t_eq('שינוי שעת השטח נרשם ביומן',
+  (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-000000000710'
+      and kind = 'changed' and field_key = 'task_onsite_start_time'
+      and new_value = '09:00'), 1);
+select t_eq('ושינוי שעת המחסן נרשם, בפורמט שעה',
+  (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-000000000710'
+      and kind = 'changed' and field_key = 'task_warehouse_start_time'
+      and new_value = '07:00'), 1);
+-- פרסום והורדה (שינויי סטטוס) אינם שורות changed — יש להם התראות משלהם
+select t_eq('שינוי סטטוס משימה אינו נרשם כשינוי שדה',
+  (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-000000000710'
+      and kind = 'changed' and field_key like 'task_status%'), 0);
+
+-- שער אותה-טרנזקציה: אירוע שנולד עם בלוק הקמה בקריאה אחת מדבר פעם אחת —
+-- task_added — ולא בנוסף מטח שורות changed מול ערכי ברירת המחדל.
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+create temp table n7_born as
+select create_event(jsonb_build_object(
+  'customer_id', '10000000-0000-0000-0000-000000000001',
+  'event_date', (current_date + 405)::text,
+  'setup_worker_count', 4)) as id;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('משימה שנולדה ומולאה באותה קריאה אינה מדברת פעמיים',
+  (select count(*)::int from event_activity
+    where event_id = (select id from n7_born)
+      and kind = 'changed' and field_key like 'task_%'), 0);
 
 \echo '--- תחולה ---'
 
