@@ -265,6 +265,16 @@ OUT="$OUT
 $OUT24"
 
 echo
+echo "== price add-ons suite =="
+# 25 מקימה לקוח, קבלן, אירוע, משימות וארבע דמויות משלה. היא רצה אחרונה כי היא
+# סופרת את שורות היומן של האירוע שלה ומשאירה אחריה תוספות שאינן מנוקות.
+# האירוע שלה יושב ב-current_date+410.
+OUT25=$($PSQL -d vl -f "$HERE/25_price_addons.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT25"
+OUT="$OUT
+$OUT25"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

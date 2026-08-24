@@ -72,7 +72,16 @@ export function EventSpecsModal({
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
   const isPhone = useIsPhone()
-  const canManage = has(PERM.EVENTS_SPECS_MANAGE)
+  /**
+   * שתי שאלות ולא אחת (0113).
+   *
+   * להעלות גרסה ולהוריד גרסה נראו כאותה פעולה כל עוד שתיהן היו של המשרד.
+   * מרגע שהלקוח מעלה את המפרט של עצמו הן נפרדות: המסמך שהוא שלח הוא שלו,
+   * וההחלטה למחוק גרסה מההיסטוריה של האירוע היא של מי שמנהל אותו. לקוח
+   * שהעלה גרסה שגויה מעלה אחריה גרסה נכונה — לשם כך המספור קיים.
+   */
+  const canUpload = has(PERM.EVENTS_SPECS_UPLOAD)
+  const canRemove = has(PERM.EVENTS_SPECS_MANAGE)
   /**
    * מי משווה שתי גרסאות.
    *
@@ -148,7 +157,7 @@ export function EventSpecsModal({
               ]}
             />
           )}
-          {canManage && !adding && (
+          {canUpload && !adding && (
             <Button size="sm" variant="primary" onClick={() => setAdding(true)}>
               <Upload size={ICON.sm} strokeWidth={STROKE} />
               העלאת גרסה חדשה
@@ -156,7 +165,7 @@ export function EventSpecsModal({
           )}
         </div>
 
-        {adding && canManage && (
+        {adding && canUpload && (
           <AddSpecForm eventId={eventId} onDone={() => setAdding(false)} />
         )}
 
@@ -168,12 +177,12 @@ export function EventSpecsModal({
             art="box"
             title="טרם הועלה מפרט"
             description={
-              canManage
+              canUpload
                 ? 'אפשר להעלות PDF או תמונה, או לקשר למסמך חיצוני. כל העלאה נשמרת כגרסה, והקודמות נשארות להשוואה.'
                 : 'כשיועלה מפרט לאירוע הזה הוא יופיע כאן.'
             }
             action={
-              canManage && !adding ? (
+              canUpload && !adding ? (
                 <Button variant="primary" onClick={() => setAdding(true)}>
                   <Upload size={ICON.sm} strokeWidth={STROKE} />
                   העלאת מפרט
@@ -201,7 +210,7 @@ export function EventSpecsModal({
           <VersionHistory
             specs={live}
             activeId={active?.id ?? null}
-            canManage={canManage}
+            canManage={canRemove}
             removing={remove.isPending}
             onRemove={onRemove}
           />

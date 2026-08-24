@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { addMonths, differenceInCalendarDays, eachDayOfInterval, endOfMonth, isSameMonth, parseISO, startOfMonth } from 'date-fns'
 import {
-  AlertTriangle,
   CalendarCheck,
   CalendarDays,
   ChevronDown,
@@ -63,7 +62,7 @@ import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { BOARD_FIELDS } from './boardFields'
 import type { BoardLookups } from './boardFields'
-import { COLOR_BY_OPTIONS, buildTones, clusterDay, isOverdue } from './grouping'
+import { COLOR_BY_OPTIONS, buildTones, clusterDay } from './grouping'
 import type { Cluster, ColorBy, GroupTone } from './grouping'
 import type { TaskRow, WorkBoardRow } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
@@ -832,11 +831,14 @@ export default function WorkBoardPage() {
     setJumpPending(false)
   }, [jumpPending, isLoading, scrollToToday, toast])
 
-  /* "באיחור" נמדד לפי הפרסום ולא לפי `status_is_terminal`. מאז 0063 אין
-     למשימה סטטוס סוגר בכלל — טיוטה, מתוכנן ומשובץ, וזהו — ולכן הבדיקה
-     הישנה הייתה מסמנת כל משימה שתאריכה עבר. מה שבאמת פספסנו הוא משימה
-     שהתאריך שלה חלף והיא עדיין לא הגיעה לעובד. */
-  const overdueTotal = useMemo(() => rows.filter(isOverdue(today)).length, [rows, today])
+  /* אין כאן ספירת איחורים, וזו הכרעה ולא השמטה.
+
+     הלו״ז מציג חודש שלם, ובו כל יום שכבר עבר. "באיחור" — תאריך שחלף בלי
+     שהמשימה פורסמה לעובד — סימן ברגע אחד את כל ההיסטוריה: שבוע שעבר,
+     החודש שלפניו, וכל משימה שנסגרה בטלפון ואיש לא טרח להזיז לה סטטוס.
+     צ׳יפ אדום שמונה מאות ושורות אדומות לאורך חצי הלוח אינם התראה — הם
+     רעש שהעין לומדת לדלג עליו, ובדרך הוא צובע גם את מה שבאמת קרה כבר.
+     המשימות עצמן נשארו במקומן: מה שירד הוא הצבע, לא הנתון. */
 
   const workingDays = useMemo(() => bands.filter((b) => b.count > 0).length, [bands])
   const activeFilterCount = Object.values(filters).filter(Boolean).length
@@ -964,12 +966,6 @@ export default function WorkBoardPage() {
                 <span className="tabular font-medium text-ink bg-subtle px-2 py-0.5 rounded-full">{rows.length} משימות</span>
                 <span className="tabular bg-subtle px-2 py-0.5 rounded-full">{workingDays} ימי עבודה</span>
                 {colorBy === 'event' && tones.size > 0 && <span className="tabular bg-subtle px-2 py-0.5 rounded-full">{tones.size} אירועים</span>}
-                {overdueTotal > 0 && (
-                  <span className="inline-flex items-center gap-1 font-medium text-error-text bg-error-subtle px-2 py-0.5 rounded-full">
-                    <AlertTriangle size={ICON.xs} />
-                    {overdueTotal} באיחור
-                  </span>
-                )}
               </div>
             </div>
 
@@ -1276,9 +1272,10 @@ export default function WorkBoardPage() {
                           key={b.dayKey}
                           className={cx(
                             'absolute top-0 flex flex-col items-center justify-center overflow-hidden border-b border-s border-line px-2 leading-tight',
-                            /* a past day is a past day — the tasks on it carry
-                               their own overdue mark, and painting the whole
-                               band red turned every old week into a wall */
+                            /* a past day is a past day: painting the whole band
+                               red turned every old week into a wall, and the
+                               per-task mark that used to justify it is gone
+                               too — the board no longer flags lateness */
                             isToday
                               ? 'bg-[var(--vl-board-today)]'
                               : /* שבתון נצבע, מועד שאין בו שבתון מקבל רמז, ושאר
@@ -1604,7 +1601,6 @@ function MobileBoard({
                         <MobileTaskCard
                           row={row}
                           tone={cluster.tone}
-                          overdue={isOverdue(today)(row)}
                           onOpen={onOpen}
                           onPanel={onPanel}
                           canOpenStaffing={canOpenStaffing}
@@ -1625,7 +1621,6 @@ function MobileBoard({
 const MobileTaskCard = memo(function MobileTaskCard({
   row,
   tone,
-  overdue,
   onOpen,
   onPanel,
   canOpenStaffing,
@@ -1633,7 +1628,6 @@ const MobileTaskCard = memo(function MobileTaskCard({
 }: {
   row: WorkBoardRow
   tone: GroupTone | null
-  overdue: boolean
   onOpen: (row: WorkBoardRow) => void
   onPanel: (taskId: string, kind: 'staffing' | 'contractor') => void
   canOpenStaffing: boolean
@@ -1649,7 +1643,7 @@ const MobileTaskCard = memo(function MobileTaskCard({
 
   return (
     <div
-      className={cx('flex items-stretch gap-1.5 px-2.5 py-1.5', overdue && 'bg-[var(--vl-board-overdue)]')}
+      className="flex items-stretch gap-1.5 px-2.5 py-1.5"
       style={tone ? { background: tone.tint } : undefined}
     >
       <span
@@ -1660,13 +1654,12 @@ const MobileTaskCard = memo(function MobileTaskCard({
       <button onClick={() => onOpen(row)} className="min-w-0 flex-1 space-y-0.5 text-start">
         <span className="flex items-center gap-1.5">
           {time ? (
-            <span className={cx('shrink-0 type-button tabular', overdue ? 'text-error-text' : 'text-ink')} dir="ltr">
+            <span className="shrink-0 type-button tabular text-ink" dir="ltr">
               {time}
             </span>
           ) : (
             <span className="shrink-0 type-caption text-ink-tertiary">ללא שעה</span>
           )}
-          {overdue && <AlertTriangle size={12} className="shrink-0 text-error" aria-label="באיחור" />}
           <StatusPill color={row.status_color} className="ms-auto shrink-0">
             {row.status_name}
           </StatusPill>

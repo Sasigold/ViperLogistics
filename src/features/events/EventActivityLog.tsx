@@ -66,6 +66,8 @@ const KIND_COLORS: Record<EventActivityKind, string> = {
   spec_added: '#0284c7',
   spec_removed: '#b45309',
   customer_signed: '#0d9488',
+  price_addon_added: '#c2410c',
+  price_addon_removed: '#b45309',
 }
 
 const KIND_LABELS: Record<EventActivityKind, string> = {
@@ -79,6 +81,8 @@ const KIND_LABELS: Record<EventActivityKind, string> = {
   spec_added: 'מפרט הועלה',
   spec_removed: 'מפרט הוסר',
   customer_signed: 'חתימת לקוח',
+  price_addon_added: 'תוספת מחיר',
+  price_addon_removed: 'תוספת הוסרה',
 }
 
 /** One timeline entry: a note, a lifecycle event, or every field one save moved. */
