@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeQuery, rankSuggestions, scoreSuggestion, shortAddress } from './address'
+import { normalizeQuery, orderSuggestions, rankSuggestions, scoreSuggestion, shortAddress } from './address'
 import type { AddressSuggestion } from '../types/domain'
 
 /**
@@ -56,6 +56,12 @@ describe('shortAddress', () => {
 
   it('tolerates stray separators', () => {
     expect(shortAddress('הרצל 5,, תל אביב-יפו, ישראל,')).toBe('הרצל 5, תל אביב-יפו')
+  })
+
+  it('shortens a Google-style label the same way — venue name and city survive', () => {
+    // Google מחזיר "שם, כתובת מלאה, ישראל"; מה שהעין צריכה הוא השם והעיר
+    expect(shortAddress('אולמי הגן הקסום, הרצל 5, ראשון לציון, ישראל')).toBe('אולמי הגן הקסום, ראשון לציון')
+    expect(shortAddress('שדרות רוטשילד 1, תל אביב-יפו, ישראל')).toBe('שדרות רוטשילד 1, תל אביב-יפו')
   })
 })
 
@@ -152,5 +158,40 @@ describe('rankSuggestions', () => {
       suggestion({ place_id: `W${i}`, lat: 31.7 + i / 1000, lng: 35.2 + i / 1000 }),
     )
     expect(rankSuggestions('אש התורה', many)).toHaveLength(8)
+  })
+})
+
+/**
+ * Google מדרג בעצמו, כולל סלחנות לשגיאות כתיב שהניקוד המקומי עיוור להן. לכן
+ * תוצאות Google נשארות בסדר שהגיעו; דירוג מקומי נשמר רק לנתיב הנסיגה של OSM,
+ * שבו שני ספקים עם דירוגים שונים מתמזגים לרשימה אחת.
+ */
+describe('orderSuggestions', () => {
+  const google = (over: Partial<AddressSuggestion>): AddressSuggestion =>
+    suggestion({ provider: 'google', ...over })
+
+  it('keeps the server order for Google results, even when local scoring disagrees', () => {
+    // מי שהקליד עם שגיאת כתיב מקבל מ-Google את המקום הנכון ראשון, אבל הניקוד
+    // המקומי היה נותן לו אפס והופך את הסדר
+    const first = google({ place_id: 'g1', label: 'אולמי הגן הקסום, הרצל 5, ראשון לציון, ישראל' })
+    const second = google({ place_id: 'g2', label: 'הגן הכסום, יפו, ישראל' })
+    expect(orderSuggestions('הגן הכסום', [first, second]).map((s) => s.place_id)).toEqual(['g1', 'g2'])
+  })
+
+  it('caps Google results like the ranked list', () => {
+    const many = Array.from({ length: 12 }, (_, i) => google({ place_id: `g${i}` }))
+    expect(orderSuggestions('אולם', many)).toHaveLength(8)
+  })
+
+  it('still ranks OSM results against what was typed', () => {
+    const ordered = orderSuggestions('אש התורה', [
+      suggestion({ place_id: 'W439159162', label: SDEROT_STREET, lat: 31.5257, lng: 34.588 }),
+      suggestion({ place_id: 'W290725352' }),
+    ])
+    expect(ordered[0].place_id).toBe('W290725352')
+  })
+
+  it('returns nothing for nothing', () => {
+    expect(orderSuggestions('אולם', [])).toEqual([])
   })
 })

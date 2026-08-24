@@ -8,7 +8,7 @@
 - **Frontend:** Vite + React 19 + TypeScript, Tailwind CSS v4, TanStack Query + Virtual,
   FullCalendar v6 (חינמי), Recharts, ExcelJS, Zustand
 - **Backend:** Supabase — Postgres 17 עם RLS מלא, Auth, Edge Functions, Realtime
-- **כתובות:** Nominatim (OSM) דרך Edge Function פרוקסי, עם שכבת Adapter הניתנת להחלפה ל-Google Places
+- **כתובות:** Google Places (Text Search) דרך Edge Function פרוקסי כשהסוד `GOOGLE_MAPS_API_KEY` מוגדר, עם נסיגה אוטומטית ל-Photon/Nominatim (OSM) בלעדיו
 
 ## מודולים
 
@@ -908,7 +908,7 @@ npm test            # שניהם
 supabase/migrations/   # 0001..0110 — סכמה, זריעה, RLS, RPCs, הרשאות, תמחור,
                        # נוכחות, דשבורד, דוחות, התראות, הכנסות, רווחיות משימה,
                        # מפרט אירוע (Storage), צי רכב
-supabase/functions/    # admin-users (ניהול חשבונות), geocode-proxy (Nominatim),
+supabase/functions/    # admin-users (ניהול חשבונות), geocode-proxy (Google Places, נסיגה ל-OSM),
                        # notify-dispatch (משלוח התראות),
                        # fleet-expiry-sweep (סריקת תוקף מסמכי רכב)
 src/features/          # מודול לכל פיצ'ר: calendar, workboard, events, customers,
@@ -1108,8 +1108,21 @@ HTTP שכולן מנקזות ממילא את אותו תור.
 ## הערות תפעול
 
 - ליצירת משתמשים עם סיסמה משתמשים ב-Edge Function ‏`admin-users` (service role בצד השרת בלבד).
-- Nominatim מוגבל לבקשה בשנייה — הפרוקסי דורש משתמש מחובר, מחזיק cache חסום
-  ומווסת את עצמו לקצב הזה. חריגה הייתה חוסמת את כתובת ה-IP של האפליקציה כולה
-  ולא רק את מי שגרם לה. לשימוש כבד מומלץ לעבור ל-Google Places דרך ה-Adapter
-  (`src/lib/address.ts`).
+- **חיפוש כתובות ב-Google Places** — הפרוקסי `geocode-proxy` משתמש ב-Google
+  Places (Text Search) כשהסוד `GOOGLE_MAPS_API_KEY` מוגדר. הפעלה:
+  1. ב-Google Cloud Console: פרויקט עם חיוב (billing) פעיל.
+  2. הפעלת **Places API (New)** — לא ה-Places API הישן.
+  3. יצירת API key, ותחת API restrictions הגבלתו ל-Places API (New) בלבד.
+     אין הגבלת referrer — הקריאה מצד השרת והמפתח לעולם לא מגיע לדפדפן.
+  4. Supabase Dashboard → Edge Functions → Secrets → הוספת
+     `GOOGLE_MAPS_API_KEY` (או `supabase secrets set GOOGLE_MAPS_API_KEY='<key>'`).
+     נכנס לתוקף אוטומטית, בלי פריסה מחדש.
+
+  **בלי הסוד הפונקציה ממשיכה עם Photon/Nominatim (OSM) כרגיל** — פריסה בטוחה,
+  ומחיקת הסוד היא מתג כיבוי שמחזיר ל-OSM ללא שינוי קוד. הגנות עלות שכבר
+  קיימות: debounce של 300ms בהקלדה, מינימום 2 תווים, cache של 24 שעות בצד
+  השרת ו-pageSize 10; מומלץ בנוסף להגדיר התראת תקציב (Budget Alert) ב-GCP.
+- Nominatim (נתיב הנסיגה) מוגבל לבקשה בשנייה — הפרוקסי דורש משתמש מחובר,
+  מחזיק cache חסום ומווסת את עצמו לקצב הזה. חריגה הייתה חוסמת את כתובת ה-IP
+  של האפליקציה כולה ולא רק את מי שגרם לה.
 - מומלץ להפעיל Leaked Password Protection בהגדרות ה-Auth בדשבורד של Supabase.

@@ -1,11 +1,16 @@
-// OSM geocoding proxy: adds a proper User-Agent, caches results, and keeps the
-// address-provider swappable server-side without touching the client adapter.
+// Geocoding proxy: keeps the address-provider swappable server-side without
+// touching the client adapter, caches results, and holds the API keys.
+//
+// הספק הראשי הוא Google Places (Text Search) — כיסוי שמות עסקים, אולמות
+// וסלחנות לשגיאות כתיב שמסד OSM פשוט לא מכיל. הוא פעיל רק כשהסוד
+// GOOGLE_MAPS_API_KEY מוגדר; בלעדיו (או כשהקריאה נכשלת או חוזרת ריקה)
+// הפונקציה נסוגה לצמד ה-OSM שהיה כאן קודם:
 //
 // שני ספקים, לא אחד. Nominatim בנוי לכתובת שלמה ומדויקת, ולכן מי שהקליד "אש
 // התורה" לא קיבל את "ישיבת אש התורה" — הוא חיפוש כתובות, לא חיפוש שמות.
 // Photon בנוי בדיוק להקלדה תוך כדי: התאמת מילים חלקיות, שגיאות כתיב ושמות של
-// נקודות עניין. הוא הספק הראשי כאן, ו-Nominatim נשאר כמשלים לשאילתות שבהן
-// Photon מחזיר מעט מדי או נופל.
+// נקודות עניין. הוא הספק הראשי בנתיב הנסיגה, ו-Nominatim נשאר כמשלים
+// לשאילתות שבהן Photon מחזיר מעט מדי או נופל.
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const cors = {
@@ -23,8 +28,14 @@ function json(body: unknown, status = 200, extra: Record<string, string> = {}) {
 
 const UA = 'ViperLogistics/1.0 (workforce management app)'
 
-/** ישראל והשטח שסביבה, בסדר minLon,minLat,maxLon,maxLat ש-Photon מצפה לו. */
-const IL_BBOX = '34.2,29.4,35.95,33.45'
+/** ישראל והשטח שסביבה. Photon מקבל מחרוזת, Google מקבל מלבן — מקור אחד לשניהם. */
+const IL_LAT_MIN = 29.4
+const IL_LAT_MAX = 33.45
+const IL_LON_MIN = 34.2
+const IL_LON_MAX = 35.95
+
+/** בסדר minLon,minLat,maxLon,maxLat ש-Photon מצפה לו. */
+const IL_BBOX = `${IL_LON_MIN},${IL_LAT_MIN},${IL_LON_MAX},${IL_LAT_MAX}`
 
 /** מספר התוצאות שנשלחות ללקוח. הוא מדרג ומקצר מעבר לזה. */
 const MAX_RESULTS = 12
@@ -136,6 +147,78 @@ function photonLabel(p: Record<string, unknown>): string {
     s('country'),
   ]
   return [...new Set(parts.filter(Boolean))].join(', ')
+}
+
+/**
+ * Google Places פעיל רק כשהסוד מוגדר (Supabase Dashboard → Edge Functions →
+ * Secrets). מחיקת הסוד היא מתג הכיבוי: הפונקציה חוזרת ל-OSM בלי שינוי קוד.
+ */
+const GOOGLE_KEY = Deno.env.get('GOOGLE_MAPS_API_KEY') ?? ''
+
+/** השוואת "מתחיל ב-" סלחנית לפיסוק ולרישיות, כדי לא לשכפל שם שכבר בכתובת. */
+function foldLabel(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/["'`.,;:()[\]{}/\\|–—_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Google מפריד בין שם המקום לכתובת. חיבורם — מהפרט אל הכללי, כמו אצל שאר
+ * הספקים — משאיר את `shortAddress` בצד הלקוח עובד כרגיל: "אולמי הגן הקסום,
+ * הרצל 5, ראשון לציון, ישראל". כשהכתובת עצמה כבר נפתחת בשם (חיפוש רחוב, למשל)
+ * אין מה להוסיף.
+ */
+function googleLabel(place: {
+  displayName?: { text?: string }
+  formattedAddress?: string
+}): string {
+  const name = (place.displayName?.text ?? '').trim()
+  const addr = (place.formattedAddress ?? '').trim()
+  if (!name) return addr
+  if (!addr) return name
+  if (foldLabel(addr).startsWith(foldLabel(name))) return addr
+  return `${name}, ${addr}`
+}
+
+async function searchGoogle(q: string): Promise<Suggestion[]> {
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': GOOGLE_KEY,
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location',
+    },
+    body: JSON.stringify({
+      textQuery: q,
+      languageCode: 'he',
+      regionCode: 'IL',
+      pageSize: 10,
+      locationRestriction: {
+        rectangle: {
+          low: { latitude: IL_LAT_MIN, longitude: IL_LON_MIN },
+          high: { latitude: IL_LAT_MAX, longitude: IL_LON_MAX },
+        },
+      },
+    }),
+  })
+  if (!res.ok) throw new Error(`google ${res.status}`)
+  const body = (await res.json()) as {
+    places?: Array<{
+      id?: string
+      displayName?: { text?: string }
+      formattedAddress?: string
+      location?: { latitude?: number; longitude?: number }
+    }>
+  }
+  return (body.places ?? []).flatMap((p) => {
+    const lat = p.location?.latitude
+    const lng = p.location?.longitude
+    const label = googleLabel(p)
+    if (!p.id || typeof lat !== 'number' || typeof lng !== 'number' || !label) return []
+    return [{ provider: 'google', place_id: p.id, label, lat, lng }]
+  })
 }
 
 /**
@@ -267,40 +350,57 @@ Deno.serve(async (req) => {
   // an unbounded query string is just cache keys and upstream bytes
   if (q.length > 200) return json({ error: 'שאילתת חיפוש ארוכה מדי' }, 400)
 
-  const key = q.toLowerCase()
+  // התחילית מבדילה בין מצב Google למצב OSM, כדי שהוספת המפתח (או הסרתו) לא
+  // תגיש מ-isolate חם תוצאות שנשמרו מהספק הלא נכון.
+  const key = (GOOGLE_KEY ? 'g:' : 'o:') + q.toLowerCase()
   const hit = cacheGet(key)
   if (hit !== null) return json(hit, 200, { 'X-Cache': 'HIT' })
 
   const out: Suggestion[] = []
   let reachedSomeone = false
 
-  try {
-    merge(out, await searchPhoton(q))
-    reachedSomeone = true
-  } catch {
-    // Photon לא זמין — Nominatim למטה עדיין ינסה
-  }
-
-  // מעט מדי תוצאות מהספק המשלים-שמות: כתובת מדויקת היא בדיוק מה ש-Nominatim
-  // טוב בו, ולכן שווה את שנייית ההמתנה של המכסה שלו.
-  if (out.length < 3) {
+  // Google ראשון כשיש מפתח. בלי throttle — זה API בתשלום עם מכסה משלו;
+  // ה-throttles נועדו לנימוס מול שירותי ה-OSM החינמיים בנתיב הנסיגה.
+  if (GOOGLE_KEY) {
     try {
-      merge(out, await searchNominatim(q))
+      merge(out, await searchGoogle(q))
       reachedSomeone = true
     } catch {
-      // ממשיכים עם מה שיש
+      // Google נפל — נתיב ה-OSM למטה מכסה
     }
   }
 
-  // ניסיון אחרון וסלחני: אותה שאילתה בלי מילות התיאור שהמשתמש הוסיף מעצמו
+  // נתיב ה-OSM: הנתיב היחיד כשאין מפתח Google, ורשת הביטחון כשהוא לא החזיר דבר.
   if (out.length === 0) {
-    const loose = loosen(q)
-    if (loose && loose !== q && loose.length >= 2) {
+    try {
+      merge(out, await searchPhoton(q))
+      reachedSomeone = true
+    } catch {
+      // Photon לא זמין — Nominatim למטה עדיין ינסה
+    }
+
+    // מעט מדי תוצאות מהספק המשלים-שמות: כתובת מדויקת היא בדיוק מה ש-Nominatim
+    // טוב בו, ולכן שווה את שנייית ההמתנה של המכסה שלו.
+    if (out.length < 3) {
       try {
-        merge(out, await searchPhoton(loose))
+        merge(out, await searchNominatim(q))
         reachedSomeone = true
       } catch {
-        // אין יותר מה לנסות
+        // ממשיכים עם מה שיש
+      }
+    }
+
+    // ניסיון אחרון וסלחני: אותה שאילתה בלי מילות התיאור שהמשתמש הוסיף מעצמו.
+    // Google לא צריך את זה — הוא כבר סלחני לניסוחים חלקיים.
+    if (out.length === 0) {
+      const loose = loosen(q)
+      if (loose && loose !== q && loose.length >= 2) {
+        try {
+          merge(out, await searchPhoton(loose))
+          reachedSomeone = true
+        } catch {
+          // אין יותר מה לנסות
+        }
       }
     }
   }
