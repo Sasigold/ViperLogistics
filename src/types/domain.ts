@@ -1049,6 +1049,27 @@ export interface NotificationPolicyOverride extends Omit<NotificationPolicy, 'au
   note: string | null
 }
 
+/**
+ * תחולת התראות (0110): על אילו ישויות סוג התראה חל.
+ * ‏customer = customers, ‏contractor = contractors, ‏worker = profiles (סגל).
+ */
+export type NotificationScopeKind = 'customer' | 'contractor' | 'worker'
+
+/** אין שורה = 'all'. שורה קיימת רק כשמנהל צמצם. */
+export interface NotificationScopeMode {
+  id: string
+  type: string
+  entity_kind: NotificationScopeKind
+  mode: 'all' | 'selected'
+}
+
+export interface NotificationScope {
+  id: string
+  type: string
+  entity_kind: NotificationScopeKind
+  entity_id: string
+}
+
 /** תא בודד כפי ש-my_notification_settings מחזיר אותו. */
 export interface NotificationCell {
   mode: NotificationMode

@@ -23,30 +23,39 @@ import {
   AUDIENCES,
   CHANNELS,
   MODES,
+  SCOPE_KINDS,
+  scopeKindsForType,
   useEmailConfig,
   useNotificationOverrides,
   useNotificationPolicies,
+  useNotificationScopeModes,
+  useNotificationScopes,
   useNotificationTypes,
   useOverriddenProfiles,
   usePushConfig,
   usePushStats,
   useSaveOverride,
   useSavePolicy,
+  useSaveScopeMode,
+  useScopeEntities,
+  useToggleScopeEntity,
   useUserNotificationSettings,
 } from './notificationQueries'
 import type {
   NotificationAudience,
   NotificationChannel,
   NotificationMode,
+  NotificationScopeKind,
   NotificationType,
 } from '../../types/domain'
 
 /**
  * מסך הניהול של ההתראות.
  *
- * שלושה כרטיסים, ובכוונה בסדר הזה: קודם *האם* ערוץ בכלל פועל, אחר כך מה
- * כל קהל מקבל, ורק בסוף היוצאים מן הכלל. מנהל שמסתכל על המטריצה בלי לדעת
- * שהערוץ כבוי היה מגדיר שם דברים ותוהה למה דבר לא קורה.
+ * ארבעה כרטיסים, ובכוונה בסדר הזה: קודם *האם* ערוץ בכלל פועל, אחר כך מה
+ * כל קהל מקבל, אחר כך *על מי* הסוג חל בכלל (תחולה, 0110), ורק בסוף
+ * היוצאים מן הכלל. מנהל שמסתכל על המטריצה בלי לדעת שהערוץ כבוי היה מגדיר
+ * שם דברים ותוהה למה דבר לא קורה.
  */
 export function NotificationsAdminTab() {
   const { data: types = [], isLoading } = useNotificationTypes()
@@ -55,6 +64,7 @@ export function NotificationsAdminTab() {
     <div className="space-y-4">
       <ChannelsCard types={types} />
       <PolicyMatrix types={types} />
+      <ScopeCard types={types} />
       <UserOverrides types={types} />
     </div>
   )
@@ -301,6 +311,170 @@ function PolicyMatrix({ types }: { types: NotificationType[] }) {
         )}
       </CardBody>
     </Card>
+  )
+}
+
+/**
+ * תחולה (0110): על אילו לקוחות / קבלנים / עובדים כל סוג חל.
+ *
+ * ההבדל מהשתקה חשוב ומוסבר בכותרת המשנה: נושא שמחוץ לתחולה אינו יוצר שורה
+ * בכלל — אין יומן ואין פעמון. ברירת המחדל היא "כולם", והטבלאות דלילות: שורה
+ * קיימת רק כשמנהל צמצם, ולכן הרשימה למעלה מציגה בדיוק את מה שצומצם.
+ */
+function ScopeCard({ types }: { types: NotificationType[] }) {
+  const toast = useToast()
+  const { data: modes = [], isLoading } = useNotificationScopeModes()
+  const { data: scopes = [] } = useNotificationScopes()
+  const saveMode = useSaveScopeMode()
+  const [selected, setSelected] = useState<{ type: string; kind: NotificationScopeKind } | null>(
+    null,
+  )
+
+  const rows = types
+    .map((t) => ({ type: t, kinds: scopeKindsForType(t) }))
+    .filter((r) => r.kinds.length > 0)
+
+  const modeOf = (type: string, kind: NotificationScopeKind) =>
+    modes.find((m) => m.type === type && m.entity_kind === kind)?.mode ?? 'all'
+
+  const narrowed = modes.filter((m) => m.mode === 'selected')
+
+  if (isLoading) return <Skeleton className="h-64 w-full" />
+
+  return (
+    <Card>
+      <CardHeader
+        title="תחולה"
+        subtitle="על אילו לקוחות, קבלנים ועובדים כל התראה חלה. מחוץ לתחולה — ההתראה אינה נוצרת כלל"
+      />
+      <CardBody className="p-0">
+        {narrowed.length > 0 && (
+          <p className="px-4 pt-3 type-caption text-ink-tertiary">
+            תחולה מצומצמת כרגע ל:{' '}
+            {narrowed
+              .map(
+                (m) =>
+                  `${types.find((t) => t.key === m.type)?.label_he ?? m.type} (${
+                    SCOPE_KINDS.find((k) => k.key === m.entity_kind)?.label ?? m.entity_kind
+                  })`,
+              )
+              .join(', ')}
+          </p>
+        )}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[36rem]">
+            <thead>
+              <tr className="border-b border-line-subtle">
+                <th className="px-4 py-2 text-start type-caption font-normal text-ink-tertiary">
+                  סוג ההתראה
+                </th>
+                {SCOPE_KINDS.map((k) => (
+                  <th
+                    key={k.key}
+                    className="px-3 py-2 text-start type-caption font-normal text-ink-tertiary"
+                  >
+                    {k.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ type: t, kinds }) => (
+                <tr key={t.key} className="border-b border-line-subtle last:border-0">
+                  <td className="px-4 py-2.5">
+                    <p className="type-body">{t.label_he}</p>
+                    <p className="type-caption text-ink-tertiary">{t.group_he}</p>
+                  </td>
+                  {SCOPE_KINDS.map((k) => {
+                    if (!kinds.includes(k.key)) {
+                      return (
+                        <td key={k.key} className="px-3 py-2.5 type-body text-ink-tertiary">
+                          —
+                        </td>
+                      )
+                    }
+                    const mode = modeOf(t.key, k.key)
+                    const count = scopes.filter(
+                      (s) => s.type === t.key && s.entity_kind === k.key,
+                    ).length
+                    const open = selected?.type === t.key && selected.kind === k.key
+                    return (
+                      <td key={k.key} className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <SegmentedControl
+                            items={[
+                              { key: 'all', label: 'כולם' },
+                              { key: 'selected', label: 'נבחרים' },
+                            ]}
+                            value={mode}
+                            onChange={(next) => {
+                              saveMode.mutate(
+                                { type: t.key, entityKind: k.key, mode: next as 'all' | 'selected' },
+                                { onError: (err) => toast.error(errorMessage(err)) },
+                              )
+                              setSelected(
+                                next === 'selected' ? { type: t.key, kind: k.key } : null,
+                              )
+                            }}
+                          />
+                          {mode === 'selected' && (
+                            <button
+                              type="button"
+                              className="type-caption text-accent underline-offset-2 hover:underline"
+                              onClick={() => setSelected(open ? null : { type: t.key, kind: k.key })}
+                            >
+                              {count} נבחרו
+                            </button>
+                          )}
+                        </div>
+                        {open && mode === 'selected' && (
+                          <ScopeEntityPicker type={t.key} kind={k.key} />
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="px-4 py-3 type-caption text-ink-tertiary">
+          "נבחרים" בלי אף בחירה משתיק את הסוג לגמרי. הצמצום נבחן על נושא ההתראה — הלקוח
+          שהאירוע שלו, העובד או הקבלן שהפעולה נוגעת בהם.
+        </p>
+      </CardBody>
+    </Card>
+  )
+}
+
+/** רשימת הישויות של תא תחולה אחד. נטענת רק כשהתא נפתח. */
+function ScopeEntityPicker({ type, kind }: { type: string; kind: NotificationScopeKind }) {
+  const toast = useToast()
+  const { data: entities = [] } = useScopeEntities(kind, true)
+  const { data: scopes = [] } = useNotificationScopes()
+  const toggle = useToggleScopeEntity()
+  const included = new Set(
+    scopes.filter((s) => s.type === type && s.entity_kind === kind).map((s) => s.entity_id),
+  )
+  return (
+    <div className="mt-2 max-h-48 space-y-0.5 overflow-y-auto rounded-lg border border-line-subtle p-2">
+      {entities.length === 0 && (
+        <p className="type-caption text-ink-tertiary">אין ישויות להצגה.</p>
+      )}
+      {entities.map((e) => (
+        <Checkbox
+          key={e.id}
+          checked={included.has(e.id)}
+          onChange={(v) =>
+            toggle.mutate(
+              { type, entityKind: kind, entityId: e.id, included: v },
+              { onError: (err) => toast.error(errorMessage(err)) },
+            )
+          }
+          label={e.name}
+        />
+      ))}
+    </div>
   )
 }
 
