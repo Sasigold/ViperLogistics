@@ -226,6 +226,16 @@ OUT="$OUT
 $OUT19"
 
 echo
+echo "== event signature suite =="
+# 21 מקימה לקוח, אירוע ושש דמויות משלה ואינה נשענת על אף חבילה קודמת. היא רצה
+# אחרונה כי היא מזריעה משימות, שיבוצים וחתימות שאינם מנוקים, וסופרת את שורות
+# היומן של האירוע שלה. האירוע יושב ב-current_date+350, מעבר לכל טווח אחר.
+OUT20=$($PSQL -d vl -f "$HERE/21_event_signature.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT20"
+OUT="$OUT
+$OUT20"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

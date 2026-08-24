@@ -15,6 +15,7 @@ import {
   List,
   Paperclip,
   Pencil,
+  PencilLine,
   Plus,
   STROKE,
   Trash2,
@@ -55,7 +56,9 @@ import { formatCustomValue } from './CustomFieldInput'
 import { TaskDrawer } from '../tasks/TaskDrawer'
 import { EventActivityLog } from './EventActivityLog'
 import { EventSpecsModal } from './EventSpecsModal'
+import { CustomerSignatureModal } from './CustomerSignatureModal'
 import { useEventSpecs } from './specQueries'
+import { useEventSignatures } from './signatureQueries'
 import type { EventRow, WorkBoardRow } from '../../types/domain'
 
 type TaskTab = 'all' | 'setup' | 'teardown' | 'other'
@@ -66,10 +69,11 @@ export default function EventDetailPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const toast = useToast()
-  const { has, me, canViewField, showsEventField } = useAuth()
+  const { has, hasAny, me, canViewField, showsEventField } = useAuth()
   const { confirm, dialog } = useConfirm()
   const [editOpen, setEditOpen] = useState(false)
   const [specsOpen, setSpecsOpen] = useState(false)
+  const [signOpen, setSignOpen] = useState(false)
   const [taskDrawer, setTaskDrawer] = useState<{ open: boolean; taskId: string | null }>({ open: false, taskId: null })
   const [activeTab, setActiveTab] = useState<TaskTab>('all')
   const [viewMode, setViewMode] = useState<TaskViewMode>('cards')
@@ -104,6 +108,21 @@ export default function EventDetailPage() {
 
   // רק בשביל המונה על הכפתור. המסך עצמו נטען כשהמודאל נפתח.
   const { data: specs = [] } = useEventSpecs(id ?? '', !!id && has(PERM.EVENTS_SPECS_VIEW))
+
+  /**
+   * ראש צוות ההקמה — לא מפתח במרשם אלא תפקיד על משימת ההקמה של האירוע (0107),
+   * נגזר מהמשימות שכבר נשלפו. השרת מכריע את אותו דבר ב-`is_event_setup_team_lead`,
+   * וכאן זה רק מה שמחליט אם להציע את כפתור החתימה.
+   */
+  const isSetupLead =
+    !!me?.profile.id && tasks.some((t) => t.task_type_code === 'setup' && t.team_lead_id === me.profile.id)
+  // הקהל שעשוי לראות חתימות: מי שיש לו מפתח, ראש צוות ההקמה, או משתמש הלקוח
+  // (שרואה רק את האירועים שלו ממילא). RLS היא השער האמיתי — זה רק חוסך שליפה.
+  const signAudience =
+    hasAny(PERM.EVENTS_SIGN_VIEW, PERM.EVENTS_SIGN_CAPTURE) ||
+    isSetupLead ||
+    me?.profile.user_kind === 'customer_user'
+  const { data: signatures = [] } = useEventSignatures(id ?? '', !!id && signAudience)
 
   usePageTitle(data?.event.end_client_name ?? null)
 
@@ -339,6 +358,13 @@ export default function EventDetailPage() {
   const canSeeLog = has(PERM.EVENTS_ACTIVITY_LOG) || isEventLead
   const canSeeContact = canViewField('event', 'contact_phone') || isEventLead
 
+  /* החתמת לקוח (0107): הכפתור לראש צוות ההקמה, למנהל המערכת, וללקוח — ולא
+     לעובד מן השורה ולא לרכז אקראי. `has()` מחזיר true לאדמין על כל מפתח. */
+  const isEventCustomerUser =
+    me?.profile.user_kind === 'customer_user' && me?.profile.customer_id === event.customer_id
+  const canCaptureSignature = has(PERM.EVENTS_SIGN_CAPTURE) || isSetupLead || isEventCustomerUser
+  const canViewSignature = canCaptureSignature || has(PERM.EVENTS_SIGN_VIEW)
+
   const remove = async () => {
     if (
       !(await confirm('למחוק את האירוע וכל המשימות שלו? ניתן לשחזר מסל המיחזור.', {
@@ -482,6 +508,13 @@ export default function EventDetailPage() {
                 <Paperclip size={ICON.sm} strokeWidth={STROKE} />
                 מפרט
                 {specs.length > 0 && <Badge tone="primary">{specs.length}</Badge>}
+              </Button>
+            )}
+            {canViewSignature && (
+              <Button size="sm" onClick={() => setSignOpen(true)}>
+                <PencilLine size={ICON.sm} strokeWidth={STROKE} />
+                החתמת לקוח
+                {signatures.length > 0 && <Badge tone="success">נחתם</Badge>}
               </Button>
             )}
             {has(PERM.EVENTS_DUPLICATE) && (
@@ -937,6 +970,15 @@ export default function EventDetailPage() {
         open={specsOpen}
         onClose={() => setSpecsOpen(false)}
       />
+      {canViewSignature && (
+        <CustomerSignatureModal
+          eventId={event.id}
+          eventTitle={event.end_client_name ?? fmtDateLong(event.event_date)}
+          open={signOpen}
+          onClose={() => setSignOpen(false)}
+          canCapture={canCaptureSignature}
+        />
+      )}
       <TaskDrawer
         open={taskDrawer.open}
         onClose={() => {

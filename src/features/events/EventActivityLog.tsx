@@ -64,6 +64,7 @@ const KIND_COLORS: Record<EventActivityKind, string> = {
   task_removed: '#b45309',
   spec_added: '#0284c7',
   spec_removed: '#b45309',
+  customer_signed: '#0d9488',
 }
 
 const KIND_LABELS: Record<EventActivityKind, string> = {
@@ -76,6 +77,7 @@ const KIND_LABELS: Record<EventActivityKind, string> = {
   task_removed: 'משימה הוסרה',
   spec_added: 'מפרט הועלה',
   spec_removed: 'מפרט הוסר',
+  customer_signed: 'חתימת לקוח',
 }
 
 /** One timeline entry: a note, a lifecycle event, or every field one save moved. */
