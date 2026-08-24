@@ -262,8 +262,13 @@ export function ContractorDelegationCard({
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {/* נקודת ההתחלה שהמשרד קובע לקבלן. חלה אוטומטית על עובדיו (0091). */}
-        <Field label="נקודת התחלה">
+        {/* נקודת ההתחלה שהמשרד קובע לקבלן. חלה אוטומטית על עובדיו (0091),
+            ומאז 0111 היא היחידה שקובעת: ה-RPC מתעלם ממה שהקבלן שולח. הבורר
+            נראה כבוי למי שאינו רשאי — קודם הוא היה נראה פעיל ובלע את הלחיצה. */}
+        <Field
+          label="נקודת התחלה"
+          hint={canDelegate && !paid ? 'עובדי הקבלן יוצאים מכאן — כולם' : undefined}
+        >
           <SegmentedControl
             value={workSite}
             onChange={(v) => {
@@ -275,6 +280,7 @@ export function ContractorDelegationCard({
               { key: 'field' as WorkSite, label: 'שטח' },
               { key: 'warehouse' as WorkSite, label: 'מחסן' },
             ]}
+            className={cx(!canDelegate || paid ? 'pointer-events-none opacity-55' : undefined)}
           />
         </Field>
         {/* כמה עובדים הקבלן צריך להביא — תקרת השיבוץ, בלתי תלויה בכמות המשימה. */}
@@ -621,6 +627,23 @@ export function StaffingPanel({
   const canTruck = has(PERM.TASKS_ASSIGN_TRUCK)
   const canChangeLocation = has(PERM.TASKS_CHANGE_LOCATION)
   const canAssignContractor = has(PERM.PORTAL_ASSIGN_WORKERS) || has(PERM.CONTRACTORS_ASSIGN_WORKERS)
+  const myContractorId = useAuth((s) => s.me?.profile.contractor_id ?? null)
+  /**
+   * הקבלן שמשבץ את הסגל שלו — ותו לא (0111).
+   *
+   * נגזר מהמפתחות ולא מסוג המשתמש, כמו ב-0108: מי שאין לו אף מפתח שיבוץ של
+   * המשרד ואין לו את המפתח המשרדי מול קבלנים, אבל כן `portal.assign_workers`,
+   * הוא בהגדרה קבלן שמשבץ אצל עצמו. עבורו הפאנל הזה מצטמצם לרשימת העובדים
+   * שלו: כרטיס "מי משובץ" מונה את **הצוות שלנו** בשמות ובתפקידים והיה מנוטרל
+   * אצלו ממילא, וכרטיס "נקודת התחלה" מציע החלטה שאינה שלו — השרת מתעלם ממנה
+   * מאז 0111, והמסך לא אמור להציע מה שלא ייכתב.
+   */
+  const contractorOnly =
+    canAssignContractor &&
+    !has(PERM.CONTRACTORS_ASSIGN_WORKERS) &&
+    !canAssign.worker &&
+    !canAssign.driver &&
+    !canAssign.team_lead
 
   const assignments = data?.assignments ?? []
   const contractorWorkers = data?.contractorWorkers ?? []
@@ -646,8 +669,11 @@ export function StaffingPanel({
     for (const t of data?.terms ?? []) ids.add(t.contractor_id)
     if (data?.task.contractor_id) ids.add(data.task.contractor_id)
     for (const w of data?.contractorWorkers ?? []) if (w.contractor_id) ids.add(w.contractor_id)
+    /* קבלן רואה את הסגל שלו בלבד. המשימה יכולה לשאת כמה קבלנים (0096), ושמו
+       של קבלן אחר אינו עניינו — גם כשהשיקוף שעל המשימה מסגיר אותו. */
+    if (contractorOnly) return [...ids].filter((id) => id === myContractorId)
     return [...ids]
-  }, [data])
+  }, [data, contractorOnly, myContractorId])
   const contractorNameOf = (id: string) =>
     contractors.find((c) => c.id === id)?.name ??
     (data?.task.contractor_id === id ? data.task.contractor_name : null)
@@ -689,6 +715,7 @@ export function StaffingPanel({
         <div className="space-y-4">
           <PanelSubject task={data.task} />
 
+          {!contractorOnly && (
           <Card>
             <CardHeader
               title="מי משובץ"
@@ -743,8 +770,9 @@ export function StaffingPanel({
               </Field>
             </CardBody>
           </Card>
+          )}
 
-          {(assignments.length > 0 || contractorWorkers.length > 0) && (
+          {!contractorOnly && (assignments.length > 0 || contractorWorkers.length > 0) && (
             <Card>
               <CardHeader
                 title="נקודת התחלה"

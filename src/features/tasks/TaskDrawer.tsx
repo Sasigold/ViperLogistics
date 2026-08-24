@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Banknote,
@@ -244,8 +244,33 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
   const chosenContractorWorkers = existing?.contractorWorkers ?? []
   const delegate = useContractorDelegate()
 
+  /**
+   * הזרעת הטופס — פעם אחת לפתיחה, ולא בכל רינדור.
+   *
+   * ‏`initial` נכתב כאובייקט ליטרלי בתוך ה-JSX של המסך שמעל
+   * (`initial={{ event_id: ..., customer_id: ... }}`), ולכן הזהות שלו מתחלפת
+   * בכל רינדור *שלו*; ו-`existing` נבנה מחדש בכל ריצה של ה-queryFn, כלומר בכל
+   * ריענון רקע. שניהם ישבו במערך התלויות, ולכן `setForm` רץ שוב ושוב ומחק את
+   * מה שהוקלד ועוד לא נשמר — שאילתה שנרגעה באמצע הקלדה הספיקה לכך.
+   *
+   * ‏`seeded` זוכר איזו משימה כבר הוזרעה. פתיחה, וכל החלפת משימה, מזריעות
+   * מחדש; ריענון של אותה משימה לא נוגע בטופס — הכרטיסים שקוראים ישירות מ-
+   * ‏`existing` (האצלה, סגל הקבלן) ממילא מתעדכנים ממנו ולא מה-state.
+   */
+  const seeded = useRef<string | null>(null)
+  const initialRef = useRef(initial)
+  initialRef.current = initial
+
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      seeded.current = null
+      return
+    }
+    const key = taskId ?? 'new'
+    if (seeded.current === key) return
+    // משימה קיימת מוזרעת רק כשהנתונים שלה הגיעו
+    if (taskId && !existing) return
+    seeded.current = key
     setTouched(false)
     setAddContractor('')
     if (taskId && existing) {
@@ -253,11 +278,11 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
       setAssignments(existing.assignments)
       setCustomerPrice(existing.pricing?.price != null ? String(existing.pricing.price) : '')
     } else if (!taskId) {
-      setForm({ task_date: new Date().toISOString().slice(0, 10), worker_count: 0, ...initial })
+      setForm({ task_date: new Date().toISOString().slice(0, 10), worker_count: 0, ...initialRef.current })
       setAssignments([])
       setCustomerPrice('')
     }
-  }, [open, taskId, existing, initial])
+  }, [open, taskId, existing])
 
   /**
    * כפל-שיבוץ. הבדיקה יושבת ב-SQL (app.task_window / assignment_conflicts)

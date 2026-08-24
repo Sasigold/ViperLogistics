@@ -40,8 +40,26 @@ const FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
 /** Traps Tab inside the panel, restores focus to the opener on close. */
+/**
+ * מלכודת הפוקוס של מודאל ומגירה — נרשמת פעם אחת לפתיחה, ולא בכל רינדור.
+ *
+ * ‏`onClose` מגיע כמעט תמיד כארוו-פונקציה שנכתבת בתוך ה-JSX של המסך שמעל
+ * (`onClose={() => setDrawer(...)}`), ולכן הזהות שלו מתחלפת בכל רינדור *שלו* —
+ * וכל שאילתת רקע שנרגעת מספיקה לכך. כשהוא ישב במערך התלויות, האפקט נרשם
+ * מחדש בכל פעם: הניקוי החזיר את הפוקוס לכפתור שפתח את המגירה, והריצה
+ * שאחריו לקחה אותו לשדה הראשון — כלומר לראש התוכן. מי שהקליד בשדה באמצע
+ * הטופס ראה את הכרטיס קופץ למעלה ואת הפוקוס נעלם לו מתחת לאצבעות.
+ *
+ * ‏`onClose` נקרא דרך ref, ולכן תמיד הגרסה העדכנית שלו רצה — בלי שהזהות שלו
+ * תהיה סיבה לפרק ולהרכיב את המלכודת מחדש. ‏`active` נשאר התלות היחידה, וזה
+ * בדיוק מה שהמלכודת אמורה להגיב לו: פתיחה וסגירה.
+ */
 function useFocusTrap(active: boolean, onClose: () => void) {
   const ref = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
   useEffect(() => {
     if (!active) return
     const opener = document.activeElement as HTMLElement | null
@@ -52,7 +70,7 @@ function useFocusTrap(active: boolean, onClose: () => void) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (e.key !== 'Tab' || !panel) return
@@ -75,7 +93,7 @@ function useFocusTrap(active: boolean, onClose: () => void) {
       document.removeEventListener('keydown', onKey, true)
       opener?.focus?.()
     }
-  }, [active, onClose])
+  }, [active])
   return ref
 }
 

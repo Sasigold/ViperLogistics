@@ -21,6 +21,7 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import {
   useAllowedExecutionMethods,
+  useCustomerDefaultExecutionMethod,
   useCustomFormFields,
   useCustomerIncomeSplits,
   useEffectiveFormConfig,
@@ -283,6 +284,26 @@ export function EventFormModal({
     }
     setForm((f) => ({ ...f, ...patch }))
   }, [open, event, autoTasks])
+
+  /**
+   * אופן הביצוע שהלקוח עובד בו בדרך כלל (0111) — מוקדם לבורר באירוע חדש.
+   *
+   * רק כשהשדה ריק, ורק ביצירה: באירוע קיים ערך ריק פירושו שמישהו ניקה אותו,
+   * ומילוי מחדש היה מחזיר לו את מה שהוא הוריד. השרת ממלא בכל מקרה בטריגר
+   * ‏`tasks_default_method`, ולכן זו הקדמה של מה שיקרה ממילא — ולא הכלל עצמו.
+   */
+  const defaultMethod = useCustomerDefaultExecutionMethod(effectiveCustomerId)
+  useEffect(() => {
+    if (!open || event || !defaultMethod) return
+    setForm((f) => {
+      const patch: Partial<EventForm> = {}
+      if (!f.setup_execution_method && setupMethods.some((m) => m.id === defaultMethod))
+        patch.setup_execution_method = defaultMethod
+      if (!f.teardown_execution_method && teardownMethods.some((m) => m.id === defaultMethod))
+        patch.teardown_execution_method = defaultMethod
+      return Object.keys(patch).length ? { ...f, ...patch } : f
+    })
+  }, [open, event, defaultMethod, setupMethods, teardownMethods])
 
   // auto-save draft for new events
   useEffect(() => {

@@ -18,6 +18,7 @@ import {
   STROKE,
   Shield,
   SlidersHorizontal,
+  Star,
   Trash2,
   User,
 } from '../../components/ui/icons'
@@ -707,7 +708,9 @@ function MethodsTab({ customerId }: { customerId: string }) {
   const { has } = useAuth()
   const canEdit = has(PERM.CUSTOMERS_MANAGE_FORM_FIELDS)
   const { data: methods = [] } = useExecutionMethods()
-  const { data: enabled = [] } = useCustomerExecutionMethods(customerId)
+  const { data: enabledRows = [] } = useCustomerExecutionMethods(customerId)
+  const enabled = useMemo(() => enabledRows.map((r) => r.execution_method_id), [enabledRows])
+  const defaultId = enabledRows.find((r) => r.is_default)?.execution_method_id ?? null
   const { data: taskTypes = [] } = useTaskTypes()
   const { data: typeMethods = [] } = useTaskTypeMethods()
 
@@ -748,6 +751,31 @@ function MethodsTab({ customerId }: { customerId: string }) {
     onError: (e) => toast.error(errorMessage(e)),
   })
 
+  /**
+   * ברירת המחדל (0111). שתי כתיבות ולא אחת: האינדקס מתיר שורת `is_default`
+   * אחת ללקוח, ולכן הקודמת חייבת לרדת לפני שהחדשה עולה — באותה טרנזקציה זה
+   * היה נופל על האינדקס.
+   */
+  const setDefault = useMutation({
+    mutationFn: async (methodId: string | null) => {
+      const clear = await supabase
+        .from('customer_execution_methods')
+        .update({ is_default: false })
+        .eq('customer_id', customerId)
+        .eq('is_default', true)
+      if (clear.error) throw clear.error
+      if (!methodId) return
+      const { error } = await supabase
+        .from('customer_execution_methods')
+        .update({ is_default: true })
+        .eq('customer_id', customerId)
+        .eq('execution_method_id', methodId)
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['customer_execution_methods', customerId] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
   return (
     <Card className="max-w-2xl">
       <CardHeader
@@ -762,6 +790,8 @@ function MethodsTab({ customerId }: { customerId: string }) {
           <>
             <p className="type-caption text-ink-secondary">
               אופן ביצוע המשותף לשני הסעיפים מופיע בשניהם — כיבויו משפיע על שניהם.
+              הכוכב מסמן את ברירת המחדל: כל משימה חדשה של הלקוח נולדת איתה, גם
+              כשהיא נוצרת ממקום שאין בו בורר.
             </p>
             {groups.map((g) => (
               <div key={g.label} className="space-y-2">
@@ -770,17 +800,36 @@ function MethodsTab({ customerId }: { customerId: string }) {
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {g.items.map((m) => (
-                    <label
+                    <div
                       key={m.id}
-                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-line-subtle p-2.5 transition-colors hover:bg-hover"
+                      className="flex items-center gap-2 rounded-lg border border-line-subtle p-2.5 transition-colors hover:bg-hover"
                     >
-                      <Checkbox
-                        label={m.name}
-                        checked={enabled.includes(m.id)}
-                        onChange={(v) => toggle.mutate({ methodId: m.id, on: v })}
-                        disabled={!canEdit}
-                      />
-                    </label>
+                      <label className="min-w-0 flex-1 cursor-pointer">
+                        <Checkbox
+                          label={m.name}
+                          checked={enabled.includes(m.id)}
+                          onChange={(v) => toggle.mutate({ methodId: m.id, on: v })}
+                          disabled={!canEdit}
+                        />
+                      </label>
+                      {/* ברירת המחדל מוצעת רק על אופן שכבר הותר — היא חייבת
+                          להיות אחד מהם, וזה מה שהאינדקס בשרת מבטיח (0111). */}
+                      {enabled.includes(m.id) && (
+                        <IconButton
+                          label={defaultId === m.id ? `${m.name} — ברירת המחדל` : `הגדרת ${m.name} כברירת מחדל`}
+                          size="sm"
+                          bare
+                          disabled={!canEdit || setDefault.isPending}
+                          onClick={() => setDefault.mutate(defaultId === m.id ? null : m.id)}
+                        >
+                          <Star
+                            size={ICON.sm}
+                            strokeWidth={STROKE}
+                            className={defaultId === m.id ? 'fill-warning text-warning' : 'text-ink-tertiary'}
+                          />
+                        </IconButton>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
