@@ -272,8 +272,12 @@ export function useContractorWorkerAssign() {
       })
       if (error) throw error
     },
-    onSettled: () => {
+    onSettled: (_d, _e, v) => {
       void qc.invalidateQueries({ queryKey: ['workboard'] })
+      /* הכרטיס המלא והפאנל הממוקד קוראים את אותו שיבוץ משני מפתחות (0108),
+         ושניהם מתיישנים כאן — אחרת המסך שממנו נלחץ הכפתור נשאר על הישן. */
+      void qc.invalidateQueries({ queryKey: ['tasks', 'one', v.taskId] })
+      void qc.invalidateQueries({ queryKey: ['tasks', 'staffing', v.taskId] })
       /* השיבוץ עשוי ליצור שורת סגל, ולכן גם שתי רשימות העובדים מתיישנות */
       void qc.invalidateQueries({ queryKey: ['contractor_assignable'] })
       void qc.invalidateQueries({ queryKey: ['contractor_workers'] })

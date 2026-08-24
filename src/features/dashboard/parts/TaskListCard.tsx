@@ -34,7 +34,8 @@ export function TaskListCard({
   showUpdated?: boolean
   emptyTitle: string
   emptyDescription?: string
-  onOpen: (id: string) => void
+  /* אופציונלי — ראו DayTimeline (0108) */
+  onOpen?: (id: string) => void
 }) {
   return (
     <Card>
@@ -63,8 +64,9 @@ export function TaskListCard({
               return (
                 <li key={t.id}>
                   <button
-                    onClick={() => onOpen(t.id)}
-                    className="flex w-full items-center gap-2.5 border-b border-line-subtle px-4 py-2.5 text-start transition-colors last:border-0 hover:bg-hover"
+                    onClick={() => onOpen?.(t.id)}
+                    disabled={!onOpen}
+                    className="flex w-full items-center gap-2.5 border-b border-line-subtle px-4 py-2.5 text-start transition-colors last:border-0 hover:bg-hover disabled:cursor-default disabled:hover:bg-transparent"
                   >
                     <span
                       className="h-8 w-1 shrink-0 rounded-full"

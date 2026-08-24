@@ -13,12 +13,14 @@ import {
   ChevronUp,
   Columns3,
   Filter,
+  HardHat,
   ICON,
   MapPin,
   Plus,
   STROKE,
   Search,
   SlidersHorizontal,
+  Users,
 } from '../../components/ui/icons'
 import {
   Button,
@@ -40,7 +42,6 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import {
-  useContractorWorkerAssign,
   useContractors,
   useCustomers,
   useExecutionMethods,
@@ -56,14 +57,15 @@ import { useIsMobile } from '../../lib/useMediaQuery'
 import { useDragScroll } from '../../lib/useDragScroll'
 import { KIND_LABEL, holidaysInRange, isDayOff } from '../../lib/hebrewHolidays'
 import type { Holiday } from '../../lib/hebrewHolidays'
-import { TaskDrawer } from '../tasks/TaskDrawer'
+import { TaskDrawer, useCanOpenTaskCard } from '../tasks/TaskDrawer'
+import { ContractorPanel, StaffingPanel } from '../tasks/taskPanels'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { BOARD_FIELDS } from './boardFields'
 import type { BoardLookups } from './boardFields'
 import { COLOR_BY_OPTIONS, buildTones, clusterDay, isOverdue } from './grouping'
 import type { Cluster, ColorBy, GroupTone } from './grouping'
-import type { StaffRole, TaskRow, WorkBoardRow } from '../../types/domain'
+import type { TaskRow, WorkBoardRow } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
 /* ── geometry ─────────────────────────────────────────────────────────────
@@ -82,6 +84,28 @@ const MAX_EMPTY_DAY_SPAN = 120
 
 /** the crumb of air above and below the team cell's list of names */
 const TEAM_ROW_PAD = 4
+
+/**
+ * הגג של שורת ההערות, בשורות טקסט.
+ *
+ * ההערה היא השדה היחיד בלוח שהוא פרוזה, ולכן היא גם השדה היחיד שאפשר לכתוב
+ * בו פסקה. השורה גדלה אל ההערה הארוכה ביותר שעל המסך — אבל לא בלי גבול:
+ * הערה אחת בת מאה מילים הייתה דוחפת את כל שאר השדות מהמסך לכל שאר הימים.
+ * מה שלא נכנס נשאר לחיצה אחת משם, בבועה של התא.
+ */
+const MAX_NOTE_LINES = 6
+
+/**
+ * כמה תווים נכנסים בשורה אחת של תא, לפי רוחב העמודה וגודל הטופוגרפיה.
+ *
+ * הערכה ולא מדידה, ובכוונה: מדידה אמיתית מחייבת לצייר קודם, והלוח מוירטואל —
+ * העמודה שהערתה הארוכה ביותר יושבת בה אינה בהכרח מצוירת. ‏0.52 מגודל הגופן
+ * הוא הרוחב הממוצע של תו עברי ב-Heebo, והשגיאה לכל כיוון עולה שורה אחת:
+ * אם ההערכה נמוכה מדי הבועה נשארת (כמו קודם), ואם היא גבוהה מדי נשאר אוויר.
+ */
+function charsPerLine(colWidth: number, fontPx: number) {
+  return Math.max(8, Math.floor((colWidth - 14) / (fontPx * 0.52)))
+}
 
 /**
  * How long a press on a column's name waits to see whether a second one is
@@ -251,57 +275,6 @@ function useInlineUpdate() {
   })
 }
 
-/**
- * Staffing is not a column on `tasks`, so the staffing cells cannot ride the
- * patch above: a team lead, a worker and a driver are each a row in
- * `task_assignments`, and RLS there is granular per role. One row in, one row
- * out — no read-modify-write of the whole set, so two dispatchers assigning
- * two different people at the same moment do not overwrite each other.
- */
-function useAssignmentUpdate() {
-  const qc = useQueryClient()
-  const toast = useToast()
-  return useMutation({
-    mutationFn: async ({
-      row,
-      role,
-      profileId,
-      on,
-    }: {
-      row: WorkBoardRow
-      role: StaffRole
-      profileId: string
-      on: boolean
-    }) => {
-      if (!on) {
-        const { error } = await supabase
-          .from('task_assignments')
-          .delete()
-          .eq('task_id', row.id)
-          .eq('profile_id', profileId)
-          .eq('role', role)
-        if (error) throw error
-        return
-      }
-      /* one lead per task is a unique index, so the seat is cleared first */
-      if (role === 'team_lead') {
-        const { error } = await supabase
-          .from('task_assignments')
-          .delete()
-          .eq('task_id', row.id)
-          .eq('role', 'team_lead')
-        if (error) throw error
-      }
-      const { error } = await supabase
-        .from('task_assignments')
-        .insert({ task_id: row.id, profile_id: profileId, role, work_site: 'field' })
-      if (error) throw error
-    },
-    onSettled: () => void qc.invalidateQueries({ queryKey: ['workboard'] }),
-    onError: (e) => toast.error(errorMessage(e)),
-  })
-}
-
 export default function WorkBoardPage() {
   const { has, me } = useAuth()
   /* מנהל הקבלן: עמודת "קבלן" מיותרת לו — אם הוא רואה את המשימה, היא שלו.
@@ -318,7 +291,13 @@ export default function WorkBoardPage() {
    */
   const canFilter = has(PERM.BOARD_FILTER)
   const canTune = has(PERM.BOARD_COLUMNS)
-  const canOpenTask = has(PERM.BOARD_OPEN_TASK)
+  /* ‏0108: הכרטיס המלא הוא של מנהל המערכת. `board.open_task` נשאר השער
+     השני — מי שאינו אדמין ממשיך ליפול לדף האירוע, כמו קודם. */
+  const canOpenTaskCard = useCanOpenTaskCard()
+  const canOpenTask = has(PERM.BOARD_OPEN_TASK) && canOpenTaskCard
+  /* משימה חדשה נפתחת באותו כרטיס, ולכן היא הולכת אחריו — כפתור שפותח מגירה
+     שלא תיפתח גרוע מכפתור שאינו שם. */
+  const canCreateTask = has(PERM.TASKS_CREATE) && canOpenTaskCard
   const navigate = useNavigate()
   /**
    * Resolved per cell rather than once for the board: a field carries the key
@@ -336,6 +315,17 @@ export default function WorkBoardPage() {
    * `task_contractor_workers` כבר מכירות: הקבלן את שלו, והמשרד את של כולם.
    */
   const canAssignContractor = has(PERM.PORTAL_ASSIGN_WORKERS) || has(PERM.CONTRACTORS_ASSIGN_WORKERS)
+  /**
+   * מי רשאי לפתוח את הפאנלים — נדרש רק בכרטיס הנייד, שאין בו תאים ולכן אין בו
+   * ‏`canEdit` פר-תא. בטבלה השאלה כבר נענית בתא עצמו.
+   */
+  const canOpenStaffing =
+    has(PERM.BOARD_VIEW_STAFFING) &&
+    (has(PERM.TASKS_ASSIGN_WORKER) ||
+      has(PERM.TASKS_ASSIGN_DRIVER) ||
+      has(PERM.TASKS_ASSIGN_TEAM_LEAD) ||
+      canAssignContractor)
+  const canOpenDelegation = has(PERM.BOARD_VIEW_STAFFING) && has(PERM.TASKS_DELEGATE)
   const [params, setParams] = useSearchParams()
   const prefs = useRef(loadPrefs())
   const isMobile = useIsMobile()
@@ -400,11 +390,10 @@ export default function WorkBoardPage() {
   const { data: contractors = EMPTY } = useContractors()
   const { data: methods = EMPTY } = useExecutionMethods()
   const { data: trucks = EMPTY } = useTrucks()
-  /* only fetched for the staffing cells, and those are gated by the same key */
+  /* למסנן העובדים שמעל הלוח. הבוררים שהיו בתאים עברו לפאנלים (0108), והם
+     שולפים את הסגל בעצמם — אבל המסנן נשאר כאן, ומגודר באותו מפתח. */
   const { data: staff = EMPTY } = useStaff(has(PERM.BOARD_VIEW_STAFFING))
   const inline = useInlineUpdate()
-  const staffing = useAssignmentUpdate()
-  const contractorAssign = useContractorWorkerAssign()
 
   const { data: rawRows = EMPTY, isLoading, error: rowsError, refetch: refetchRows } = useQuery({
     queryKey: ['workboard', 'range', from, to, filters],
@@ -454,36 +443,24 @@ export default function WorkBoardPage() {
     )
   }, [rawRows, filters.worker, filters.contractor])
 
-  const lookups = useMemo<BoardLookups>(
-    () => ({ statuses, trucks, methods, contractors, staff, canAssignContractor }),
-    [statuses, trucks, methods, contractors, staff, canAssignContractor],
-  )
   const patchCell = useCallback(
     (row: WorkBoardRow, patch: Record<string, unknown>) => inline.mutate({ row, patch }),
     [inline],
   )
-  const assignCell = useCallback(
-    (row: WorkBoardRow, role: StaffRole | 'contractor', id: string, on: boolean) => {
-      /* עובד קבלן אינו שורה ב-task_assignments, ולכן הוא הולך ל-RPC שלו.
-         הקידומת אומרת אם נבחרה שורת סגל קיימת או חשבון שעדיין אין לו אחת. */
-      if (role === 'contractor') {
-        const isProfile = id.startsWith('p:')
-        contractorAssign.mutate(
-          {
-            taskId: row.id,
-            workerId: isProfile ? null : id.slice(2),
-            profileId: isProfile ? id.slice(2) : null,
-            on,
-          },
-          { onError: (e) => toast.error(errorMessage(e)) },
-        )
-        return
-      }
-      staffing.mutate({ row, role, profileId: id, on })
-    },
-    [staffing, contractorAssign, toast],
-  )
 
+  /**
+   * הפאנלים הממוקדים (0108).
+   *
+   * תא "צוות"/"ראש צוות" ותא "קבלן" אינם נפתחים עוד לתפריט בחירה אלא למסך
+   * שעונה על כל השאלה שלהם — כולל מי יוצא מהמחסן וכמה עובדים הקבלן מביא,
+   * שמעולם לא נכנסו לתפריט. שניהם כותבים מיד, כמו הבורר שהיה כאן.
+   */
+  const [panel, setPanel] = useState<{ kind: 'staffing' | 'contractor'; taskId: string } | null>(null)
+  const openPanel = useCallback(
+    (taskId: string, kind: 'staffing' | 'contractor') => setPanel({ kind, taskId }),
+    [],
+  )
+  const closePanel = useCallback(() => setPanel(null), [])
   /**
    * Two different questions, resolved in order. `viewPerm` decides whether a
    * row exists for this reader at all; `hidden` is their own choice among the
@@ -527,6 +504,34 @@ export default function WorkBoardPage() {
     return Math.max(metrics.tall, most * metrics.line + TEAM_ROW_PAD)
   }, [rows, metrics])
 
+  /**
+   * אותה הכרעה על ההערות, מאותה סיבה.
+   *
+   * שתי שורות קבועות היו מספיק להערה "לקחת מפתחות" ולא להערה שמסבירה איך
+   * נכנסים לחניון — וזו בדיוק ההערה שכתובה כדי להיקרא. השורה נמתחת אל
+   * ההערה הארוכה ביותר שעל הלוח, עד `MAX_NOTE_LINES`, ומי שחורגת גם משם
+   * ממשיכה להיקרא בבועה של התא.
+   *
+   * ‏`\n` נספר כשורה בפני עצמה: מי שכתב ירידת שורה התכוון אליה, והתא מכבד
+   * אותה (`whitespace-pre-wrap`).
+   */
+  const noteLines = useMemo(() => {
+    const perLine = charsPerLine(metrics.col, parseFloat(boardFontSize) * 16)
+    const most = rows.reduce((m, r) => {
+      if (!r.notes) return m
+      const lines = r.notes
+        .split('\n')
+        .reduce((n, seg) => n + Math.max(1, Math.ceil(seg.length / perLine)), 0)
+      return Math.max(m, lines)
+    }, 0)
+    return Math.min(MAX_NOTE_LINES, Math.max(2, most))
+  }, [rows, metrics, boardFontSize])
+
+  const lookups = useMemo<BoardLookups>(
+    () => ({ statuses, trucks, methods, canAssignContractor, noteLines, openPanel }),
+    [statuses, trucks, methods, canAssignContractor, noteLines, openPanel],
+  )
+
   /** one height array drives both the legend and every task column, so the
    *  grid can never drift out of alignment */
   const rowHeights = useMemo(
@@ -534,13 +539,15 @@ export default function WorkBoardPage() {
       fields.map((f) =>
         f.key === 'team'
           ? teamRowHeight
-          : f.grow
-            ? metrics.row * f.grow
-            : f.tall
-              ? metrics.tall
-              : metrics.row,
+          : f.key === 'notes'
+            ? Math.max(metrics.row * (f.grow ?? 1), noteLines * metrics.line + TEAM_ROW_PAD)
+            : f.grow
+              ? metrics.row * f.grow
+              : f.tall
+                ? metrics.tall
+                : metrics.row,
       ),
-    [fields, metrics, teamRowHeight],
+    [fields, metrics, teamRowHeight, noteLines],
   )
   const bodyHeight = rowHeights.reduce((a, b) => a + b, 0)
 
@@ -1110,7 +1117,7 @@ export default function WorkBoardPage() {
                 </Popover>
               )}
 
-              {has(PERM.TASKS_CREATE) && (
+              {canCreateTask && (
                 <Button size="sm" variant="primary" onClick={() => setDrawer({ open: true, taskId: null })}>
                   <Plus size={ICON.sm} strokeWidth={STROKE} />
                   <span className="hidden sm:inline">משימה חדשה</span>
@@ -1172,7 +1179,7 @@ export default function WorkBoardPage() {
                   : 'אין משימות בחודש הזה. אפשר לדפדף לחודש אחר בכותרת'
               }
               action={
-                has(PERM.TASKS_CREATE) && (
+                canCreateTask && (
                   <Button variant="primary" size="sm" onClick={() => setDrawer({ open: true, taskId: null })}>
                     <Plus size={ICON.sm} />
                     משימה חדשה
@@ -1190,8 +1197,11 @@ export default function WorkBoardPage() {
               days={daysForList}
               today={today}
               holidays={holidays}
-              canCreate={has(PERM.TASKS_CREATE)}
+              canCreate={canCreateTask}
               onOpen={openTask}
+              onPanel={openPanel}
+              canOpenStaffing={canOpenStaffing}
+              canOpenDelegation={canOpenDelegation}
               onToggleDay={toggleDay}
               onNewTask={newTaskOn}
             />
@@ -1365,7 +1375,7 @@ export default function WorkBoardPage() {
                           <EmptyDayColumn
                             key={col.id}
                             dayKey={col.dayKey}
-                            canCreate={has(PERM.TASKS_CREATE)}
+                            canCreate={canCreateTask}
                             narrow={metrics.empty < 96}
                             onNewTask={newTaskOn}
                             style={{ insetInlineStart: vi.start, width, height: bodyHeight }}
@@ -1377,7 +1387,6 @@ export default function WorkBoardPage() {
                           row={col.row}
                           canEditCell={canEditCell}
                           patch={patchCell}
-                          assign={assignCell}
                           lookups={lookups}
                           fields={fields}
                           heights={rowHeights}
@@ -1411,6 +1420,18 @@ export default function WorkBoardPage() {
           taskId={drawer.taskId}
           initial={drawer.date ? ({ task_date: drawer.date } as Partial<TaskRow>) : undefined}
         />
+        {/* הפאנלים הממוקדים של התאים (0108) — פתוחים לפי המפתחות שלהם,
+            ולא לפי מי שרשאי לפתוח את הכרטיס המלא. */}
+        <StaffingPanel
+          open={panel?.kind === 'staffing'}
+          onClose={closePanel}
+          taskId={panel?.kind === 'staffing' ? panel.taskId : null}
+        />
+        <ContractorPanel
+          open={panel?.kind === 'contractor'}
+          onClose={closePanel}
+          taskId={panel?.kind === 'contractor' ? panel.taskId : null}
+        />
       </div>
     </RequirePermission>
   )
@@ -1428,6 +1449,9 @@ function MobileBoard({
   holidays,
   canCreate,
   onOpen,
+  onPanel,
+  canOpenStaffing,
+  canOpenDelegation,
   onToggleDay,
   onNewTask,
 }: {
@@ -1438,6 +1462,10 @@ function MobileBoard({
   holidays: Map<string, Holiday>
   canCreate: boolean
   onOpen: (row: WorkBoardRow) => void
+  /** הפאנלים הממוקדים (0108) — בטלפון אין תאים, ולכן הם נפתחים מהכרטיס */
+  onPanel: (taskId: string, kind: 'staffing' | 'contractor') => void
+  canOpenStaffing: boolean
+  canOpenDelegation: boolean
   onToggleDay: (dayKey: string) => void
   onNewTask: (dayKey: string) => void
 }) {
@@ -1560,6 +1588,9 @@ function MobileBoard({
                           tone={cluster.tone}
                           overdue={isOverdue(today)(row)}
                           onOpen={onOpen}
+                          onPanel={onPanel}
+                          canOpenStaffing={canOpenStaffing}
+                          canOpenDelegation={canOpenDelegation}
                         />
                       </li>
                     ))}
@@ -1578,11 +1609,17 @@ const MobileTaskCard = memo(function MobileTaskCard({
   tone,
   overdue,
   onOpen,
+  onPanel,
+  canOpenStaffing,
+  canOpenDelegation,
 }: {
   row: WorkBoardRow
   tone: GroupTone | null
   overdue: boolean
   onOpen: (row: WorkBoardRow) => void
+  onPanel: (taskId: string, kind: 'staffing' | 'contractor') => void
+  canOpenStaffing: boolean
+  canOpenDelegation: boolean
 }) {
   const label = row.end_client_name || row.title || row.customer_name || row.task_type_name
   const time = fmtTime(row.onsite_start_time) || fmtTime(row.warehouse_start_time)
@@ -1653,6 +1690,34 @@ const MobileTaskCard = memo(function MobileTaskCard({
           )}
         </span>
       </button>
+
+      {/* בטלפון אין תאים, ולכן שתי השאלות שהתאים פותחים בטבלה — מי משובץ
+          ומאיפה, ולאיזה קבלן ובאיזה תנאים — יושבות כאן ככפתורים. בלעדיהן
+          כרטיס נייד היה לקריאה בלבד לכל מי שאינו מנהל מערכת (0108). */}
+      {(canOpenStaffing || canOpenDelegation) && (
+        <span className="flex shrink-0 flex-col justify-center gap-1">
+          {canOpenStaffing && (
+            <button
+              type="button"
+              aria-label="שיבוץ הצוות"
+              onClick={() => onPanel(row.id, 'staffing')}
+              className="rounded-md border border-line p-1.5 text-ink-secondary transition-colors hover:bg-hover"
+            >
+              <Users size={ICON.sm} strokeWidth={STROKE} />
+            </button>
+          )}
+          {canOpenDelegation && (
+            <button
+              type="button"
+              aria-label="האצלה לקבלנים"
+              onClick={() => onPanel(row.id, 'contractor')}
+              className="rounded-md border border-line p-1.5 text-ink-secondary transition-colors hover:bg-hover"
+            >
+              <HardHat size={ICON.sm} strokeWidth={STROKE} />
+            </button>
+          )}
+        </span>
+      )}
     </div>
   )
 })
@@ -1812,7 +1877,6 @@ const TaskColumn = memo(
     row,
     canEditCell,
     patch,
-    assign,
     lookups,
     fields,
     heights,
@@ -1825,7 +1889,6 @@ const TaskColumn = memo(
     row: WorkBoardRow
     canEditCell: (perm?: string) => boolean
     patch: (row: WorkBoardRow, patch: Record<string, unknown>) => void
-    assign: (row: WorkBoardRow, role: StaffRole | 'contractor', id: string, on: boolean) => void
     lookups: BoardLookups
     fields: typeof BOARD_FIELDS
     heights: number[]
@@ -1862,7 +1925,7 @@ const TaskColumn = memo(
                 team list — is measured to fit its longest crew, so everyone is
                 on screen at once and the board grows instead of hiding them */}
             <div className="min-w-0 flex-1 text-center">
-              {f.render({ row, canEdit: canEditCell(f.editPerm), can: canEditCell, patch, assign, lookups })}
+              {f.render({ row, canEdit: canEditCell(f.editPerm), can: canEditCell, patch, lookups })}
             </div>
           </div>
         ))}
@@ -1872,7 +1935,6 @@ const TaskColumn = memo(
   (a, b) =>
     a.row === b.row &&
     a.canEditCell === b.canEditCell &&
-    a.assign === b.assign &&
     a.fields === b.fields &&
     a.heights === b.heights &&
     a.lookups === b.lookups &&

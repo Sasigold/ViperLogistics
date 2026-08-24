@@ -197,7 +197,7 @@ export function QuickActionsWidget(_props: WidgetProps) {
           אירוע חדש
         </Button>
       )}
-      {has(PERM.TASKS_CREATE) && (
+      {has(PERM.TASKS_CREATE) && openNewTask && (
         <Button size="sm" onClick={openNewTask}>
           <Plus size={ICON.sm} strokeWidth={STROKE} />
           משימה חדשה
