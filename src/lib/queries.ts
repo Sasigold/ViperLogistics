@@ -466,6 +466,12 @@ export function useCustomerUsers(customerId?: string | null) {
   })
 }
 
+/**
+ * אופני הביצוע שהותרו ללקוח, ואיזה מהם ברירת המחדל שלו (0110).
+ *
+ * מחזירה שורות ולא מזהים: "מותר" ו"הרגיל" הן שתי תשובות מאותה שורה, ושאילתה
+ * שנייה עבור השנייה הייתה מביאה את אותה טבלה פעמיים.
+ */
 export function useCustomerExecutionMethods(customerId?: string | null) {
   return useQuery({
     queryKey: ['customer_execution_methods', customerId],
@@ -473,12 +479,23 @@ export function useCustomerExecutionMethods(customerId?: string | null) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customer_execution_methods')
-        .select('execution_method_id')
+        .select('execution_method_id, is_default')
         .eq('customer_id', customerId)
       if (error) throw error
-      return (data as { execution_method_id: string }[]).map((r) => r.execution_method_id)
+      return data as { execution_method_id: string; is_default: boolean }[]
     },
   })
+}
+
+/**
+ * אופן הביצוע שכל משימה חדשה של הלקוח נולדת איתו (0110).
+ *
+ * המסך מקדים בו את הבורר; השרת ממלא אותו בכל מקרה בטריגר `tasks_default_method`,
+ * ולכן זו נוחות ולא הכלל — משימה שנוצרה מדלת שאין בה בורר תקבל אותו בכל זאת.
+ */
+export function useCustomerDefaultExecutionMethod(customerId?: string | null) {
+  const { data: rows } = useCustomerExecutionMethods(customerId)
+  return useMemo(() => rows?.find((r) => r.is_default)?.execution_method_id ?? null, [rows])
 }
 
 export function useTaskTypeMethods() {
@@ -503,7 +520,10 @@ export function useAllowedExecutionMethods(taskTypeId?: string | null, customerI
       const forType = typeMethods.filter((tm) => tm.task_type_id === taskTypeId).map((tm) => tm.execution_method_id)
       if (forType.length) list = list.filter((m) => forType.includes(m.id))
     }
-    if (customerId && customerMethods) list = list.filter((m) => customerMethods.includes(m.id))
+    if (customerId && customerMethods) {
+      const allowed = new Set(customerMethods.map((r) => r.execution_method_id))
+      list = list.filter((m) => allowed.has(m.id))
+    }
     return list
   }, [methods, typeMethods, taskTypeId, customerId, customerMethods])
 }

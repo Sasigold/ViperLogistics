@@ -256,6 +256,15 @@ OUT="$OUT
 $OUT22"
 
 echo
+echo "== office defaults suite =="
+# 24 מקימה לקוח, קבלן, אופני ביצוע ואירוע משלה. היא רצה אחרונה כי היא מזריעה
+# אופני ביצוע גלובליים ומסתירה שדה טופס, ושניהם אינם מנוקים אחריה.
+OUT24=$($PSQL -d vl -f "$HERE/24_office_defaults.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT24"
+OUT="$OUT
+$OUT24"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

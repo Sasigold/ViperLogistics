@@ -118,6 +118,7 @@ export {
   Circle,
   Pentagon,
   Timer,
+  Star,
   Sun,
   Moon,
   LogOut,
