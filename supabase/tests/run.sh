@@ -250,10 +250,10 @@ echo "== customer board & approval suite =="
 # 23 מקימה שני לקוחות, אירועים, משימות וארבע דמויות משלה ואינה נשענת על אף
 # חבילה קודמת. היא רצה אחרונה כי היא מזריעה תמחור וקונפיגורציית שדות שאינם
 # מנוקים, והאירועים שלה יושבים ב-current_date+370.
-OUT22=$($PSQL -d vl -f "$HERE/23_customer_board_and_approval.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT22"
+OUT23=$($PSQL -d vl -f "$HERE/23_customer_board_and_approval.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT23"
 OUT="$OUT
-$OUT22"
+$OUT23"
 
 echo
 echo "== office defaults suite =="
