@@ -3,9 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { useAuth } from '../state/auth'
 import type {
+  BoardFieldDef,
   Contractor,
   ContractorWorker,
   Customer,
+  CustomerBoardField,
   CustomerIncomeSplit,
   CustomerPricingRule,
   IncomeCategory,
@@ -373,6 +375,40 @@ export function useCustomerFormConfig(customerId?: string | null) {
       const { data, error } = await supabase.from('customer_form_fields').select('*').eq('customer_id', customerId)
       if (error) throw error
       return data as { customer_id: string; field_key: string; state: 'visible' | 'hidden' | 'required' }[]
+    },
+  })
+}
+
+/**
+ * קטלוג שדות הלו״ז, ומה שלקוח מסוים עושה עם כל אחד מהם (0109).
+ *
+ * הקטלוג הוא טבלה ולא מערך בקוד מאותה סיבה שמרשם ההרשאות הוא טבלה: שדה
+ * שייכתב בלוח מחר יופיע במסך הניהול מפני שהוא נרשם. ‏`board_fields` פתוחה
+ * לקריאה לכולם ו-`customer_board_fields` נכתבת בידי מנהל המערכת בלבד.
+ */
+export function useBoardFields() {
+  return useQuery({
+    queryKey: ['board_fields'],
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('board_fields').select('*').order('sort_order')
+      if (error) throw error
+      return data as BoardFieldDef[]
+    },
+  })
+}
+
+export function useCustomerBoardConfig(customerId?: string | null) {
+  return useQuery({
+    queryKey: ['customer_board_fields', customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customer_board_fields')
+        .select('*')
+        .eq('customer_id', customerId)
+      if (error) throw error
+      return data as CustomerBoardField[]
     },
   })
 }

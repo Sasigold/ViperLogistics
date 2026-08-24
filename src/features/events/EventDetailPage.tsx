@@ -196,6 +196,26 @@ export default function EventDetailPage() {
   const canCreateTask = has(PERM.TASKS_CREATE) && canOpenTaskCard
   /** סכומי כסף הם מפתח, ולא "מה שיש בנתונים": בלעדיו הכרטיס אינו קיים */
   const canSeePricing = has(PERM.PRICING_VIEW)
+  /**
+   * אישור לביצוע (0109) — של מנהל המערכת, ולא של מפתח.
+   *
+   * ‏`set_event_approved` דוחה כל אחד אחר, וטריגר חוסם כתיבה ישירה לעמודה,
+   * ולכן המתג כאן אינו השער אלא רק הדלת: מי שאינו אדמין פשוט לא רואה אותו.
+   */
+  const isAdmin = !!me?.profile.is_admin
+  const approve = useMutation({
+    mutationFn: async (on: boolean) => {
+      const { error } = await supabase.rpc('set_event_approved', { p_event_id: id, p_on: on })
+      if (error) throw error
+    },
+    onSuccess: (_d, on) => {
+      toast.success(on ? 'האירוע אושר לביצוע' : 'האישור בוטל')
+      void qc.invalidateQueries({ queryKey: ['events'] })
+      void qc.invalidateQueries({ queryKey: ['calendar'] })
+      void qc.invalidateQueries({ queryKey: ['event_activity', id] })
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
 
   const columns = useMemo<Column<WorkBoardRow>[]>(
     () => [
@@ -480,6 +500,14 @@ export default function EventDetailPage() {
           <span className="flex flex-wrap items-center gap-2.5">
             {event.end_client_name || 'אירוע'}
             <StatusPicker event={event} />
+            {/* ‏0109: מה שמנהל המערכת אישר, כל מי שרואה את האירוע קורא —
+                ובראשם הלקוח, שזו כל הסיבה שהסימון קיים. */}
+            {event.approved_at && (
+              <Badge tone="success">
+                <Check size={ICON.xs} strokeWidth={STROKE} />
+                מאושר לביצוע
+              </Badge>
+            )}
           </span>
         }
         subtitle={
@@ -519,6 +547,18 @@ export default function EventDetailPage() {
                 <PencilLine size={ICON.sm} strokeWidth={STROKE} />
                 החתמת לקוח
                 {signatures.length > 0 && <Badge tone="success">נחתם</Badge>}
+              </Button>
+            )}
+            {/* המתג עצמו הוא של מנהל המערכת, וה-RPC דוחה כל אחד אחר (0109). */}
+            {isAdmin && (
+              <Button
+                size="sm"
+                variant={event.approved_at ? 'ghost' : 'primary'}
+                loading={approve.isPending}
+                onClick={() => approve.mutate(!event.approved_at)}
+              >
+                <Check size={ICON.sm} strokeWidth={STROKE} />
+                {event.approved_at ? 'ביטול אישור לביצוע' : 'אישור לביצוע'}
               </Button>
             )}
             {has(PERM.EVENTS_DUPLICATE) && (

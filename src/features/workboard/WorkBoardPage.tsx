@@ -276,7 +276,7 @@ function useInlineUpdate() {
 }
 
 export default function WorkBoardPage() {
-  const { has, me } = useAuth()
+  const { has, me, boardFieldState } = useAuth()
   /* מנהל הקבלן: עמודת "קבלן" מיותרת לו — אם הוא רואה את המשימה, היא שלו.
      במקומה הלוח מציג לו את "כמות עובדים" שהוא צריך להביא (0091). */
   const isContractor = !!me?.profile.contractor_id || me?.profile.user_kind === 'contractor_user'
@@ -307,6 +307,18 @@ export default function WorkBoardPage() {
   const canEditCell = useCallback(
     (perm?: string) => canInline && (!perm || has(perm)),
     [canInline, has],
+  )
+  /**
+   * אותה שאלה, פר-שדה, אחרי ש-0109 הוסיף שכבה שנייה.
+   *
+   * ‏`canEditCell` שואלת על המפתח; זו שואלת גם על מה שמנהל המערכת קבע ללקוח
+   * הזה. שתיהן חייבות להסכים, כי הראשונה לבדה כבר אינה מה שהשרת יאמר: הטריגר
+   * ‏`app.enforce_customer_board_edit` דוחה כתיבה לשדה שאינו `editable` גם
+   * כשהמפתח קיים. תא שנראה פתוח ונדחה בשמירה גרוע מתא שנראה נעול.
+   */
+  const canEditField = useCallback(
+    (key: string, perm?: string) => canEditCell(perm) && boardFieldState(key) === 'editable',
+    [canEditCell, boardFieldState],
   )
   /**
    * שיבוץ עובדי קבלן אינו עובר ב-`canEditCell` בכוונה: היא מכפילה ב-
@@ -471,9 +483,14 @@ export default function WorkBoardPage() {
   const available = useMemo(
     () =>
       BOARD_FIELDS.filter(
-        (f) => (!f.viewPerm || has(f.viewPerm)) && !(isContractor && f.key === 'contractor'),
+        (f) =>
+          (!f.viewPerm || has(f.viewPerm)) &&
+          !(isContractor && f.key === 'contractor') &&
+          /* ‏0109: השורה השלישית היא הכרעה של מנהל המערכת פר-לקוח, ולא
+             מפתח. לאיש צוות היא תמיד `editable` ולכן אינה מסננת דבר. */
+          boardFieldState(f.key) !== 'hidden',
       ),
-    [has, isContractor],
+    [has, isContractor, boardFieldState],
   )
   const fields = useMemo(() => available.filter((f) => !hidden.has(f.key)), [available, hidden])
   const metrics = DENSITY[density]
@@ -1386,6 +1403,7 @@ export default function WorkBoardPage() {
                           key={col.id}
                           row={col.row}
                           canEditCell={canEditCell}
+                          canEditField={canEditField}
                           patch={patchCell}
                           lookups={lookups}
                           fields={fields}
@@ -1876,6 +1894,7 @@ const TaskColumn = memo(
   function TaskColumn({
     row,
     canEditCell,
+    canEditField,
     patch,
     lookups,
     fields,
@@ -1888,6 +1907,8 @@ const TaskColumn = memo(
   }: {
     row: WorkBoardRow
     canEditCell: (perm?: string) => boolean
+    /** `canEditCell` ועוד ההכרעה של מנהל המערכת לשדה הזה אצל הלקוח (0109) */
+    canEditField: (key: string, perm?: string) => boolean
     patch: (row: WorkBoardRow, patch: Record<string, unknown>) => void
     lookups: BoardLookups
     fields: typeof BOARD_FIELDS
@@ -1925,7 +1946,7 @@ const TaskColumn = memo(
                 team list — is measured to fit its longest crew, so everyone is
                 on screen at once and the board grows instead of hiding them */}
             <div className="min-w-0 flex-1 text-center">
-              {f.render({ row, canEdit: canEditCell(f.editPerm), can: canEditCell, patch, lookups })}
+              {f.render({ row, canEdit: canEditField(f.key, f.editPerm), can: canEditCell, patch, lookups })}
             </div>
           </div>
         ))}
@@ -1935,6 +1956,7 @@ const TaskColumn = memo(
   (a, b) =>
     a.row === b.row &&
     a.canEditCell === b.canEditCell &&
+    a.canEditField === b.canEditField &&
     a.fields === b.fields &&
     a.heights === b.heights &&
     a.lookups === b.lookups &&
