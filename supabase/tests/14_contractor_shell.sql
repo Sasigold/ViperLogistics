@@ -398,4 +398,11 @@ select t_eq('ולצוות אותו יעד',
                         '31000000-0000-0000-0000-000000140001')
     like '/board?task=%', true);
 
+-- 0110: התראות הכניסה/יציאה מובילות לדוח הנוכחות — המסך של מי שמקבל אותן,
+-- מנהל ומנהל קבלן כאחד (שניהם על /attendance, בהיקפים שונים).
+select t_eq('התראת כניסה מובילה לדוח הנוכחות',
+  app.notification_link('20000000-0000-0000-0000-0000000014a1', 'attendance_clock_in',
+                        'attendance_entry', gen_random_uuid())
+    like '/attendance?entry=%', true);
+
 select set_config('request.jwt.claim.sub', '', false);
