@@ -396,7 +396,7 @@ Deno.serve(async (req) => {
     // Google לא צריך את זה — הוא כבר סלחני לניסוחים חלקיים.
     if (out.length === 0) {
       const loose = loosen(q)
-      if (loose && loose !== q && loose.length >= 2) {
+      if (loose && loose !== q && loose.length >= 3) {
         try {
           merge(out, await searchPhoton(loose))
           reachedSomeone = true
