@@ -2,9 +2,10 @@ import { supabase } from './supabase'
 import type { AddressSuggestion } from '../types/domain'
 
 /**
- * Pluggable address-autocomplete provider. To switch to Google Places later,
- * implement AddressProvider and change the export at the bottom — nothing in
- * the UI needs to change.
+ * Pluggable address-autocomplete provider. The actual switch to Google Places
+ * happened server-side (in the `geocode-proxy` edge function, keyed by a
+ * secret); this seam stays for the next swap — implement AddressProvider and
+ * change the export at the bottom, nothing in the UI needs to change.
  */
 export interface AddressProvider {
   search(q: string, signal?: AbortSignal): Promise<AddressSuggestion[]>
@@ -157,11 +158,23 @@ export function rankSuggestions(
 }
 
 /**
- * הספק בפועל: פונקציית הקצה `geocode-proxy`, שמאחדת מאחוריה את Photon (חיפוש
- * סלחני לשמות ולשגיאות כתיב) ואת Nominatim (כתובת מדויקת). הדירוג נעשה כאן,
- * מול הטקסט שהוקלד.
+ * `rankSuggestions` נולד כדי למזג שני ספקי OSM עם שיטות דירוג שאינן מסכימות זו
+ * עם זו. Google מגיע כבר מדורג — קוהרנטי וסלחני לשגיאות כתיב — וניקוד לפי
+ * תחיליות רק יקלקל אותו: שם שהוקלד עם שגיאת כתיב מקבל אפס מול כל תווית.
+ * רשימה מעורבת לא קיימת — פונקציית הקצה מחזירה או Google בלבד או OSM בלבד.
  */
-class OsmProvider implements AddressProvider {
+export function orderSuggestions(query: string, items: AddressSuggestion[]): AddressSuggestion[] {
+  if (items.length > 0 && items.every((s) => s.provider === 'google')) return items.slice(0, 8)
+  return rankSuggestions(query, items)
+}
+
+/**
+ * הספק בפועל: פונקציית הקצה `geocode-proxy`. כשמפתח Google מוגדר שם, החיפוש הוא
+ * Google Places (שמות עסקים, אולמות, סלחנות לשגיאות כתיב); אחרת — Photon (חיפוש
+ * סלחני לשמות) ו-Nominatim (כתובת מדויקת). הסידור הסופי נעשה כאן, מול הטקסט
+ * שהוקלד.
+ */
+class ProxyProvider implements AddressProvider {
   async search(q: string): Promise<AddressSuggestion[]> {
     const query = normalizeQuery(q)
     if (query.length < MIN_QUERY_CHARS) return []
@@ -170,11 +183,11 @@ class OsmProvider implements AddressProvider {
       { method: 'GET' },
     )
     if (error) return []
-    return rankSuggestions(query, (data as AddressSuggestion[]) ?? [])
+    return orderSuggestions(query, (data as AddressSuggestion[]) ?? [])
   }
 }
 
-export const addressProvider: AddressProvider = new OsmProvider()
+export const addressProvider: AddressProvider = new ProxyProvider()
 
 /**
  * מה שנשמר ב-`location_text` הוא ה-display_name המלא של הספק — שרשרת של כל רמות
