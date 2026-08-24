@@ -21,6 +21,7 @@ import {
   CardBody,
   CardHeader,
   EmptyState,
+  SegmentedControl,
   Skeleton,
   StatusPill,
   Textarea,
@@ -139,6 +140,16 @@ export function EventActivityLog({
   const { has, me } = useAuth()
   const qc = useQueryClient()
   const [draft, setDraft] = useState('')
+  // "הערות בלבד" מסתיר את הודעות המערכת. הבחירה נשמרת פר-דפדפן, כמו שאר
+  // העדפות התצוגה (דפוס vl-*); המבחין הוא kind === 'note' — גם סוגים אחרים
+  // נושאים טקסט ב-note, אבל רק 'note' נכתב בידי אדם.
+  const [notesOnly, setNotesOnly] = useState(() => {
+    try {
+      return localStorage.getItem('vl-activity-notes-only') === '1'
+    } catch {
+      return false
+    }
+  })
   const canWrite = has(PERM.EVENTS_ACTIVITY_NOTE) || !!canNote
 
   const { data: rows = [], isLoading } = useQuery({
@@ -177,7 +188,10 @@ export function EventActivityLog({
     },
   })
 
-  const entries = useMemo(() => toEntries(rows), [rows])
+  const entries = useMemo(
+    () => toEntries(notesOnly ? rows.filter((r) => r.kind === 'note') : rows),
+    [rows, notesOnly],
+  )
 
   return (
     <Card className={`flex flex-col h-full ${className ?? ''}`}>
@@ -185,7 +199,27 @@ export function EventActivityLog({
         title="יומן פעילות"
         subtitle="כל שינוי באירוע, ומה שרשמתם עליו"
         icon={<History size={ICON.md} strokeWidth={STROKE} />}
-        actions={<span className="type-caption tabular text-ink-tertiary">{entries.length}</span>}
+        actions={
+          <span className="flex items-center gap-2">
+            <SegmentedControl
+              items={[
+                { key: 'all', label: 'הכול' },
+                { key: 'notes', label: 'הערות בלבד' },
+              ]}
+              value={notesOnly ? 'notes' : 'all'}
+              onChange={(k) => {
+                const next = k === 'notes'
+                setNotesOnly(next)
+                try {
+                  localStorage.setItem('vl-activity-notes-only', next ? '1' : '0')
+                } catch {
+                  /* פרטי/חסום — ההעדפה פשוט לא תישמר */
+                }
+              }}
+            />
+            <span className="type-caption tabular text-ink-tertiary">{entries.length}</span>
+          </span>
+        }
       />
 
       {canWrite && (
@@ -232,16 +266,25 @@ export function EventActivityLog({
             ))}
           </div>
         ) : entries.length === 0 ? (
-          <EmptyState
-            compact
-            art="table"
-            title="היומן ריק"
-            description={
-              canWrite
-                ? 'שינויים באירוע יירשמו כאן אוטומטית, ואפשר גם לרשום תיעוד חופשי'
-                : 'שינויים באירוע יירשמו כאן אוטומטית'
-            }
-          />
+          notesOnly && rows.length > 0 ? (
+            <EmptyState
+              compact
+              art="table"
+              title="אין הערות"
+              description='ביומן יש רק הודעות מערכת — החזירו את הבורר ל"הכול" כדי לראות אותן'
+            />
+          ) : (
+            <EmptyState
+              compact
+              art="table"
+              title="היומן ריק"
+              description={
+                canWrite
+                  ? 'שינויים באירוע יירשמו כאן אוטומטית, ואפשר גם לרשום תיעוד חופשי'
+                  : 'שינויים באירוע יירשמו כאן אוטומטית'
+              }
+            />
+          )
         ) : (
           /* a vertical rail turns a list of entries into a readable timeline */
           <ol className="relative flex-1 min-h-0 space-y-3 overflow-y-auto ps-6 pe-1 scrollbar-thin">
@@ -279,8 +322,10 @@ export function EventActivityLog({
                   {e.changes.length > 0 && (
                     <table className="mt-2.5 w-full">
                       <tbody>
-                        {e.changes.map((c) => (
-                          <tr key={c.key} className="border-t border-line-subtle first:border-0">
+                        {e.changes.map((c, i) => (
+                          // המפתח כולל אינדקס: שתי משימות מאותו סוג ששונו
+                          // בשמירה אחת חולקות field_key
+                          <tr key={`${c.key}-${i}`} className="border-t border-line-subtle first:border-0">
                             <td className="py-1 pe-2 align-top type-caption text-ink-tertiary">{c.label}</td>
                             <td className="py-1 type-caption">
                               <span className="text-error-text line-through decoration-error/40">
