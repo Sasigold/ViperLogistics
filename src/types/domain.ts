@@ -410,6 +410,8 @@ export type EventActivityKind =
   | 'spec_added'
   | 'spec_removed'
   | 'customer_signed'
+  | 'price_addon_added'
+  | 'price_addon_removed'
 
 /**
  * A line of an event's activity log, as `event_activity_feed` returns it: a
@@ -788,6 +790,37 @@ export interface TaskPricing {
   is_manual: boolean
   breakdown: PriceBreakdown | null
   calculated_at: string | null
+}
+
+/**
+ * תוספת מחיר על משימה, עם המשפט שמסביר אותה ללקוח (0113).
+ *
+ * שורה ולא עמודה על `task_pricing`: אירוע חורג נושא יותר מחריגה אחת, ותוספת
+ * בלי פירוט היא בדיוק המספר חסר ההסבר שהיא באה להחליף. הסכום חי לצד המחיר
+ * ולא בתוכו — מחיר שחושב מהמחשבון נכתב מחדש בכל `recalculate_task_price`,
+ * ותוספת שהתמזגה לתוכו הייתה נמחקת שם.
+ */
+export interface TaskPriceAddon {
+  id: string
+  task_id: string
+  /** שלילי מותר: הנחה היא אותה ישות עם אותו משפט מוצג */
+  amount: number
+  note: string
+  created_by: string | null
+  creator_name: string | null
+  created_at: string
+  deleted_at: string | null
+}
+
+/** שורת `event_price_addons` — אותה תוספת, עם שם המשימה שהיא יושבת עליה. */
+export interface EventPriceAddon {
+  id: string
+  task_id: string
+  task_label: string
+  amount: number
+  note: string
+  created_at: string
+  creator_name: string | null
 }
 
 export interface CustomerPricingRule {

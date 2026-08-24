@@ -46,6 +46,7 @@ import {
   useTrucks,
 } from '../../lib/queries'
 import { Breakdown } from '../customers/PricingTab'
+import { PriceAddonsEditor } from '../pricing/PriceAddons'
 import { ContractorCrew, ContractorDelegationCard } from './taskPanels'
 import { EventSpecsModal } from '../events/EventSpecsModal'
 import { useEventSpecs } from '../events/specQueries'
@@ -967,6 +968,11 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
                     </div>
                   </details>
                 )}
+
+                {/* התוספות יושבות מתחת למחיר ולא לצידו: הן אינן דרך אחרת
+                    לקבוע אותו אלא מה שנוסף עליו אחרי שהוא כבר נקבע, וזה גם
+                    הסדר שבו הלקוח קורא אותן בכרטיס התמחור של האירוע. */}
+                {taskId && <PriceAddonsEditor taskId={taskId} canEdit={canEditCustomerPrice} />}
               </CardBody>
             </Card>
           )}

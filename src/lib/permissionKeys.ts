@@ -105,6 +105,11 @@ export const PERM = {
   EVENTS_ACTIVITY_LOG: 'events.activity_log',
   EVENTS_ACTIVITY_NOTE: 'events.activity_note',
   EVENTS_SPECS_VIEW: 'events.specs_view',
+  /* העלאה והסרה נפרדו ב-0113: המפרט נולד אצל הלקוח, ולכן ההעלאה פתוחה לו
+     בברירת המחדל של סוג המשתמש — וההסרה מההיסטוריה נשארה של מי שמנהל את
+     האירוע. `specs_upload` נגזר מ-`specs_manage`, ולכן איש צוות שמנהל
+     מפרטים ממשיך להעלות בלי שינוי. */
+  EVENTS_SPECS_UPLOAD: 'events.specs_upload',
   EVENTS_SPECS_MANAGE: 'events.specs_manage',
   /* החתמת לקוח (0107). ראש צוות ההקמה והלקוח מגיעים דרך תפקיד/זהות, לא דרך
      המפתחות האלה — הם פותחים את החתימה גם לרכז משרדי שהוענק לו במפורש. */

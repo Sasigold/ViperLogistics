@@ -58,8 +58,9 @@ import { EventActivityLog } from './EventActivityLog'
 import { EventSpecsModal } from './EventSpecsModal'
 import { CustomerSignatureModal } from './CustomerSignatureModal'
 import { useEventSpecs } from './specQueries'
+import { sumAddons, useEventPriceAddons } from '../pricing/addonQueries'
 import { useEventSignatures } from './signatureQueries'
-import type { EventRow, WorkBoardRow } from '../../types/domain'
+import type { EventPriceAddon, EventRow, WorkBoardRow } from '../../types/domain'
 
 type TaskTab = 'all' | 'setup' | 'teardown' | 'other'
 type TaskViewMode = 'cards' | 'table'
@@ -126,20 +127,36 @@ export default function EventDetailPage() {
 
   usePageTitle(data?.event.end_client_name ?? null)
 
+  /**
+   * תוספות המחיר של האירוע (0113) — הן ואת ההערה שמסבירה כל אחת מהן.
+   *
+   * שאילתה נפרדת ולא עמודה ב-`work_board_view`: התוספת היא רשימה ולא מספר,
+   * וכל הנקודה שלה היא המשפט שנלווה לסכום. ‏RLS על `task_price_addons` היא
+   * שמכריעה מי רואה מה, ולכן הלקוח מקבל כאן בדיוק את התוספות של האירוע שלו.
+   */
+  const { data: priceAddons = [] } = useEventPriceAddons(id ?? null, !!id && has(PERM.PRICING_VIEW))
+
   const pricing = useMemo(() => {
     const priced = tasks.filter((t) => t.customer_price != null)
-    if (!priced.length) return null
+    if (!priced.length && !priceAddons.length) return null
+    const base = priced.reduce((sum, t) => sum + Number(t.customer_price), 0)
     return {
       rows: priced.map((t) => ({
         id: t.id,
         label: t.title || t.task_type_name,
         price: Number(t.customer_price),
         isManual: !!t.price_is_manual,
+        /* התוספות של אותה משימה יושבות מתחתיה, ולא בגוש נפרד: "המתנה בשער"
+           היא משפט על ההקמה, ומי שקורא את השורה שלה צריך לראות אותו שם. */
+        addons: priceAddons.filter((a) => a.task_id === t.id),
       })),
-      total: priced.reduce((sum, t) => sum + Number(t.customer_price), 0),
+      /* תוספת על משימה שאין לה מחיר עדיין אינה נעלמת — היא נספרת בסך הכול
+         ומקבלת שורה משלה מתחת לרשימה. */
+      orphanAddons: priceAddons.filter((a) => !priced.some((t) => t.id === a.task_id)),
+      total: base + sumAddons(priceAddons),
       unpriced: tasks.length - priced.length,
     }
-  }, [tasks])
+  }, [tasks, priceAddons])
 
   /* מנהל הקבלן רואה כמה הוא מקבל על האירוע: סכום התשלום על משימותיו, מתוך
      `contractor_price` שה-view כבר הגביל לתמחור שהוא רשאי לראות ולמשימות
@@ -637,16 +654,31 @@ export default function EventDetailPage() {
                 <CardBody>
                   <dl className="divide-y divide-line-subtle">
                     {pricing.rows.map((r) => (
-                      <div key={r.id} className="flex items-start justify-between gap-3 py-2 first:pt-0">
-                        <dt className="min-w-0 shrink type-caption text-ink-tertiary">
-                          {r.label}
-                          {r.isManual && <span className="ms-1.5 text-warning-text">ידני</span>}
-                        </dt>
-                        <dd dir="ltr" className="shrink-0 tabular-nums type-body font-medium">
-                          {fmtMoney(r.price)}
-                        </dd>
+                      <div key={r.id} className="py-2 first:pt-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <dt className="min-w-0 shrink type-caption text-ink-tertiary">
+                            {r.label}
+                            {r.isManual && <span className="ms-1.5 text-warning-text">ידני</span>}
+                          </dt>
+                          <dd dir="ltr" className="shrink-0 tabular-nums type-body font-medium">
+                            {fmtMoney(r.price)}
+                          </dd>
+                        </div>
+                        {r.addons.map((a) => (
+                          <PriceAddonLine key={a.id} addon={a} />
+                        ))}
                       </div>
                     ))}
+                    {/* תוספת על משימה שעדיין אין לה מחיר. היא נספרת בסך הכול
+                        ממילא, ולכן היא חייבת להיראות — אחרת הסכום למטה גדול
+                        מסך השורות שמעליו בלי הסבר. */}
+                    {pricing.orphanAddons.length > 0 && (
+                      <div className="py-2">
+                        {pricing.orphanAddons.map((a) => (
+                          <PriceAddonLine key={a.id} addon={a} withTask />
+                        ))}
+                      </div>
+                    )}
                     <div className="flex items-baseline justify-between gap-3 pt-2">
                       <dt className="type-body font-semibold">סך הכול</dt>
                       <dd dir="ltr" className="tabular-nums type-title font-semibold text-primary">
@@ -1123,5 +1155,34 @@ function StatusPicker({ event }: { event: EventRow }) {
         </>
       )}
     </Popover>
+  )
+}
+
+/**
+ * שורת תוספת מחיר בכרטיס התמחור — הסכום, וההערה שמסבירה אותו (0113).
+ *
+ * זו הסיבה שהתוספת קיימת בכלל: הלקוח רואה למה החשבון גדל, במילים של מי
+ * שהיה שם, במקום להתקשר ולשאול. הסכום נוטה ימינה כדי להיקרא כתת-שורה של
+ * המשימה שמעליה, ולא כפריט נפרד ברשימה.
+ */
+function PriceAddonLine({ addon, withTask }: { addon: EventPriceAddon; withTask?: boolean }) {
+  const amount = Number(addon.amount)
+  return (
+    <div className="mt-1 flex items-start justify-between gap-3 ps-3">
+      <span className="min-w-0 shrink type-caption text-ink-tertiary">
+        {withTask && <span className="font-medium">{addon.task_label} · </span>}
+        {addon.note}
+      </span>
+      <span
+        dir="ltr"
+        className={cx(
+          'shrink-0 tabular-nums type-caption font-medium',
+          amount < 0 ? 'text-success-text' : 'text-warning-text',
+        )}
+      >
+        {amount > 0 ? '+' : ''}
+        {fmtMoney(amount)}
+      </span>
+    </div>
   )
 }

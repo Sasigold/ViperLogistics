@@ -196,6 +196,16 @@ export function EventFormModal({
      קורא את שורת הלקוח שלו מ-useCustomers, ולכן ההיעדר נחשב "לא אוטומטי":
      ממילא אצלו השדה מוסתר בברירת מחדל, והשרת הוא זה שמכריע. */
   const autoPriced = customers.find((c) => c.id === effectiveCustomerId)?.pricing_mode === 'auto'
+  /**
+   * המחיר אינו שדה של הלקוח.
+   *
+   * השרת קבע את זה מ-0111: הענף שכותב `<code>_price` שואל `user_kind = 'staff'`
+   * לפני שהוא שואל על `pricing.edit`, ולכן מה שלקוח שולח מושלך בשקט. מה
+   * שנשאר היה מסך שמזמין אותו להקליד מספר, לשמור, לקבל "נשמר" ולחזור למחיר
+   * הישן. השדה נשאר *גלוי* — לדעת כמה זה עולה זה בדיוק מה שהוא בא לראות —
+   * והוא נעול, ואינו נשלח.
+   */
+  const priceIsReadOnly = me?.profile.user_kind === 'customer_user'
   const config = useEffectiveFormConfig(effectiveCustomerId)
   const { data: suppliers = [] } = useSuppliers(effectiveCustomerId)
   /* The fields this customer defined for themselves. They travel through the
@@ -394,6 +404,10 @@ export function EventFormModal({
         if (!typeIdOf(code)) continue
         for (const [key, label] of SECTION_LABELS) {
           const k = `${code}_${key}` as keyof EventForm
+          /* שדה נעול אינו "חסר": אצל משתמש לקוח המחיר אינו ניתן למילוי, ולוּ
+             סומן חובה בקונפיגורציה של הלקוח — הוא היה נועל את האשף על צעד
+             שאין ממנו יציאה. */
+          if (key === 'price' && priceIsReadOnly) continue
           if (show(k) && req(k) && !String(form[k] ?? '').trim()) out.push(`${title} — ${label}`)
         }
       }
@@ -450,8 +464,9 @@ export function EventFormModal({
         if (!typeIdOf(code)) continue
         for (const key of sectionFields(code)) {
           if (!show(key) || ro(key)) continue
-          // אצל לקוח אוטומטי המחיר מגיע מהמחשבון; שליחתו הייתה נועלת אותו
-          if (key.endsWith('_price') && autoPriced) continue
+          // אצל לקוח אוטומטי המחיר מגיע מהמחשבון; שליחתו הייתה נועלת אותו.
+          // ומשתמש לקוח אינו שולח מחיר כלל — השרת משליך אותו ממילא (0111).
+          if (key.endsWith('_price') && (autoPriced || priceIsReadOnly)) continue
           // task_date is NOT NULL — omitting an empty date keeps the current one
           if (key.endsWith('_date') && !form[key]) continue
           payload[key] = form[key]
@@ -798,6 +813,7 @@ export function EventFormModal({
                 methods={code === 'setup' ? setupMethods : teardownMethods}
                 allMethods={allMethods}
                 autoPriced={autoPriced}
+                priceIsReadOnly={priceIsReadOnly}
               />
             ) : null,
           )}
@@ -879,6 +895,7 @@ function TaskSection({
   methods,
   allMethods,
   autoPriced,
+  priceIsReadOnly,
 }: {
   code: 'setup' | 'teardown'
   title: string
@@ -891,6 +908,8 @@ function TaskSection({
   methods: ExecutionMethod[]
   allMethods: ExecutionMethod[]
   autoPriced: boolean
+  /** משתמש לקוח: השדה מוצג ואינו ניתן למילוי */
+  priceIsReadOnly: boolean
 }) {
   const dateKey = `${code}_date` as const
   const timeKey = `${code}_time` as const
@@ -943,14 +962,23 @@ function TaskSection({
               />
             </Field>
           )}
-          {/* אצל לקוח אוטומטי המחיר מוצג ולא נערך: הזנה ידנית כאן הייתה
-              נועלת אותו ומנתקת אותו מהמחשבון בלי שהמזין מתכוון לכך. */}
+          {/* שני מצבים שבהם השדה מוצג ואינו נערך: אצל לקוח אוטומטי הזנה ידנית
+              כאן הייתה נועלת את המחיר ומנתקת אותו מהמחשבון בלי שהמזין מתכוון
+              לכך; ואצל משתמש לקוח המחיר הוא מה שהמשרד גובה, ולא מה שהוא
+              ממלא — ‏0111 משליכה אותו בשרת בכל מקרה, ומסך שמזמין להקליד
+              מספר שיישמר לתוך הריק הוא הבטחה שהמערכת אינה מקיימת. */}
           {show(priceKey) && (
             <Field
               label="מחיר ללקוח (₪)"
-              required={req(priceKey)}
-              error={err(priceKey, form[priceKey])}
-              hint={autoPriced ? 'מחושב אוטומטית ממחשבון התמחור' : undefined}
+              required={req(priceKey) && !priceIsReadOnly}
+              error={priceIsReadOnly ? undefined : err(priceKey, form[priceKey])}
+              hint={
+                priceIsReadOnly
+                  ? 'נקבע על ידי המשרד'
+                  : autoPriced
+                    ? 'מחושב אוטומטית ממחשבון התמחור'
+                    : undefined
+              }
             >
               <Input
                 type="number"
@@ -959,7 +987,7 @@ function TaskSection({
                 dir="ltr"
                 value={form[priceKey]}
                 onChange={(e) => set({ [priceKey]: e.target.value })}
-                disabled={ro(priceKey) || autoPriced}
+                disabled={ro(priceKey) || autoPriced || priceIsReadOnly}
               />
             </Field>
           )}
