@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Banknote, Check, Clock, ICON, MapPin, Package, Paperclip, PartyPopper, Phone, SlidersHorizontal, STROKE, User } from '../../components/ui/icons'
 import {
@@ -35,7 +35,17 @@ import {
   useTaskTypes,
 } from '../../lib/queries'
 import { AddressAutocomplete } from './AddressAutocomplete'
-import { CustomFieldInput, isBlank, toFormValues, toPayloadValue } from './CustomFieldInput'
+import { CustomFieldInput, isBlank, toPayloadValue } from './CustomFieldInput'
+import {
+  SECTIONS,
+  draftFormValues,
+  emptyEventForm,
+  eventFormValues,
+  incomeValuesFromRows,
+  sectionFields,
+  sectionValuesFromTasks,
+} from './eventForm'
+import type { EventForm } from './eventForm'
 import type { CustomFormValue } from './CustomFieldInput'
 import { SpecPicker } from './SpecPicker'
 import { emptySpecDraft, specDraftIsEmpty, specDraftLiveProblem, specDraftProblem } from './specs'
@@ -44,70 +54,12 @@ import { uploadSpec } from './specQueries'
 import type { EventRow, ExecutionMethod } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
-type EventForm = {
-  customer_id: string
-  end_client_name: string
-  event_number: string
-  event_date: string
-  location_text: string
-  location_provider: string
-  location_place_id: string
-  location_lat: number | null
-  location_lng: number | null
-  location_notes: string
-  volume_m: string
-  truck_count: string
-  contact_name: string
-  contact_phone: string
-  notes: string
-  status_id: string
-  no_parking: boolean
-  porterage: boolean
-  supplier_pickup: boolean
-  supplier_ids: string[]
-  setup_date: string
-  setup_time: string
-  setup_worker_count: string
-  setup_hours_count: string
-  setup_price: string
-  setup_execution_method: string
-  teardown_date: string
-  teardown_time: string
-  teardown_worker_count: string
-  teardown_hours_count: string
-  teardown_price: string
-  teardown_execution_method: string
-  /** values of the customer's custom fields, keyed by field_key */
-  custom: Record<string, CustomFormValue>
-  /** category income amounts (0068), keyed by income_categories.id */
-  income: Record<string, string>
-}
-
-const empty: EventForm = {
-  customer_id: '', end_client_name: '', event_number: '', event_date: '', location_text: '',
-  location_provider: '', location_place_id: '', location_lat: null, location_lng: null,
-  location_notes: '', volume_m: '', truck_count: '', contact_name: '', contact_phone: '',
-  notes: '', status_id: '', no_parking: false, porterage: false, supplier_pickup: false, supplier_ids: [],
-  setup_date: '', setup_time: '', setup_worker_count: '', setup_hours_count: '', setup_execution_method: '',
-  setup_price: '',
-  teardown_date: '', teardown_time: '', teardown_worker_count: '', teardown_hours_count: '', teardown_execution_method: '',
-  teardown_price: '',
-  custom: {},
-  income: {},
-}
-
 /**
  * The draft key is per-profile. It used to be one global key, so on a shared
  * or kiosk browser an abandoned draft — customer contact name, phone, notes,
  * location — pre-filled the next person's new-event form.
  */
 const draftKey = (profileId?: string | null) => `vl-event-draft:${profileId ?? 'anon'}`
-
-/** The two auto-created tasks the last wizard step edits. */
-const SECTIONS = [
-  { code: 'setup' as const, title: 'הקמה' },
-  { code: 'teardown' as const, title: 'פירוק' },
-]
 
 /** The five per-section fields, with the labels reused from the task drawer. */
 const SECTION_LABELS = [
@@ -118,17 +70,6 @@ const SECTION_LABELS = [
   ['execution_method', 'אופן ביצוע'],
   ['price', 'מחיר ללקוח'],
 ] as const
-
-/** Field keys of one section — same names in form_fields, in the form and in the RPC payload. */
-const sectionFields = (code: 'setup' | 'teardown') =>
-  [
-    `${code}_date`,
-    `${code}_time`,
-    `${code}_worker_count`,
-    `${code}_hours_count`,
-    `${code}_execution_method`,
-    `${code}_price`,
-  ] as const
 
 /** The contact pair is one permission, not two — see the event_contacts policy. */
 const CONTACT_KEYS = ['contact_name', 'contact_phone']
@@ -189,7 +130,7 @@ export function EventFormModal({
      `profiles_customer_kind` (0001) enforces the iff — so this is the same test
      the kind check was making, stated as the fact it actually depends on. */
   const boundCustomerId = me?.profile.customer_id ?? null
-  const [form, setForm] = useState<EventForm>(empty)
+  const [form, setForm] = useState<EventForm>(emptyEventForm)
   const [step, setStep] = useState(0)
   const [touched, setTouched] = useState(false)
   /**
@@ -257,68 +198,66 @@ export function EventFormModal({
     [incomeCategories, incomeSplits],
   )
 
+  /* מפתח הפתיחה: 'new' ביצירה, מזהה האירוע בעריכה, ו-null כשהמודאל סגור.
+     כל ההזרעה למטה נמדדת מולו — "פתיחה אחת" ולא "רינדור אחד". */
+  const openKey = open ? (event?.id ?? 'new') : null
+
+  /**
+   * הטופס נזרע פעם אחת לפתיחה, ולא בכל פעם שמשהו למעלה מתרנדר.
+   *
+   * שלושת המקורות ישבו במערך התלויות, ושלושתם מתחלפים בלי ששום נתון השתנה:
+   * ‏`supplierIds` נכתב כ-`suppliers.map(...)` בתוך ה-JSX של כרטיס האירוע,
+   * ולכן הוא מערך חדש בכל רינדור *שלו*; ו-`event`/`contact` מתחלפים בכל פעם
+   * שהשאילתה מחזירה שורה שהשתנתה באמת — ו-`useRealtimeSync` מבטל אותה בכל
+   * אות על האירוע, כולל אות שהמשתמש עצמו יצר מלשונית אחרת.
+   *
+   * מה שקרה בפועל: ההזרעה רצה שוב באמצע עריכה, החזירה את האשף לצעד 1 ורוקנה
+   * את שדות ההקמה והפירוק — והאפקט שממלא אותם *לא* רץ אחריה, כי `autoTasks`
+   * לא השתנה (‏staleTime של 30 שניות, בלי refetch). התוצאה היא שלב שנראה ריק
+   * עד שסוגרים ופותחים, ואז המטמון כבר שם והכול מתמלא באותו commit.
+   *
+   * אותו שומר הוא גם מה שמונע מרענון רקע לדרוס מספר שהמשתמש הקליד ועוד לא
+   * שמר. המחיר אמור במפורש: מה שנטען בפתיחה הוא מה שנשמר, ומי ששומר אחרון
+   * מנצח — זה החוזה הרגיל של טופס, ועדיף על שדות שמשתנים תחת הידיים.
+   *
+   * הדגלים מתאפסים בגוף האפקט ולא ב-cleanup: ב-cleanup, ה-unmount המדומה של
+   * StrictMode היה מזריע מחדש ומוחק את הטופס — בפיתוח בלבד.
+   */
+  const seeded = useRef({ key: null as string | null, sections: false, income: false })
+  /* ה-props נקראים דרך ref כדי שהזהות שלהם תהיה קלט להזרעה ולא הטריגר שלה —
+     אותו פתרון כמו `initialRef` ב-TaskDrawer. */
+  const sourcesRef = useRef({ event, contact, supplierIds })
+  sourcesRef.current = { event, contact, supplierIds }
+
   useEffect(() => {
-    if (!open) return
+    if (!openKey) {
+      seeded.current = { key: null, sections: false, income: false }
+      return
+    }
+    if (seeded.current.key === openKey) return
+    seeded.current = { key: openKey, sections: false, income: false }
     setStep(0)
     setTouched(false)
     setSpec(emptySpecDraft)
-    if (event) {
-      setForm({
-        ...empty,
-        customer_id: event.customer_id,
-        end_client_name: event.end_client_name ?? '',
-        event_number: event.event_number ?? '',
-        event_date: event.event_date,
-        location_text: event.location_text ?? '',
-        location_provider: event.location_provider ?? '',
-        location_place_id: event.location_place_id ?? '',
-        location_lat: event.location_lat,
-        location_lng: event.location_lng,
-        location_notes: event.location_notes ?? '',
-        volume_m: event.volume_m != null ? String(event.volume_m) : '',
-        truck_count: event.truck_count != null ? String(event.truck_count) : '',
-        contact_name: contact?.contact_name ?? '',
-        contact_phone: contact?.contact_phone ?? '',
-        notes: event.notes ?? '',
-        status_id: event.status_id ?? '',
-        no_parking: event.no_parking,
-        porterage: event.porterage,
-        supplier_pickup: event.supplier_pickup,
-        supplier_ids: supplierIds ?? [],
-        custom: toFormValues(event.custom_fields),
-        // placeholders until the two auto tasks load below
-        setup_date: event.event_date,
-        teardown_date: event.event_date,
-      })
-    } else {
-      const draft = localStorage.getItem(draftKey(me?.profile.id))
-      setForm(draft ? { ...empty, ...(JSON.parse(draft) as Partial<EventForm>) } : empty)
-    }
-  }, [open, event, contact, supplierIds, me?.profile.id])
+    const { event: ev, contact: c, supplierIds: ids } = sourcesRef.current
+    setForm(
+      ev ? eventFormValues(ev, c, ids) : draftFormValues(localStorage.getItem(draftKey(me?.profile.id))),
+    )
+  }, [openKey, me?.profile.id])
 
   /** Edit mode: the amounts live in event_income, hydrated once they arrive. */
   useEffect(() => {
-    if (!open || !event || !eventIncome) return
-    const income: Record<string, string> = {}
-    for (const r of eventIncome) income[r.category_id] = String(r.amount)
-    setForm((f) => ({ ...f, income }))
-  }, [open, event, eventIncome])
+    if (!openKey || seeded.current.income || !event || !eventIncome) return
+    seeded.current.income = true
+    setForm((f) => ({ ...f, income: incomeValuesFromRows(eventIncome) }))
+  }, [openKey, event, eventIncome])
 
   /** Edit mode: the section values live on the auto-created tasks, not on the event. */
   useEffect(() => {
-    if (!open || !event || !autoTasks) return
-    const patch: Partial<EventForm> = {}
-    for (const { code } of SECTIONS) {
-      const t = autoTasks.find((x) => x.task_types.code === code)
-      patch[`${code}_date`] = t?.task_date ?? ''
-      patch[`${code}_time`] = t?.onsite_start_time?.slice(0, 5) ?? ''
-      patch[`${code}_worker_count`] = t?.worker_count ? String(t.worker_count) : ''
-      patch[`${code}_hours_count`] = t?.hours_count != null ? String(t.hours_count) : ''
-      patch[`${code}_execution_method`] = t?.execution_method_id ?? ''
-      patch[`${code}_price`] = t?.price != null ? String(t.price) : ''
-    }
-    setForm((f) => ({ ...f, ...patch }))
-  }, [open, event, autoTasks])
+    if (!openKey || seeded.current.sections || !event || !autoTasks) return
+    seeded.current.sections = true
+    setForm((f) => ({ ...f, ...sectionValuesFromTasks(autoTasks) }))
+  }, [openKey, event, autoTasks])
 
   /**
    * אופן הביצוע שהלקוח עובד בו בדרך כלל (0111) — מוקדם לבורר באירוע חדש.

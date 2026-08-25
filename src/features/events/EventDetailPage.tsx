@@ -234,6 +234,11 @@ export default function EventDetailPage() {
     onError: (e) => toast.error(errorMessage(e)),
   })
 
+  /* נגזר מהשאילתה ולא נבנה בתוך ה-JSX: `.map()` שם מייצר מערך חדש בכל
+     רינדור, כלומר prop שמתחלף בלי ששום דבר השתנה. יושב מעל ה-early return
+     כי hook מתחתיו הוא הפרה של rules-of-hooks. */
+  const supplierIds = useMemo(() => (data?.suppliers ?? []).map((s) => s.supplier_id), [data])
+
   const columns = useMemo<Column<WorkBoardRow>[]>(
     () => [
       {
@@ -1038,7 +1043,7 @@ export default function EventDetailPage() {
         }}
         event={event}
         contact={contact}
-        supplierIds={suppliers.map((s) => s.supplier_id)}
+        supplierIds={supplierIds}
       />
       <EventSpecsModal
         eventId={event.id}
