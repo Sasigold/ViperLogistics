@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Banknote, Check, Clock, ICON, MapPin, Package, PartyPopper, Phone, SlidersHorizontal, STROKE, User } from '../../components/ui/icons'
+import { Banknote, Check, Clock, ICON, MapPin, Package, Paperclip, PartyPopper, Phone, SlidersHorizontal, STROKE, User } from '../../components/ui/icons'
 import {
   Button,
   Card,
@@ -37,6 +37,10 @@ import {
 import { AddressAutocomplete } from './AddressAutocomplete'
 import { CustomFieldInput, isBlank, toFormValues, toPayloadValue } from './CustomFieldInput'
 import type { CustomFormValue } from './CustomFieldInput'
+import { SpecPicker } from './SpecPicker'
+import { emptySpecDraft, specDraftIsEmpty, specDraftLiveProblem, specDraftProblem } from './specs'
+import type { SpecDraft } from './specs'
+import { uploadSpec } from './specQueries'
 import type { EventRow, ExecutionMethod } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
@@ -188,6 +192,14 @@ export function EventFormModal({
   const [form, setForm] = useState<EventForm>(empty)
   const [step, setStep] = useState(0)
   const [touched, setTouched] = useState(false)
+  /**
+   * המפרט של אירוע חדש — מחוץ ל-`form` במכוון.
+   *
+   * הטופס נשמר כטיוטה ב-localStorage דרך JSON.stringify, ו-File אינו עובר שם:
+   * הוא היה נשמר כאובייקט ריק וחוזר בפתיחה הבאה כקובץ שאינו קיים. הבחירה
+   * חיה כל עוד המודאל פתוח, וזה בדיוק אורך החיים של הקובץ עצמו.
+   */
+  const [spec, setSpec] = useState<SpecDraft>(emptySpecDraft)
 
   const { data: customers = [] } = useCustomers()
   const { data: statuses = [] } = useStatuses('event')
@@ -227,6 +239,18 @@ export function EventFormModal({
   const { data: incomeSplits = [] } = useCustomerIncomeSplits(effectiveCustomerId)
   const { data: eventIncome } = useEventIncome(open && event ? event.id : null)
   const canEditIncome = has(PERM.FINANCE_INCOME_EDIT)
+  /**
+   * מפרט כבר בטופס היצירה (0113).
+   *
+   * המפרט נולד אצל הלקוח, ומי שפותח אירוע כבר מחזיק אותו ביד — לשלוח אותו
+   * בצעד נפרד, אחרי שמירה, מתוך מסך אחר, זה מה שגרם לו להישלח בוואטסאפ
+   * במקום. אותו מפתח שההעלאה במסך המפרט נשענת עליו, ולכן מי שאינו מעלה שם
+   * אינו רואה כאן צעד.
+   *
+   * ביצירה בלבד: לאירוע קיים ההעלאה יושבת במסך המפרט, שם יש גם היסטוריית
+   * גרסאות והשוואה — ושם היא "גרסה חדשה" ולא "המפרט".
+   */
+  const canUploadSpec = has(PERM.EVENTS_SPECS_UPLOAD) && !event
   const enabledCategories = useMemo(
     () =>
       incomeCategories.filter((c) => c.is_active && incomeSplits.some((s) => s.category_id === c.id)),
@@ -237,6 +261,7 @@ export function EventFormModal({
     if (!open) return
     setStep(0)
     setTouched(false)
+    setSpec(emptySpecDraft)
     if (event) {
       setForm({
         ...empty,
@@ -374,8 +399,13 @@ export function EventFormModal({
     if (enabledCategories.length > 0 && canEditIncome) {
       all.push({ key: 'income', label: 'הכנסות לפי קטגוריה', icon: Banknote, fields: [] })
     }
-    return all.filter((s) => s.key === 'income' || s.fields.some((f) => show(f)))
-  }, [show, customFields, enabledCategories, canEditIncome])
+    /* גם הוא אינו form_field — קיומו הוא שאלת הרשאה בלבד, ולכן הוא עוקף את
+       מסנן show(). אחרון: הוא צירוף לאירוע, ולא פרט שלו. */
+    if (canUploadSpec) {
+      all.push({ key: 'spec', label: 'מפרט', icon: Paperclip, fields: [] })
+    }
+    return all.filter((s) => s.fields.length === 0 || s.fields.some((f) => show(f)))
+  }, [show, customFields, enabledCategories, canEditIncome, canUploadSpec])
 
   /** A step is incomplete when a field the customer marked "required" is empty. */
   const missingIn = (stepKey: string): string[] => {
@@ -489,16 +519,40 @@ export function EventFormModal({
       if (event) {
         const { error } = await supabase.rpc('update_event', { p_event_id: event.id, payload })
         if (error) throw error
-        return event.id
+        return { id: event.id, specError: null as string | null }
       }
       const { data, error } = await supabase.rpc('create_event', { payload })
       if (error) throw error
-      return data as string
+      const id = data as string
+
+      /**
+       * המפרט עולה אחרי היצירה, ולא יכול אחרת: הנתיב בדלי מתחיל במזהה
+       * האירוע (0077), והפוליסה קוראת אותו משם — לפני היצירה אין לקובץ
+       * לאן ללכת.
+       *
+       * כישלון כאן אינו מבטל אירוע שכבר נוצר, ולכן הוא אינו נזרק: הוא חוזר
+       * כאזהרה. האירוע קיים, המשימות שלו נוצרו, והמפרט נשאר להעלאה מכרטיס
+       * האירוע — זה מדויק יותר מ"היצירה נכשלה" על אירוע שיושב במסד.
+       */
+      if (canUploadSpec && !specDraftIsEmpty(spec)) {
+        try {
+          await uploadSpec(id, spec)
+        } catch (e) {
+          return { id, specError: errorMessage(e) }
+        }
+      }
+      return { id, specError: null as string | null }
     },
-    onSuccess: () => {
-      toast.success(event ? 'האירוע עודכן' : 'האירוע נוצר', {
-        description: event ? undefined : 'משימות הקמה ופירוק נוצרו אוטומטית',
-      })
+    onSuccess: ({ specError }) => {
+      if (specError) {
+        toast.warning('האירוע נוצר, אך המפרט לא הועלה', {
+          description: `${specError} — אפשר להעלות אותו מכרטיס האירוע`,
+        })
+      } else {
+        toast.success(event ? 'האירוע עודכן' : 'האירוע נוצר', {
+          description: event ? undefined : 'משימות הקמה ופירוק נוצרו אוטומטית',
+        })
+      }
       localStorage.removeItem(draftKey(me?.profile.id))
       void qc.invalidateQueries({ queryKey: ['events'] })
       void qc.invalidateQueries({ queryKey: ['tasks'] })
@@ -511,12 +565,23 @@ export function EventFormModal({
     onError: (e) => toast.error(errorMessage(e)),
   })
 
+  /* המפרט אינו חובה, ולכן הוא לעולם אינו "שדה חסר". קובץ גדול מדי או כתובת
+     שאינה כתובת הם דבר אחר: הם ייכשלו בשרת, ועדיף לומר את זה לפני שהאירוע
+     נוצר. */
+  const specProblem = canUploadSpec ? specDraftProblem(spec, false) : null
+
   const submit = () => {
     setTouched(true)
     if (allMissing.length > 0) {
       const firstBad = stepMissing.findIndex((m) => m.length > 0)
       setStep(firstBad)
       toast.warning('חסרים שדות חובה', { description: allMissing.join(', ') })
+      return
+    }
+    if (specProblem) {
+      const i = steps.findIndex((s) => s.key === 'spec')
+      if (i >= 0) setStep(i)
+      toast.warning('המפרט אינו תקין', { description: specProblem })
       return
     }
     save.mutate()
@@ -852,6 +917,25 @@ export function EventFormModal({
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* ── מפרט האירוע ────────────────────────────────────────────────────
+          קובץ אחד או קישור אחד, ולא היסטוריה: כאן זו הגרסה הראשונה, ובמסך
+          המפרט של האירוע ממשיכים ממנה. הבחירה נשלחת אחרי שהאירוע נוצר.  */}
+      {current?.key === 'spec' && (
+        <div className="animate-fade-in space-y-4">
+          <p className="type-caption text-ink-secondary">
+            אפשר לצרף את המפרט כבר עכשיו — PDF, תמונה או קישור למסמך. הוא יישמר כגרסה
+            הראשונה של האירוע, וכל עדכון אחריו יישמר לצידה כגרסה חדשה. השדה אינו חובה.
+          </p>
+          <SpecPicker
+            value={spec}
+            onChange={setSpec}
+            problem={specDraftLiveProblem(spec, touched, false)}
+            disabled={save.isPending}
+            hint="תישמר כגרסה 1"
+          />
         </div>
       )}
 

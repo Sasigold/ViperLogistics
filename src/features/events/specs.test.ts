@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   SPEC_MAX_BYTES,
   currentSpec,
+  emptySpecDraft,
   formatBytes,
   pickCompareDefaults,
+  specDraftIsEmpty,
+  specDraftLiveProblem,
+  specDraftProblem,
   specLabel,
   specStoragePath,
   specViewerKind,
@@ -11,6 +15,7 @@ import {
   validateSpecFile,
   validateSpecUrl,
 } from './specs'
+import type { SpecDraft } from './specs'
 import type { EventSpec } from '../../types/domain'
 
 const EVENT = '30000000-0000-0000-0000-000000000016'
@@ -186,5 +191,73 @@ describe('formatBytes', () => {
   it('says nothing when the size is unknown', () => {
     expect(formatBytes(null)).toBe('')
     expect(formatBytes(0)).toBe('')
+  })
+})
+
+/* ===== טיוטת מפרט בטופס ==================================================
+ * אותה טיוטה מוגשת משני מקומות, והשוני היחיד ביניהם הוא מה קורה כשהיא ריקה:
+ * במסך המפרט הטופס *הוא* ההעלאה, ובטופס יצירת האירוע המפרט הוא תוספת. */
+
+const draft = (over: Partial<SpecDraft> = {}): SpecDraft => ({ ...emptySpecDraft, ...over })
+
+const file = (name: string, type: string, size: number): File =>
+  ({ name, type, size }) as File
+
+describe('specDraftIsEmpty', () => {
+  it('reads only the active tab', () => {
+    expect(specDraftIsEmpty(emptySpecDraft)).toBe(true)
+    expect(specDraftIsEmpty(draft({ file: file('a.pdf', 'application/pdf', 10) }))).toBe(false)
+    // כתובת שהוקלדה ואז המשתמש חזר ללשונית הקובץ אינה נחשבת בחירה
+    expect(specDraftIsEmpty(draft({ url: 'https://x.test/a' }))).toBe(true)
+    expect(specDraftIsEmpty(draft({ source: 'link', url: 'https://x.test/a' }))).toBe(false)
+  })
+
+  it('does not count whitespace as a link', () => {
+    expect(specDraftIsEmpty(draft({ source: 'link', url: '   ' }))).toBe(true)
+  })
+})
+
+describe('specDraftProblem', () => {
+  it('lets an empty draft pass only where the spec is optional', () => {
+    expect(specDraftProblem(emptySpecDraft, false)).toBeNull()
+    expect(specDraftProblem(emptySpecDraft, true)).toBe('צריך לבחור קובץ')
+    expect(specDraftProblem(draft({ source: 'link' }), true)).toBe('צריך להזין כתובת')
+  })
+
+  it('applies the file and link rules to a draft that is not empty', () => {
+    expect(specDraftProblem(draft({ file: file('a.pdf', 'application/pdf', 10) }), false)).toBeNull()
+    expect(specDraftProblem(draft({ file: file('a.zip', 'application/zip', 10) }), false)).toBe(
+      'אפשר להעלות PDF או תמונה בלבד',
+    )
+    expect(specDraftProblem(draft({ source: 'link', url: 'ftp://x.test/a' }), false)).toBe(
+      'הכתובת צריכה להתחיל ב-https://',
+    )
+  })
+
+  /** קובץ שנדחה בשרת אחרי שהמשתמש חיכה לו הוא בדיוק מה שהבדיקה כאן חוסכת. */
+  it('rejects a file over the bucket limit', () => {
+    expect(specDraftProblem(draft({ file: file('a.pdf', 'application/pdf', SPEC_MAX_BYTES + 1) }), false)).toContain(
+      '25MB',
+    )
+  })
+})
+
+describe('specDraftLiveProblem', () => {
+  it('pronounces a bad file the moment it is chosen', () => {
+    expect(specDraftLiveProblem(draft({ file: file('a.zip', 'application/zip', 10) }), false, false)).toBe(
+      'אפשר להעלות PDF או תמונה בלבד',
+    )
+  })
+
+  /** כתובת נבנית תו-תו, ו"אינה תקינה" באמצע ההקלדה הוא ניקור ולא עזרה. */
+  it('holds its tongue about a link until the form is submitted', () => {
+    const half = draft({ source: 'link', url: 'https:/' })
+    expect(specDraftLiveProblem(half, false, true)).toBeNull()
+    expect(specDraftLiveProblem(half, true, true)).toBe('הכתובת אינה תקינה')
+  })
+
+  it('never demands a spec the form did not require', () => {
+    expect(specDraftLiveProblem(emptySpecDraft, true, false)).toBeNull()
+    expect(specDraftLiveProblem(draft({ source: 'link' }), true, true)).toBe('צריך להזין כתובת')
   })
 })

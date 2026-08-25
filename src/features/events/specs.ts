@@ -73,6 +73,55 @@ export function validateSpecUrl(raw: string): string | null {
   return null
 }
 
+/* ===== טיוטת מפרט בטופס =================================================== */
+
+/**
+ * מה שיושב במסך לפני שיש שורה במסד.
+ *
+ * אותו מבנה משמש שני הקשרים: העלאת גרסה לאירוע קיים (מסך המפרט), ומפרט
+ * שנבחר בטופס יצירת האירוע ועולה מיד אחרי שנוצר לו event_id. ההפרדה בין
+ * השניים היא שאלה אחת — האם ריק הוא שגיאה — והיא הפרמטר `required` למטה.
+ */
+export interface SpecDraft {
+  source: 'file' | 'link'
+  file: File | null
+  url: string
+  title: string
+}
+
+export const emptySpecDraft: SpecDraft = { source: 'file', file: null, url: '', title: '' }
+
+/** האם נבחר משהו בלשונית הפעילה. מה שהוקלד בלשונית השנייה אינו נחשב. */
+export function specDraftIsEmpty(draft: SpecDraft): boolean {
+  return draft.source === 'file' ? !draft.file : !draft.url.trim()
+}
+
+/**
+ * null = אפשר לשלוח.
+ *
+ * במסך המפרט הטופס *הוא* ההעלאה, ולכן ריק הוא שגיאה; בטופס יצירת האירוע
+ * המפרט הוא תוספת, וריק פירושו "בלי מפרט".
+ */
+export function specDraftProblem(draft: SpecDraft, required: boolean): string | null {
+  if (specDraftIsEmpty(draft)) {
+    if (!required) return null
+    return draft.source === 'file' ? 'צריך לבחור קובץ' : 'צריך להזין כתובת'
+  }
+  return draft.source === 'file' ? validateSpecFile(draft.file!) : validateSpecUrl(draft.url)
+}
+
+/**
+ * מה מוצג בזמן ההקלדה, להבדיל ממה שחוסם שליחה.
+ *
+ * קובץ נבחר במחוות אחת ואפשר לפסול אותו מיד; כתובת נבנית תו-תו, ו"הכתובת
+ * אינה תקינה" אחרי ‏`https:/` הוא ניקור ולא עזרה — ולכן היא נבדקת רק אחרי
+ * ניסיון שליחה.
+ */
+export function specDraftLiveProblem(draft: SpecDraft, attempted: boolean, required: boolean): string | null {
+  if (draft.source === 'link' && !attempted) return null
+  return specDraftProblem(draft, attempted && required)
+}
+
 /**
  * הנתיב בדלי. התיקייה הראשונה היא מזהה האירוע — זה החוזה שפוליסת ה-Storage
  * קוראת ממנו (0077), ולכן הוא נבנה כאן ולא נלקח מהמשתמש.
