@@ -216,6 +216,94 @@ OUT="$OUT
 $OUT18"
 
 echo
+echo "== realtime sync suite =="
+# 20 מקימה לקוח, קבלן, אירוע ושישה פרופילים משלה ואינה נשענת על אף חבילה
+# קודמת. היא מרוקנת את realtime.messages בין תרחישים — אף חבילה אחרת אינה
+# קוראת את הטבלה — והאירוע שלה יושב ב-current_date+340, מעבר לכל טווח אחר.
+OUT19=$($PSQL -d vl -f "$HERE/20_realtime_sync.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT19"
+OUT="$OUT
+$OUT19"
+
+echo
+echo "== event signature suite =="
+# 21 מקימה לקוח, אירוע ושש דמויות משלה ואינה נשענת על אף חבילה קודמת. היא רצה
+# אחרונה כי היא מזריעה משימות, שיבוצים וחתימות שאינם מנוקים, וסופרת את שורות
+# היומן של האירוע שלה. האירוע יושב ב-current_date+350, מעבר לכל טווח אחר.
+OUT20=$($PSQL -d vl -f "$HERE/21_event_signature.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT20"
+OUT="$OUT
+$OUT20"
+
+echo
+echo "== contractor hats & penalties suite =="
+# 22 מקימה קבלן, לקוח, אירוע, משימות ושלוש דמויות משלה ואינה נשענת על אף חבילה
+# קודמת. היא רצה אחרונה כי היא מזריעה שיבוצים ותמחור שאינם מנוקים, והאירוע שלה
+# יושב ב-current_date+360, מעבר לכל טווח אחר.
+OUT21=$($PSQL -d vl -f "$HERE/22_contractor_hats_and_penalties.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT21"
+OUT="$OUT
+$OUT21"
+
+echo
+echo "== customer board & approval suite =="
+# 23 מקימה שני לקוחות, אירועים, משימות וארבע דמויות משלה ואינה נשענת על אף
+# חבילה קודמת. היא רצה אחרונה כי היא מזריעה תמחור וקונפיגורציית שדות שאינם
+# מנוקים, והאירועים שלה יושבים ב-current_date+370.
+OUT23=$($PSQL -d vl -f "$HERE/23_customer_board_and_approval.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT23"
+OUT="$OUT
+$OUT23"
+
+echo
+echo "== office defaults suite =="
+# 24 מקימה לקוח, קבלן, אופני ביצוע ואירוע משלה. היא רצה אחרונה כי היא מזריעה
+# אופני ביצוע גלובליים ומסתירה שדה טופס, ושניהם אינם מנוקים אחריה.
+OUT24=$($PSQL -d vl -f "$HERE/24_office_defaults.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT24"
+OUT="$OUT
+$OUT24"
+
+echo
+echo "== price add-ons suite =="
+# 25 מקימה לקוח, קבלן, אירוע, משימות וארבע דמויות משלה. היא רצה אחרונה כי היא
+# סופרת את שורות היומן של האירוע שלה ומשאירה אחריה תוספות שאינן מנוקות.
+# האירוע שלה יושב ב-current_date+410.
+OUT25=$($PSQL -d vl -f "$HERE/25_price_addons.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT25"
+OUT="$OUT
+$OUT25"
+
+echo
+echo "== cancelled events and price add-ons suite =="
+# 26 מקימה לקוח, שלושה אירועים ומשימות משלה, והאירועים שלה יושבים ב-
+# current_date+420 — מעבר לכל טווח קודם, כדי שכל מספר בה יהיה של השורות שלה
+# בלבד. היא רצה אחרונה כי היא מזריעה תוספות מחיר שאינן מנוקות אחריה.
+OUT26=$($PSQL -d vl -f "$HERE/26_cancelled_and_addons.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT26"
+OUT="$OUT
+$OUT26"
+
+echo
+echo "== customer trucks and status suite =="
+# 27 מקימה לקוח, אירוע, משאיות ומשימות משלה, ב-current_date+430. היא רצה
+# אחרונה כי היא פותחת שדות לו״ז ללקוח שלה ומזריעה משאיות גלובליות שאינן
+# מנוקות אחריה.
+OUT27=$($PSQL -d vl -f "$HERE/27_customer_trucks_and_status.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT27"
+OUT="$OUT
+$OUT27"
+
+echo
+echo "== transport-only pricing suite =="
+# 28 מקימה לקוח, אופני ביצוע, מחשבון ומשימות משלה ב-current_date+440. היא רצה
+# אחרונה כי היא מזריעה אופני ביצוע גלובליים ומחשבון שאינם מנוקים אחריה.
+OUT28=$($PSQL -d vl -f "$HERE/28_transport_only_pricing.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT28"
+OUT="$OUT
+$OUT28"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

@@ -192,8 +192,9 @@ export function UnderstaffedWidget(_props: WidgetProps) {
             {data.rows.map((r) => (
               <li key={r.id}>
                 <button
-                  onClick={() => openTask(r.id)}
-                  className="flex w-full items-center gap-2.5 border-b border-line-subtle px-4 py-2.5 text-start transition-colors last:border-0 hover:bg-hover"
+                  onClick={() => openTask?.(r.id)}
+                  disabled={!openTask}
+                  className="flex w-full items-center gap-2.5 border-b border-line-subtle px-4 py-2.5 text-start transition-colors last:border-0 hover:bg-hover disabled:cursor-default disabled:hover:bg-transparent"
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate type-body font-medium">{r.label ?? 'ללא שם'}</span>

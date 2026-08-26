@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Banknote, Briefcase, Clock, ICON, Plus, STROKE, Trash2, User, Wallet } from '../../components/ui/icons'
+import {
+  Banknote,
+  Briefcase,
+  Clock,
+  ICON,
+  Plus,
+  STROKE,
+  SlidersHorizontal,
+  Trash2,
+  User,
+  Wallet,
+} from '../../components/ui/icons'
 import {
   Avatar,
   Badge,
@@ -32,6 +43,7 @@ import { supabase, invokeFunction } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { useContractorAssignableWorkers, useContractorWorkers } from '../../lib/queries'
 import { fmtDate, fmtMoney } from '../../lib/dates'
+import { EmployeeWorkSettingsCard } from '../attendance/EmployeeWorkSettingsCard'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
@@ -299,6 +311,15 @@ export function WorkersTab({
   const toast = useToast()
   const has = useAuth((s) => s.has)
   const mayManage = canManage ?? has(PERM.CONTRACTORS_MANAGE_WORKERS)
+  /**
+   * מה שהקבלן עושה בסגל שלו, ומה שנשאר של המשרד.
+   *
+   * ‏`portal.manage_workers` פותח לו את המסך: לראות מי בסגל ולהוסיף עובד.
+   * מעקב האיחורים והסרה מהסגל אינם שם — הראשון קובע על מי חל קנס האיחור
+   * *שלו* (0091), והשני מוחק שורה שנוכחות ותשלומים מצביעים עליה. שניהם
+   * נשארים מאחורי המפתח המשרדי.
+   */
+  const mayManageTerms = has(PERM.CONTRACTORS_MANAGE_WORKERS)
   // יצירת חשבון היא פעולה של המשרד, לא של הקבלן — ולכן מפתח users ולא portal.
   const canCreateLogin = has(PERM.USERS_CREATE_LOGIN) && has(PERM.USERS_CREATE)
   const { confirm, dialog } = useConfirm()
@@ -321,6 +342,19 @@ export function WorkersTab({
     () => new Set(assignable.filter((a) => a.has_login && a.worker_id).map((a) => a.worker_id as string)),
     [assignable],
   )
+  /* שורת סגל → חשבון. הגדרות השכר והשעון יושבות על `profile_id`, ולכן הן
+     קיימות רק לעובד שיש לו התחברות — למי שאין, אין שעון ואין שורת שכר. */
+  const profileOf = useMemo(
+    () =>
+      new Map(
+        assignable
+          .filter((a) => a.worker_id && a.profile_id)
+          .map((a) => [a.worker_id as string, a.profile_id as string]),
+      ),
+    [assignable],
+  )
+  const canSettings = has(PERM.ATTENDANCE_MANAGE_PAY) || has(PERM.ATTENDANCE_MANAGE_CLOCK) || has(PERM.PORTAL_WORKER_SETTINGS)
+  const [settingsFor, setSettingsFor] = useState<{ name: string; profileId: string } | null>(null)
 
   const add = useMutation({
     mutationFn: async () => {
@@ -416,12 +450,24 @@ export function WorkersTab({
                     {[w.phone, w.id_number].filter(Boolean).join(' · ') || '—'}
                   </p>
                 </div>
-                {mayManage && (
+                {mayManageTerms && (
                   <Switch
                     checked={w.lateness_tracked}
                     onChange={(on) => toggleLateness.mutate({ id: w.id, on })}
                     label="מעקב איחורים"
                   />
+                )}
+                {/* הגדרות שכר ושעון של העובד — לעובד שיש לו חשבון. במשרד זה
+                    המפתח המשרדי; אצל הקבלן `portal.worker_settings`, שההיקף
+                    שלו הוא הסגל שלו בלבד ונאכף בשרת (0103). */}
+                {canSettings && profileOf.has(w.id) && (
+                  <IconButton
+                    label={`הגדרות שכר ושעון ל${w.full_name}`}
+                    size="sm"
+                    onClick={() => setSettingsFor({ name: w.full_name, profileId: profileOf.get(w.id)! })}
+                  >
+                    <SlidersHorizontal size={ICON.sm} strokeWidth={STROKE} />
+                  </IconButton>
                 )}
                 {hasLogin.has(w.id) ? (
                   <Badge tone="success">שעון נוכחות</Badge>
@@ -433,7 +479,7 @@ export function WorkersTab({
                     </Button>
                   )
                 )}
-                {mayManage && (
+                {mayManageTerms && (
                   <IconButton label={`הסרת ${w.full_name}`} size="sm" onClick={() => void remove(w)} className="hover:text-error">
                     <Trash2 size={ICON.sm} strokeWidth={STROKE} />
                   </IconButton>
@@ -450,6 +496,17 @@ export function WorkersTab({
           onClose={() => setClockFor(null)}
           onDone={() => void qc.invalidateQueries({ queryKey: ['profiles'] })}
         />
+      )}
+      {settingsFor && (
+        <Modal
+          open
+          onClose={() => setSettingsFor(null)}
+          size="lg"
+          title={`הגדרות שכר ושעון — ${settingsFor.name}`}
+          footer={<Button onClick={() => setSettingsFor(null)}>סגירה</Button>}
+        >
+          <EmployeeWorkSettingsCard profileId={settingsFor.profileId} />
+        </Modal>
       )}
     </Card>
   )
@@ -596,7 +653,10 @@ function TasksTab({ contractorId }: { contractorId: string }) {
       const { error } = await supabase
         .from('task_contractor_terms')
         .update(paid ? { paid_at: new Date().toISOString(), paid_amount: row?.price ?? 0 } : { paid_at: null, paid_amount: null })
+        /* ‏0096: למשימה יכולות להיות כמה שורות terms — מסמנים תשלום רק על
+           השורה של הקבלן הזה, לא על כל הקבלנים במשימה. */
         .eq('task_id', taskId)
+        .eq('contractor_id', contractorId)
       if (error) throw error
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['contractor_terms'] }),
@@ -605,7 +665,11 @@ function TasksTab({ contractorId }: { contractorId: string }) {
 
   const updatePrice = useMutation({
     mutationFn: async ({ taskId, price }: { taskId: string; price: number }) => {
-      const { error } = await supabase.from('task_contractor_terms').update({ price }).eq('task_id', taskId)
+      const { error } = await supabase
+        .from('task_contractor_terms')
+        .update({ price })
+        .eq('task_id', taskId)
+        .eq('contractor_id', contractorId)
       if (error) throw error
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['contractor_terms'] }),

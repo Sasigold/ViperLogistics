@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { addMonths, differenceInCalendarDays, eachDayOfInterval, endOfMonth, isSameMonth, parseISO, startOfMonth } from 'date-fns'
 import {
-  AlertTriangle,
   CalendarCheck,
   CalendarDays,
   ChevronDown,
@@ -13,12 +12,14 @@ import {
   ChevronUp,
   Columns3,
   Filter,
+  HardHat,
   ICON,
   MapPin,
   Plus,
   STROKE,
   Search,
   SlidersHorizontal,
+  Users,
 } from '../../components/ui/icons'
 import {
   Button,
@@ -40,30 +41,31 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import {
-  useContractorWorkerAssign,
   useContractors,
   useCustomers,
   useExecutionMethods,
   useStaff,
   useStatuses,
   useTaskTypes,
+  useCustomerTrucks,
   useTrucks,
 } from '../../lib/queries'
-import { fmtDate, fmtMonth, fmtTime, toISODate } from '../../lib/dates'
+import { fmtDate, fmtMonth, fmtTime, fmtWeekday, fmtWeekdayShort, toISODate } from '../../lib/dates'
 import { shortAddress } from '../../lib/address'
 import { NEUTRAL, readableOn } from '../../lib/colors'
 import { useIsMobile } from '../../lib/useMediaQuery'
 import { useDragScroll } from '../../lib/useDragScroll'
 import { KIND_LABEL, holidaysInRange, isDayOff } from '../../lib/hebrewHolidays'
 import type { Holiday } from '../../lib/hebrewHolidays'
-import { TaskDrawer } from '../tasks/TaskDrawer'
+import { TaskDrawer, useCanOpenTaskCard } from '../tasks/TaskDrawer'
+import { ContractorPanel, StaffingPanel } from '../tasks/taskPanels'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
-import { BOARD_FIELDS, DEFAULT_HIDDEN_FIELDS } from './boardFields'
+import { BOARD_FIELDS } from './boardFields'
 import type { BoardLookups } from './boardFields'
-import { COLOR_BY_OPTIONS, buildTones, clusterDay, isOverdue } from './grouping'
+import { COLOR_BY_OPTIONS, buildTones, byTaskTime, clusterDay } from './grouping'
 import type { Cluster, ColorBy, GroupTone } from './grouping'
-import type { StaffRole, TaskRow, WorkBoardRow } from '../../types/domain'
+import type { CustomerTruck, TaskRow, Truck, WorkBoardRow } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
 /* ── geometry ─────────────────────────────────────────────────────────────
@@ -71,7 +73,8 @@ import { errorMessage } from '../../lib/errors'
    legend on the inline-start edge is sticky and never scrolls away.       */
 
 const SPINE_W = 46
-const DAY_HEAD_H = 30
+/** שתי שורות: היום בשבוע (והחג, אם יש) מעל התאריך */
+const DAY_HEAD_H = 42
 /** breathing room between one day's run of columns and the next day's */
 const DAY_GAP = 10
 
@@ -81,6 +84,28 @@ const MAX_EMPTY_DAY_SPAN = 120
 
 /** the crumb of air above and below the team cell's list of names */
 const TEAM_ROW_PAD = 4
+
+/**
+ * הגג של שורת ההערות, בשורות טקסט.
+ *
+ * ההערה היא השדה היחיד בלוח שהוא פרוזה, ולכן היא גם השדה היחיד שאפשר לכתוב
+ * בו פסקה. השורה גדלה אל ההערה הארוכה ביותר שעל המסך — אבל לא בלי גבול:
+ * הערה אחת בת מאה מילים הייתה דוחפת את כל שאר השדות מהמסך לכל שאר הימים.
+ * מה שלא נכנס נשאר לחיצה אחת משם, בבועה של התא.
+ */
+const MAX_NOTE_LINES = 6
+
+/**
+ * כמה תווים נכנסים בשורה אחת של תא, לפי רוחב העמודה וגודל הטופוגרפיה.
+ *
+ * הערכה ולא מדידה, ובכוונה: מדידה אמיתית מחייבת לצייר קודם, והלוח מוירטואל —
+ * העמודה שהערתה הארוכה ביותר יושבת בה אינה בהכרח מצוירת. ‏0.52 מגודל הגופן
+ * הוא הרוחב הממוצע של תו עברי ב-Heebo, והשגיאה לכל כיוון עולה שורה אחת:
+ * אם ההערכה נמוכה מדי הבועה נשארת (כמו קודם), ואם היא גבוהה מדי נשאר אוויר.
+ */
+function charsPerLine(colWidth: number, fontPx: number) {
+  return Math.max(8, Math.floor((colWidth - 14) / (fontPx * 0.52)))
+}
 
 /**
  * How long a press on a column's name waits to see whether a second one is
@@ -158,6 +183,8 @@ const PREFS_KEY = 'vl-board-prefs'
  * קבוע יחיד שומר על זהות יציבה, והשרשרת נחה עד שיש נתונים אמיתיים.
  */
 const EMPTY: never[] = []
+/* מפורד מ-EMPTY כדי שההיסק לא ייפול על never[] בשדה מוטיפס */
+const EMPTY_CT: CustomerTruck[] = []
 
 interface Prefs {
   hidden?: string[]
@@ -187,7 +214,7 @@ function loadPrefs(): Prefs {
  * בתפקיד אחר הייתה משנה מסך שאין בו כפתור להחזיר אותה.
  */
 const FIXED_VIEW: Required<Prefs> = {
-  hidden: DEFAULT_HIDDEN_FIELDS,
+  hidden: [],
   view: 'grid',
   colorBy: 'event',
   emptyDays: true,
@@ -250,59 +277,8 @@ function useInlineUpdate() {
   })
 }
 
-/**
- * Staffing is not a column on `tasks`, so the staffing cells cannot ride the
- * patch above: a team lead, a worker and a driver are each a row in
- * `task_assignments`, and RLS there is granular per role. One row in, one row
- * out — no read-modify-write of the whole set, so two dispatchers assigning
- * two different people at the same moment do not overwrite each other.
- */
-function useAssignmentUpdate() {
-  const qc = useQueryClient()
-  const toast = useToast()
-  return useMutation({
-    mutationFn: async ({
-      row,
-      role,
-      profileId,
-      on,
-    }: {
-      row: WorkBoardRow
-      role: StaffRole
-      profileId: string
-      on: boolean
-    }) => {
-      if (!on) {
-        const { error } = await supabase
-          .from('task_assignments')
-          .delete()
-          .eq('task_id', row.id)
-          .eq('profile_id', profileId)
-          .eq('role', role)
-        if (error) throw error
-        return
-      }
-      /* one lead per task is a unique index, so the seat is cleared first */
-      if (role === 'team_lead') {
-        const { error } = await supabase
-          .from('task_assignments')
-          .delete()
-          .eq('task_id', row.id)
-          .eq('role', 'team_lead')
-        if (error) throw error
-      }
-      const { error } = await supabase
-        .from('task_assignments')
-        .insert({ task_id: row.id, profile_id: profileId, role, work_site: 'field' })
-      if (error) throw error
-    },
-    onSettled: () => void qc.invalidateQueries({ queryKey: ['workboard'] }),
-    onError: (e) => toast.error(errorMessage(e)),
-  })
-}
-
 export default function WorkBoardPage() {
-  const { has, me } = useAuth()
+  const { has, me, boardFieldState } = useAuth()
   /* מנהל הקבלן: עמודת "קבלן" מיותרת לו — אם הוא רואה את המשימה, היא שלו.
      במקומה הלוח מציג לו את "כמות עובדים" שהוא צריך להביא (0091). */
   const isContractor = !!me?.profile.contractor_id || me?.profile.user_kind === 'contractor_user'
@@ -317,7 +293,13 @@ export default function WorkBoardPage() {
    */
   const canFilter = has(PERM.BOARD_FILTER)
   const canTune = has(PERM.BOARD_COLUMNS)
-  const canOpenTask = has(PERM.BOARD_OPEN_TASK)
+  /* ‏0108: הכרטיס המלא הוא של מנהל המערכת. `board.open_task` נשאר השער
+     השני — מי שאינו אדמין ממשיך ליפול לדף האירוע, כמו קודם. */
+  const canOpenTaskCard = useCanOpenTaskCard()
+  const canOpenTask = has(PERM.BOARD_OPEN_TASK) && canOpenTaskCard
+  /* משימה חדשה נפתחת באותו כרטיס, ולכן היא הולכת אחריו — כפתור שפותח מגירה
+     שלא תיפתח גרוע מכפתור שאינו שם. */
+  const canCreateTask = has(PERM.TASKS_CREATE) && canOpenTaskCard
   const navigate = useNavigate()
   /**
    * Resolved per cell rather than once for the board: a field carries the key
@@ -329,12 +311,35 @@ export default function WorkBoardPage() {
     [canInline, has],
   )
   /**
+   * אותה שאלה, פר-שדה, אחרי ש-0109 הוסיף שכבה שנייה.
+   *
+   * ‏`canEditCell` שואלת על המפתח; זו שואלת גם על מה שמנהל המערכת קבע ללקוח
+   * הזה. שתיהן חייבות להסכים, כי הראשונה לבדה כבר אינה מה שהשרת יאמר: הטריגר
+   * ‏`app.enforce_customer_board_edit` דוחה כתיבה לשדה שאינו `editable` גם
+   * כשהמפתח קיים. תא שנראה פתוח ונדחה בשמירה גרוע מתא שנראה נעול.
+   */
+  const canEditField = useCallback(
+    (key: string, perm?: string) => canEditCell(perm) && boardFieldState(key) === 'editable',
+    [canEditCell, boardFieldState],
+  )
+  /**
    * שיבוץ עובדי קבלן אינו עובר ב-`canEditCell` בכוונה: היא מכפילה ב-
    * `board.inline_edit`, שאין למנהל קבלן ולעולם לא יהיה — הלוח שלו לקריאה
    * בלבד פרט לדבר האחד הזה. שני מפתחות כי אלה שני הקהלים שהפוליסות על
    * `task_contractor_workers` כבר מכירות: הקבלן את שלו, והמשרד את של כולם.
    */
   const canAssignContractor = has(PERM.PORTAL_ASSIGN_WORKERS) || has(PERM.CONTRACTORS_ASSIGN_WORKERS)
+  /**
+   * מי רשאי לפתוח את הפאנלים — נדרש רק בכרטיס הנייד, שאין בו תאים ולכן אין בו
+   * ‏`canEdit` פר-תא. בטבלה השאלה כבר נענית בתא עצמו.
+   */
+  const canOpenStaffing =
+    has(PERM.BOARD_VIEW_STAFFING) &&
+    (has(PERM.TASKS_ASSIGN_WORKER) ||
+      has(PERM.TASKS_ASSIGN_DRIVER) ||
+      has(PERM.TASKS_ASSIGN_TEAM_LEAD) ||
+      canAssignContractor)
+  const canOpenDelegation = has(PERM.BOARD_VIEW_STAFFING) && has(PERM.TASKS_DELEGATE)
   const [params, setParams] = useSearchParams()
   const prefs = useRef(loadPrefs())
   const isMobile = useIsMobile()
@@ -352,7 +357,7 @@ export default function WorkBoardPage() {
   })
   const from = toISODate(month)
   const to = toISODate(endOfMonth(month))
-  const [filters, setFilters] = useState({ customer: '', status: '', type: '', contractor: '', q: '' })
+  const [filters, setFilters] = useState({ customer: '', status: '', type: '', contractor: '', worker: '', q: '' })
   const [drawer, setDrawer] = useState<{ open: boolean; taskId: string | null; date?: string }>({
     open: !!params.get('task'),
     taskId: params.get('task'),
@@ -361,17 +366,17 @@ export default function WorkBoardPage() {
   /* ‏`canTune` נקרא פעם אחת, באתחול: הרשאה אינה משתנה תוך כדי צפייה במסך,
      ושינוי שלה מגיע ממילא עם `refreshOwnCapabilities` שמרענן את כל העץ. */
   const [hidden, setHidden] = useState<Set<string>>(
-    new Set(canTune ? (prefs.current.hidden ?? DEFAULT_HIDDEN_FIELDS) : FIXED_VIEW.hidden),
+    new Set(canTune ? (prefs.current.hidden ?? FIXED_VIEW.hidden) : FIXED_VIEW.hidden),
   )
   const [density, setDensity] = useState<Density>(
-    canTune ? (prefs.current.density ?? 'comfortable') : FIXED_VIEW.density,
+    canTune ? (prefs.current.density ?? FIXED_VIEW.density) : FIXED_VIEW.density,
   )
-  const [sortBy, setSortBy] = useState<SortKey>(canTune ? (prefs.current.sort ?? 'time') : FIXED_VIEW.sort)
-  const [colorBy, setColorBy] = useState<ColorBy>(canTune ? (prefs.current.colorBy ?? 'event') : FIXED_VIEW.colorBy)
+  const [sortBy, setSortBy] = useState<SortKey>(canTune ? (prefs.current.sort ?? FIXED_VIEW.sort) : FIXED_VIEW.sort)
+  const [colorBy, setColorBy] = useState<ColorBy>(canTune ? (prefs.current.colorBy ?? FIXED_VIEW.colorBy) : FIXED_VIEW.colorBy)
   const [showEmptyDays, setShowEmptyDays] = useState(
-    canTune ? (prefs.current.emptyDays ?? true) : FIXED_VIEW.emptyDays,
+    canTune ? (prefs.current.emptyDays ?? FIXED_VIEW.emptyDays) : FIXED_VIEW.emptyDays,
   )
-  const [viewMode, setViewMode] = useState<ViewMode>(canTune ? (prefs.current.view ?? 'auto') : FIXED_VIEW.view)
+  const [viewMode, setViewMode] = useState<ViewMode>(canTune ? (prefs.current.view ?? FIXED_VIEW.view) : FIXED_VIEW.view)
   /** "go to today" asked for a range that isn't loaded yet — scroll once it is */
   const [jumpPending, setJumpPending] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
@@ -399,13 +404,13 @@ export default function WorkBoardPage() {
   const { data: contractors = EMPTY } = useContractors()
   const { data: methods = EMPTY } = useExecutionMethods()
   const { data: trucks = EMPTY } = useTrucks()
-  /* only fetched for the staffing cells, and those are gated by the same key */
+  const { data: customerTrucks = EMPTY_CT } = useCustomerTrucks()
+  /* למסנן העובדים שמעל הלוח. הבוררים שהיו בתאים עברו לפאנלים (0108), והם
+     שולפים את הסגל בעצמם — אבל המסנן נשאר כאן, ומגודר באותו מפתח. */
   const { data: staff = EMPTY } = useStaff(has(PERM.BOARD_VIEW_STAFFING))
   const inline = useInlineUpdate()
-  const staffing = useAssignmentUpdate()
-  const contractorAssign = useContractorWorkerAssign()
 
-  const { data: rows = EMPTY, isLoading, error: rowsError, refetch: refetchRows } = useQuery({
+  const { data: rawRows = EMPTY, isLoading, error: rowsError, refetch: refetchRows } = useQuery({
     queryKey: ['workboard', 'range', from, to, filters],
     queryFn: async () => {
       let q = supabase
@@ -423,7 +428,6 @@ export default function WorkBoardPage() {
       if (filters.customer) q = q.eq('customer_id', filters.customer)
       if (filters.status) q = q.eq('status_id', filters.status)
       if (filters.type) q = q.eq('task_type_id', filters.type)
-      if (filters.contractor) q = q.eq('contractor_id', filters.contractor)
       if (filters.q.trim())
         q = q.or(
           `title.ilike.%${filters.q}%,end_client_name.ilike.%${filters.q}%,event_number.ilike.%${filters.q}%,location_text.ilike.%${filters.q}%,customer_name.ilike.%${filters.q}%`,
@@ -434,36 +438,44 @@ export default function WorkBoardPage() {
     },
   })
 
-  const lookups = useMemo<BoardLookups>(
-    () => ({ statuses, trucks, methods, contractors, staff, canAssignContractor }),
-    [statuses, trucks, methods, contractors, staff, canAssignContractor],
-  )
+  /* פילטרים שמסוננים בצד הלקוח:
+     — עובד ספציפי: נבדק מול מערכי ה-jsonb של המשובצים (עובדים/נהגים/ראש צוות),
+       ולא מול עמודה פשוטה שאפשר לגדר עליה בשרת.
+     — קבלן ספציפי: מאז ריבוי הקבלנים (0096) המשימה נושאת רשימת קבלנים, ולא
+       עמודה יחידה — הסינון על `contractor_list` תופס גם קבלן משני, ש-
+       ‏`tasks.contractor_id` (הראשי בלבד) היה מפספס. */
+  const rows = useMemo(() => {
+    const w = filters.worker
+    const ct = filters.contractor
+    if (!w && !ct) return rawRows
+    return rawRows.filter(
+      (r) =>
+        (!w ||
+          (r.workers ?? []).some((p) => p.profile_id === w) ||
+          (r.drivers ?? []).some((p) => p.profile_id === w) ||
+          r.team_lead_id === w) &&
+        (!ct || (r.contractor_list ?? []).some((c) => c.contractor_id === ct)),
+    )
+  }, [rawRows, filters.worker, filters.contractor])
+
   const patchCell = useCallback(
     (row: WorkBoardRow, patch: Record<string, unknown>) => inline.mutate({ row, patch }),
     [inline],
   )
-  const assignCell = useCallback(
-    (row: WorkBoardRow, role: StaffRole | 'contractor', id: string, on: boolean) => {
-      /* עובד קבלן אינו שורה ב-task_assignments, ולכן הוא הולך ל-RPC שלו.
-         הקידומת אומרת אם נבחרה שורת סגל קיימת או חשבון שעדיין אין לו אחת. */
-      if (role === 'contractor') {
-        const isProfile = id.startsWith('p:')
-        contractorAssign.mutate(
-          {
-            taskId: row.id,
-            workerId: isProfile ? null : id.slice(2),
-            profileId: isProfile ? id.slice(2) : null,
-            on,
-          },
-          { onError: (e) => toast.error(errorMessage(e)) },
-        )
-        return
-      }
-      staffing.mutate({ row, role, profileId: id, on })
-    },
-    [staffing, contractorAssign, toast],
-  )
 
+  /**
+   * הפאנלים הממוקדים (0108).
+   *
+   * תא "צוות"/"ראש צוות" ותא "קבלן" אינם נפתחים עוד לתפריט בחירה אלא למסך
+   * שעונה על כל השאלה שלהם — כולל מי יוצא מהמחסן וכמה עובדים הקבלן מביא,
+   * שמעולם לא נכנסו לתפריט. שניהם כותבים מיד, כמו הבורר שהיה כאן.
+   */
+  const [panel, setPanel] = useState<{ kind: 'staffing' | 'contractor'; taskId: string } | null>(null)
+  const openPanel = useCallback(
+    (taskId: string, kind: 'staffing' | 'contractor') => setPanel({ kind, taskId }),
+    [],
+  )
+  const closePanel = useCallback(() => setPanel(null), [])
   /**
    * Two different questions, resolved in order. `viewPerm` decides whether a
    * row exists for this reader at all; `hidden` is their own choice among the
@@ -474,9 +486,14 @@ export default function WorkBoardPage() {
   const available = useMemo(
     () =>
       BOARD_FIELDS.filter(
-        (f) => (!f.viewPerm || has(f.viewPerm)) && !(isContractor && f.key === 'contractor'),
+        (f) =>
+          (!f.viewPerm || has(f.viewPerm)) &&
+          !(isContractor && f.key === 'contractor') &&
+          /* ‏0109: השורה השלישית היא הכרעה של מנהל המערכת פר-לקוח, ולא
+             מפתח. לאיש צוות היא תמיד `editable` ולכן אינה מסננת דבר. */
+          boardFieldState(f.key) !== 'hidden',
       ),
-    [has, isContractor],
+    [has, isContractor, boardFieldState],
   )
   const fields = useMemo(() => available.filter((f) => !hidden.has(f.key)), [available, hidden])
   const metrics = DENSITY[density]
@@ -507,6 +524,59 @@ export default function WorkBoardPage() {
     return Math.max(metrics.tall, most * metrics.line + TEAM_ROW_PAD)
   }, [rows, metrics])
 
+  /**
+   * אותה הכרעה על ההערות, מאותה סיבה.
+   *
+   * שתי שורות קבועות היו מספיק להערה "לקחת מפתחות" ולא להערה שמסבירה איך
+   * נכנסים לחניון — וזו בדיוק ההערה שכתובה כדי להיקרא. השורה נמתחת אל
+   * ההערה הארוכה ביותר שעל הלוח, עד `MAX_NOTE_LINES`, ומי שחורגת גם משם
+   * ממשיכה להיקרא בבועה של התא.
+   *
+   * ‏`\n` נספר כשורה בפני עצמה: מי שכתב ירידת שורה התכוון אליה, והתא מכבד
+   * אותה (`whitespace-pre-wrap`).
+   */
+  const noteLines = useMemo(() => {
+    const perLine = charsPerLine(metrics.col, parseFloat(boardFontSize) * 16)
+    const most = rows.reduce((m, r) => {
+      if (!r.notes) return m
+      const lines = r.notes
+        .split('\n')
+        .reduce((n, seg) => n + Math.max(1, Math.ceil(seg.length / perLine)), 0)
+      return Math.max(m, lines)
+    }, 0)
+    return Math.min(MAX_NOTE_LINES, Math.max(2, most))
+  }, [rows, metrics, boardFontSize])
+
+  /**
+   * ‏0116: המשאיות של הלקוח *של השורה*.
+   *
+   * המפה נבנית פעם אחת מכל השורות שה-RLS החזירה — המשרד מקבל את כולן, ומשתמש
+   * לקוח את שלו בלבד — ולכן אותה פונקציה משרתת את שני הקהלים. לקוח שאין לו
+   * רשימה אינו מוגבל, וזה מה שהופך את התכונה לשקטה עד שמישהו מגדיר אותה.
+   */
+  const trucksFor = useMemo(() => {
+    const byCustomer = new Map<string, Set<string>>()
+    for (const row of customerTrucks) {
+      let set = byCustomer.get(row.customer_id)
+      if (!set) byCustomer.set(row.customer_id, (set = new Set()))
+      set.add(row.truck_id)
+    }
+    const cache = new Map<string, Truck[]>()
+    return (customerId: string | null) => {
+      if (!customerId) return trucks
+      const allowed = byCustomer.get(customerId)
+      if (!allowed) return trucks
+      let list = cache.get(customerId)
+      if (!list) cache.set(customerId, (list = trucks.filter((t) => allowed.has(t.id))))
+      return list
+    }
+  }, [trucks, customerTrucks])
+
+  const lookups = useMemo<BoardLookups>(
+    () => ({ statuses, trucks, trucksFor, methods, canAssignContractor, noteLines, openPanel }),
+    [statuses, trucks, trucksFor, methods, canAssignContractor, noteLines, openPanel],
+  )
+
   /** one height array drives both the legend and every task column, so the
    *  grid can never drift out of alignment */
   const rowHeights = useMemo(
@@ -514,13 +584,15 @@ export default function WorkBoardPage() {
       fields.map((f) =>
         f.key === 'team'
           ? teamRowHeight
-          : f.grow
-            ? metrics.row * f.grow
-            : f.tall
-              ? metrics.tall
-              : metrics.row,
+          : f.key === 'notes'
+            ? Math.max(metrics.row * (f.grow ?? 1), noteLines * metrics.line + TEAM_ROW_PAD)
+            : f.grow
+              ? metrics.row * f.grow
+              : f.tall
+                ? metrics.tall
+                : metrics.row,
       ),
-    [fields, metrics, teamRowHeight],
+    [fields, metrics, teamRowHeight, noteLines],
   )
   const bodyHeight = rowHeights.reduce((a, b) => a + b, 0)
 
@@ -533,24 +605,33 @@ export default function WorkBoardPage() {
 
   const tones = useMemo(() => buildTones(rows, colorBy), [rows, colorBy])
 
-  const dayKeys = useMemo(() => {
-    const withRows = [...new Set(rows.map((r) => r.task_date))].sort()
-    if (!showEmptyDays || !from || !to) return withRows
-    const a = parseISO(from)
-    const b = parseISO(to)
-    const span = differenceInCalendarDays(b, a)
-    if (span < 0 || span > MAX_EMPTY_DAY_SPAN) return withRows
-    const all = new Set(eachDayOfInterval({ start: a, end: b }).map(toISODate))
-    for (const d of withRows) all.add(d)
-    return [...all].sort()
-  }, [rows, showEmptyDays, from, to])
+  const daysWithRows = useMemo(() => [...new Set(rows.map((r) => r.task_date))].sort(), [rows])
 
-  /* חגים ומועדים לימים שעל הלוח. ‏`dayKeys` ולא הטווח המבוקש: יום שנשר
-     מהלוח (בלי משימות, כשהימים הריקים מוסתרים) גם לא צריך חג. */
-  const holidays = useMemo(
-    () => (dayKeys.length ? holidaysInRange(dayKeys[0], dayKeys[dayKeys.length - 1]) : new Map<string, Holiday>()),
-    [dayKeys],
-  )
+  /* חגים ומועדים לכל החודש שהלוח מציג — הטווח המבוקש ולא רק הימים שיש בהם
+     משימות, כדי שהלו״ז יראה את מה שלוח השנה רואה. */
+  const holidays = useMemo(() => {
+    const first = from || daysWithRows[0]
+    const last = to || daysWithRows[daysWithRows.length - 1]
+    return first && last ? holidaysInRange(first, last) : new Map<string, Holiday>()
+  }, [from, to, daysWithRows])
+
+  const dayKeys = useMemo(() => {
+    const withRows = daysWithRows
+    const a = from ? parseISO(from) : null
+    const b = to ? parseISO(to) : null
+    const span = a && b ? differenceInCalendarDays(b, a) : -1
+    if (showEmptyDays && a && b && span >= 0 && span <= MAX_EMPTY_DAY_SPAN) {
+      const all = new Set(eachDayOfInterval({ start: a, end: b }).map(toISODate))
+      for (const d of withRows) all.add(d)
+      return [...all].sort()
+    }
+    /* גם כשהימים הריקים מוסתרים, שבתון נשאר על הלוח: יום שאסור לשבץ בו
+       עבודה הוא מידע לתכנון, ולא יום ריק שאין מה לומר עליו. מועד שעובדים
+       בו — חנוכה, פורים, חול המועד — נופל עם שאר הימים הריקים. */
+    const kept = new Set(withRows)
+    for (const h of holidays.values()) if (isDayOff(h)) kept.add(h.date)
+    return [...kept].sort()
+  }, [daysWithRows, showEmptyDays, from, to, holidays])
 
   /* ── group by day, then lay the columns out in reading order ───────────── */
 
@@ -566,17 +647,10 @@ export default function WorkBoardPage() {
       if (sortBy === 'customer') return (a.customer_name ?? '').localeCompare(b.customer_name ?? '', 'he')
       if (sortBy === 'status') return a.status_name.localeCompare(b.status_name, 'he')
       if (sortBy === 'type') return a.task_type_name.localeCompare(b.task_type_name, 'he')
-      /* the hour the crew is due on site, and only that one: a warehouse
-         call at 05:00 is not what the day is read by, and letting it stand
-         in for a missing on-site time put those tasks first */
-      const at = a.onsite_start_time ?? '99:99'
-      const bt = b.onsite_start_time ?? '99:99'
-      if (at !== bt) return at.localeCompare(bt)
-      /* same on-site hour (or none at all) — leaving is the next thing that
-         separates them, then the name, so the order never wobbles */
-      const aw = a.warehouse_start_time ?? '99:99'
-      const bw = b.warehouse_start_time ?? '99:99'
-      if (aw !== bw) return aw.localeCompare(bw)
+      /* השעה — הכלל עצמו יושב ב-grouping.ts, כי דף האירוע נשאל אותו גם הוא */
+      const byTime = byTaskTime(a, b)
+      if (byTime !== 0) return byTime
+      /* אותה שעה לגמרי — השם, כדי שהסדר לא יתנדנד בין רינדורים */
       return (a.customer_name ?? '').localeCompare(b.customer_name ?? '', 'he')
     }
 
@@ -779,15 +853,18 @@ export default function WorkBoardPage() {
     setJumpPending(false)
   }, [jumpPending, isLoading, scrollToToday, toast])
 
-  /* "באיחור" נמדד לפי הפרסום ולא לפי `status_is_terminal`. מאז 0063 אין
-     למשימה סטטוס סוגר בכלל — טיוטה, מתוכנן ומשובץ, וזהו — ולכן הבדיקה
-     הישנה הייתה מסמנת כל משימה שתאריכה עבר. מה שבאמת פספסנו הוא משימה
-     שהתאריך שלה חלף והיא עדיין לא הגיעה לעובד. */
-  const overdueTotal = useMemo(() => rows.filter(isOverdue(today)).length, [rows, today])
+  /* אין כאן ספירת איחורים, וזו הכרעה ולא השמטה.
+
+     הלו״ז מציג חודש שלם, ובו כל יום שכבר עבר. "באיחור" — תאריך שחלף בלי
+     שהמשימה פורסמה לעובד — סימן ברגע אחד את כל ההיסטוריה: שבוע שעבר,
+     החודש שלפניו, וכל משימה שנסגרה בטלפון ואיש לא טרח להזיז לה סטטוס.
+     צ׳יפ אדום שמונה מאות ושורות אדומות לאורך חצי הלוח אינם התראה — הם
+     רעש שהעין לומדת לדלג עליו, ובדרך הוא צובע גם את מה שבאמת קרה כבר.
+     המשימות עצמן נשארו במקומן: מה שירד הוא הצבע, לא הנתון. */
 
   const workingDays = useMemo(() => bands.filter((b) => b.count > 0).length, [bands])
   const activeFilterCount = Object.values(filters).filter(Boolean).length
-  const resetFilters = () => setFilters({ customer: '', status: '', type: '', contractor: '', q: '' })
+  const resetFilters = () => setFilters({ customer: '', status: '', type: '', contractor: '', worker: '', q: '' })
 
   /* ── filter controls ──────────────────────────────────────────────────────
      One definition, two homes: a single toolbar row on desktop, and a dialog
@@ -878,6 +955,21 @@ export default function WorkBoardPage() {
           ))}
         </Select>
       )}
+      {/* פילטר עובד ספציפי — מסונן בצד הלקוח מול המשובצים למשימה (0094). */}
+      {staff.length > 0 && (
+        <Select
+          className="w-full lg:w-36"
+          selectSize="sm"
+          value={filters.worker}
+          onChange={(e) => setFilters((f) => ({ ...f, worker: e.target.value }))}
+          aria-label="עובד"
+        >
+          <option value="">כל העובדים</option>
+          {staff.map((p) => (
+            <option key={p.id} value={p.id}>{p.full_name}</option>
+          ))}
+        </Select>
+      )}
     </>
   )
 
@@ -896,12 +988,6 @@ export default function WorkBoardPage() {
                 <span className="tabular font-medium text-ink bg-subtle px-2 py-0.5 rounded-full">{rows.length} משימות</span>
                 <span className="tabular bg-subtle px-2 py-0.5 rounded-full">{workingDays} ימי עבודה</span>
                 {colorBy === 'event' && tones.size > 0 && <span className="tabular bg-subtle px-2 py-0.5 rounded-full">{tones.size} אירועים</span>}
-                {overdueTotal > 0 && (
-                  <span className="inline-flex items-center gap-1 font-medium text-error-text bg-error-subtle px-2 py-0.5 rounded-full">
-                    <AlertTriangle size={ICON.xs} />
-                    {overdueTotal} באיחור
-                  </span>
-                )}
               </div>
             </div>
 
@@ -1066,7 +1152,7 @@ export default function WorkBoardPage() {
                 </Popover>
               )}
 
-              {has(PERM.TASKS_CREATE) && (
+              {canCreateTask && (
                 <Button size="sm" variant="primary" onClick={() => setDrawer({ open: true, taskId: null })}>
                   <Plus size={ICON.sm} strokeWidth={STROKE} />
                   <span className="hidden sm:inline">משימה חדשה</span>
@@ -1128,7 +1214,7 @@ export default function WorkBoardPage() {
                   : 'אין משימות בחודש הזה. אפשר לדפדף לחודש אחר בכותרת'
               }
               action={
-                has(PERM.TASKS_CREATE) && (
+                canCreateTask && (
                   <Button variant="primary" size="sm" onClick={() => setDrawer({ open: true, taskId: null })}>
                     <Plus size={ICON.sm} />
                     משימה חדשה
@@ -1146,8 +1232,11 @@ export default function WorkBoardPage() {
               days={daysForList}
               today={today}
               holidays={holidays}
-              canCreate={has(PERM.TASKS_CREATE)}
+              canCreate={canCreateTask}
               onOpen={openTask}
+              onPanel={openPanel}
+              canOpenStaffing={canOpenStaffing}
+              canOpenDelegation={canOpenDelegation}
               onToggleDay={toggleDay}
               onNewTask={newTaskOn}
             />
@@ -1204,10 +1293,11 @@ export default function WorkBoardPage() {
                         <div
                           key={b.dayKey}
                           className={cx(
-                            'absolute top-0 flex items-center justify-center gap-1.5 overflow-hidden border-b border-s border-line px-2',
-                            /* a past day is a past day — the tasks on it carry
-                               their own overdue mark, and painting the whole
-                               band red turned every old week into a wall */
+                            'absolute top-0 flex flex-col items-center justify-center overflow-hidden border-b border-s border-line px-2 leading-tight',
+                            /* a past day is a past day: painting the whole band
+                               red turned every old week into a wall, and the
+                               per-task mark that used to justify it is gone
+                               too — the board no longer flags lateness */
                             isToday
                               ? 'bg-[var(--vl-board-today)]'
                               : /* שבתון נצבע, מועד שאין בו שבתון מקבל רמז, ושאר
@@ -1220,34 +1310,50 @@ export default function WorkBoardPage() {
                           )}
                           style={{ insetInlineStart: b.start, width: b.width, height: DAY_HEAD_H }}
                         >
+                          {/* היום בשבוע והחג יושבים בשורה שמעל התאריך. בשורה
+                              אחת עם התאריך שם החג נחתך לאות וחצי בעמודה צרה,
+                              ומי שקורא לו״ז צריך לדעת שהיום הזה הוא שבתון
+                              לפני שהוא סופר עליו משימות. */}
+                          <span className="flex max-w-full items-center gap-1 overflow-hidden">
+                            <span
+                              className={cx(
+                                'shrink-0 type-caption',
+                                quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
+                              )}
+                            >
+                              {fmtWeekdayShort(b.dayKey)}
+                            </span>
+                            {holiday && (
+                              <Tooltip content={`${holiday.name} — ${KIND_LABEL[holiday.kind]}`}>
+                                <span
+                                  className={cx(
+                                    'truncate type-caption',
+                                    isDayOff(holiday) ? 'font-bold text-warning-text' : 'text-ink-secondary',
+                                  )}
+                                >
+                                  {holiday.name}
+                                </span>
+                              </Tooltip>
+                            )}
+                          </span>
                           {/* the date is a label. Folding a day from here was
                               one careless click away from hiding a day's work,
                               and the width menu now covers the same need */}
-                          <span
-                            className={cx(
-                              'truncate type-caption font-bold tabular',
-                              quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
-                            )}
-                          >
-                            {fmtDate(b.dayKey)}
-                          </span>
-                          {isToday && (
-                            <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
-                              היום
+                          <span className="flex max-w-full items-center gap-1.5 overflow-hidden">
+                            <span
+                              className={cx(
+                                'truncate type-caption font-bold tabular',
+                                quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
+                              )}
+                            >
+                              {fmtDate(b.dayKey)}
                             </span>
-                          )}
-                          {holiday && (
-                            <Tooltip content={`${holiday.name} — ${KIND_LABEL[holiday.kind]}`}>
-                              <span
-                                className={cx(
-                                  'truncate type-caption',
-                                  isDayOff(holiday) ? 'font-bold text-warning-text' : 'text-ink-secondary',
-                                )}
-                              >
-                                {holiday.name}
+                            {isToday && (
+                              <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
+                                היום
                               </span>
-                            </Tooltip>
-                          )}
+                            )}
+                          </span>
                         </div>
                       )
                     })}
@@ -1305,7 +1411,7 @@ export default function WorkBoardPage() {
                           <EmptyDayColumn
                             key={col.id}
                             dayKey={col.dayKey}
-                            canCreate={has(PERM.TASKS_CREATE)}
+                            canCreate={canCreateTask}
                             narrow={metrics.empty < 96}
                             onNewTask={newTaskOn}
                             style={{ insetInlineStart: vi.start, width, height: bodyHeight }}
@@ -1316,8 +1422,8 @@ export default function WorkBoardPage() {
                           key={col.id}
                           row={col.row}
                           canEditCell={canEditCell}
+                          canEditField={canEditField}
                           patch={patchCell}
-                          assign={assignCell}
                           lookups={lookups}
                           fields={fields}
                           heights={rowHeights}
@@ -1351,6 +1457,18 @@ export default function WorkBoardPage() {
           taskId={drawer.taskId}
           initial={drawer.date ? ({ task_date: drawer.date } as Partial<TaskRow>) : undefined}
         />
+        {/* הפאנלים הממוקדים של התאים (0108) — פתוחים לפי המפתחות שלהם,
+            ולא לפי מי שרשאי לפתוח את הכרטיס המלא. */}
+        <StaffingPanel
+          open={panel?.kind === 'staffing'}
+          onClose={closePanel}
+          taskId={panel?.kind === 'staffing' ? panel.taskId : null}
+        />
+        <ContractorPanel
+          open={panel?.kind === 'contractor'}
+          onClose={closePanel}
+          taskId={panel?.kind === 'contractor' ? panel.taskId : null}
+        />
       </div>
     </RequirePermission>
   )
@@ -1368,6 +1486,9 @@ function MobileBoard({
   holidays,
   canCreate,
   onOpen,
+  onPanel,
+  canOpenStaffing,
+  canOpenDelegation,
   onToggleDay,
   onNewTask,
 }: {
@@ -1378,6 +1499,10 @@ function MobileBoard({
   holidays: Map<string, Holiday>
   canCreate: boolean
   onOpen: (row: WorkBoardRow) => void
+  /** הפאנלים הממוקדים (0108) — בטלפון אין תאים, ולכן הם נפתחים מהכרטיס */
+  onPanel: (taskId: string, kind: 'staffing' | 'contractor') => void
+  canOpenStaffing: boolean
+  canOpenDelegation: boolean
   onToggleDay: (dayKey: string) => void
   onNewTask: (dayKey: string) => void
 }) {
@@ -1413,29 +1538,45 @@ function MobileBoard({
                     className={cx('shrink-0 transition-transform duration-200', day.collapsed && 'rotate-90 rtl:-rotate-90')}
                   />
                 )}
-                <span
-                  className={cx(
-                    'truncate type-button tabular',
-                    quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
-                  )}
-                >
-                  {fmtDate(day.dayKey)}
-                </span>
-                {isToday && (
-                  <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
-                    היום
-                  </span>
-                )}
-                {holiday && (
-                  <span
-                    className={cx(
-                      'truncate type-caption',
-                      isDayOff(holiday) ? 'font-bold text-warning-text' : 'text-ink-secondary',
+                {/* אותו סדר כמו בטבלה: היום בשבוע והחג מעל, התאריך מתחת */}
+                <span className="flex min-w-0 flex-col leading-tight">
+                  <span className="flex min-w-0 items-center gap-1">
+                    <span
+                      className={cx(
+                        'shrink-0 type-caption',
+                        quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
+                      )}
+                    >
+                      {fmtWeekday(day.dayKey)}
+                    </span>
+                    {holiday && (
+                      <span
+                        className={cx(
+                          'truncate type-caption',
+                          isDayOff(holiday) ? 'font-bold text-warning-text' : 'text-ink-secondary',
+                        )}
+                        title={`${holiday.name} — ${KIND_LABEL[holiday.kind]}`}
+                      >
+                        {holiday.name}
+                      </span>
                     )}
-                  >
-                    {holiday.name}
                   </span>
-                )}
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span
+                      className={cx(
+                        'truncate type-button tabular',
+                        quiet ? 'text-ink-tertiary' : isToday ? 'text-primary-text' : 'text-ink-secondary',
+                      )}
+                    >
+                      {fmtDate(day.dayKey)}
+                    </span>
+                    {isToday && (
+                      <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-on-primary">
+                        היום
+                      </span>
+                    )}
+                  </span>
+                </span>
               </button>
               {/* a quiet day is one line, not a section — a week with four of
                   them shouldn't push the actual work off the screen */}
@@ -1482,8 +1623,10 @@ function MobileBoard({
                         <MobileTaskCard
                           row={row}
                           tone={cluster.tone}
-                          overdue={isOverdue(today)(row)}
                           onOpen={onOpen}
+                          onPanel={onPanel}
+                          canOpenStaffing={canOpenStaffing}
+                          canOpenDelegation={canOpenDelegation}
                         />
                       </li>
                     ))}
@@ -1500,13 +1643,17 @@ function MobileBoard({
 const MobileTaskCard = memo(function MobileTaskCard({
   row,
   tone,
-  overdue,
   onOpen,
+  onPanel,
+  canOpenStaffing,
+  canOpenDelegation,
 }: {
   row: WorkBoardRow
   tone: GroupTone | null
-  overdue: boolean
   onOpen: (row: WorkBoardRow) => void
+  onPanel: (taskId: string, kind: 'staffing' | 'contractor') => void
+  canOpenStaffing: boolean
+  canOpenDelegation: boolean
 }) {
   const label = row.end_client_name || row.title || row.customer_name || row.task_type_name
   const time = fmtTime(row.onsite_start_time) || fmtTime(row.warehouse_start_time)
@@ -1518,7 +1665,7 @@ const MobileTaskCard = memo(function MobileTaskCard({
 
   return (
     <div
-      className={cx('flex items-stretch gap-1.5 px-2.5 py-1.5', overdue && 'bg-[var(--vl-board-overdue)]')}
+      className="flex items-stretch gap-1.5 px-2.5 py-1.5"
       style={tone ? { background: tone.tint } : undefined}
     >
       <span
@@ -1529,13 +1676,12 @@ const MobileTaskCard = memo(function MobileTaskCard({
       <button onClick={() => onOpen(row)} className="min-w-0 flex-1 space-y-0.5 text-start">
         <span className="flex items-center gap-1.5">
           {time ? (
-            <span className={cx('shrink-0 type-button tabular', overdue ? 'text-error-text' : 'text-ink')} dir="ltr">
+            <span className="shrink-0 type-button tabular text-ink" dir="ltr">
               {time}
             </span>
           ) : (
             <span className="shrink-0 type-caption text-ink-tertiary">ללא שעה</span>
           )}
-          {overdue && <AlertTriangle size={12} className="shrink-0 text-error" aria-label="באיחור" />}
           <StatusPill color={row.status_color} className="ms-auto shrink-0">
             {row.status_name}
           </StatusPill>
@@ -1577,6 +1723,34 @@ const MobileTaskCard = memo(function MobileTaskCard({
           )}
         </span>
       </button>
+
+      {/* בטלפון אין תאים, ולכן שתי השאלות שהתאים פותחים בטבלה — מי משובץ
+          ומאיפה, ולאיזה קבלן ובאיזה תנאים — יושבות כאן ככפתורים. בלעדיהן
+          כרטיס נייד היה לקריאה בלבד לכל מי שאינו מנהל מערכת (0108). */}
+      {(canOpenStaffing || canOpenDelegation) && (
+        <span className="flex shrink-0 flex-col justify-center gap-1">
+          {canOpenStaffing && (
+            <button
+              type="button"
+              aria-label="שיבוץ הצוות"
+              onClick={() => onPanel(row.id, 'staffing')}
+              className="rounded-md border border-line p-1.5 text-ink-secondary transition-colors hover:bg-hover"
+            >
+              <Users size={ICON.sm} strokeWidth={STROKE} />
+            </button>
+          )}
+          {canOpenDelegation && (
+            <button
+              type="button"
+              aria-label="האצלה לקבלנים"
+              onClick={() => onPanel(row.id, 'contractor')}
+              className="rounded-md border border-line p-1.5 text-ink-secondary transition-colors hover:bg-hover"
+            >
+              <HardHat size={ICON.sm} strokeWidth={STROKE} />
+            </button>
+          )}
+        </span>
+      )}
     </div>
   )
 })
@@ -1735,8 +1909,8 @@ const TaskColumn = memo(
   function TaskColumn({
     row,
     canEditCell,
+    canEditField,
     patch,
-    assign,
     lookups,
     fields,
     heights,
@@ -1748,8 +1922,9 @@ const TaskColumn = memo(
   }: {
     row: WorkBoardRow
     canEditCell: (perm?: string) => boolean
+    /** `canEditCell` ועוד ההכרעה של מנהל המערכת לשדה הזה אצל הלקוח (0109) */
+    canEditField: (key: string, perm?: string) => boolean
     patch: (row: WorkBoardRow, patch: Record<string, unknown>) => void
-    assign: (row: WorkBoardRow, role: StaffRole | 'contractor', id: string, on: boolean) => void
     lookups: BoardLookups
     fields: typeof BOARD_FIELDS
     heights: number[]
@@ -1786,7 +1961,7 @@ const TaskColumn = memo(
                 team list — is measured to fit its longest crew, so everyone is
                 on screen at once and the board grows instead of hiding them */}
             <div className="min-w-0 flex-1 text-center">
-              {f.render({ row, canEdit: canEditCell(f.editPerm), can: canEditCell, patch, assign, lookups })}
+              {f.render({ row, canEdit: canEditField(f.key, f.editPerm), can: canEditCell, patch, lookups })}
             </div>
           </div>
         ))}
@@ -1796,7 +1971,7 @@ const TaskColumn = memo(
   (a, b) =>
     a.row === b.row &&
     a.canEditCell === b.canEditCell &&
-    a.assign === b.assign &&
+    a.canEditField === b.canEditField &&
     a.fields === b.fields &&
     a.heights === b.heights &&
     a.lookups === b.lookups &&

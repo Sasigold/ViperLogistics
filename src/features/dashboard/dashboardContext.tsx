@@ -22,8 +22,13 @@ export interface DashboardCtxValue {
   prev: DateRange
   today: string
   sections: DashboardSections
-  openTask: (id: string) => void
-  openNewTask: () => void
+  /**
+   * ‏`undefined` כשכרטיס המשימה סגור לקורא (0108: מנהל מערכת בלבד). זה לא
+   * אותו דבר כמו פונקציה שאינה עושה דבר — אריח שמקבל `undefined` מפסיק
+   * לצייר את השורה כלחיצה, במקום להציע פתיחה שלא תקרה.
+   */
+  openTask?: (id: string) => void
+  openNewTask?: () => void
   openNewEvent: () => void
 }
 

@@ -86,25 +86,30 @@ insert into task_assignments (task_id, profile_id, role, work_site) values
   ('31000000-0000-0000-0000-000000110001', '20000000-0000-0000-0000-0000000011a8', 'worker', 'field');
 
 -- T2 — משימה שהואצלה לקבלן, פורסמה, ועובד הקבלן רשום עליה
-insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id, contractor_id)
+insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id)
 select '31000000-0000-0000-0000-000000110002', '30000000-0000-0000-0000-000000000011',
        '10000000-0000-0000-0000-000000000011',
        (select id from task_types where code = 'setup' limit 1),
        current_date + 3,
-       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null),
-       '11000000-0000-0000-0000-000000000011';
+       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null);
+
+-- ‏0096: ההאצלה היא שורת terms; `tasks.contractor_id` הוא שיקוף שנגזר ממנה.
+insert into task_contractor_terms (task_id, contractor_id, price)
+values ('31000000-0000-0000-0000-000000110002', '11000000-0000-0000-0000-000000000011', 0);
 
 insert into task_contractor_workers (task_id, contractor_worker_id) values
   ('31000000-0000-0000-0000-000000110002', '12000000-0000-0000-0000-000000000011');
 
 -- T3 — משימה של אותו קבלן, פורסמה, אך עובד הקבלן *אינו* רשום עליה
-insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id, contractor_id)
+insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id)
 select '31000000-0000-0000-0000-000000110003', '30000000-0000-0000-0000-000000000011',
        '10000000-0000-0000-0000-000000000011',
        (select id from task_types where code = 'setup' limit 1),
        current_date + 3,
-       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null),
-       '11000000-0000-0000-0000-000000000011';
+       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null);
+
+insert into task_contractor_terms (task_id, contractor_id, price)
+values ('31000000-0000-0000-0000-000000110003', '11000000-0000-0000-0000-000000000011', 0);
 
 -- ===========================================================================
 \echo '--- מנהל לקוח: עורך אבל לא משבץ, לא מתמחר, לא מפרסם ---'
@@ -123,14 +128,39 @@ select t_eq('מנהל לקוח: אין tasks.assign.worker', app.has('tasks.assi
 select t_eq('מנהל לקוח: אין tasks.delegate',   app.has('tasks.delegate'), false);
 select t_eq('מנהל לקוח: dashboard.view',       app.has('dashboard.view'), true);
 
-select t_expect_ok('מנהל לקוח עורך הערות במשימה', $$
+-- ‏0109 הפך את הכיוון: המפתחות עדיין בידו, אבל מה שהוא עורך בלו״ז נקבע
+-- פר-לקוח בידי מנהל המערכת, וברירת המחדל היא "רואה, אינו עורך". שתי
+-- הטענות שהיו כאן ("עורך הערות", "משנה סטטוס") הן עכשיו החסימה עצמה, ומיד
+-- אחריהן אותה פעולה בדיוק אחרי שהשדה נפתח.
+select t_expect_fail('מנהל לקוח נחסם מעריכת הערות עד שהשדה ייפתח לו', $$
   update tasks set notes = 'הערה מהמנהל' where id = '31000000-0000-0000-0000-000000110001'$$);
 
-select t_expect_ok('מנהל לקוח משנה סטטוס למתוכנן/טיוטה (לא פרסום)', $$
+select t_expect_fail('ומשינוי סטטוס, מאותה סיבה', $$
   update tasks set status_id = (select id from statuses
     where entity = 'task' and code = 'draft' and deleted_at is null)
    where id = '31000000-0000-0000-0000-000000110001'$$);
 
+-- מנהל המערכת פותח את שני השדות ללקוח הזה, והפעולה מצליחה — בלי שאף מפתח
+-- של המנהל השתנה. זו כל הנקודה של 0109.
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+insert into customer_board_fields (customer_id, field_key, state) values
+  ('10000000-0000-0000-0000-000000000011', 'notes',  'editable'),
+  ('10000000-0000-0000-0000-000000000011', 'status', 'editable')
+on conflict (customer_id, field_key) do update set state = excluded.state;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000011a1', false);
+
+select t_expect_ok('ואחרי שמנהל המערכת פתח את "הערות" — הוא עורך', $$
+  update tasks set notes = 'הערה מהמנהל' where id = '31000000-0000-0000-0000-000000110001'$$);
+
+select t_expect_ok('וכך גם סטטוס למתוכנן/טיוטה', $$
+  update tasks set status_id = (select id from statuses
+    where entity = 'task' and code = 'draft' and deleted_at is null)
+   where id = '31000000-0000-0000-0000-000000110001'$$);
+
+-- והפרסום נשאר חסום: הוא נשען על `tasks.publish`, לא על שדה בלו״ז.
 select t_expect_fail('מנהל לקוח נחסם מפרסום (סטטוס "משובץ")', $$
   update tasks set status_id = (select id from statuses
     where entity = 'task' and code = 'assigned' and deleted_at is null)
@@ -268,9 +298,13 @@ select t_eq('צוות: אין reports.view (דוחות)',            app.has('re
 -- 0011 והיו נדלקים לו בהיסק מ-events.view.
 select t_eq('עובד: events.view נפתח (0079)',              app.has('events.view'), true);
 select t_eq('אך לא יומן הפעילות של האירוע',               app.has('events.activity_log'), false);
-select t_eq('ולא המפרט',                                  app.has('events.specs_view'), false);
 select t_eq('ולא עריכה',                                  app.has('events.edit'), false);
 select t_eq('ולא ייצוא',                                  app.has('events.export'), false);
+-- המפרט הוא היוצא מן הכלל מאז 0102: שורת הדחייה הגורפת של 0079 נמחקה, והמפתח
+-- פתוח בברירת המחדל של המרשם — מי שנוסע לאירוע קורא את המסמך שצריך לבצע.
+select t_eq('והמפרט דווקא כן (0102)',                     app.has('events.specs_view'), true);
+-- ...ובלי שהעלאה נפתחה איתו
+select t_eq('אבל לא העלאת מפרט',                          app.has('events.specs_manage'), false);
 
 \echo '--- אבל מסכי הצוות פתוחים ---'
 select t_eq('צוות: calendar.view',            app.has('calendar.view'), true);

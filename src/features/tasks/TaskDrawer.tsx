@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Banknote,
@@ -7,6 +7,7 @@ import {
   HardHat,
   ICON,
   MapPin,
+  Paperclip,
   RefreshCw,
   STROKE,
   Trash2,
@@ -29,30 +30,35 @@ import {
   Skeleton,
   Textarea,
   cx,
-  fmtMoney,
   useConfirm,
   useToast,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
+import { statusOptions } from '../workboard/statusOptions'
 import {
   useAllowedExecutionMethods,
-  useContractorAssignableWorkers,
-  useContractorWorkerAssign,
+  useContractorDelegate,
   useContractors,
   useStaff,
   useStatuses,
   useTaskTypes,
+  useCustomerTrucks,
   useTrucks,
 } from '../../lib/queries'
 import { Breakdown } from '../customers/PricingTab'
+import { PriceAddonsEditor } from '../pricing/PriceAddons'
+import { ContractorCrew, ContractorDelegationCard } from './taskPanels'
+import { EventSpecsModal } from '../events/EventSpecsModal'
+import { useEventSpecs } from '../events/specQueries'
 import { TaskPnlCard } from '../reports/TaskPnlCard'
 import { useWarehouses } from '../attendance/attendanceQueries'
 import type {
   AssignmentConflict,
   PriceBreakdown,
   StaffRole,
+  TaskContractorTerms,
   TaskPricing,
   TaskRow,
   WorkSite,
@@ -81,11 +87,41 @@ export interface TaskDrawerProps {
 const clockTime = (iso: string) =>
   new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', hour12: false })
 
-export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) {
+/**
+ * מי רשאי לפתוח את כרטיס המשימה המלא — מנהל מערכת, ואיש מלבדו.
+ *
+ * זו הכרעה על **מסך**, לא על נתונים, ולכן היא יושבת כאן ולא בפוליסה: כל מה
+ * שהכרטיס כותב — סטטוס, שעות, שיבוץ, האצלה — נכתב גם מתאי הלו״ז ומהפאנלים
+ * הממוקדים שנפתחים מהם, ואותם מפתחות (`tasks.edit`, `tasks.assign.*`,
+ * `tasks.delegate`) ממשיכים לשמור עליהם בשרת. מה שנסגר הוא הטופס שמרכז את
+ * כולם במקום אחד: עשרים שדות בכרטיס אחד הם המקום שבו נעשות טעויות שאיש
+ * אינו שם לב אליהן, ולכן הוא נשאר בידי מי שמחזיק את המערכת.
+ *
+ * ‏`board.open_task` (0079) לא בוטל — הוא ממשיך לגדר את הכרטיס למי שאינו
+ * אדמין ממילא, וכך גם את הנפילה לדף האירוע במקומו.
+ */
+export function useCanOpenTaskCard() {
+  return useAuth((s) => !!s.me?.profile.is_admin)
+}
+
+/**
+ * הכרטיס עצמו. עוטף אותו שער אחד — ולא בדיקה בכל אתר קריאה — כדי שגם מסך
+ * שייכתב מחר לא יוכל לפתוח אותו בטעות למי שאינו אדמין.
+ */
+export function TaskDrawer(props: TaskDrawerProps) {
+  const allowed = useCanOpenTaskCard()
+  if (!allowed) return null
+  return <TaskCard {...props} />
+}
+
+function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
   const qc = useQueryClient()
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
   const has = useAuth((s) => s.has)
+  const me = useAuth((s) => s.me)
+  /** הקבלן של המשתמש עצמו — מנהל קבלן משבץ את עובדיו דרך זה, לא דרך כרטיס ההאצלה. */
+  const myContractorId = me?.profile.contractor_id ?? null
   /**
    * One gate per thing that can change, matching the keys the column trigger
    * enforces. On a new task the create permission stands in for all of them —
@@ -122,10 +158,14 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   /* לא נגזר מ-`canAssign`: הסגל של הקבלן אינו `task_assignments`, והמפתחות
      שמתירים לגעת בו הם אחרים לגמרי — של הקבלן, או של המשרד מול קבלנים. */
   const canAssignContractor = has(PERM.PORTAL_ASSIGN_WORKERS) || has(PERM.CONTRACTORS_ASSIGN_WORKERS)
+  /* אי-התייצבות נקבעת ע״י מנהל/משרד (contractors.assign_workers), לא ע״י הקבלן. */
+  const canMarkNoShow = has(PERM.CONTRACTORS_ASSIGN_WORKERS)
+  const canViewSpecs = has(PERM.EVENTS_SPECS_VIEW)
 
   const { data: taskTypes = [] } = useTaskTypes()
   const { data: statuses = [] } = useStatuses('task')
   const { data: trucks = [] } = useTrucks()
+  const { data: customerTrucks = [] } = useCustomerTrucks()
   const { data: contractors = [] } = useContractors()
   const { data: staff = [] } = useStaff()
   const { data: warehouses = [] } = useWarehouses()
@@ -136,68 +176,117 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
     queryFn: async () => {
       // task_pricing חסומה ב-RLS למי שאין לו pricing.view, ומחזירה אז פשוט
       // כלום — ולכן היא נשלפת כאן בלי תנאי והכרטיס הוא שמגודר.
+      // ‏0096: למשימה יכולות להיות כמה שורות terms — אחת לכל קבלן — ולכן זו
+      // רשימה, לא שורה יחידה; ועובדי הקבלן נשלפים עם ה-contractor_id שלהם כדי
+      // לשייך כל אחד לכרטיס הקבלן שלו.
       const [t, a, terms, pricing, cw] = await Promise.all([
         supabase.from('tasks').select('*').eq('id', taskId).single(),
         supabase.from('task_assignments').select('*').eq('task_id', taskId),
-        supabase.from('task_contractor_terms').select('*').eq('task_id', taskId).maybeSingle(),
+        supabase.from('task_contractor_terms').select('*').eq('task_id', taskId),
         supabase.from('task_pricing').select('*').eq('task_id', taskId).maybeSingle(),
-        supabase.from('task_contractor_workers').select('contractor_worker_id').eq('task_id', taskId),
+        supabase
+          .from('task_contractor_workers')
+          .select('contractor_worker_id, no_show, contractor_workers!inner(contractor_id)')
+          .eq('task_id', taskId),
       ])
       if (t.error) throw t.error
+      const cwRows = (cw.data ?? []) as unknown as {
+        contractor_worker_id: string
+        no_show: boolean
+        contractor_workers: { contractor_id: string } | null
+      }[]
       return {
         task: t.data as TaskRow,
         assignments: (a.data ?? []) as Assignment[],
-        terms: terms.data as {
-          price: number
-          price_per_worker: number | null
-          work_site: WorkSite
-          paid_at: string | null
-        } | null,
+        terms: (terms.data ?? []) as TaskContractorTerms[],
         pricing: (pricing.data as TaskPricing) ?? null,
-        contractorWorkers: ((cw.data ?? []) as { contractor_worker_id: string }[]).map(
-          (r) => r.contractor_worker_id,
-        ),
+        contractorWorkers: cwRows.map((r) => ({
+          worker_id: r.contractor_worker_id,
+          contractor_id: r.contractor_workers?.contractor_id ?? null,
+          no_show: r.no_show,
+        })),
       }
     },
   })
 
   const [form, setForm] = useState<Partial<TaskRow>>({})
   const [assignments, setAssignments] = useState<Assignment[]>([])
-  const [price, setPrice] = useState<string>('')
-  const [pricePerWorker, setPricePerWorker] = useState<string>('')
-  const [contractorWorkSite, setContractorWorkSite] = useState<WorkSite>('field')
   const [customerPrice, setCustomerPrice] = useState<string>('')
   const [touched, setTouched] = useState(false)
+  /* איזה קבלן נבחר בבורר ה"הוסף האצלה" לפני הלחיצה על הוספה. */
+  const [addContractor, setAddContractor] = useState<string>('')
 
+  const [specsOpen, setSpecsOpen] = useState(false)
+  /**
+   * המפרט של האירוע שהמשימה שייכת אליו.
+   *
+   * הרשימה נטענת עם המגירה ולא עם המודאל, כי המונה על הכפתור הוא מה שאומר אם
+   * יש בכלל מה לפתוח — ובאותו מפתח שאילתה שהמודאל משתמש בו, כך שהפתיחה מיידית.
+   * שם האירוע נשלף רק כשהמודאל נפתח: הוא כותרת, ולא סיבה לשאילתה נוספת בכל
+   * פתיחה של משימה.
+   */
+  const specEventId = form.event_id ?? null
+  const { data: specs = [] } = useEventSpecs(specEventId ?? '', open && !!specEventId && canViewSpecs)
+  const { data: specEvent } = useQuery({
+    queryKey: ['events', 'specHeader', specEventId],
+    enabled: specsOpen && !!specEventId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('events')
+        .select('end_client_name, event_date')
+        .eq('id', specEventId!)
+        .single()
+      if (error) throw error
+      return data as { end_client_name: string | null; event_date: string }
+    },
+  })
+
+  /* ‏0096: שורת terms לכל קבלן שהואצל אליו המשימה. */
+  const terms = existing?.terms ?? []
   /* שיבוץ עובדי הקבלן נכתב מיד ולא נשמר עם הטופס, ולכן הוא נקרא מהשאילתה
      ולא מוחזק ב-state: הרענון שאחרי הכתיבה הוא מה שמצייר את התוצאה. */
   const chosenContractorWorkers = existing?.contractorWorkers ?? []
-  const contractorAssign = useContractorWorkerAssign()
-  const { data: assignableWorkers = [] } = useContractorAssignableWorkers(
-    canAssignContractor && open ? (form.contractor_id ?? null) : null,
-  )
+  const delegate = useContractorDelegate()
+
+  /**
+   * הזרעת הטופס — פעם אחת לפתיחה, ולא בכל רינדור.
+   *
+   * ‏`initial` נכתב כאובייקט ליטרלי בתוך ה-JSX של המסך שמעל
+   * (`initial={{ event_id: ..., customer_id: ... }}`), ולכן הזהות שלו מתחלפת
+   * בכל רינדור *שלו*; ו-`existing` נבנה מחדש בכל ריצה של ה-queryFn, כלומר בכל
+   * ריענון רקע. שניהם ישבו במערך התלויות, ולכן `setForm` רץ שוב ושוב ומחק את
+   * מה שהוקלד ועוד לא נשמר — שאילתה שנרגעה באמצע הקלדה הספיקה לכך.
+   *
+   * ‏`seeded` זוכר איזו משימה כבר הוזרעה. פתיחה, וכל החלפת משימה, מזריעות
+   * מחדש; ריענון של אותה משימה לא נוגע בטופס — הכרטיסים שקוראים ישירות מ-
+   * ‏`existing` (האצלה, סגל הקבלן) ממילא מתעדכנים ממנו ולא מה-state.
+   */
+  const seeded = useRef<string | null>(null)
+  const initialRef = useRef(initial)
+  initialRef.current = initial
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      seeded.current = null
+      return
+    }
+    const key = taskId ?? 'new'
+    if (seeded.current === key) return
+    // משימה קיימת מוזרעת רק כשהנתונים שלה הגיעו
+    if (taskId && !existing) return
+    seeded.current = key
     setTouched(false)
+    setAddContractor('')
     if (taskId && existing) {
       setForm(existing.task)
       setAssignments(existing.assignments)
-      setPrice(existing.terms?.price != null ? String(existing.terms.price) : '')
-      setPricePerWorker(
-        existing.terms?.price_per_worker != null ? String(existing.terms.price_per_worker) : '',
-      )
-      setContractorWorkSite(existing.terms?.work_site ?? 'field')
       setCustomerPrice(existing.pricing?.price != null ? String(existing.pricing.price) : '')
     } else if (!taskId) {
-      setForm({ task_date: new Date().toISOString().slice(0, 10), worker_count: 0, ...initial })
+      setForm({ task_date: new Date().toISOString().slice(0, 10), worker_count: 0, ...initialRef.current })
       setAssignments([])
-      setPrice('')
-      setPricePerWorker('')
-      setContractorWorkSite('field')
       setCustomerPrice('')
     }
-  }, [open, taskId, existing, initial])
+  }, [open, taskId, existing])
 
   /**
    * כפל-שיבוץ. הבדיקה יושבת ב-SQL (app.task_window / assignment_conflicts)
@@ -225,6 +314,19 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
   })
 
   const allowedMethods = useAllowedExecutionMethods(form.task_type_id, form.customer_id)
+
+  /* אותו כלל בדיוק שהתא בלו״ז מציית לו, מאותה פונקציה (0117) */
+  const statusPick = statusOptions(statuses, form.status_id ?? null, canPublish)
+
+  /* ‏0116: המשאיות של הלקוח של המשימה. רשימה ריקה = אין הגבלה, כמו בלוח.
+     סינון בלבד — הגבול הוא app.enforce_customer_trucks בשרת. */
+  const availableTrucks = useMemo(() => {
+    if (!form.customer_id) return trucks
+    const allowed = customerTrucks.filter((r) => r.customer_id === form.customer_id)
+    if (allowed.length === 0) return trucks
+    const ids = new Set(allowed.map((r) => r.truck_id))
+    return trucks.filter((t) => ids.has(t.id))
+  }, [trucks, customerTrucks, form.customer_id])
 
   /* משימות שנשמרו לפני ריבוי המשאיות מגיעות עם truck_id בלבד */
   const truckIds = useMemo(
@@ -255,7 +357,9 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
         truck_free_text: form.truck_free_text || null,
         notes: form.notes || null,
         status_id: form.status_id || statuses.find((s) => s.is_default)?.id,
-        contractor_id: form.contractor_id || null,
+        /* ‏contractor_id הוא כיום שיקוף של הקבלן הראשי, מתוחזק בטריגר על
+           ‏task_contractor_terms (0096). ההאצלה נעשית ב-RPC ולא נכתבת כאן,
+           ולכן העמודה אינה בעדכון — כדי לא לדרוס את השיקוף. */
         location_text: form.location_text || null,
         warehouse_id: form.warehouse_id || null,
         ...(canEditCustomerPrice
@@ -300,23 +404,9 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
           )
         if (error) throw error
       }
-      // תנאי הקבלן: נקודת התחלה, תעריף-לעובד, ומחיר שטוח רק כשאין תעריף-לעובד
-      // (במצב תעריף-לעובד המחיר מחושב בשרת מספירת העובדים ששובצו, 0091).
-      if (base.contractor_id) {
-        const termsPatch: Record<string, unknown> = {}
-        if (canDelegate) termsPatch.work_site = contractorWorkSite
-        if (canEditPricing) {
-          termsPatch.price_per_worker = pricePerWorker === '' ? null : Number(pricePerWorker)
-          if (!perWorkerPricing && price !== '') termsPatch.price = Number(price)
-        }
-        if (Object.keys(termsPatch).length) {
-          const { error } = await supabase
-            .from('task_contractor_terms')
-            .update(termsPatch)
-            .eq('task_id', id)
-          if (error) throw error
-        }
-      }
+      // תנאי הקבלן (נקודת התחלה, תעריף, כמות עובדים) וההאצלה עצמה נשמרים מיד
+      // דרך כרטיס הקבלן וה-RPCים, ולא עם הטופס — כי משימה נושאת כמה קבלנים,
+      // וכל אחד הוא ישות נפרדת עם שמירה משלה (0096).
       // מחיר ללקוח. נכתב רק כשהוא באמת השתנה, כי כל כתיבה נועלת את המחיר
       // מפני חישוב מחדש — שמירה של המגירה בלי שנגעו בשדה לא אמורה לנעול.
       const before = existing?.pricing?.price
@@ -407,17 +497,18 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
      עובדי הקבלן נספרים כאן כמאיישים: משימה שהואצלה לקבלן והוא איישָׁ אותה
      אינה "חסרה", גם אם אין לה task_assignments משלה (0091). */
   const assignedCount =
-    byRole('worker').length + byRole('driver').length + chosenContractorWorkers.length
+    byRole('worker').length +
+    byRole('driver').length +
+    byRole('team_lead').length +
+    chosenContractorWorkers.length
   const needed = form.worker_count ?? 0
   const understaffed = needed > 0 && assignedCount < needed
 
-  /* תמחור הקבלן: התעריף-לעובד האפקטיבי הוא דריסת המשימה, ואם ריקה — ברירת
-     המחדל של הקבלן. כשקיים תעריף כזה, מחיר המשימה מחושב בשרת (מספר העובדים
-     ששובצו × התעריף), ולכן שדה "מחיר לקבלן" מוצג לקריאה בלבד. */
-  const selectedContractor = contractors.find((c) => c.id === form.contractor_id)
-  const effectiveWorkerRate =
-    pricePerWorker !== '' ? Number(pricePerWorker) : selectedContractor?.price_per_worker ?? null
-  const perWorkerPricing = effectiveWorkerRate != null
+  /* הקבלנים שכבר הואצלו, והרשימה שנותרה לבחירה בבורר ההוספה. */
+  const delegatedIds = new Set(terms.map((t) => t.contractor_id))
+  const addableContractors = contractors.filter(
+    (c) => c.is_active && !delegatedIds.has(c.id),
+  )
 
   return (
     <Drawer
@@ -460,6 +551,14 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
       }
     >
       {dialog}
+      {specEventId && canViewSpecs && (
+        <EventSpecsModal
+          eventId={specEventId}
+          eventTitle={specEvent?.end_client_name || (specEvent ? fmtDate(specEvent.event_date) : '')}
+          open={specsOpen}
+          onClose={() => setSpecsOpen(false)}
+        />
+      )}
       {taskId && isLoading ? (
         <div className="space-y-4">
           <Skeleton className="h-20 w-full" />
@@ -470,7 +569,23 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
         <div className="space-y-4">
           {/* ── what ─────────────────────────────────────────────────────── */}
           <Card>
-            <CardHeader title="מהות המשימה" icon={<Briefcase size={ICON.md} strokeWidth={STROKE} />} />
+            <CardHeader
+              title="מהות המשימה"
+              icon={<Briefcase size={ICON.md} strokeWidth={STROKE} />}
+              /* המפרט של האירוע, מתוך המשימה. דף האירוע אינו נפתח לכולם —
+                 מנהל קבלן ועובד קבלן מגיעים ללו״ז ולא ל-/events/:id — והמגירה
+                 היא המקום היחיד שבו הם רואים משימה שיש לה אירוע. מ-0102
+                 הצפייה במפרט נגזרת מהאירוע, ולכן מה שנשאר הוא לתת לה דלת. */
+              actions={
+                specEventId && canViewSpecs ? (
+                  <Button size="sm" onClick={() => setSpecsOpen(true)}>
+                    <Paperclip size={ICON.sm} strokeWidth={STROKE} />
+                    מפרט
+                    {specs.length > 0 && <Badge tone="primary">{specs.length}</Badge>}
+                  </Button>
+                ) : undefined
+              }
+            />
             <CardBody className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="סוג משימה" required error={typeError}>
@@ -491,12 +606,17 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                   </Select>
                 </Field>
                 <Field label="סטטוס">
-                  <Select value={form.status_id ?? ''} onChange={(e) => set({ status_id: e.target.value })} disabled={!canChangeStatus}>
+                  {/* מסתירים את "משובץ" ממי שאינו רשאי לפרסם — אך משאירים אותו
+                      כשזה הסטטוס הנוכחי, כדי שמשימה שכבר פורסמה תוצג נכון.
+                      ומאז 0117 גם היציאה ממנו שמורה לו, ולכן משימה שפורסמה
+                      נעולה בפניו: בורר פתוח שכל בחירה בו נדחית גרוע מבורר סגור. */}
+                  <Select
+                    value={form.status_id ?? ''}
+                    onChange={(e) => set({ status_id: e.target.value })}
+                    disabled={!canChangeStatus || statusPick.locked}
+                  >
                     <option value="">ברירת מחדל</option>
-                    {statuses
-                      // מסתירים את "משובץ" ממי שאינו רשאי לפרסם — אך משאירים אותו
-                      // כשזה הסטטוס הנוכחי, כדי שמשימה שכבר פורסמה תוצג נכון.
-                      .filter((s) => canPublish || s.code !== 'assigned' || s.id === form.status_id)
+                    {statusPick.options
                       .map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name}
@@ -603,7 +723,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                     שנשמרת גם ב-truck_id, ולפיה מחושבים המחיר והנוכחות. */}
                 <Field label="משאיות" hint={truckIds.length > 1 ? `הראשונה: ${firstTruckName}` : undefined}>
                   <MultiSelect
-                    options={trucks
+                    options={availableTrucks
                       .filter((t) => t.is_active || truckIds.includes(t.id))
                       .map((t) => ({ id: t.id, label: t.name }))}
                     values={truckIds}
@@ -770,7 +890,7 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                         disabled={!has(PERM.TASKS_ASSIGN_TRUCK)}
                       >
                         <option value="">ללא משאית</option>
-                        {trucks
+                        {availableTrucks
                           .filter((t) => t.is_active)
                           .map((t) => (
                             <option key={t.id} value={t.id}>
@@ -869,6 +989,11 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                     </div>
                   </details>
                 )}
+
+                {/* התוספות יושבות מתחת למחיר ולא לצידו: הן אינן דרך אחרת
+                    לקבוע אותו אלא מה שנוסף עליו אחרי שהוא כבר נקבע, וזה גם
+                    הסדר שבו הלקוח קורא אותן בכרטיס התמחור של האירוע. */}
+                {taskId && <PriceAddonsEditor taskId={taskId} canEdit={canEditCustomerPrice} />}
               </CardBody>
             </Card>
           )}
@@ -879,100 +1004,93 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
             <TaskPnlCard taskId={taskId} taskDate={existing.task.task_date} />
           )}
 
-          {/* ── delegation ───────────────────────────────────────────────── */}
-          {has(PERM.CONTRACTORS_VIEW) && (
-            <Card className={cx(form.contractor_id && 'border-warning-border')}>
+          {/* ── delegation to contractors (0096: several per task) ─────────
+              ההאצלה אינה עוד בחירה יחידה: אפשר להאציל את המשימה לכמה קבלנים,
+              כל אחד עם נקודת התחלה, תעריף, כמות עובדים וקנסות משלו. כל שורה
+              היא ישות נפרדת שנשמרת מיד (הוספה/הסרה דרך RPC, שאר השדות בכתיבה
+              ישירה ל-terms), ולא עם כפתור השמירה של הטופס. */}
+          {taskId && has(PERM.CONTRACTORS_VIEW) && (
+            <Card className={cx(terms.length > 0 && 'border-warning-border')}>
               <CardHeader
-                title="האצלה לקבלן"
-                subtitle="הקבלן רואה את המשימה בלוח שלו ומשבץ אליה את עובדיו"
+                title="האצלה לקבלנים"
+                subtitle="כל קבלן רואה את המשימה בלוח שלו ומשבץ אליה את עובדיו — נשמר מיד"
                 icon={<HardHat size={ICON.md} strokeWidth={STROKE} />}
               />
               <CardBody className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="קבלן">
-                    <Select
-                      value={form.contractor_id ?? ''}
-                      onChange={(e) => set({ contractor_id: e.target.value || null })}
-                      disabled={!canDelegate}
-                    >
-                      <option value="">ללא קבלן</option>
-                      {contractors
-                        .filter((c) => c.is_active)
-                        .map((c) => (
+                {terms.length === 0 && (
+                  <p className="type-caption text-ink-tertiary">המשימה לא הואצלה לאף קבלן.</p>
+                )}
+                {terms.map((term) => {
+                  const contractor = contractors.find((c) => c.id === term.contractor_id)
+                  const mine = chosenContractorWorkers.filter(
+                    (w) => w.contractor_id === term.contractor_id,
+                  )
+                  return (
+                    <ContractorDelegationCard
+                      key={term.contractor_id}
+                      taskId={taskId}
+                      term={term}
+                      contractor={contractor}
+                      assignedWorkerIds={mine.map((w) => w.worker_id)}
+                      noShow={new Set(mine.filter((w) => w.no_show).map((w) => w.worker_id))}
+                      canDelegate={canDelegate}
+                      canEditPricing={canEditPricing}
+                      canViewPricing={canViewPricing}
+                      canAssignContractor={canAssignContractor}
+                      canMarkNoShow={canMarkNoShow}
+                      onRemove={() =>
+                        delegate.mutate(
+                          { taskId, contractorId: term.contractor_id, on: false },
+                          { onError: (e) => toast.error(errorMessage(e)) },
+                        )
+                      }
+                      removing={delegate.isPending}
+                    />
+                  )
+                })}
+
+                {canDelegate && addableContractors.length > 0 && (
+                  <div className="flex items-end gap-2 border-t border-line-subtle pt-4">
+                    <Field label="הוספת קבלן" className="flex-1">
+                      <Select
+                        value={addContractor}
+                        onChange={(e) => setAddContractor(e.target.value)}
+                      >
+                        <option value="">בחירת קבלן...</option>
+                        {addableContractors.map((c) => (
                           <option key={c.id} value={c.id}>
                             {c.name}
                           </option>
                         ))}
-                    </Select>
-                  </Field>
-                  {/* נקודת ההתחלה שהמשרד קובע לקבלן. חלה אוטומטית על עובדיו (0091). */}
-                  {form.contractor_id && (
-                    <Field label="נקודת התחלה של הקבלן">
-                      <SegmentedControl
-                        value={contractorWorkSite}
-                        onChange={(v) => canDelegate && setContractorWorkSite(v as WorkSite)}
-                        items={[
-                          { key: 'field' as WorkSite, label: 'שטח' },
-                          { key: 'warehouse' as WorkSite, label: 'מחסן' },
-                        ]}
-                      />
+                      </Select>
                     </Field>
-                  )}
-                </div>
-
-                {form.contractor_id && canViewPricing && (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {/* התעריף-לעובד: ריק = ברירת המחדל של הקבלן. כשקיים, המחיר
-                        מחושב בשרת לפי מספר העובדים ששובצו בפועל (0091). */}
-                    <Field
-                      label="מחיר לעובד (₪)"
-                      hint={
-                        selectedContractor?.price_per_worker != null
-                          ? `ריק = ברירת מחדל של הקבלן (${fmtMoney(selectedContractor.price_per_worker)})`
-                          : 'ריק = תמחור לפי מחיר משימה קבוע'
+                    <Button
+                      loading={delegate.isPending}
+                      disabled={!addContractor}
+                      onClick={() =>
+                        delegate.mutate(
+                          { taskId, contractorId: addContractor, on: true },
+                          {
+                            onSuccess: () => setAddContractor(''),
+                            onError: (e) => toast.error(errorMessage(e)),
+                          },
+                        )
                       }
                     >
-                      <Input
-                        type="number"
-                        min="0"
-                        value={pricePerWorker}
-                        placeholder={selectedContractor?.price_per_worker?.toString() ?? ''}
-                        onChange={(e) => setPricePerWorker(e.target.value)}
-                        disabled={!canEditPricing}
-                      />
-                    </Field>
-                    <Field
-                      label="מחיר לקבלן (₪)"
-                      hint={
-                        perWorkerPricing
-                          ? `מחושב: ${assignedCount} עובדים × ${fmtMoney(effectiveWorkerRate ?? 0)}`
-                          : undefined
-                      }
-                    >
-                      <Input
-                        type="number"
-                        min="0"
-                        value={perWorkerPricing ? String(effectiveWorkerRate! * assignedCount) : price}
-                        onChange={(e) => setPrice(e.target.value)}
-                        disabled={!canEditPricing || perWorkerPricing}
-                      />
-                    </Field>
+                      הוספה
+                    </Button>
                   </div>
                 )}
               </CardBody>
             </Card>
           )}
 
-          {/* ── the contractor's own crew ─────────────────────────────────
-              נפרד מכרטיס "שיבוץ צוות" שמעליו בכוונה: שם השיבוץ הוא state של
-              הטופס שנשמר עם השאר, וכאן הוא נכתב מיד דרך RPC — `task_contractor_workers`
-              אינה עמודה של המשימה, ואין לה שמירה לחזור אליה. גם המפתח אחר:
-              ‏`portal.assign_workers` לקבלן ו-`contractors.assign_workers`
-              למשרד, ולא `tasks.assign.worker`.
-
-              זה גם המסך היחיד שבו מנהל קבלן בטלפון יכול לשבץ: הכרטיס הנייד
-              פותח את המגירה במקום לצייר את תא הצוות. */}
-          {taskId && form.contractor_id && canAssignContractor && (
+          {/* ── the contractor manager's own crew ─────────────────────────
+              מנהל הקבלן אינו רואה את כרטיס ההאצלה שלמעלה (אין לו contractors.view),
+              אך הוא כן משבץ את עובדיו — וזה המסך היחיד שבו הוא יכול, כי הכרטיס
+              הנייד פותח את המגירה במקום לצייר את תא הצוות. שיבוץ נכתב מיד דרך
+              RPC; המפתח הוא `portal.assign_workers`, לא `tasks.assign.worker`. */}
+          {taskId && !has(PERM.CONTRACTORS_VIEW) && canAssignContractor && myContractorId && (
             <Card>
               <CardHeader
                 title="עובדי הקבלן"
@@ -980,32 +1098,16 @@ export function TaskDrawer({ open, onClose, taskId, initial }: TaskDrawerProps) 
                 icon={<HardHat size={ICON.md} strokeWidth={STROKE} />}
               />
               <CardBody>
-                <MultiSelect
-                  options={assignableWorkers.map((w) => ({
-                    id: w.worker_id ? `w:${w.worker_id}` : `p:${w.profile_id}`,
-                    label: w.has_login ? `${w.full_name} · חשבון` : w.full_name,
-                  }))}
-                  values={assignableWorkers
-                    .filter((w) => w.worker_id && chosenContractorWorkers.includes(w.worker_id))
-                    .map((w) => `w:${w.worker_id}`)}
-                  onToggle={(id) => {
-                    const isProfile = id.startsWith('p:')
-                    const key = id.slice(2)
-                    contractorAssign.mutate(
-                      {
-                        taskId,
-                        workerId: isProfile ? null : key,
-                        profileId: isProfile ? key : null,
-                        on: !(!isProfile && chosenContractorWorkers.includes(key)),
-                      },
-                      { onError: (e) => toast.error(errorMessage(e)) },
-                    )
-                  }}
-                  placeholder="בחירת עובדים מהקבלן..."
+                <ContractorCrew
+                  taskId={taskId}
+                  contractorId={myContractorId}
+                  contractorName={contractors.find((c) => c.id === myContractorId)?.name ?? null}
+                  assignedWorkerIds={chosenContractorWorkers
+                    .filter((w) => w.contractor_id === myContractorId)
+                    .map((w) => w.worker_id)}
+                  noShow={new Set()}
+                  canMarkNoShow={false}
                 />
-                {assignableWorkers.length === 0 && (
-                  <p className="mt-1 type-caption text-ink-tertiary">אין עדיין עובדים בסגל של הקבלן.</p>
-                )}
               </CardBody>
             </Card>
           )}

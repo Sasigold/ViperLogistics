@@ -105,7 +105,16 @@ export const PERM = {
   EVENTS_ACTIVITY_LOG: 'events.activity_log',
   EVENTS_ACTIVITY_NOTE: 'events.activity_note',
   EVENTS_SPECS_VIEW: 'events.specs_view',
+  /* העלאה והסרה נפרדו ב-0113: המפרט נולד אצל הלקוח, ולכן ההעלאה פתוחה לו
+     בברירת המחדל של סוג המשתמש — וההסרה מההיסטוריה נשארה של מי שמנהל את
+     האירוע. `specs_upload` נגזר מ-`specs_manage`, ולכן איש צוות שמנהל
+     מפרטים ממשיך להעלות בלי שינוי. */
+  EVENTS_SPECS_UPLOAD: 'events.specs_upload',
   EVENTS_SPECS_MANAGE: 'events.specs_manage',
+  /* החתמת לקוח (0107). ראש צוות ההקמה והלקוח מגיעים דרך תפקיד/זהות, לא דרך
+     המפתחות האלה — הם פותחים את החתימה גם לרכז משרדי שהוענק לו במפורש. */
+  EVENTS_SIGN_VIEW: 'events.sign_view',
+  EVENTS_SIGN_CAPTURE: 'events.sign_capture',
   FINANCE_INCOME_VIEW: 'finance.income_view',
   FINANCE_INCOME_EDIT: 'finance.income_edit',
   FINANCE_MANAGE_SPLITS: 'finance.manage_splits',
@@ -139,6 +148,9 @@ export const PERM = {
   PORTAL_VIEW_FINANCIALS: 'portal.view_financials',
   PORTAL_MANAGE_WORKERS: 'portal.manage_workers',
   PORTAL_APPROVE_ATTENDANCE: 'portal.approve_attendance',
+  /* הגדרות שכר ושעון לסגל של הקבלן (0103). מפתח נפרד מהמשרדי
+     `attendance.manage_pay`, שמתיר לכתוב את ההגדרות של כל אדם במערכת. */
+  PORTAL_WORKER_SETTINGS: 'portal.worker_settings',
   NOTIFICATIONS_PREFERENCES: 'notifications.preferences',
   NOTIFICATIONS_MANAGE: 'notifications.manage',
   SETTINGS_VIEW: 'settings.view',

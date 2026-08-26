@@ -10,7 +10,9 @@ import type { WorkBoardRow } from '../../../types/domain'
  * glance. Everything is derived from onsite_start_time / hours_count — no new
  * data.
  */
-export function DayTimeline({ tasks, onOpen }: { tasks: WorkBoardRow[]; onOpen: (id: string) => void }) {
+/* `onOpen` הוא אופציונלי: כרטיס המשימה סגור למי שאינו מנהל מערכת (0108),
+   ובלעדיו הצ׳יפ נשאר תצוגה ולא כפתור. */
+export function DayTimeline({ tasks, onOpen }: { tasks: WorkBoardRow[]; onOpen?: (id: string) => void }) {
   const timed = tasks.filter((t) => t.onsite_start_time)
   const untimed = tasks.filter((t) => !t.onsite_start_time)
   /* An hour axis needs horizontal room to mean anything: on a phone every bar
@@ -53,8 +55,9 @@ export function DayTimeline({ tasks, onOpen }: { tasks: WorkBoardRow[]; onOpen: 
             return (
               <li key={t.id}>
                 <button
-                  onClick={() => onOpen(t.id)}
-                  className="flex w-full items-center gap-2 rounded-lg p-2 text-start transition-colors hover:bg-hover"
+                  onClick={() => onOpen?.(t.id)}
+                disabled={!onOpen}
+                  className="flex w-full items-center gap-2 rounded-lg p-2 text-start transition-colors hover:bg-hover disabled:cursor-default disabled:hover:bg-transparent"
                 >
                   <span
                     aria-hidden
@@ -128,8 +131,9 @@ export function DayTimeline({ tasks, onOpen }: { tasks: WorkBoardRow[]; onOpen: 
                     }
                   >
                     <button
-                      onClick={() => onOpen(t.id)}
-                      className="absolute inset-y-0.5 flex items-center gap-1.5 overflow-hidden rounded px-1.5 text-start shadow-xs transition-[filter] hover:brightness-105 focus-visible:outline-none focus-visible:focus-ring"
+                      onClick={() => onOpen?.(t.id)}
+                      disabled={!onOpen}
+                      className="absolute inset-y-0.5 flex items-center gap-1.5 overflow-hidden rounded px-1.5 text-start shadow-xs transition-[filter] hover:brightness-105 focus-visible:outline-none focus-visible:focus-ring disabled:cursor-default disabled:hover:brightness-100"
                       style={{
                         insetInlineStart: `${Math.max(0, Math.min(start, 97))}%`,
                         width: `${Math.min(width, 100 - Math.max(0, Math.min(start, 97)))}%`,
@@ -155,8 +159,9 @@ export function DayTimeline({ tasks, onOpen }: { tasks: WorkBoardRow[]; onOpen: 
             {untimed.map((t) => (
               <button
                 key={t.id}
-                onClick={() => onOpen(t.id)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2 py-0.5 type-caption transition-colors hover:bg-hover"
+                onClick={() => onOpen?.(t.id)}
+                  disabled={!onOpen}
+                className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2 py-0.5 type-caption transition-colors hover:bg-hover disabled:cursor-default disabled:hover:bg-surface"
               >
                 <span className="size-1.5 rounded-full" style={{ background: t.customer_color ?? '#64748b' }} />
                 {t.end_client_name || t.title || t.task_type_name}

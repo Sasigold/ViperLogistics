@@ -1,18 +1,11 @@
-import type { TaskStatusCode, WorkBoardRow } from '../../types/domain'
+import type { WorkBoardRow } from '../../types/domain'
 
-/** הסטטוס שממנו ואילך המשימה גלויה לעובד המשובץ אליה (0063). */
-export const PUBLISHED: TaskStatusCode = 'assigned'
-
-/**
- * משימה באיחור: התאריך שלה עבר והיא עדיין לא פורסמה לעובד.
- *
- * עד 0063 המדד היה `!status_is_terminal` — "הושלם" ו"בוטל" סגרו את המשימה
- * וכל השאר נחשב פתוח. שלושת הסטטוסים האלה ירדו, ומאז אין למשימה סטטוס סוגר
- * בכלל, כך שאותו מדד היה מסמן כל משימה שתאריכה עבר — כלומר את כל
- * ההיסטוריה. מה שנשאר ניתן לפספוס הוא הפרסום, וזה מה שנמדד כאן.
- */
-export const isOverdue = (today: string) => (row: WorkBoardRow) =>
-  row.task_date < today && row.status_code !== PUBLISHED
+/* כאן ישב `isOverdue` — "התאריך עבר והמשימה עדיין לא פורסמה לעובד" — והוא
+   ירד יחד עם הסימון שהוא הזין: הצ׳יפ בכותרת, הרקע האדום על השורה ומשולש
+   האזהרה. הבעיה לא הייתה בהגדרה אלא בהיקף שלה: מאז 0063 אין למשימה סטטוס
+   סוגר, ולכן כל יום שעבר בלי פרסום נספר לנצח, והלוח נצבע אדום לאורך כל
+   ההיסטוריה. סימון שמופיע על הכול אינו מסמן דבר. המשימות עצמן לא זזו — הן
+   ממשיכות להופיע בעמודת היום שלהן כמו כל משימה אחרת. */
 
 /* ── colour-coded groups ───────────────────────────────────────────────────
    Every task that belongs to the same event is painted with the same hue, so
@@ -23,6 +16,39 @@ export const isOverdue = (today: string) => (row: WorkBoardRow) =>
    number, so the board stays readable for anyone who can't separate the
    colours, and so two groups that happen to land on the same palette slot can
    still be told apart.                                                      */
+
+/* ── מה קודם ביום ──────────────────────────────────────────────────────────
+   שעת ההגעה לשטח, ורק היא: יציאה מהמחסן ב-05:00 אינה מה שהיום נקרא לפיו,
+   ולתת לה לעמוד במקום שעת שטח חסרה הציבה דווקא את המשימות האלה בראש.
+   ‏'99:99' הוא סנטינל ולא שעה — הוא ממיין אחרי כל שעה אמיתית, ולכן משימה
+   בלי שעה שוקעת לתחתית במקום לצוף לראש.
+
+   הפונקציה יושבת כאן, ולא בקומפוננטה, מפני שהיא נשאלת בשני מסכים: הלו״ז
+   ממיין בה את היום, ודף האירוע מסדר בה את ההקמה מול הפירוק (0114-). שתי
+   העתקות של אותו כלל היו אחת יותר מדי, וההבדל ביניהן היה מתגלה כשהפירוק
+   מקדים את ההקמה — כלומר בדיוק במקרה שבגללו הכלל נכתב.                    */
+
+type TimedRow = Pick<WorkBoardRow, 'onsite_start_time' | 'warehouse_start_time'>
+
+export function byTaskTime(a: TimedRow, b: TimedRow): number {
+  const at = a.onsite_start_time ?? '99:99'
+  const bt = b.onsite_start_time ?? '99:99'
+  if (at !== bt) return at.localeCompare(bt)
+  /* אותה שעת שטח (או אין כזו) — היציאה מהמחסן היא מה שמפריד הלאה */
+  const aw = a.warehouse_start_time ?? '99:99'
+  const bw = b.warehouse_start_time ?? '99:99'
+  if (aw !== bw) return aw.localeCompare(bw)
+  return 0
+}
+
+/** אותו כלל, כשהתאריך עצמו יכול להיות שונה: קודם היום, ואז השעה בתוכו. */
+export function byTaskDateTime(
+  a: TimedRow & { task_date: string },
+  b: TimedRow & { task_date: string },
+): number {
+  if (a.task_date !== b.task_date) return a.task_date.localeCompare(b.task_date)
+  return byTaskTime(a, b)
+}
 
 export type ColorBy = 'event' | 'customer' | 'none'
 

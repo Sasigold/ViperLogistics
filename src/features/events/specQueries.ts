@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import type { EventSpec } from '../../types/domain'
 import { specStoragePath } from './specs'
+import type { SpecDraft } from './specs'
 
 export const SPEC_BUCKET = 'event-specs'
 
@@ -71,12 +72,6 @@ export async function specDownloadUrl(spec: EventSpec): Promise<string | null> {
   return data.signedUrl
 }
 
-export interface NewSpec {
-  file?: File
-  url?: string
-  title?: string
-}
-
 /**
  * העלאה בשני צעדים, ובניקוי אחריהם.
  *
@@ -86,47 +81,52 @@ export interface NewSpec {
  *
  * מספר הגרסה אינו נשלח מכאן — הטריגר במסד קובע אותו תחת נעילה, ושתי העלאות
  * במקביל לאותו אירוע אינן יכולות לקבל אותו מספר.
+ *
+ * פונקציה ולא hook: טופס יצירת האירוע מקבל את ה-event_id רק כשהיצירה חוזרת
+ * מהשרת, ולכן אין לו מזהה לקשור אליו hook מראש.
  */
+export async function uploadSpec(eventId: string, draft: SpecDraft): Promise<void> {
+  const title = draft.title.trim() || null
+
+  if (draft.source === 'link') {
+    const { error } = await supabase.from('event_specs').insert({
+      event_id: eventId,
+      source: 'link',
+      url: draft.url.trim(),
+      title,
+    })
+    if (error) throw error
+    return
+  }
+
+  const file = draft.file!
+  const path = specStoragePath(eventId, file.name, crypto.randomUUID())
+  const { error: upErr } = await supabase.storage.from(SPEC_BUCKET).upload(path, file, {
+    contentType: file.type || undefined,
+    upsert: false,
+  })
+  if (upErr) throw upErr
+
+  const { error } = await supabase.from('event_specs').insert({
+    event_id: eventId,
+    source: 'file',
+    storage_path: path,
+    file_name: file.name,
+    mime_type: file.type || null,
+    size_bytes: file.size,
+    title,
+  })
+  if (error) {
+    await supabase.storage.from(SPEC_BUCKET).remove([path])
+    throw error
+  }
+}
+
 export function useUploadSpec(eventId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (next: NewSpec) => {
-      const title = next.title?.trim() || null
-
-      if (!next.file) {
-        const { error } = await supabase.from('event_specs').insert({
-          event_id: eventId,
-          source: 'link',
-          url: next.url!.trim(),
-          title,
-        })
-        if (error) throw error
-        return
-      }
-
-      const file = next.file
-      const path = specStoragePath(eventId, file.name, crypto.randomUUID())
-      const { error: upErr } = await supabase.storage.from(SPEC_BUCKET).upload(path, file, {
-        contentType: file.type || undefined,
-        upsert: false,
-      })
-      if (upErr) throw upErr
-
-      const { error } = await supabase.from('event_specs').insert({
-        event_id: eventId,
-        source: 'file',
-        storage_path: path,
-        file_name: file.name,
-        mime_type: file.type || null,
-        size_bytes: file.size,
-        title,
-      })
-      if (error) {
-        await supabase.storage.from(SPEC_BUCKET).remove([path])
-        throw error
-      }
-    },
-    onSuccess: () => invalidate(qc, eventId),
+    mutationFn: (draft: SpecDraft) => uploadSpec(eventId, draft),
+    onSuccess: () => invalidateEventSpecs(qc, eventId),
   })
 }
 
@@ -144,11 +144,11 @@ export function useRemoveSpec(eventId: string) {
       const { error } = await supabase.rpc('remove_event_spec', { p_spec_id: specId })
       if (error) throw error
     },
-    onSuccess: () => invalidate(qc, eventId),
+    onSuccess: () => invalidateEventSpecs(qc, eventId),
   })
 }
 
-function invalidate(qc: ReturnType<typeof useQueryClient>, eventId: string) {
+export function invalidateEventSpecs(qc: ReturnType<typeof useQueryClient>, eventId: string) {
   void qc.invalidateQueries({ queryKey: ['event_specs', eventId] })
   // הטריגר במסד רשם שורה ביומן, והיומן פתוח על אותו מסך
   void qc.invalidateQueries({ queryKey: ['event_activity', eventId] })

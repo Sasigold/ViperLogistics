@@ -21,6 +21,7 @@ import { useAuth } from '../state/auth'
 import { RouteGate } from '../features/auth/guards'
 import { NotificationsBell } from '../features/notifications/NotificationsBell'
 import { usePushNavigation, usePushSync } from '../features/notifications/pushQueries'
+import { useRealtimeSync } from '../features/sync/useRealtimeSync'
 import { CommandPalette } from '../features/search/CommandPalette'
 import { NAV_SECTIONS, ROUTE_LABELS, bottomNavItems, navAudience, navItemVisible, visibleNavSections } from './nav'
 import type { NavItem, NavSection } from './nav'
@@ -50,6 +51,8 @@ export default function AppLayout() {
   // ל-Service Worker דרך לטפל בו בלי session.
   usePushSync()
   usePushNavigation(navigate)
+  // אותות שינוי ממשתמשים אחרים → רענון השאילתות הפעילות (0101)
+  useRealtimeSync()
 
   useEffect(() => localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0'), [collapsed])
   useEffect(() => setMobileNav(false), [location.pathname])

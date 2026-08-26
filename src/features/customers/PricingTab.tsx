@@ -51,6 +51,8 @@ import {
   ADJUST_ROUNDING_LABEL,
   AFTER_KINDS,
   BOOLEAN_VARS,
+  condState,
+  setCondState,
   COMPONENT_KINDS,
   HOUR_KINDS,
   MODEL_HINT,
@@ -421,11 +423,25 @@ function VarSelect({
   )
 }
 
+/* ‏— / כן / לא. "—" הוא היעדר התנאי ולא "לא אכפת לי שהוא שלילי", ולכן הוא
+   מוחק את השורה מהתנאי במקום לכתוב בה `is_false`. */
+const TRI_OPTIONS = [
+  { key: 'off' as const, label: '—' },
+  { key: 'true' as const, label: 'כן' },
+  { key: 'false' as const, label: 'לא' },
+]
+
 /**
  * עורך התנאי. מכוון בכוונה לצורה אחת בלבד — "כל התנאים מתקיימים" על שדות
- * בוליאניים — כי זו הצורה היחידה שעלתה בשטח, ותיבת סימון היא ממשק שאפשר
- * להשתמש בו. המנוע תומך ב-any, בהשוואות מספריות ובקינון; קונפיג שמגיע עם
- * תנאי מורכב יותר נשמר כפי שהוא ומוצג כאן כטקסט בלבד, ולא נדרס.
+ * בוליאניים — כי זו הצורה היחידה שעלתה בשטח. המנוע תומך ב-any, בהשוואות
+ * מספריות ובקינון; קונפיג שמגיע עם תנאי מורכב יותר נשמר כפי שהוא ומוצג כאן
+ * כטקסט בלבד, ולא נדרס.
+ *
+ * שלושה מצבים ולא שניים (0118): תיבת סימון ידעה לומר "חייב להתקיים" בלבד,
+ * ולכן "רק כשזו **אינה** הובלה בלבד" לא היה ניתן לביטוי — אף שהמנוע תומך
+ * ב-`is_false` מאז 0017. ‏`simple` נשאר רחב כפי שהיה במכוון: תנאי שמערב
+ * מבחן מספרי לצד הבוליאניים ממשיך להיערך כאן, והמבחן המספרי רוכב איתו בלי
+ * שנגעו בו — הידוק הבדיקה היה שולח קונפיגים עובדים למסלול "לקריאה בלבד".
  */
 function CondEditor({
   when,
@@ -438,7 +454,6 @@ function CondEditor({
 }) {
   const tests = when && typeof when === 'object' && 'all' in when ? when.all : []
   const simple = !when || (typeof when === 'object' && 'all' in when)
-  const active = new Set(tests.filter((t) => t.op === 'is_true').map((t) => t.field))
 
   if (!simple) {
     return (
@@ -449,20 +464,21 @@ function CondEditor({
   }
 
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+    <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
       {BOOLEAN_VARS.map((v) => (
-        <Checkbox
-          key={v.key}
-          label={v.label}
-          disabled={disabled}
-          checked={active.has(v.key)}
-          onChange={(on) => {
-            const next = on
-              ? [...tests, { field: v.key, op: 'is_true' as const }]
-              : tests.filter((t) => t.field !== v.key)
-            onChange(next.length ? { all: next } : null)
-          }}
-        />
+        <div key={v.key} className="flex min-w-0 items-center justify-between gap-2">
+          <span className="type-caption truncate text-ink-secondary">{v.label}</span>
+          {/* fieldset ולא prop: ל-SegmentedControl אין `disabled` משלו, והוא
+              מרונדר כ-buttons — שהדפדפן משבית מאליו בתוך fieldset מושבת. */}
+          <fieldset disabled={disabled} className="contents">
+            <SegmentedControl
+              items={TRI_OPTIONS}
+              value={condState(tests, v.key)}
+              onChange={(next) => onChange(setCondState(tests, v.key, next))}
+              className={disabled ? 'opacity-60' : undefined}
+            />
+          </fieldset>
+        </div>
       ))}
     </div>
   )

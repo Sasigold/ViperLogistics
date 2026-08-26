@@ -15,6 +15,7 @@ import {
   List,
   Paperclip,
   Pencil,
+  PencilLine,
   Plus,
   STROKE,
   Trash2,
@@ -49,14 +50,18 @@ import { PERM } from '../../lib/permissions'
 import { useCustomFormFields, useStatuses } from '../../lib/queries'
 import { errorMessage } from '../../lib/errors'
 import { fmtDate, fmtDateLong, fmtHours, fmtTime } from '../../lib/dates'
+import { byTaskDateTime } from '../workboard/grouping'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { EventFormModal } from './EventFormModal'
 import { formatCustomValue } from './CustomFieldInput'
-import { TaskDrawer } from '../tasks/TaskDrawer'
+import { TaskDrawer, useCanOpenTaskCard } from '../tasks/TaskDrawer'
 import { EventActivityLog } from './EventActivityLog'
 import { EventSpecsModal } from './EventSpecsModal'
+import { CustomerSignatureModal } from './CustomerSignatureModal'
 import { useEventSpecs } from './specQueries'
-import type { EventRow, WorkBoardRow } from '../../types/domain'
+import { sumAddons, useEventPriceAddons } from '../pricing/addonQueries'
+import { useEventSignatures } from './signatureQueries'
+import type { EventPriceAddon, EventRow, WorkBoardRow } from '../../types/domain'
 
 type TaskTab = 'all' | 'setup' | 'teardown' | 'other'
 type TaskViewMode = 'cards' | 'table'
@@ -66,10 +71,11 @@ export default function EventDetailPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const toast = useToast()
-  const { has, me, canViewField, showsEventField } = useAuth()
+  const { has, hasAny, me, canViewField, showsEventField } = useAuth()
   const { confirm, dialog } = useConfirm()
   const [editOpen, setEditOpen] = useState(false)
   const [specsOpen, setSpecsOpen] = useState(false)
+  const [signOpen, setSignOpen] = useState(false)
   const [taskDrawer, setTaskDrawer] = useState<{ open: boolean; taskId: string | null }>({ open: false, taskId: null })
   const [activeTab, setActiveTab] = useState<TaskTab>('all')
   const [viewMode, setViewMode] = useState<TaskViewMode>('cards')
@@ -94,7 +100,16 @@ export default function EventDetailPage() {
   const { data: tasks = [], isLoading: loadingTasks, error: tasksError, refetch: refetchTasks } = useQuery({
     queryKey: ['workboard', 'byEvent', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('work_board_view').select('*').eq('event_id', id).order('task_date')
+      const { data, error } = await supabase
+        .from('work_board_view')
+        .select('*')
+        .eq('event_id', id)
+        /* התאריך ואז השעה. בלי השעה, הקמה ופירוק שנופלים על אותו יום חוזרים
+           בסדר שרירותי — ובאירוע שבו הפירוק ב-06:00 וההקמה ב-18:00 המסך סיפר
+           את היום הפוך. `DataTable` מחזיר את השורות כפי שהן כשאין מיון פעיל,
+           ולכן זה לבדו מסדר את הטבלה. */
+        .order('task_date')
+        .order('onsite_start_time', { nullsFirst: false })
       if (error) throw error
       return data as WorkBoardRow[]
     },
@@ -105,22 +120,53 @@ export default function EventDetailPage() {
   // רק בשביל המונה על הכפתור. המסך עצמו נטען כשהמודאל נפתח.
   const { data: specs = [] } = useEventSpecs(id ?? '', !!id && has(PERM.EVENTS_SPECS_VIEW))
 
+  /**
+   * ראש צוות ההקמה — לא מפתח במרשם אלא תפקיד על משימת ההקמה של האירוע (0107),
+   * נגזר מהמשימות שכבר נשלפו. השרת מכריע את אותו דבר ב-`is_event_setup_team_lead`,
+   * וכאן זה רק מה שמחליט אם להציע את כפתור החתימה.
+   */
+  const isSetupLead =
+    !!me?.profile.id && tasks.some((t) => t.task_type_code === 'setup' && t.team_lead_id === me.profile.id)
+  // הקהל שעשוי לראות חתימות: מי שיש לו מפתח, ראש צוות ההקמה, או משתמש הלקוח
+  // (שרואה רק את האירועים שלו ממילא). RLS היא השער האמיתי — זה רק חוסך שליפה.
+  const signAudience =
+    hasAny(PERM.EVENTS_SIGN_VIEW, PERM.EVENTS_SIGN_CAPTURE) ||
+    isSetupLead ||
+    me?.profile.user_kind === 'customer_user'
+  const { data: signatures = [] } = useEventSignatures(id ?? '', !!id && signAudience)
+
   usePageTitle(data?.event.end_client_name ?? null)
+
+  /**
+   * תוספות המחיר של האירוע (0113) — הן ואת ההערה שמסבירה כל אחת מהן.
+   *
+   * שאילתה נפרדת ולא עמודה ב-`work_board_view`: התוספת היא רשימה ולא מספר,
+   * וכל הנקודה שלה היא המשפט שנלווה לסכום. ‏RLS על `task_price_addons` היא
+   * שמכריעה מי רואה מה, ולכן הלקוח מקבל כאן בדיוק את התוספות של האירוע שלו.
+   */
+  const { data: priceAddons = [] } = useEventPriceAddons(id ?? null, !!id && has(PERM.PRICING_VIEW))
 
   const pricing = useMemo(() => {
     const priced = tasks.filter((t) => t.customer_price != null)
-    if (!priced.length) return null
+    if (!priced.length && !priceAddons.length) return null
+    const base = priced.reduce((sum, t) => sum + Number(t.customer_price), 0)
     return {
       rows: priced.map((t) => ({
         id: t.id,
         label: t.title || t.task_type_name,
         price: Number(t.customer_price),
         isManual: !!t.price_is_manual,
+        /* התוספות של אותה משימה יושבות מתחתיה, ולא בגוש נפרד: "המתנה בשער"
+           היא משפט על ההקמה, ומי שקורא את השורה שלה צריך לראות אותו שם. */
+        addons: priceAddons.filter((a) => a.task_id === t.id),
       })),
-      total: priced.reduce((sum, t) => sum + Number(t.customer_price), 0),
+      /* תוספת על משימה שאין לה מחיר עדיין אינה נעלמת — היא נספרת בסך הכול
+         ומקבלת שורה משלה מתחת לרשימה. */
+      orphanAddons: priceAddons.filter((a) => !priced.some((t) => t.id === a.task_id)),
+      total: base + sumAddons(priceAddons),
       unpriced: tasks.length - priced.length,
     }
-  }, [tasks])
+  }, [tasks, priceAddons])
 
   /* מנהל הקבלן רואה כמה הוא מקבל על האירוע: סכום התשלום על משימותיו, מתוך
      `contractor_price` שה-view כבר הגביל לתמחור שהוא רשאי לראות ולמשימות
@@ -170,9 +216,38 @@ export default function EventDetailPage() {
    * (0079). בלעדיו שורת המשימה נשארת מה שהיא — מידע — ואינה מציעה לחיצה
    * שתיפתח למסך שאין בו מה לשנות.
    */
-  const canOpenTask = has(PERM.BOARD_OPEN_TASK)
+  /* ‏0108: כרטיס המשימה — פתיחה ויצירה כאחת — הוא של מנהל המערכת. */
+  const canOpenTaskCard = useCanOpenTaskCard()
+  const canOpenTask = has(PERM.BOARD_OPEN_TASK) && canOpenTaskCard
+  /* משימה חדשה נפתחת באותו כרטיס, ולכן היא הולכת אחריו. */
+  const canCreateTask = has(PERM.TASKS_CREATE) && canOpenTaskCard
   /** סכומי כסף הם מפתח, ולא "מה שיש בנתונים": בלעדיו הכרטיס אינו קיים */
   const canSeePricing = has(PERM.PRICING_VIEW)
+  /**
+   * אישור לביצוע (0109) — של מנהל המערכת, ולא של מפתח.
+   *
+   * ‏`set_event_approved` דוחה כל אחד אחר, וטריגר חוסם כתיבה ישירה לעמודה,
+   * ולכן המתג כאן אינו השער אלא רק הדלת: מי שאינו אדמין פשוט לא רואה אותו.
+   */
+  const isAdmin = !!me?.profile.is_admin
+  const approve = useMutation({
+    mutationFn: async (on: boolean) => {
+      const { error } = await supabase.rpc('set_event_approved', { p_event_id: id, p_on: on })
+      if (error) throw error
+    },
+    onSuccess: (_d, on) => {
+      toast.success(on ? 'האירוע אושר לביצוע' : 'האישור בוטל')
+      void qc.invalidateQueries({ queryKey: ['events'] })
+      void qc.invalidateQueries({ queryKey: ['calendar'] })
+      void qc.invalidateQueries({ queryKey: ['event_activity', id] })
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  /* נגזר מהשאילתה ולא נבנה בתוך ה-JSX: `.map()` שם מייצר מערך חדש בכל
+     רינדור, כלומר prop שמתחלף בלי ששום דבר השתנה. יושב מעל ה-early return
+     כי hook מתחתיו הוא הפרה של rules-of-hooks. */
+  const supplierIds = useMemo(() => (data?.suppliers ?? []).map((s) => s.supplier_id), [data])
 
   const columns = useMemo<Column<WorkBoardRow>[]>(
     () => [
@@ -339,6 +414,13 @@ export default function EventDetailPage() {
   const canSeeLog = has(PERM.EVENTS_ACTIVITY_LOG) || isEventLead
   const canSeeContact = canViewField('event', 'contact_phone') || isEventLead
 
+  /* החתמת לקוח (0107): הכפתור לראש צוות ההקמה, למנהל המערכת, וללקוח — ולא
+     לעובד מן השורה ולא לרכז אקראי. `has()` מחזיר true לאדמין על כל מפתח. */
+  const isEventCustomerUser =
+    me?.profile.user_kind === 'customer_user' && me?.profile.customer_id === event.customer_id
+  const canCaptureSignature = has(PERM.EVENTS_SIGN_CAPTURE) || isSetupLead || isEventCustomerUser
+  const canViewSignature = canCaptureSignature || has(PERM.EVENTS_SIGN_VIEW)
+
   const remove = async () => {
     if (
       !(await confirm('למחוק את האירוע וכל המשימות שלו? ניתן לשחזר מסל המיחזור.', {
@@ -377,6 +459,30 @@ export default function EventDetailPage() {
         .join(' · ') || null
     )
   }
+
+  /**
+   * שתי שורות הסיכום, לפי מי שקודם.
+   *
+   * הסדר "הקמה ואז פירוק" נכון כמעט תמיד, ולכן הוא היה מקובע — אבל כשהשניים
+   * נופלים על אותו יום הוא מקובע גם כשהוא הפוך: פירוק ב-06:00 של ציוד מאתמול
+   * והקמה ב-18:00 לערב הם יום אחד שמתחיל בפירוק. המיון הוא כרונולוגי לגמרי
+   * (תאריך ואז שעה), ולכן בתאריכים שונים הוא ממילא נותן את הסדר המוכר.
+   *
+   * ‏`byTaskDateTime` הוא אותו כלל שהלו״ז ממיין בו את היום — שם שעה חסרה
+   * שוקעת לתחתית, וכאן זה אומר שהבלוק שאין לו שעה יורד למטה. תיקו מלא (אין
+   * שעות לשניהם) משאיר את סדר המקור, כלומר הקמה ואז פירוק.
+   */
+  /* בלי useMemo: הקטע הזה יושב אחרי היציאות המוקדמות של הקומפוננטה, והוק
+     שנקרא אחרי `return` מותנה נקרא בסדר שונה בין רינדורים. שני איברים אינם
+     שווים את המחיר הזה ממילא. */
+  const sectionRows: [string, React.ReactNode][] = (
+    [
+      ['הקמה', 'setup', tasks.find((x) => x.task_type_code === 'setup')],
+      ['פירוק', 'teardown', tasks.find((x) => x.task_type_code === 'teardown')],
+    ] as [string, 'setup' | 'teardown', WorkBoardRow | undefined][]
+  )
+    .sort((a, b) => (a[2] && b[2] ? byTaskDateTime(a[2], b[2]) : 0))
+    .map(([label, code]) => [label, sectionLine(code)])
 
   /* The same rule that shapes the form shapes the read view: a field the
      reader's company configured off, or their field permissions hide, should
@@ -421,8 +527,7 @@ export default function EventDetailPage() {
           ],
         ] as [string, React.ReactNode][])
       : []),
-    ['הקמה', sectionLine('setup')],
-    ['פירוק', sectionLine('teardown')],
+    ...sectionRows,
     ...(show('notes') ? ([['הערות', event.notes]] as [string, React.ReactNode][]) : []),
     /* the customer's own fields, under the same rule as everything above */
     ...(customFields
@@ -450,6 +555,14 @@ export default function EventDetailPage() {
           <span className="flex flex-wrap items-center gap-2.5">
             {event.end_client_name || 'אירוע'}
             <StatusPicker event={event} />
+            {/* ‏0109: מה שמנהל המערכת אישר, כל מי שרואה את האירוע קורא —
+                ובראשם הלקוח, שזו כל הסיבה שהסימון קיים. */}
+            {event.approved_at && (
+              <Badge tone="success">
+                <Check size={ICON.xs} strokeWidth={STROKE} />
+                מאושר לביצוע
+              </Badge>
+            )}
           </span>
         }
         subtitle={
@@ -482,6 +595,25 @@ export default function EventDetailPage() {
                 <Paperclip size={ICON.sm} strokeWidth={STROKE} />
                 מפרט
                 {specs.length > 0 && <Badge tone="primary">{specs.length}</Badge>}
+              </Button>
+            )}
+            {canViewSignature && (
+              <Button size="sm" onClick={() => setSignOpen(true)}>
+                <PencilLine size={ICON.sm} strokeWidth={STROKE} />
+                החתמת לקוח
+                {signatures.length > 0 && <Badge tone="success">נחתם</Badge>}
+              </Button>
+            )}
+            {/* המתג עצמו הוא של מנהל המערכת, וה-RPC דוחה כל אחד אחר (0109). */}
+            {isAdmin && (
+              <Button
+                size="sm"
+                variant={event.approved_at ? 'ghost' : 'primary'}
+                loading={approve.isPending}
+                onClick={() => approve.mutate(!event.approved_at)}
+              >
+                <Check size={ICON.sm} strokeWidth={STROKE} />
+                {event.approved_at ? 'ביטול אישור לביצוע' : 'אישור לביצוע'}
               </Button>
             )}
             {has(PERM.EVENTS_DUPLICATE) && (
@@ -560,16 +692,31 @@ export default function EventDetailPage() {
                 <CardBody>
                   <dl className="divide-y divide-line-subtle">
                     {pricing.rows.map((r) => (
-                      <div key={r.id} className="flex items-start justify-between gap-3 py-2 first:pt-0">
-                        <dt className="min-w-0 shrink type-caption text-ink-tertiary">
-                          {r.label}
-                          {r.isManual && <span className="ms-1.5 text-warning-text">ידני</span>}
-                        </dt>
-                        <dd dir="ltr" className="shrink-0 tabular-nums type-body font-medium">
-                          {fmtMoney(r.price)}
-                        </dd>
+                      <div key={r.id} className="py-2 first:pt-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <dt className="min-w-0 shrink type-caption text-ink-tertiary">
+                            {r.label}
+                            {r.isManual && <span className="ms-1.5 text-warning-text">ידני</span>}
+                          </dt>
+                          <dd dir="ltr" className="shrink-0 tabular-nums type-body font-medium">
+                            {fmtMoney(r.price)}
+                          </dd>
+                        </div>
+                        {r.addons.map((a) => (
+                          <PriceAddonLine key={a.id} addon={a} />
+                        ))}
                       </div>
                     ))}
+                    {/* תוספת על משימה שעדיין אין לה מחיר. היא נספרת בסך הכול
+                        ממילא, ולכן היא חייבת להיראות — אחרת הסכום למטה גדול
+                        מסך השורות שמעליו בלי הסבר. */}
+                    {pricing.orphanAddons.length > 0 && (
+                      <div className="py-2">
+                        {pricing.orphanAddons.map((a) => (
+                          <PriceAddonLine key={a.id} addon={a} withTask />
+                        ))}
+                      </div>
+                    )}
                     <div className="flex items-baseline justify-between gap-3 pt-2">
                       <dt className="type-body font-semibold">סך הכול</dt>
                       <dd dir="ltr" className="tabular-nums type-title font-semibold text-primary">
@@ -748,7 +895,7 @@ export default function EventDetailPage() {
                     </button>
                   </div>
 
-                  {has(PERM.TASKS_CREATE) && (
+                  {canCreateTask && (
                     <Button size="sm" variant="primary" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
                       <Plus size={ICON.sm} strokeWidth={STROKE} />
                       משימה חדשה
@@ -767,7 +914,7 @@ export default function EventDetailPage() {
                     title="אין משימות להצגה"
                     description="נסה לשנות את הסינון או להוסיף משימה חדשה"
                     action={
-                      has(PERM.TASKS_CREATE) && (
+                      canCreateTask && (
                         <Button size="sm" variant="primary" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
                           <Plus size={ICON.sm} />
                           משימה חדשה
@@ -929,7 +1076,7 @@ export default function EventDetailPage() {
         }}
         event={event}
         contact={contact}
-        supplierIds={suppliers.map((s) => s.supplier_id)}
+        supplierIds={supplierIds}
       />
       <EventSpecsModal
         eventId={event.id}
@@ -937,6 +1084,15 @@ export default function EventDetailPage() {
         open={specsOpen}
         onClose={() => setSpecsOpen(false)}
       />
+      {canViewSignature && (
+        <CustomerSignatureModal
+          eventId={event.id}
+          eventTitle={event.end_client_name ?? fmtDateLong(event.event_date)}
+          open={signOpen}
+          onClose={() => setSignOpen(false)}
+          canCapture={canCaptureSignature}
+        />
+      )}
       <TaskDrawer
         open={taskDrawer.open}
         onClose={() => {
@@ -1037,5 +1193,34 @@ function StatusPicker({ event }: { event: EventRow }) {
         </>
       )}
     </Popover>
+  )
+}
+
+/**
+ * שורת תוספת מחיר בכרטיס התמחור — הסכום, וההערה שמסבירה אותו (0113).
+ *
+ * זו הסיבה שהתוספת קיימת בכלל: הלקוח רואה למה החשבון גדל, במילים של מי
+ * שהיה שם, במקום להתקשר ולשאול. הסכום נוטה ימינה כדי להיקרא כתת-שורה של
+ * המשימה שמעליה, ולא כפריט נפרד ברשימה.
+ */
+function PriceAddonLine({ addon, withTask }: { addon: EventPriceAddon; withTask?: boolean }) {
+  const amount = Number(addon.amount)
+  return (
+    <div className="mt-1 flex items-start justify-between gap-3 ps-3">
+      <span className="min-w-0 shrink type-caption text-ink-tertiary">
+        {withTask && <span className="font-medium">{addon.task_label} · </span>}
+        {addon.note}
+      </span>
+      <span
+        dir="ltr"
+        className={cx(
+          'shrink-0 tabular-nums type-caption font-medium',
+          amount < 0 ? 'text-success-text' : 'text-warning-text',
+        )}
+      >
+        {amount > 0 ? '+' : ''}
+        {fmtMoney(amount)}
+      </span>
+    </div>
   )
 }

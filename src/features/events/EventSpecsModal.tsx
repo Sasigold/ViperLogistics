@@ -5,7 +5,7 @@
  * בעברית החדשה יושבת מימין והישנה משמאל — זה כיוון הקריאה, ולכן זה גם הכיוון
  * שבו "מה השתנה" נקרא נכון.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Columns2,
   Download,
@@ -24,9 +24,7 @@ import {
   Button,
   EmptyState,
   ErrorState,
-  Field,
   IconButton,
-  Input,
   Modal,
   SegmentedControl,
   Select,
@@ -44,15 +42,17 @@ import { fmtDate } from '../../lib/dates'
 import { useIsPhone } from '../../lib/useMediaQuery'
 import type { EventSpec } from '../../types/domain'
 import {
-  SPEC_ACCEPT,
   currentSpec,
+  emptySpecDraft,
   formatBytes,
   pickCompareDefaults,
   sortedSpecs,
+  specDraftLiveProblem,
+  specDraftProblem,
   specViewerKind,
-  validateSpecFile,
-  validateSpecUrl,
 } from './specs'
+import type { SpecDraft } from './specs'
+import { SpecPicker } from './SpecPicker'
 import { specDownloadUrl, useEventSpecs, useRemoveSpec, useSpecSignedUrl, useUploadSpec } from './specQueries'
 
 type Mode = 'view' | 'compare'
@@ -68,11 +68,29 @@ export function EventSpecsModal({
   open: boolean
   onClose: () => void
 }) {
-  const { has } = useAuth()
+  const { has, me } = useAuth()
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
   const isPhone = useIsPhone()
-  const canManage = has(PERM.EVENTS_SPECS_MANAGE)
+  /**
+   * שתי שאלות ולא אחת (0113).
+   *
+   * להעלות גרסה ולהוריד גרסה נראו כאותה פעולה כל עוד שתיהן היו של המשרד.
+   * מרגע שהלקוח מעלה את המפרט של עצמו הן נפרדות: המסמך שהוא שלח הוא שלו,
+   * וההחלטה למחוק גרסה מההיסטוריה של האירוע היא של מי שמנהל אותו. לקוח
+   * שהעלה גרסה שגויה מעלה אחריה גרסה נכונה — לשם כך המספור קיים.
+   */
+  const canUpload = has(PERM.EVENTS_SPECS_UPLOAD)
+  const canRemove = has(PERM.EVENTS_SPECS_MANAGE)
+  /**
+   * מי משווה שתי גרסאות.
+   *
+   * הצפייה היא של כל מי שרואה את האירוע (0102) — היא המסמך שצריך לבצע.
+   * ההשוואה היא שאלה אחרת: "מה השתנה מול מה שסוכם" הוא דיון מול הלקוח, ולכן
+   * הוא של מנהל המערכת ושל הלקוח עצמו. זו שאלה על *מי* ולא על מפתח: אין כאן
+   * נתון שנחשף — שתי הגרסאות גלויות לשניהם ממילא — אלא כלי שאין לו קהל שלישי.
+   */
+  const canCompare = !!me?.profile.is_admin || me?.profile.user_kind === 'customer_user'
 
   const { data: specs = [], isLoading, error, refetch } = useEventSpecs(eventId, open)
   const remove = useRemoveSpec(eventId)
@@ -95,6 +113,9 @@ export function EventSpecsModal({
 
   const right = live.find((s) => s.id === rightId) ?? active ?? null
   const left = live.find((s) => s.id === leftId) ?? null
+  /* מי שאין לו השוואה רואה תמיד את הגרסה הפעילה: הבורר מוסתר, וגם ה-state
+     אינו יכול להשאיר אותו על מצב שאין לו דרך לצאת ממנו. */
+  const view = canCompare ? mode : 'view'
 
   async function onRemove(spec: EventSpec) {
     const ok = await confirm(`להסיר את גרסה ${spec.version} של המפרט?`, {
@@ -126,7 +147,7 @@ export function EventSpecsModal({
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          {live.length > 0 && (
+          {live.length > 0 && canCompare && (
             <SegmentedControl<Mode>
               value={mode}
               onChange={setMode}
@@ -136,7 +157,7 @@ export function EventSpecsModal({
               ]}
             />
           )}
-          {canManage && !adding && (
+          {canUpload && !adding && (
             <Button size="sm" variant="primary" onClick={() => setAdding(true)}>
               <Upload size={ICON.sm} strokeWidth={STROKE} />
               העלאת גרסה חדשה
@@ -144,7 +165,7 @@ export function EventSpecsModal({
           )}
         </div>
 
-        {adding && canManage && (
+        {adding && canUpload && (
           <AddSpecForm eventId={eventId} onDone={() => setAdding(false)} />
         )}
 
@@ -156,12 +177,12 @@ export function EventSpecsModal({
             art="box"
             title="טרם הועלה מפרט"
             description={
-              canManage
+              canUpload
                 ? 'אפשר להעלות PDF או תמונה, או לקשר למסמך חיצוני. כל העלאה נשמרת כגרסה, והקודמות נשארות להשוואה.'
                 : 'כשיועלה מפרט לאירוע הזה הוא יופיע כאן.'
             }
             action={
-              canManage && !adding ? (
+              canUpload && !adding ? (
                 <Button variant="primary" onClick={() => setAdding(true)}>
                   <Upload size={ICON.sm} strokeWidth={STROKE} />
                   העלאת מפרט
@@ -171,11 +192,11 @@ export function EventSpecsModal({
           />
         )}
 
-        {live.length > 0 && mode === 'view' && right && (
+        {live.length > 0 && view === 'view' && right && (
           <SpecPane spec={right} versions={live} onPick={setRightId} />
         )}
 
-        {live.length > 0 && mode === 'compare' && right && left && (
+        {live.length > 0 && view === 'compare' && right && left && (
           <div className={cx('grid gap-4', isPhone ? 'grid-cols-1' : 'grid-cols-2')}>
             {/* בעברית הקריאה מימין לשמאל, ולכן החדשה נפתחת מימין. התווית נגזרת
                 מהגרסאות עצמן ולא מהצד, כדי שהיא תישאר נכונה אחרי שהמשתמש יחליף
@@ -189,7 +210,7 @@ export function EventSpecsModal({
           <VersionHistory
             specs={live}
             activeId={active?.id ?? null}
-            canManage={canManage}
+            canManage={canRemove}
             removing={remove.isPending}
             onRemove={onRemove}
           />
@@ -409,23 +430,14 @@ function VersionHistory({
 function AddSpecForm({ eventId, onDone }: { eventId: string; onDone: () => void }) {
   const toast = useToast()
   const upload = useUploadSpec(eventId)
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [tab, setTab] = useState<'file' | 'link'>('file')
-  const [file, setFile] = useState<File | null>(null)
-  const [url, setUrl] = useState('')
-  const [title, setTitle] = useState('')
-  const [problem, setProblem] = useState<string | null>(null)
-
-  function pick(f: File | null) {
-    setProblem(f ? validateSpecFile(f) : null)
-    setFile(f)
-  }
+  const [draft, setDraft] = useState<SpecDraft>(emptySpecDraft)
+  const [attempted, setAttempted] = useState(false)
 
   async function submit() {
-    const issue = tab === 'file' ? (file ? validateSpecFile(file) : 'צריך לבחור קובץ') : validateSpecUrl(url)
-    if (issue) return setProblem(issue)
+    setAttempted(true)
+    if (specDraftProblem(draft, true)) return
     try {
-      await upload.mutateAsync(tab === 'file' ? { file: file!, title } : { url, title })
+      await upload.mutateAsync(draft)
       toast.success('המפרט נוסף כגרסה חדשה')
       onDone()
     } catch (e) {
@@ -435,62 +447,14 @@ function AddSpecForm({ eventId, onDone }: { eventId: string; onDone: () => void 
 
   return (
     <div className="space-y-3 rounded-xl border border-line-subtle bg-subtle/40 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <SegmentedControl<'file' | 'link'>
-          value={tab}
-          onChange={(k) => {
-            setTab(k)
-            setProblem(null)
-          }}
-          items={[
-            { key: 'file', label: 'קובץ', icon: <Upload size={ICON.sm} strokeWidth={STROKE} /> },
-            { key: 'link', label: 'קישור', icon: <Link2 size={ICON.sm} strokeWidth={STROKE} /> },
-          ]}
-        />
-        {/* המספר עצמו נקבע בשרת תחת נעילה, ולכן הוא אינו מובטח כאן */}
-        <span className="type-caption text-ink-tertiary">תישמר כגרסה חדשה</span>
-      </div>
-
-      {tab === 'file' ? (
-        <Field label="קובץ" hint="PDF או תמונה, עד 25MB" error={problem ?? undefined}>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={() => fileRef.current?.click()}>
-              <Upload size={ICON.sm} strokeWidth={STROKE} />
-              בחירת קובץ
-            </Button>
-            <span className="min-w-0 flex-1 truncate type-caption text-ink-secondary">
-              {file ? `${file.name} · ${formatBytes(file.size)}` : 'לא נבחר קובץ'}
-            </span>
-            <input
-              ref={fileRef}
-              type="file"
-              accept={SPEC_ACCEPT}
-              className="hidden"
-              onChange={(e) => {
-                pick(e.target.files?.[0] ?? null)
-                // בלי האיפוס, בחירה חוזרת של אותו קובץ אינה מפעילה change
-                if (fileRef.current) fileRef.current.value = ''
-              }}
-            />
-          </div>
-        </Field>
-      ) : (
-        <Field label="קישור למסמך" error={problem ?? undefined}>
-          <Input
-            value={url}
-            dir="ltr"
-            placeholder="https://..."
-            onChange={(e) => {
-              setUrl(e.target.value)
-              setProblem(null)
-            }}
-          />
-        </Field>
-      )}
-
-      <Field label="כותרת" hint="לא חובה — למשל ״אחרי הסיור באולם״">
-        <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-      </Field>
+      <SpecPicker
+        value={draft}
+        onChange={setDraft}
+        problem={specDraftLiveProblem(draft, attempted, true)}
+        disabled={upload.isPending}
+        /* המספר עצמו נקבע בשרת תחת נעילה, ולכן הוא אינו מובטח כאן */
+        hint="תישמר כגרסה חדשה"
+      />
 
       <div className="flex justify-end gap-2">
         <Button onClick={onDone} disabled={upload.isPending}>

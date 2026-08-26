@@ -278,6 +278,29 @@ select t_eq('והיא נצמדה למשמרת של היום',
 select t_expect_fail('אין החתמת יציאה בלי משמרת פתוחה',
   $$select attendance_clock_out(null, null, null, null)$$);
 
+-- 0110: השעון מדבר. המשמרת עוגנה שעה אחורה, ולכן הכניסה שלמעלה הייתה
+-- באיחור — והכותרת אומרת זאת. לעובד סגל אין דקות חסד.
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('הכניסה המאוחרת יצרה התראה למנהל, מסומנת כאיחור',
+  (select count(*) from notifications
+    where type = 'attendance_clock_in'
+      and recipient_id = '20000000-0000-0000-0000-000000000001'
+      and title like '%ביצע כניסה באיחור')::int, 1);
+select t_eq('והיציאה יצרה התראת יציאה',
+  (select count(*) from notifications
+    where type = 'attendance_clock_out'
+      and recipient_id = '20000000-0000-0000-0000-000000000001'
+      and title like '%ביצע יציאה')::int, 1);
+select t_eq('המחתים עצמו אינו מקבל התראה על עצמו',
+  (select count(*) from notifications
+    where type in ('attendance_clock_in', 'attendance_clock_out')
+      and recipient_id = '20000000-0000-0000-0000-0000000000f3')::int, 0);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+
 -- העובד אינו יכול לכתוב לטבלה ישירות. זו הנקודה שבה "חסימת מיקום" הופכת
 -- מהצעה לאכיפה: אילו היה נתיב INSERT ישיר, כל בדיקה ב-RPC הייתה עקיפה.
 select t_expect_fail('עובד אינו יכול להזין נוכחות ישירות לטבלה', $$
@@ -1015,7 +1038,7 @@ insert into notification_preferences (profile_id, channel, type, enabled) values
   ('20000000-0000-0000-0000-0000000000f3', 'email', null, false);
 
 select t_eq('וגם כיבוי כללי שלו אינו עוצר דבר',
-  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_changed'), true);
+  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_time_changed'), true);
 
 -- מה שכן עוצר: חריג אישי שקבע מנהל
 insert into notification_policy_overrides (profile_id, type, channel, mode) values
@@ -1025,7 +1048,7 @@ select t_eq('חריג אישי של מנהל — לא נשלח',
   app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_assigned'), false);
 
 select t_eq('וסוג אחר ממשיך להישלח',
-  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_changed'), true);
+  app.should_email('20000000-0000-0000-0000-0000000000f3', 'task_time_changed'), true);
 
 delete from notification_policy_overrides
  where profile_id = '20000000-0000-0000-0000-0000000000f3';
@@ -1050,7 +1073,7 @@ update app_settings
 -- מי שאין לו כתובת אינו מייצר שורת משלוח תלויה
 update profiles set email = null where id = '20000000-0000-0000-0000-0000000000f4';
 select t_expect_ok('התראה למי שאין לו כתובת', $$
-  select app.notify('20000000-0000-0000-0000-0000000000f4', 'task_changed', 'שינוי', 'בדיקה', null, null)$$);
+  select app.notify('20000000-0000-0000-0000-0000000000f4', 'task_time_changed', 'שינוי', 'בדיקה', null, null)$$);
 select t_eq('אינה מייצרת שורת משלוח',
   (select count(*) from notification_deliveries
     where recipient_id = '20000000-0000-0000-0000-0000000000f4')::int, 0);

@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type {
   InputHTMLAttributes,
   ReactNode,
@@ -480,6 +481,96 @@ function useDismiss(open: boolean, close: () => void) {
 const POPOVER =
   'absolute z-40 mt-1 w-full origin-top animate-scale-in overflow-hidden rounded-lg border border-line bg-raised shadow-lg'
 
+/* פופאובר שצף מעל הכול דרך portal, כדי שלא ייחתך במגירה/כרטיס עם overflow.
+   המיקום מחושב מריבוע העוגן (fixed), ומתעדכן בגלילה ובשינוי גודל. */
+const POPOVER_FIXED =
+  'fixed z-[60] origin-top animate-scale-in overflow-hidden rounded-lg border border-line bg-raised shadow-lg'
+
+const ANCHOR_GAP = 4
+const ANCHOR_EDGE = 8
+/** התקרה הטבעית של הרשימה. אינה מחלקה, כי החישוב למטה צריך לדעת אותה. */
+const ANCHOR_LIST_MAX = 224
+/** מתחת לזה אין פאנל שמיש, ועדיף לפתוח אותו לצד השני של העוגן. */
+const ANCHOR_MIN = 160
+
+interface AnchoredPos {
+  /**
+   * צד אחד בלבד מוגדר, וזו הנקודה: כשהפאנל נפתח כלפי מעלה הוא נעגן בקצה
+   * ה*תחתון* שלו. אחרת סינון שמקצר את הרשימה היה מקטין אותו מלמטה ומשאיר
+   * מרווח בינו לבין העוגן, וכל הקלדה בחיפוש הייתה דורשת מדידה מחדש.
+   */
+  top?: number
+  bottom?: number
+  left: number
+  width: number
+  /** התקרה שהוחלה על הרשימה — היא זו שגולשת, לא הפאנל */
+  listMaxHeight: number
+}
+
+/**
+ * איפה יושב פאנל שצף ב-portal, מול העוגן שלו.
+ *
+ * עד כאן התשובה הייתה "מתחת לעוגן, תמיד". זה החזיק כל עוד העוגן ישב בחלק
+ * העליון של המסך, ונשבר בדיוק במקום שבו הוא לא: כרטיס "עובדי הקבלן" הוא
+ * האחרון בפאנל השיבוץ של הלו״ז, ולכן הבורר שלו יושב בתחתית מסך של מנהל
+ * מערכת. הרשימה נפתחה מתחתיו — `position: fixed`, כלומר מחוץ לזרימת הדף —
+ * וירדה אל מתחת לקצה החלון, במקום שגלילה אינה מגיעה אליו: לא של הדף, כי
+ * הפאנל אינו בזרימה שלו, ולא של המגירה, כי המדידה נצמדת לעוגן ומורידה את
+ * הרשימה יחד איתו. עובדי הקבלן פשוט לא היו שם.
+ *
+ * מכאן אותה הכרעה שב-`Popover` (overlay.tsx): מתחת לעוגן כברירת מחדל, מעליו
+ * כשזה הצד שיש בו מקום, ובכל מקרה עם תקרה שמתאימה למה שיש — הרשימה גולשת
+ * בתוך עצמה במקום לרדת מהמסך. גם הציר האופקי נחתך לקצוות החלון, מאותה סיבה.
+ *
+ * ‏`wanted` נמדד מ-`scrollHeight` של הרשימה ולא מגובה הפאנל: זהו גובה
+ * ה*תוכן*, והוא אינו מושפע מהתקרה שהמדידה הקודמת החילה. בלי זה ההחלטה
+ * "להפוך או לא" הייתה מזינה את עצמה ומתנדנדת בין שני המצבים.
+ */
+function useAnchoredPos(
+  open: boolean,
+  anchor: React.RefObject<HTMLElement | null>,
+  panel: React.RefObject<HTMLElement | null>,
+  list: React.RefObject<HTMLElement | null>,
+) {
+  const [pos, setPos] = useState<AnchoredPos | null>(null)
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null)
+      return
+    }
+    const update = () => {
+      const a = anchor.current?.getBoundingClientRect()
+      if (!a) return
+      /* מה שמעל הרשימה בתוך הפאנל — שורת החיפוש. נגזר ולא מקובע, כדי שהוא
+         יישאר נכון גם אם ישתנה מה שיושב שם. */
+      const chrome = (panel.current?.offsetHeight ?? 0) - (list.current?.clientHeight ?? 0)
+      const content = list.current?.scrollHeight ?? 0
+      const wanted = chrome + Math.min(content, ANCHOR_LIST_MAX)
+
+      const below = window.innerHeight - a.bottom - ANCHOR_GAP - ANCHOR_EDGE
+      const above = a.top - ANCHOR_GAP - ANCHOR_EDGE
+      const flip = wanted > below && above > below
+      const room = Math.max(ANCHOR_MIN, flip ? above : below)
+
+      setPos({
+        top: flip ? undefined : a.bottom + ANCHOR_GAP,
+        bottom: flip ? window.innerHeight - a.top + ANCHOR_GAP : undefined,
+        left: Math.max(ANCHOR_EDGE, Math.min(a.left, window.innerWidth - a.width - ANCHOR_EDGE)),
+        width: a.width,
+        listMaxHeight: Math.max(64, Math.min(ANCHOR_LIST_MAX, room - chrome)),
+      })
+    }
+    update()
+    window.addEventListener('scroll', update, true)
+    window.addEventListener('resize', update)
+    return () => {
+      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', update)
+    }
+  }, [open, anchor, panel, list])
+  return pos
+}
+
 /* ===== MultiSelect ======================================================== */
 
 export function MultiSelect({
@@ -504,7 +595,27 @@ export function MultiSelect({
   const [active, setActive] = useState(0)
   const listId = useId()
   const f = useFieldProps({})
-  const ref = useDismiss(open, () => setOpen(false))
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const pos = useAnchoredPos(open, triggerRef, panelRef, listRef)
+  /* דחייה שמכירה גם את הפאנל שצף ב-portal מחוץ ל-DOM של הרכיב. */
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (!triggerRef.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
 
   const filtered = useMemo(
     () => options.filter((o) => o.label.toLowerCase().includes(q.trim().toLowerCase())),
@@ -538,9 +649,10 @@ export function MultiSelect({
   }
 
   return (
-    <div ref={ref} className={cx('relative', className)}>
+    <div className={cx('relative', className)}>
       <button
         type="button"
+        ref={triggerRef}
         id={f.id}
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
@@ -589,8 +701,22 @@ export function MultiSelect({
         />
       </button>
 
-      {open && (
-        <div className={POPOVER}>
+      {/* מצויר לפני שהוא ממוקם, ולא אחרי: המדידה שקובעת לאיזה כיוון הוא נפתח
+          קוראת את גובה התוכן שלו, ולכן היא זקוקה לו ב-DOM. עד שהיא מסתיימת
+          הוא מוסתר — פריים אחד של פאנל שקופץ ממקום למקום גרוע מפריים בלי
+          פאנל. */}
+      {open && createPortal(
+        <div
+          ref={panelRef}
+          className={POPOVER_FIXED}
+          style={{
+            top: pos ? pos.top : -9999,
+            bottom: pos?.bottom,
+            left: pos ? pos.left : -9999,
+            width: pos?.width,
+            visibility: pos ? 'visible' : 'hidden',
+          }}
+        >
           <div className="border-b border-line-subtle p-1.5">
             <Input
               inputSize="sm"
@@ -602,7 +728,16 @@ export function MultiSelect({
               autoFocus
             />
           </div>
-          <ul id={listId} role="listbox" aria-multiselectable className="max-h-56 overflow-y-auto p-1">
+          {/* התקרה מגיעה מהמדידה ולא ממחלקה: כמה מקום יש מתחת לעוגן (או מעליו)
+              הוא נתון של הרגע, ולא של גיליון הסגנונות. */}
+          <ul
+            id={listId}
+            ref={listRef}
+            role="listbox"
+            aria-multiselectable
+            className="overflow-y-auto overscroll-contain p-1"
+            style={{ maxHeight: pos?.listMaxHeight ?? ANCHOR_LIST_MAX }}
+          >
             {filtered.length === 0 && <li className="px-2 py-3 text-center type-caption text-ink-tertiary">אין תוצאות</li>}
             {filtered.map((o, i) => {
               const on = values.includes(o.id)
@@ -625,7 +760,8 @@ export function MultiSelect({
               )
             })}
           </ul>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

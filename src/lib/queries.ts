@@ -3,9 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { useAuth } from '../state/auth'
 import type {
+  BoardFieldDef,
   Contractor,
   ContractorWorker,
   Customer,
+  CustomerBoardField,
+  CustomerTruck,
   CustomerIncomeSplit,
   CustomerPricingRule,
   IncomeCategory,
@@ -59,6 +62,27 @@ export function useStatuses(entity?: 'task' | 'event') {
 
 export function useTrucks() {
   return useQuery({ queryKey: ['trucks', 'list'], queryFn: () => fetchList<Truck>('trucks') })
+}
+
+/**
+ * רשימות המשאיות פר-לקוח (0116) — **כל** השורות שהקורא רשאי לראות, ולא של
+ * לקוח אחד.
+ *
+ * הלוח מציג משימות של כמה לקוחות בבת אחת, והרשימה הרלוונטית לכל שורה היא של
+ * הלקוח **של המשימה** ולא של הקורא. ‏RLS כבר עושה את החיתוך הנכון לשני
+ * הקהלים — המשרד מקבל הכול, ומשתמש לקוח את שלו — ולכן שאילתה אחת משרתת את
+ * שניהם ואין שני מקורות שיכולים להיפרד.
+ */
+export function useCustomerTrucks() {
+  return useQuery({
+    queryKey: ['customer_trucks'],
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('customer_trucks').select('*')
+      if (error) throw error
+      return data as CustomerTruck[]
+    },
+  })
 }
 
 /**
@@ -272,11 +296,42 @@ export function useContractorWorkerAssign() {
       })
       if (error) throw error
     },
-    onSettled: () => {
+    onSettled: (_d, _e, v) => {
       void qc.invalidateQueries({ queryKey: ['workboard'] })
+      /* הכרטיס המלא והפאנל הממוקד קוראים את אותו שיבוץ משני מפתחות (0108),
+         ושניהם מתיישנים כאן — אחרת המסך שממנו נלחץ הכפתור נשאר על הישן. */
+      void qc.invalidateQueries({ queryKey: ['tasks', 'one', v.taskId] })
+      void qc.invalidateQueries({ queryKey: ['tasks', 'staffing', v.taskId] })
       /* השיבוץ עשוי ליצור שורת סגל, ולכן גם שתי רשימות העובדים מתיישנות */
       void qc.invalidateQueries({ queryKey: ['contractor_assignable'] })
       void qc.invalidateQueries({ queryKey: ['contractor_workers'] })
+    },
+  })
+}
+
+/**
+ * האצלת משימה לקבלן וביטולה (0096).
+ *
+ * מאז שלמשימה יכולים להיות כמה קבלנים, ההאצלה אינה עוד כתיבה ל-
+ * `tasks.contractor_id` אלא הוספה/הסרה של שורת `task_contractor_terms` דרך RPC:
+ * ‏`contractor_delegate` מוסיף שורה (ומריץ תמחור), `contractor_undelegate`
+ * מסיר אותה יחד עם עובדי אותו קבלן במשימה. שתיהן דורשות `tasks.delegate`.
+ */
+export function useContractorDelegate() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { taskId: string; contractorId: string; on: boolean }) => {
+      const { error } = await supabase.rpc(v.on ? 'contractor_delegate' : 'contractor_undelegate', {
+        p_task_id: v.taskId,
+        p_contractor_id: v.contractorId,
+      })
+      if (error) throw error
+    },
+    onSettled: (_d, _e, v) => {
+      void qc.invalidateQueries({ queryKey: ['workboard'] })
+      void qc.invalidateQueries({ queryKey: ['tasks', 'one', v.taskId] })
+      void qc.invalidateQueries({ queryKey: ['tasks'] })
+      void qc.invalidateQueries({ queryKey: ['contractor_assignable'] })
     },
   })
 }
@@ -347,6 +402,40 @@ export function useCustomerFormConfig(customerId?: string | null) {
 }
 
 /**
+ * קטלוג שדות הלו״ז, ומה שלקוח מסוים עושה עם כל אחד מהם (0109).
+ *
+ * הקטלוג הוא טבלה ולא מערך בקוד מאותה סיבה שמרשם ההרשאות הוא טבלה: שדה
+ * שייכתב בלוח מחר יופיע במסך הניהול מפני שהוא נרשם. ‏`board_fields` פתוחה
+ * לקריאה לכולם ו-`customer_board_fields` נכתבת בידי מנהל המערכת בלבד.
+ */
+export function useBoardFields() {
+  return useQuery({
+    queryKey: ['board_fields'],
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('board_fields').select('*').order('sort_order')
+      if (error) throw error
+      return data as BoardFieldDef[]
+    },
+  })
+}
+
+export function useCustomerBoardConfig(customerId?: string | null) {
+  return useQuery({
+    queryKey: ['customer_board_fields', customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customer_board_fields')
+        .select('*')
+        .eq('customer_id', customerId)
+      if (error) throw error
+      return data as CustomerBoardField[]
+    },
+  })
+}
+
+/**
  * The event-form config that actually applies to the signed-in user.
  *
  * Staff see the plain per-customer config for whichever customer they picked.
@@ -399,6 +488,12 @@ export function useCustomerUsers(customerId?: string | null) {
   })
 }
 
+/**
+ * אופני הביצוע שהותרו ללקוח, ואיזה מהם ברירת המחדל שלו (0111).
+ *
+ * מחזירה שורות ולא מזהים: "מותר" ו"הרגיל" הן שתי תשובות מאותה שורה, ושאילתה
+ * שנייה עבור השנייה הייתה מביאה את אותה טבלה פעמיים.
+ */
 export function useCustomerExecutionMethods(customerId?: string | null) {
   return useQuery({
     queryKey: ['customer_execution_methods', customerId],
@@ -406,12 +501,23 @@ export function useCustomerExecutionMethods(customerId?: string | null) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customer_execution_methods')
-        .select('execution_method_id')
+        .select('execution_method_id, is_default')
         .eq('customer_id', customerId)
       if (error) throw error
-      return (data as { execution_method_id: string }[]).map((r) => r.execution_method_id)
+      return data as { execution_method_id: string; is_default: boolean }[]
     },
   })
+}
+
+/**
+ * אופן הביצוע שכל משימה חדשה של הלקוח נולדת איתו (0111).
+ *
+ * המסך מקדים בו את הבורר; השרת ממלא אותו בכל מקרה בטריגר `tasks_default_method`,
+ * ולכן זו נוחות ולא הכלל — משימה שנוצרה מדלת שאין בה בורר תקבל אותו בכל זאת.
+ */
+export function useCustomerDefaultExecutionMethod(customerId?: string | null) {
+  const { data: rows } = useCustomerExecutionMethods(customerId)
+  return useMemo(() => rows?.find((r) => r.is_default)?.execution_method_id ?? null, [rows])
 }
 
 export function useTaskTypeMethods() {
@@ -436,7 +542,10 @@ export function useAllowedExecutionMethods(taskTypeId?: string | null, customerI
       const forType = typeMethods.filter((tm) => tm.task_type_id === taskTypeId).map((tm) => tm.execution_method_id)
       if (forType.length) list = list.filter((m) => forType.includes(m.id))
     }
-    if (customerId && customerMethods) list = list.filter((m) => customerMethods.includes(m.id))
+    if (customerId && customerMethods) {
+      const allowed = new Set(customerMethods.map((r) => r.execution_method_id))
+      list = list.filter((m) => allowed.has(m.id))
+    }
     return list
   }, [methods, typeMethods, taskTypeId, customerId, customerMethods])
 }

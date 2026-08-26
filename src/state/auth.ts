@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { PERM } from '../lib/permissionKeys'
-import type { FieldState, MyPermissions, PermissionAction, UserKind } from '../types/domain'
+import type { BoardFieldState, FieldState, MyPermissions, PermissionAction, UserKind } from '../types/domain'
 
 interface AuthState {
   session: Session | null
@@ -28,6 +28,14 @@ interface AuthState {
   canEditField: (entity: string, field: string) => boolean
   /** merged company + per-user event-form config; 'visible' when unconfigured */
   formFieldState: (key: string) => FieldState
+  /**
+   * מה שהקורא עושה עם שדה בלו״ז (0109).
+   *
+   * לאיש צוות `board_config` ריק, ולכן התשובה היא `editable` — הלוח שלו
+   * נשלט במפתחות כפי שהיה תמיד, וזו הנקודה: הקונפיגורציה הזו היא הצרה
+   * *נוספת* על קהל הלקוחות, לא שכבה חדשה שכולם עוברים בה.
+   */
+  boardFieldState: (key: string) => BoardFieldState
   /** form composition AND data access — what a client actually gets to see */
   showsEventField: (key: string) => boolean
   /** `events.create` plus the per-company switch the RPC enforces anyway */
@@ -140,6 +148,12 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
 
   formFieldState: (key) => get().me?.form_config?.find((f) => f.field_key === key)?.state ?? 'visible',
+
+  boardFieldState: (key) => {
+    const cfg = get().me?.board_config
+    if (!cfg || cfg.length === 0) return 'editable'
+    return cfg.find((f) => f.field_key === key)?.state ?? 'visible'
+  },
 
   // A field disappears for two unrelated reasons: it was configured off the
   // form, or the data behind it is out of reach. Lists and detail screens have

@@ -16,6 +16,9 @@ import type {
   NotificationMode,
   NotificationPolicy,
   NotificationPolicyOverride,
+  NotificationScope,
+  NotificationScopeKind,
+  NotificationScopeMode,
   NotificationSetting,
   NotificationType,
   PushSubscriptionRow,
@@ -48,6 +51,38 @@ export const MODES: { key: NotificationMode; label: string; hint: string }[] = [
   { key: 'opt_out', label: 'נשלח (דלוק כברירת מחדל)', hint: 'ברירת מחדל דלוקה בקטלוג' },
   { key: 'forced', label: 'נשלח תמיד', hint: 'ההתראה נשלחת לקהל הזה' },
 ]
+
+export const SCOPE_KINDS: { key: NotificationScopeKind; label: string }[] = [
+  { key: 'customer', label: 'לקוחות' },
+  { key: 'contractor', label: 'קבלנים' },
+  { key: 'worker', label: 'עובדים' },
+]
+
+/**
+ * אילו סוגי-ישות רלוונטיים לתחולה של כל סוג — מראה מדויקת של מה שהפולטים
+ * ב-0110 בודקים בפועל דרך app.notification_in_scope. סוג שאינו כאן אינו
+ * נבדק מול תחולה (הפולט שלו לא השתנה), ולכן אין להציג לו בורר.
+ */
+const SCOPE_MAP: Record<string, NotificationScopeKind[]> = {
+  event_created: ['customer'],
+  event_approved: ['customer'],
+  event_updated: ['customer'],
+  event_cancelled: ['customer'],
+  spec_uploaded: ['customer'],
+  task_published: ['worker', 'contractor'],
+  task_unpublished: ['worker', 'contractor'],
+  task_assigned: ['worker', 'contractor'],
+  assignment_removed: ['worker', 'contractor'],
+  task_time_changed: ['worker', 'contractor'],
+  contractor_worker_count_changed: ['contractor'],
+  contractor_worker_assigned: ['contractor'],
+  attendance_clock_in: ['worker', 'contractor'],
+  attendance_clock_out: ['worker', 'contractor'],
+}
+
+export function scopeKindsForType(t: NotificationType): NotificationScopeKind[] {
+  return SCOPE_MAP[t.key] ?? []
+}
 
 export interface PushConfig {
   enabled: boolean
@@ -244,6 +279,151 @@ export function useSaveOverride() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['notification_overrides'] })
       void qc.invalidateQueries({ queryKey: ['notification_settings'] })
+    },
+  })
+}
+
+/**
+ * התחולה (0110): טבלאות דלילות באותה פילוסופיה של notification_policies —
+ * שורה קיימת רק כשמנהל צמצם. אין שורת מצב = הסוג חל על כולם, וההתראה
+ * שהנושא שלה מחוץ לתחולה אינה נוצרת כלל (בשונה מהשתקה, שמתעדת ומסננת).
+ */
+export function useNotificationScopeModes() {
+  const has = useAuth((s) => s.has)
+  return useQuery({
+    queryKey: ['notification_scope_modes'],
+    enabled: has(PERM.NOTIFICATIONS_MANAGE),
+    queryFn: async () => {
+      const { data, error } = await supabase.from('notification_scope_modes').select('*')
+      if (error) throw error
+      return data as NotificationScopeMode[]
+    },
+  })
+}
+
+export function useNotificationScopes() {
+  const has = useAuth((s) => s.has)
+  return useQuery({
+    queryKey: ['notification_scopes'],
+    enabled: has(PERM.NOTIFICATIONS_MANAGE),
+    queryFn: async () => {
+      const { data, error } = await supabase.from('notification_scopes').select('*')
+      if (error) throw error
+      return data as NotificationScope[]
+    },
+  })
+}
+
+/** בחירת 'all' מוחקת את שורת המצב ואת הרשימה — הטבלה נשארת "מה שצומצם". */
+export function useSaveScopeMode() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: {
+      type: string
+      entityKind: NotificationScopeKind
+      mode: 'all' | 'selected'
+    }) => {
+      if (v.mode === 'all') {
+        const del = await supabase
+          .from('notification_scope_modes')
+          .delete()
+          .eq('type', v.type)
+          .eq('entity_kind', v.entityKind)
+        if (del.error) throw del.error
+        const delScopes = await supabase
+          .from('notification_scopes')
+          .delete()
+          .eq('type', v.type)
+          .eq('entity_kind', v.entityKind)
+        if (delScopes.error) throw delScopes.error
+        return
+      }
+      const { error } = await supabase
+        .from('notification_scope_modes')
+        .upsert(
+          { type: v.type, entity_kind: v.entityKind, mode: v.mode, updated_at: new Date().toISOString() },
+          { onConflict: 'type,entity_kind' },
+        )
+      if (error) throw error
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['notification_scope_modes'] })
+      void qc.invalidateQueries({ queryKey: ['notification_scopes'] })
+    },
+  })
+}
+
+/** הוספה/הסרה של ישות בודדת ברשימת התחולה של (סוג, סוג-ישות). */
+export function useToggleScopeEntity() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: {
+      type: string
+      entityKind: NotificationScopeKind
+      entityId: string
+      included: boolean
+    }) => {
+      if (v.included) {
+        const { error } = await supabase
+          .from('notification_scopes')
+          .upsert(
+            { type: v.type, entity_kind: v.entityKind, entity_id: v.entityId },
+            { onConflict: 'type,entity_kind,entity_id' },
+          )
+        if (error) throw error
+        return
+      }
+      const { error } = await supabase
+        .from('notification_scopes')
+        .delete()
+        .eq('type', v.type)
+        .eq('entity_kind', v.entityKind)
+        .eq('entity_id', v.entityId)
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['notification_scopes'] }),
+  })
+}
+
+/** הישויות שהבורר מציג: לקוחות, קבלנים, ועובדי סגל פעילים. */
+export function useScopeEntities(kind: NotificationScopeKind, enabled: boolean) {
+  const has = useAuth((s) => s.has)
+  return useQuery({
+    queryKey: ['notification_scope_entities', kind],
+    enabled: enabled && has(PERM.NOTIFICATIONS_MANAGE),
+    queryFn: async (): Promise<{ id: string; name: string }[]> => {
+      if (kind === 'customer') {
+        const { data, error } = await supabase
+          .from('customers')
+          .select('id, name')
+          .is('deleted_at', null)
+          .eq('is_active', true)
+          .order('name')
+        if (error) throw error
+        return data as { id: string; name: string }[]
+      }
+      if (kind === 'contractor') {
+        const { data, error } = await supabase
+          .from('contractors')
+          .select('id, name')
+          .is('deleted_at', null)
+          .eq('is_active', true)
+          .order('name')
+        if (error) throw error
+        return data as { id: string; name: string }[]
+      }
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .eq('user_kind', 'staff')
+        .eq('is_active', true)
+        .is('deleted_at', null)
+        .order('full_name')
+      if (error) throw error
+      return (data as { id: string; full_name: string }[]).map((p) => ({
+        id: p.id,
+        name: p.full_name,
+      }))
     },
   })
 }

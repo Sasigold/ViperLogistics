@@ -23,11 +23,22 @@ select t_eq('ערוץ המייל כבוי בתחילת החבילה', app.email_
 select t_eq('וגם ערוץ ה-push',
   coalesce((app.attendance_config('notifications.push') ->> 'enabled')::boolean, false), false);
 
--- אחת-עשרה מאז 0089, שהוסיפה את שני סוגי פקיעת מסמכי הרכב. הספירה נשארת
--- מדויקת ולא הופכת ל-`>= 9`: קטלוג שגדל בלי שאיש שם לב הוא בדיוק מה שהבדיקה
--- הזו נועדה לתפוס.
-select t_eq('הקטלוג מכיר את אחד-עשר הסוגים',
-  (select count(*)::int from notification_types where is_active), 11);
+-- תשע-עשרה מאז 0110: אחת-עשרה פחות שלושה שפרשו (task_changed,
+-- event_status_changed, contractor_task — כבויים אך נשארים בקטלוג, כי שורות
+-- היסטוריות עדיין מצביעות עליהם) ועוד אחד-עשר חדשים. הספירה נשארת מדויקת
+-- ולא הופכת ל-`>= 9`: קטלוג שגדל בלי שאיש שם לב הוא בדיוק מה שהבדיקה הזו
+-- נועדה לתפוס.
+select t_eq('הקטלוג מכיר את תשעה-עשר הסוגים הפעילים',
+  (select count(*)::int from notification_types where is_active), 19);
+
+select t_eq('שלושת הסוגים שפרשו עדיין מוכרים, כבויים',
+  (select count(*)::int from notification_types
+    where key in ('task_changed','event_status_changed','contractor_task')
+      and not is_active), 3);
+
+select t_eq('ולסוג שפרש אין שורות מדיניות',
+  (select count(*)::int from notification_policies
+    where type in ('task_changed','event_status_changed','contractor_task')), 0);
 
 -- הרוח מ-0030: מתג שהלקוח הציג ושום טריגר לא פלט
 select t_eq('attendance_reviewed אינו בקטלוג',
@@ -78,12 +89,12 @@ select t_eq('סוג שהמשתמש כיבה לעצמו — נשלח בכל זא�
 insert into notification_preferences (profile_id, channel, type, enabled) values
   ('20000000-0000-0000-0000-0000000000f1', 'email', null, false);
 select t_eq('וגם כיבוי כללי שלו אינו חוסם',
-  app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'task_changed', 'email'), true);
+  app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'task_time_changed', 'email'), true);
 
-update app_settings set value = jsonb_set(value, '{muted_types}', '["task_changed"]'::jsonb)
+update app_settings set value = jsonb_set(value, '{muted_types}', '["task_time_changed"]'::jsonb)
  where key = 'notifications.email';
 select t_eq('השתקה גלובלית גוברת על הכול',
-  app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'task_changed', 'email'), false);
+  app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'task_time_changed', 'email'), false);
 update app_settings set value = jsonb_set(value, '{muted_types}', '[]'::jsonb)
  where key = 'notifications.email';
 
@@ -303,11 +314,12 @@ on conflict (id) do nothing;
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000007a1', false);
 
--- שישה ולא שמונה מאז 0064: "לקוח פתח אירוע חדש" צומצם לקהל 'admin' (הפולט
--- ממילא רץ על `where is_admin`), ו"עובד דיווח משמרת" קיבל
--- required_permission = attendance.approve_entry, שאין לעובד הזה.
+-- שבעה מאז 0110: חמשת סוגי המשימות (שובצה, בוטל שיבוצה, שובצתי, הוסרתי,
+-- שינוי זמנים) ושני סוגי הנוכחות האישיים. "עובד דיווח משמרת" נשאר מאחורי
+-- required_permission = attendance.approve_entry, שאין לעובד הזה, וסוגי
+-- הרכב מאחורי fleet.view.
 select t_eq('my_notification_settings מחזיר רק סוגים של הקהל שלי',
-  (select count(*)::int from jsonb_array_elements(my_notification_settings())), 6);
+  (select count(*)::int from jsonb_array_elements(my_notification_settings())), 7);
 
 select t_eq('...ובכללם אין את שני הסוגים של המנהל',
   (select count(*)::int from jsonb_array_elements(my_notification_settings()) e
@@ -438,125 +450,511 @@ select t_expect_ok('ומריץ את סטטיסטיקת המכשירים', $$sele
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
--- ===== 11. הפולטים החדשים (0047) ====================================
+-- ===== 11. הפולטים (0110) ===========================================
+--
+-- דמויות החבילה: לקוח אקמי (c1/c2) והמנהלים כבר קיימים; לצידם קבלן עם מנהל
+-- קבלן, עובד קבלן מקושר לאפליקציה (עם תפקיד contractor_worker, שדוחה את
+-- portal.view — כך מנהל ועובד נבדלים) ועובד קבלן בלי חשבון. האירועים
+-- והמשימות נטועים ב-current_date+400, מעבר לטווח של כל חבילה אחרת.
 
-\echo '--- שינוי סטטוס אירוע ---'
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000007b1', 'n7-ctr-mgr@vl.test'),
+  ('00000000-0000-0000-0000-0000000007b2', 'n7-ctr-worker@vl.test')
+on conflict (id) do nothing;
 
-delete from notifications where type = 'event_status_changed';
+insert into contractors (id, name) values
+  ('70000000-0000-0000-0000-000000000701', 'קבלן הבדיקות');
 
--- אירוע של הלקוח שיש לו משתמשים, ובסטטוס שאינו היעד — אחרת ה-update אינו
--- שינוי והטריגר שותק בצדק.
-create temp table n7_event as
-select e.id from events e
- where e.customer_id = '10000000-0000-0000-0000-000000000001'
-   and e.deleted_at is null
-   and e.status_id is distinct from
-       (select id from statuses where entity = 'event' and code = 'approved' and deleted_at is null)
- limit 1;
+insert into contractor_workers (id, contractor_id, full_name, user_id) values
+  ('70000000-0000-0000-0000-000000000702', '70000000-0000-0000-0000-000000000701',
+   'עובד קבלן מקושר', '00000000-0000-0000-0000-0000000007b2'),
+  ('70000000-0000-0000-0000-000000000703', '70000000-0000-0000-0000-000000000701',
+   'עובד קבלן בלי חשבון', null);
 
-update events set status_id = (select id from statuses
-  where entity = 'event' and code = 'approved' and deleted_at is null)
- where id in (select id from n7_event);
+insert into profiles (id, user_id, user_kind, is_admin, full_name, contractor_id, contractor_worker_id) values
+  ('20000000-0000-0000-0000-0000000007b1', '00000000-0000-0000-0000-0000000007b1',
+   'contractor_user', false, 'מנהל הקבלן', '70000000-0000-0000-0000-000000000701', null),
+  ('20000000-0000-0000-0000-0000000007b2', '00000000-0000-0000-0000-0000000007b2',
+   'contractor_user', false, 'עובד הקבלן', '70000000-0000-0000-0000-000000000701',
+   '70000000-0000-0000-0000-000000000702');
 
-select t_eq('משתמשי הלקוח קיבלו התראה',
+insert into profile_roles (profile_id, role_id)
+select '20000000-0000-0000-0000-0000000007b1', id from permission_roles where key = 'contractor_manager';
+insert into profile_roles (profile_id, role_id)
+select '20000000-0000-0000-0000-0000000007b2', id from permission_roles where key = 'contractor_worker';
+
+-- אירוע לתשתית המשימות (של המשרד — לא אמור להתריע), ומשימה בטיוטה
+insert into events (id, customer_id, event_date, created_by) values
+  ('30000000-0000-0000-0000-000000000710', '10000000-0000-0000-0000-000000000001',
+   current_date + 400, '20000000-0000-0000-0000-000000000001');
+
+insert into tasks (id, event_id, task_type_id, task_date, status_id) values
+  ('60000000-0000-0000-0000-000000000711', '30000000-0000-0000-0000-000000000710',
+   (select id from task_types where deleted_at is null limit 1),
+   current_date + 400,
+   (select id from statuses where entity = 'task' and code = 'draft' and deleted_at is null));
+
+delete from notifications where type in (
+  'event_created', 'event_approved', 'event_updated', 'event_cancelled', 'spec_uploaded',
+  'task_published', 'task_unpublished', 'task_assigned', 'assignment_removed',
+  'task_time_changed', 'contractor_worker_count_changed', 'contractor_worker_assigned',
+  'attendance_clock_in', 'attendance_clock_out');
+
+\echo '--- מסלול הלקוח: יצירה, אישור, עריכה, ביטול, מפרט ---'
+
+-- ── לקוח פותח אירוע → מנהלים ─────────────────────────────────────────
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
+insert into events (id, customer_id, event_date, created_by) values
+  ('30000000-0000-0000-0000-000000000712', '10000000-0000-0000-0000-000000000001',
+   current_date + 401, '20000000-0000-0000-0000-0000000000c1');
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('לקוח פתח אירוע — המנהל שומע',
+  (select count(*)::int from notifications where type = 'event_created'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 1);
+
+-- האירוע של המשרד (0710) לא התריע — created_by אינו לקוח
+select t_eq('אירוע שפתח המשרד שקט',
+  (select count(*)::int from notifications where type = 'event_created'
+    and entity_id = '30000000-0000-0000-0000-000000000710'), 0);
+
+-- ── "אישור לביצוע" → משתמשי הלקוח ────────────────────────────────────
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select t_expect_ok('המנהל מאשר לביצוע', $$
+  select set_event_approved('30000000-0000-0000-0000-000000000712', true)$$);
+
+select t_eq('שני משתמשי הלקוח שמעו על האישור',
+  (select count(*)::int from notifications where type = 'event_approved'
+    and recipient_id in ('20000000-0000-0000-0000-0000000000c1',
+                         '20000000-0000-0000-0000-0000000000c2')), 2);
+
+select t_expect_ok('אישור חוזר', $$
+  select set_event_approved('30000000-0000-0000-0000-000000000712', true)$$);
+select t_eq('אישור על אירוע שכבר מאושר אינו מכפיל',
+  (select count(*)::int from notifications where type = 'event_approved'
+    and recipient_id in ('20000000-0000-0000-0000-0000000000c1',
+                         '20000000-0000-0000-0000-0000000000c2')), 2);
+
+select t_expect_ok('ביטול אישור', $$
+  select set_event_approved('30000000-0000-0000-0000-000000000712', false)$$);
+select t_eq('ביטול אישור שקט כלפי הלקוח',
+  (select count(*)::int from notifications where type = 'event_approved'
+    and recipient_id in ('20000000-0000-0000-0000-0000000000c1',
+                         '20000000-0000-0000-0000-0000000000c2')), 2);
+
+-- ── לקוח עורך אירוע → מנהלים (0112: מזנב update_event, לא מטריגר) ────
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
+select t_expect_ok('לקוח עורך דרך ה-RPC', $$
+  select update_event('30000000-0000-0000-0000-000000000712',
+                      jsonb_build_object('notes', 'עדכון מהלקוח'))$$);
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('לקוח ערך אירוע — המנהל שומע',
+  (select count(*)::int from notifications where type = 'event_updated'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 1);
+
+-- הבדיקה המרכזית של 0112: עריכה שנוגעת רק בלוויין — בלוק ההקמה — בלי
+-- לשנות את שורת האירוע. טריגר-שורה לא ראה אותה; הזנב כן.
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
+select t_expect_ok('לקוח עורך רק את בלוק ההקמה', $$
+  select update_event('30000000-0000-0000-0000-000000000712',
+                      jsonb_build_object('setup_worker_count', 7))$$);
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('עריכת לוויין בלבד — המנהל שומע גם עליה',
+  (select count(*)::int from notifications where type = 'event_updated'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 2);
+select t_eq('והיומן תיעד את שינוי שדה המשימה',
+  (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-000000000712'
+      and kind = 'changed' and field_key = 'task_worker_count'
+      and new_value = '7'), 1);
+
+-- עריכת המשרד — דרך ה-RPC וגם ישירות על הטבלה (הטריגר איננו) — שקטה
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select t_expect_ok('המשרד עורך דרך ה-RPC', $$
+  select update_event('30000000-0000-0000-0000-000000000712',
+                      jsonb_build_object('notes', 'עדכון מהמשרד'))$$);
+update events set notes = 'עדכון ישיר מהמשרד' where id = '30000000-0000-0000-0000-000000000712';
+select set_config('request.jwt.claim.sub', '', false);
+select t_eq('עריכה של המשרד שקטה, בשני המסלולים',
+  (select count(*)::int from notifications where type = 'event_updated'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 2);
+
+-- שמירה שלא שינתה דבר: היומן לא קיבל שורה, ולכן הגלאי שותק
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
+select t_expect_ok('לקוח שומר בלי לשנות', $$
+  select update_event('30000000-0000-0000-0000-000000000712',
+                      jsonb_build_object('notes', 'עדכון ישיר מהמשרד',
+                                         'setup_worker_count', 7))$$);
+select set_config('request.jwt.claim.sub', '', false);
+select t_eq('שמירה שלא שינתה דבר שקטה',
+  (select count(*)::int from notifications where type = 'event_updated'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 2);
+
+-- ── לקוח מבטל אירוע → מנהלים, פעם אחת ────────────────────────────────
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
+select t_expect_ok('לקוח מבטל דרך ה-RPC', $$
+  select update_event('30000000-0000-0000-0000-000000000712',
+    jsonb_build_object('status_id', (select id from statuses
+      where entity = 'event' and code = 'cancelled' and deleted_at is null)))$$);
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('לקוח ביטל — המנהל שומע',
+  (select count(*)::int from notifications where type = 'event_cancelled'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 1);
+select t_eq('והביטול אינו נספר גם כעריכה',
+  (select count(*)::int from notifications where type = 'event_updated'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 2);
+
+-- ── לקוח מעלה מפרט → מנהלים ──────────────────────────────────────────
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
+insert into event_specs (event_id, source, url, title) values
+  ('30000000-0000-0000-0000-000000000710', 'link', 'https://example.test/spec-a', 'מפרט מהלקוח');
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('מפרט מלקוח — המנהל שומע',
+  (select count(*)::int from notifications where type = 'spec_uploaded'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 1);
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+insert into event_specs (event_id, source, url, title) values
+  ('30000000-0000-0000-0000-000000000710', 'link', 'https://example.test/spec-b', 'מפרט מהמשרד');
+select set_config('request.jwt.claim.sub', '', false);
+select t_eq('מפרט שהעלה המשרד שקט',
+  (select count(*)::int from notifications where type = 'spec_uploaded'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 1);
+
+\echo '--- מחזור הפרסום של משימה ---'
+
+-- ── שיבוצים בטיוטה שקטים לכולם ───────────────────────────────────────
+insert into task_assignments (task_id, profile_id, role) values
+  ('60000000-0000-0000-0000-000000000711', '20000000-0000-0000-0000-0000000000f1', 'worker');
+insert into task_contractor_terms (task_id, contractor_id) values
+  ('60000000-0000-0000-0000-000000000711', '70000000-0000-0000-0000-000000000701');
+insert into task_contractor_workers (task_id, contractor_worker_id) values
+  ('60000000-0000-0000-0000-000000000711', '70000000-0000-0000-0000-000000000702');
+
+select t_eq('שיבוץ סגל, האצלה ועובד קבלן על טיוטה — שקט',
   (select count(*)::int from notifications
-    where type = 'event_status_changed'
-      and recipient_id in ('20000000-0000-0000-0000-0000000000c1',
-                           '20000000-0000-0000-0000-0000000000c2')), 2);
-select t_eq('ואיש צוות לא קיבל — הסוג נשלח ללקוח',
-  (select count(*)::int from notifications
-    where type = 'event_status_changed'
-      and recipient_id = '20000000-0000-0000-0000-0000000000f1'), 0);
+    where type in ('task_published', 'task_assigned')), 0);
 
--- update שאינו נוגע בסטטוס אינו מייצר דבר
-update events set notes = coalesce(notes,'') || '.'
- where id in (select id from n7_event);
-select t_eq('עדכון שאינו סטטוס אינו מתריע',
-  (select count(*)::int from notifications
-    where type = 'event_status_changed'
-      and recipient_id in ('20000000-0000-0000-0000-0000000000c1',
-                           '20000000-0000-0000-0000-0000000000c2')), 2);
-
-\echo '--- שיבוץ, ביטול שיבוץ, ופרסום (0064) ---'
-
-delete from notifications where type in ('assignment_removed', 'task_assigned');
-
-create temp table n7_task as
-select t.id from tasks t where t.deleted_at is null order by t.created_at limit 1;
-
--- ── משימה שטרם פורסמה: שני הכיוונים שקטים ─────────────────────────────
-update tasks set status_id = (select id from statuses
-  where entity = 'task' and code = 'draft' and deleted_at is null)
- where id in (select id from n7_task);
-
-insert into task_assignments (task_id, profile_id, role)
-select id, '20000000-0000-0000-0000-0000000000f2', 'worker' from n7_task
-on conflict do nothing;
-
-select t_eq('שיבוץ למשימה בטיוטה אינו מתריע',
-  (select count(*)::int from notifications
-    where type = 'task_assigned'
-      and recipient_id = '20000000-0000-0000-0000-0000000000f2'), 0);
-
-delete from task_assignments
- where profile_id = '20000000-0000-0000-0000-0000000000f2'
-   and task_id in (select id from n7_task);
-
-select t_eq('וגם הסרתו שקטה — העובד מעולם לא ראה את המשימה',
-  (select count(*)::int from notifications
-    where type = 'assignment_removed'
-      and recipient_id = '20000000-0000-0000-0000-0000000000f2'), 0);
-
--- ── הפרסום עצמו מודיע למי שכבר שובץ ──────────────────────────────────
-insert into task_assignments (task_id, profile_id, role)
-select id, '20000000-0000-0000-0000-0000000000f2', 'worker' from n7_task
-on conflict do nothing;
-
+-- ── הפרסום מדבר לכל הקהל, שורה לאדם ──────────────────────────────────
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 update tasks set status_id = (select id from statuses
   where entity = 'task' and code = 'assigned' and deleted_at is null)
- where id in (select id from n7_task);
+ where id = '60000000-0000-0000-0000-000000000711';
+select set_config('request.jwt.claim.sub', '', false);
 
-select t_eq('מעבר ל"משובץ" מודיע למי ששובץ קודם',
-  (select count(*)::int from notifications
-    where type = 'task_assigned'
-      and recipient_id = '20000000-0000-0000-0000-0000000000f2'), 1);
+select t_eq('העובד המשובץ שמע על הפרסום',
+  (select count(*)::int from notifications where type = 'task_published'
+    and recipient_id = '20000000-0000-0000-0000-0000000000f1'), 1);
+select t_eq('מנהל הקבלן שמע',
+  (select count(*)::int from notifications where type = 'task_published'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b1'), 1);
+select t_eq('עובד הקבלן המקושר שמע',
+  (select count(*)::int from notifications where type = 'task_published'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b2'), 1);
+select t_eq('שורה אחת לאדם — שלושה נמענים, שלוש שורות',
+  (select count(*)::int from notifications where type = 'task_published'
+    and entity_id = '60000000-0000-0000-0000-000000000711'), 3);
 
--- אותו סטטוס פעם שנייה אינו אירוע
-update tasks set worker_count = coalesce(worker_count, 0) + 1
- where id in (select id from n7_task);
-select t_eq('עדכון שאינו סטטוס אינו מתריע שוב',
-  (select count(*)::int from notifications
-    where type = 'task_assigned'
-      and recipient_id = '20000000-0000-0000-0000-0000000000f2'), 1);
+-- ── הירידה מפרסום מדברת לאותו קהל ────────────────────────────────────
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+update tasks set status_id = (select id from statuses
+  where entity = 'task' and code = 'planned' and deleted_at is null)
+ where id = '60000000-0000-0000-0000-000000000711';
+select set_config('request.jwt.claim.sub', '', false);
 
--- ── ומכאן הסרה כן מדברת ──────────────────────────────────────────────
+select t_eq('הירידה משיבוץ הגיעה לשלושתם',
+  (select count(*)::int from notifications where type = 'task_unpublished'
+    and entity_id = '60000000-0000-0000-0000-000000000711'
+    and recipient_id in ('20000000-0000-0000-0000-0000000000f1',
+                         '20000000-0000-0000-0000-0000000007b1',
+                         '20000000-0000-0000-0000-0000000007b2')), 3);
+
+-- חזרה לפרסום לקראת ההמשך
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+update tasks set status_id = (select id from statuses
+  where entity = 'task' and code = 'assigned' and deleted_at is null)
+ where id = '60000000-0000-0000-0000-000000000711';
+select set_config('request.jwt.claim.sub', '', false);
+
+\echo '--- שיבוץ פרטני אחרי הפרסום ---'
+
+-- סגל: הוספה והסרה (עובד החבילה מ-§8, שאינו אדמין ואינו הקבלן)
+insert into task_assignments (task_id, profile_id, role) values
+  ('60000000-0000-0000-0000-000000000711', '20000000-0000-0000-0000-0000000007a1', 'worker');
+select t_eq('עובד שנוסף אחרי הפרסום שומע',
+  (select count(*)::int from notifications where type = 'task_assigned'
+    and recipient_id = '20000000-0000-0000-0000-0000000007a1'), 1);
+
 delete from task_assignments
- where profile_id = '20000000-0000-0000-0000-0000000000f2'
-   and task_id in (select id from n7_task);
+ where task_id = '60000000-0000-0000-0000-000000000711'
+   and profile_id = '20000000-0000-0000-0000-0000000007a1';
+select t_eq('והסרתו מדברת',
+  (select count(*)::int from notifications where type = 'assignment_removed'
+    and recipient_id = '20000000-0000-0000-0000-0000000007a1'), 1);
 
-select t_eq('הסרת שיבוץ ממשימה שפורסמה מודיעה לעובד',
-  (select count(*)::int from notifications
-    where type = 'assignment_removed'
-      and recipient_id = '20000000-0000-0000-0000-0000000000f2'), 1);
+-- עובד קבלן: הסרה והוספה מחדש
+delete from task_contractor_workers
+ where task_id = '60000000-0000-0000-0000-000000000711'
+   and contractor_worker_id = '70000000-0000-0000-0000-000000000702';
+select t_eq('עובד קבלן שהוסר שומע',
+  (select count(*)::int from notifications where type = 'assignment_removed'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b2'), 1);
 
--- מחיקת משימה מפילה שיבוצים בקסקייד. מטח התראות על משהו שאינו קיים הוא רעש.
-delete from notifications where type = 'assignment_removed';
-insert into tasks (event_id, task_type_id, task_date, status_id)
-select e.id, (select id from task_types where deleted_at is null limit 1),
-       -- משובץ במפורש: על משימה שלא פורסמה השקט מובטח ממילא (0064), והטענה
-       -- כאן היא דווקא שגם משימה שפורסמה שותקת כשהיא נמחקת
-       current_date + 30, (select id from statuses
-                            where entity = 'task' and code = 'assigned' and deleted_at is null)
-  from events e where e.deleted_at is null order by e.created_at limit 1;
+insert into task_contractor_workers (task_id, contractor_worker_id) values
+  ('60000000-0000-0000-0000-000000000711', '70000000-0000-0000-0000-000000000702');
+select t_eq('עובד קבלן שנוסף אחרי הפרסום שומע',
+  (select count(*)::int from notifications where type = 'task_assigned'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b2'), 1);
 
-insert into task_assignments (task_id, profile_id, role)
-select id, '20000000-0000-0000-0000-0000000000f2', 'worker'
-  from tasks order by created_at desc limit 1;
+select t_eq('שיבוץ שהוסיף המשרד אינו מתריע למנהלים',
+  (select count(*)::int from notifications where type = 'contractor_worker_assigned'), 0);
 
-delete from tasks where id = (select id from tasks order by created_at desc limit 1);
+-- האצלה: הסרה והוספה מחדש, אחרי פרסום
+delete from task_contractor_terms
+ where task_id = '60000000-0000-0000-0000-000000000711'
+   and contractor_id = '70000000-0000-0000-0000-000000000701';
+select t_eq('ביטול ההאצלה מדבר אל מנהל הקבלן',
+  (select count(*)::int from notifications where type = 'task_unpublished'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b1'
+    and title = 'המשימה הוסרה מהקבלן שלך'), 1);
 
-select t_eq('מחיקת משימה אינה מייצרת התראות ביטול',
-  (select count(*)::int from notifications where type = 'assignment_removed'), 0);
+insert into task_contractor_terms (task_id, contractor_id) values
+  ('60000000-0000-0000-0000-000000000711', '70000000-0000-0000-0000-000000000701');
+select t_eq('האצלה אחרי פרסום מדברת אל מנהל הקבלן',
+  (select count(*)::int from notifications where type = 'task_published'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b1'
+    and title = 'משימה חדשה הוקצתה לך'), 1);
+select t_eq('ועובד הקבלן אינו שומע על ההאצלה',
+  (select count(*)::int from notifications where type = 'task_published'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b2'
+    and title = 'משימה חדשה הוקצתה לך'), 0);
+
+\echo '--- קבלן משבץ עובד משלו ---'
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000007b1', false);
+insert into task_contractor_workers (task_id, contractor_worker_id) values
+  ('60000000-0000-0000-0000-000000000711', '70000000-0000-0000-0000-000000000703');
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('קבלן שיבץ עובד — המנהל שומע, עם שם הקבלן',
+  (select count(*)::int from notifications where type = 'contractor_worker_assigned'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'
+    and title like 'קבלן הבדיקות%'), 1);
+select t_eq('עובד בלי חשבון אינו מקבל התראת שיבוץ',
+  (select count(*)::int from notifications where type = 'task_assigned'
+    and body like 'עובד קבלן בלי חשבון%'), 0);
+
+\echo '--- כמות העובדים מהקבלן ---'
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+update task_contractor_terms set contractor_worker_count = 5
+ where task_id = '60000000-0000-0000-0000-000000000711'
+   and contractor_id = '70000000-0000-0000-0000-000000000701';
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('מנהל הקבלן שמע על הכמות החדשה',
+  (select count(*)::int from notifications where type = 'contractor_worker_count_changed'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b1'
+    and body like '%5 עובדים%'), 1);
+select t_eq('עובד הקבלן לא — זה עניין של המנהל מולו',
+  (select count(*)::int from notifications where type = 'contractor_worker_count_changed'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b2'), 0);
+
+\echo '--- שינוי זמנים במשימה משובצת ---'
+
+-- שינוי שעת שטח: כל הקהל שומע
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+update tasks set onsite_start_time = '09:00'
+ where id = '60000000-0000-0000-0000-000000000711';
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('שינוי שעת שטח הגיע לעובד, למנהל הקבלן ולעובד הקבלן',
+  (select count(*)::int from notifications where type = 'task_time_changed'
+    and recipient_id in ('20000000-0000-0000-0000-0000000000f1',
+                         '20000000-0000-0000-0000-0000000007b1',
+                         '20000000-0000-0000-0000-0000000007b2')), 3);
+
+-- שינוי שעת מחסן: רק מי שמסומן למחסן
+update task_contractor_workers set work_site = 'warehouse'
+ where task_id = '60000000-0000-0000-0000-000000000711'
+   and contractor_worker_id = '70000000-0000-0000-0000-000000000702';
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+update tasks set warehouse_start_time = '07:00'
+ where id = '60000000-0000-0000-0000-000000000711';
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('שינוי שעת מחסן — עובד הקבלן שבמחסן שמע',
+  (select count(*)::int from notifications where type = 'task_time_changed'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b2'), 2);
+select t_eq('ומי שבשטח לא',
+  (select count(*)::int from notifications where type = 'task_time_changed'
+    and recipient_id in ('20000000-0000-0000-0000-0000000000f1',
+                         '20000000-0000-0000-0000-0000000007b1')), 2);
+
+-- 0112: אותם שינויים נרשמו גם ביומן הפעילות של האירוע, בפורמט קריא
+select t_eq('שינוי שעת השטח נרשם ביומן',
+  (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-000000000710'
+      and kind = 'changed' and field_key = 'task_onsite_start_time'
+      and new_value = '09:00'), 1);
+select t_eq('ושינוי שעת המחסן נרשם, בפורמט שעה',
+  (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-000000000710'
+      and kind = 'changed' and field_key = 'task_warehouse_start_time'
+      and new_value = '07:00'), 1);
+-- פרסום והורדה (שינויי סטטוס) אינם שורות changed — יש להם התראות משלהם
+select t_eq('שינוי סטטוס משימה אינו נרשם כשינוי שדה',
+  (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-000000000710'
+      and kind = 'changed' and field_key like 'task_status%'), 0);
+
+-- שער אותה-טרנזקציה: אירוע שנולד עם בלוק הקמה בקריאה אחת מדבר פעם אחת —
+-- task_added — ולא בנוסף מטח שורות changed מול ערכי ברירת המחדל.
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+create temp table n7_born as
+select create_event(jsonb_build_object(
+  'customer_id', '10000000-0000-0000-0000-000000000001',
+  'event_date', (current_date + 405)::text,
+  'setup_worker_count', 4)) as id;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('משימה שנולדה ומולאה באותה קריאה אינה מדברת פעמיים',
+  (select count(*)::int from event_activity
+    where event_id = (select id from n7_born)
+      and kind = 'changed' and field_key like 'task_%'), 0);
+
+\echo '--- תחולה ---'
+
+-- תחולת עובדים: selected בלי רשימה משתיק את הסגל, אך לא את צד הקבלן
+insert into notification_scope_modes (type, entity_kind, mode) values
+  ('task_time_changed', 'worker', 'selected');
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+update tasks set onsite_start_time = '09:30'
+ where id = '60000000-0000-0000-0000-000000000711';
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('עובד מחוץ לתחולה אינו מקבל — ואין שורה בכלל',
+  (select count(*)::int from notifications where type = 'task_time_changed'
+    and recipient_id = '20000000-0000-0000-0000-0000000000f1'), 1);
+select t_eq('צד הקבלן, שתחולתו לא צומצמה, ממשיך לשמוע',
+  (select count(*)::int from notifications where type = 'task_time_changed'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b1'), 2);
+
+insert into notification_scopes (type, entity_kind, entity_id) values
+  ('task_time_changed', 'worker', '20000000-0000-0000-0000-0000000000f1');
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+update tasks set onsite_start_time = '10:15'
+ where id = '60000000-0000-0000-0000-000000000711';
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('עובד שנבחר לתחולה חוזר לשמוע',
+  (select count(*)::int from notifications where type = 'task_time_changed'
+    and recipient_id = '20000000-0000-0000-0000-0000000000f1'), 2);
+
+-- תחולת לקוחות על אירועים
+insert into notification_scope_modes (type, entity_kind, mode) values
+  ('event_created', 'customer', 'selected');
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
+insert into events (id, customer_id, event_date, created_by) values
+  ('30000000-0000-0000-0000-000000000714', '10000000-0000-0000-0000-000000000001',
+   current_date + 402, '20000000-0000-0000-0000-0000000000c1');
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('אירוע של לקוח מחוץ לתחולה שקט',
+  (select count(*)::int from notifications where type = 'event_created'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 1);
+
+insert into notification_scopes (type, entity_kind, entity_id) values
+  ('event_created', 'customer', '10000000-0000-0000-0000-000000000001');
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
+insert into events (id, customer_id, event_date, created_by) values
+  ('30000000-0000-0000-0000-000000000715', '10000000-0000-0000-0000-000000000001',
+   current_date + 403, '20000000-0000-0000-0000-0000000000c1');
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('לקוח שנבחר לתחולה — ההתראה חוזרת',
+  (select count(*)::int from notifications where type = 'event_created'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 2);
+
+-- ישות שאינה קיימת נדחית בשער
+select t_expect_fail('אי אפשר להוסיף לתחולה ישות שאינה קיימת', $$
+  insert into notification_scopes (type, entity_kind, entity_id)
+  values ('event_created', 'customer', '10000000-0000-0000-0000-0000000000ff')$$);
+
+-- ותחולה נקראת רק דרך notifications.manage
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000007a1', false);
+select t_eq('עובד מן השורה אינו רואה את התחולה',
+  (select count(*)::int from notification_scope_modes), 0);
+select t_rows('ואינו כותב אליה', $$
+  insert into notification_scope_modes (type, entity_kind, mode)
+  values ('event_created', 'contractor', 'selected')$$, 0);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+delete from notification_scopes;
+delete from notification_scope_modes;
+
+\echo '--- השעון מדבר ---'
+-- החתמה אמיתית דרך ה-RPC נבדקת בחבילה 04 (כולל כותרת האיחור); כאן נבדקים
+-- הנמענים והתחולה של app.notify_clock_event עצמה.
+
+delete from notifications where type in ('attendance_clock_in', 'attendance_clock_out');
+
+select app.notify_clock_event('20000000-0000-0000-0000-0000000000f1',
+  'attendance_clock_in', null, false);
+select t_eq('כניסת עובד סגל — המנהל שומע',
+  (select count(*)::int from notifications where type = 'attendance_clock_in'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'
+    and title = 'איש צוות ביצע כניסה'), 1);
+select t_eq('מנהל הקבלן אינו שומע על עובד סגל',
+  (select count(*)::int from notifications where type = 'attendance_clock_in'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b1'), 0);
+
+select app.notify_clock_event('20000000-0000-0000-0000-0000000000f1',
+  'attendance_clock_in', null, true);
+select t_eq('איחור נרשם בכותרת',
+  (select count(*)::int from notifications where type = 'attendance_clock_in'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'
+    and title = 'איש צוות ביצע כניסה באיחור'), 1);
+
+select app.notify_clock_event('20000000-0000-0000-0000-0000000007b2',
+  'attendance_clock_in', null, false);
+select t_eq('כניסת עובד קבלן — מנהל הקבלן שומע',
+  (select count(*)::int from notifications where type = 'attendance_clock_in'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b1'), 1);
+select t_eq('וגם המנהל, על כולם',
+  (select count(*)::int from notifications where type = 'attendance_clock_in'
+    and recipient_id = '20000000-0000-0000-0000-000000000001'), 3);
+select t_eq('המחתים אינו שומע על עצמו',
+  (select count(*)::int from notifications where type = 'attendance_clock_in'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b2'), 0);
+
+select app.notify_clock_event('20000000-0000-0000-0000-0000000007b2',
+  'attendance_clock_out', null, false);
+select t_eq('יציאה — מנהל הקבלן שומע, בכותרת יציאה',
+  (select count(*)::int from notifications where type = 'attendance_clock_out'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b1'
+    and title = 'עובד הקבלן ביצע יציאה'), 1);
+
+-- תחולה על השעון: צמצום לפי קבלן משתיק את עובדי הקבלן שלא נבחרו
+insert into notification_scope_modes (type, entity_kind, mode) values
+  ('attendance_clock_in', 'contractor', 'selected');
+select app.notify_clock_event('20000000-0000-0000-0000-0000000007b2',
+  'attendance_clock_in', null, false);
+select t_eq('עובד של קבלן מחוץ לתחולה — אף אחד אינו שומע',
+  (select count(*)::int from notifications where type = 'attendance_clock_in'
+    and recipient_id = '20000000-0000-0000-0000-0000000007b1'), 1);
+delete from notification_scope_modes;
 
 -- ===== 12. ניקוי =====================================================
 

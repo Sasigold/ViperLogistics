@@ -5,21 +5,26 @@ import {
   Boxes,
   Building2,
   Calculator,
+  ClipboardList,
   Eye,
   EyeOff,
   ICON,
   Mail,
   Package,
+  Pencil,
   Percent,
   Phone,
   Plus,
   STROKE,
   Shield,
   SlidersHorizontal,
+  Star,
   Trash2,
+  Truck,
   User,
 } from '../../components/ui/icons'
 import {
+  Badge,
   Button,
   Card,
   CardBody,
@@ -33,6 +38,7 @@ import {
   SegmentedControl,
   Select,
   Skeleton,
+  SkeletonTable,
   ErrorState,
   StatusPill,
   Switch,
@@ -46,26 +52,43 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import {
+  useBoardFields,
+  useCustomerBoardConfig,
   useCustomerExecutionMethods,
+  useCustomerTrucks,
   useCustomerFormConfig,
   useExecutionMethods,
   useFormFields,
   useSuppliers,
   useTaskTypeMethods,
   useTaskTypes,
+  useTrucks,
 } from '../../lib/queries'
 import { usePageTitle } from '../../app/breadcrumbs'
 import PricingTab from './PricingTab'
 import IncomeSplitTab from './IncomeSplitTab'
 import { useWarehouses } from '../attendance/attendanceQueries'
 import { RequirePermission } from '../auth/guards'
-import type { Customer, CustomFieldType, FieldState, Supplier } from '../../types/domain'
+import type {
+  BoardFieldState,
+  Customer,
+  CustomFieldType,
+  FieldState,
+  Supplier,
+} from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
 const TABS = [
   { key: 'details', label: 'פרטים', icon: <Building2 size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
   { key: 'fields', label: 'שדות טופס', icon: <SlidersHorizontal size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
+  /* ‏0109: הלשונית היחידה שאינה נגזרת ממפתח אלא ממנהל המערכת. `adminOnly`
+     ולא מפתח במרשם — מפתח אפשר להעניק, ו"רק מנהל מערכת" נאמר כדי שלא. */
+  { key: 'board', label: 'שדות הלו״ז', icon: <ClipboardList size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW, adminOnly: true },
   { key: 'methods', label: 'אופני ביצוע', icon: <Boxes size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
+  /* ‏0116: אינה adminOnly כמו "שדות הלו״ז" — זו החלטה תפעולית על קטלוג, לא
+     גבול הרשאות, ולכן יש לה מפתח: אותו `settings.trucks` שפותח את הקטלוג
+     הגלובלי במסך ההגדרות. */
+  { key: 'trucks', label: 'משאיות', icon: <Truck size={ICON.sm} />, perm: PERM.SETTINGS_TRUCKS },
   { key: 'suppliers', label: 'ספקים', icon: <Package size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
   { key: 'pricing', label: 'תמחור', icon: <Calculator size={ICON.sm} />, perm: PERM.PRICING_MANAGE_RULES },
   { key: 'income', label: 'חלוקת הכנסות', icon: <Percent size={ICON.sm} />, perm: PERM.FINANCE_MANAGE_SPLITS },
@@ -75,7 +98,8 @@ export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('details')
   const { has } = useAuth()
-  const visibleTabs = TABS.filter((t) => has(t.perm))
+  const isAdmin = !!useAuth((st) => st.me)?.profile.is_admin
+  const visibleTabs = TABS.filter((t) => has(t.perm) && (!('adminOnly' in t) || isAdmin))
 
   const { data: customer, isLoading, error, refetch } = useQuery({
     queryKey: ['customers', 'one', id],
@@ -126,7 +150,9 @@ export default function CustomerDetailPage() {
 
         {tab === 'details' && <DetailsTab customer={customer} />}
         {tab === 'fields' && <FieldsTab customerId={customer.id} />}
+        {tab === 'board' && <BoardFieldsTab customerId={customer.id} />}
         {tab === 'methods' && <MethodsTab customerId={customer.id} />}
+        {tab === 'trucks' && <CustomerTrucksTab customerId={customer.id} />}
         {tab === 'suppliers' && <SuppliersTab customerId={customer.id} />}
         {tab === 'pricing' && <PricingTab customer={customer} />}
         {tab === 'income' && <IncomeSplitTab customerId={customer.id} />}
@@ -339,6 +365,120 @@ function DetailsTab({ customer }: { customer: Customer }) {
 }
 
 /* ===== form field configuration =========================================== */
+
+/**
+ * שדות הלו״ז של לקוח אחד (0109).
+ *
+ * שלוש מדרגות ולא שתיים, וזו כל ההבחנה שהמסך הזה קיים בשבילה: **מוסתר** —
+ * השדה אינו מצויר אצלו כלל; **נראה** — הוא קורא ואינו נוגע; **עריכה** — הוא
+ * גם משנה. עד כאן התשובה נגזרה מהמפתחות של התפקיד, כלומר הייתה זהה לכל
+ * הלקוחות; מעכשיו היא נשאלת פר-לקוח, ומי שעונה עליה הוא מנהל המערכת.
+ *
+ * ההכרעה נאכפת בשרת ולא כאן: `app.enforce_customer_board_edit` דוחה כתיבה
+ * לשדה שאינו `editable`, ולכן שינוי כאן משנה גם את מה שהמסך מצייר וגם את מה
+ * שהשרת מקבל — ואי אפשר להם להיפרד.
+ */
+const BOARD_STATES = [
+  { key: 'hidden' as const, label: 'מוסתר', icon: <EyeOff size={12} /> },
+  { key: 'visible' as const, label: 'נראה', icon: <Eye size={12} /> },
+  { key: 'editable' as const, label: 'עריכה', icon: <Pencil size={12} /> },
+]
+
+function BoardFieldsTab({ customerId }: { customerId: string }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const { data: fields = [], isLoading } = useBoardFields()
+  const { data: config = [] } = useCustomerBoardConfig(customerId)
+  const stateOf = (key: string): BoardFieldState =>
+    config.find((c) => c.field_key === key)?.state ?? 'visible'
+
+  const update = useMutation({
+    mutationFn: async ({ key, state }: { key: string; state: BoardFieldState }) => {
+      const { error } = await supabase
+        .from('customer_board_fields')
+        .upsert({ customer_id: customerId, field_key: key, state })
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['customer_board_fields', customerId] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  const setAll = useMutation({
+    mutationFn: async (state: BoardFieldState) => {
+      const { error } = await supabase.from('customer_board_fields').upsert(
+        fields.map((f) => ({ customer_id: customerId, field_key: f.field_key, state })),
+      )
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['customer_board_fields', customerId] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  const counts = fields.reduce(
+    (acc, f) => {
+      acc[stateOf(f.field_key)]++
+      return acc
+    },
+    { hidden: 0, visible: 0, editable: 0 } as Record<BoardFieldState, number>,
+  )
+
+  if (isLoading) return <SkeletonTable rows={6} cols={2} />
+
+  return (
+    <Card>
+      <CardHeader
+        title="שדות הלו״ז"
+        subtitle="מה הלקוח הזה רואה בלוח העבודה, ומה הוא גם רשאי לשנות"
+        icon={<ClipboardList size={ICON.md} strokeWidth={STROKE} />}
+        actions={
+          <span className="flex flex-wrap items-center gap-1.5">
+            <Badge>{counts.visible} נראים</Badge>
+            <Badge tone="primary">{counts.editable} לעריכה</Badge>
+            {counts.hidden > 0 && <Badge tone="neutral">{counts.hidden} מוסתרים</Badge>}
+          </span>
+        }
+      />
+      <CardBody className="p-0">
+        <p className="border-b border-line-subtle px-4 py-2.5 type-caption text-ink-secondary">
+          שדה ב״עריכה״ נפתח ללקוח גם בשרת. שים לב ששדות שמזיזים כסף — משך, כמות
+          עובדים ואופן ביצוע — מריצים מחדש את חישוב המחיר, ולכן מי שרשאי לשנות
+          אותם משנה גם את מה שהוא ישלם.
+        </p>
+        <ul>
+          {fields.map((f) => (
+            <li
+              key={f.field_key}
+              className="flex items-center gap-3 border-b border-line-subtle px-4 py-2.5 last:border-0"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate type-body font-medium">{f.label_he}</span>
+                {/* שדה בלי עמודה אינו נכתב מהלוח כלל — "עריכה" עליו היא הבטחה
+                    שאין מי שיקיים, ולכן הוא מוצע כמוסתר/נראה בלבד */}
+                {!f.column_name && (
+                  <span className="type-caption text-ink-tertiary">לקריאה בלבד בלוח</span>
+                )}
+              </span>
+              <SegmentedControl
+                items={f.column_name ? BOARD_STATES : BOARD_STATES.filter((x) => x.key !== 'editable')}
+                value={stateOf(f.field_key)}
+                onChange={(state) => update.mutate({ key: f.field_key, state })}
+              />
+            </li>
+          ))}
+        </ul>
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+          <span className="type-caption text-ink-tertiary">החלה על הכול:</span>
+          <Button size="sm" loading={setAll.isPending} onClick={() => setAll.mutate('hidden')}>
+            הכול מוסתר
+          </Button>
+          <Button size="sm" loading={setAll.isPending} onClick={() => setAll.mutate('visible')}>
+            הכול נראה
+          </Button>
+        </div>
+      </CardBody>
+    </Card>
+  )
+}
 
 const FIELD_STATES = [
   { key: 'visible' as const, label: 'מוצג', icon: <Eye size={12} /> },
@@ -576,7 +716,9 @@ function MethodsTab({ customerId }: { customerId: string }) {
   const { has } = useAuth()
   const canEdit = has(PERM.CUSTOMERS_MANAGE_FORM_FIELDS)
   const { data: methods = [] } = useExecutionMethods()
-  const { data: enabled = [] } = useCustomerExecutionMethods(customerId)
+  const { data: enabledRows = [] } = useCustomerExecutionMethods(customerId)
+  const enabled = useMemo(() => enabledRows.map((r) => r.execution_method_id), [enabledRows])
+  const defaultId = enabledRows.find((r) => r.is_default)?.execution_method_id ?? null
   const { data: taskTypes = [] } = useTaskTypes()
   const { data: typeMethods = [] } = useTaskTypeMethods()
 
@@ -617,6 +759,31 @@ function MethodsTab({ customerId }: { customerId: string }) {
     onError: (e) => toast.error(errorMessage(e)),
   })
 
+  /**
+   * ברירת המחדל (0111). שתי כתיבות ולא אחת: האינדקס מתיר שורת `is_default`
+   * אחת ללקוח, ולכן הקודמת חייבת לרדת לפני שהחדשה עולה — באותה טרנזקציה זה
+   * היה נופל על האינדקס.
+   */
+  const setDefault = useMutation({
+    mutationFn: async (methodId: string | null) => {
+      const clear = await supabase
+        .from('customer_execution_methods')
+        .update({ is_default: false })
+        .eq('customer_id', customerId)
+        .eq('is_default', true)
+      if (clear.error) throw clear.error
+      if (!methodId) return
+      const { error } = await supabase
+        .from('customer_execution_methods')
+        .update({ is_default: true })
+        .eq('customer_id', customerId)
+        .eq('execution_method_id', methodId)
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['customer_execution_methods', customerId] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
   return (
     <Card className="max-w-2xl">
       <CardHeader
@@ -631,6 +798,8 @@ function MethodsTab({ customerId }: { customerId: string }) {
           <>
             <p className="type-caption text-ink-secondary">
               אופן ביצוע המשותף לשני הסעיפים מופיע בשניהם — כיבויו משפיע על שניהם.
+              הכוכב מסמן את ברירת המחדל: כל משימה חדשה של הלקוח נולדת איתה, גם
+              כשהיא נוצרת ממקום שאין בו בורר.
             </p>
             {groups.map((g) => (
               <div key={g.label} className="space-y-2">
@@ -639,21 +808,129 @@ function MethodsTab({ customerId }: { customerId: string }) {
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {g.items.map((m) => (
-                    <label
+                    <div
                       key={m.id}
-                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-line-subtle p-2.5 transition-colors hover:bg-hover"
+                      className="flex items-center gap-2 rounded-lg border border-line-subtle p-2.5 transition-colors hover:bg-hover"
                     >
-                      <Checkbox
-                        label={m.name}
-                        checked={enabled.includes(m.id)}
-                        onChange={(v) => toggle.mutate({ methodId: m.id, on: v })}
-                        disabled={!canEdit}
-                      />
-                    </label>
+                      <label className="min-w-0 flex-1 cursor-pointer">
+                        <Checkbox
+                          label={m.name}
+                          checked={enabled.includes(m.id)}
+                          onChange={(v) => toggle.mutate({ methodId: m.id, on: v })}
+                          disabled={!canEdit}
+                        />
+                      </label>
+                      {/* ברירת המחדל מוצעת רק על אופן שכבר הותר — היא חייבת
+                          להיות אחד מהם, וזה מה שהאינדקס בשרת מבטיח (0111). */}
+                      {enabled.includes(m.id) && (
+                        <IconButton
+                          label={defaultId === m.id ? `${m.name} — ברירת המחדל` : `הגדרת ${m.name} כברירת מחדל`}
+                          size="sm"
+                          bare
+                          disabled={!canEdit || setDefault.isPending}
+                          onClick={() => setDefault.mutate(defaultId === m.id ? null : m.id)}
+                        >
+                          <Star
+                            size={ICON.sm}
+                            strokeWidth={STROKE}
+                            className={defaultId === m.id ? 'fill-warning text-warning' : 'text-ink-tertiary'}
+                          />
+                        </IconButton>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
             ))}
+          </>
+        )}
+      </CardBody>
+    </Card>
+  )
+}
+
+/* ===== המשאיות של הלקוח (0116) ============================================ */
+
+/**
+ * אילו משאיות מהקטלוג הגלובלי זמינות ללקוח הזה בלו״ז.
+ *
+ * **ריק אינו "אין משאיות" אלא "אין הגבלה"**, וזו ההכרעה שמאפשרת לתכונה
+ * לעלות בלי לגעת באף לקוח קיים. הכותרת אומרת זאת במפורש, כי מסך שמראה אפס
+ * מסומנים ולא מסביר נקרא כמסך שאוסר הכול.
+ *
+ * האכיפה אינה כאן: `app.enforce_customer_trucks` דוחה שיבוץ של משאית שאינה
+ * ברשימה גם כשהוא מגיע בלי לעבור במסך.
+ */
+function CustomerTrucksTab({ customerId }: { customerId: string }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const { has } = useAuth()
+  const canEdit = has(PERM.SETTINGS_TRUCKS)
+  const { data: trucks = [] } = useTrucks()
+  const { data: rows = [] } = useCustomerTrucks()
+
+  const mine = useMemo(
+    () => new Set(rows.filter((r) => r.customer_id === customerId).map((r) => r.truck_id)),
+    [rows, customerId],
+  )
+  const active = useMemo(() => trucks.filter((t) => t.is_active || mine.has(t.id)), [trucks, mine])
+
+  const toggle = useMutation({
+    mutationFn: async ({ truckId, on }: { truckId: string; on: boolean }) => {
+      if (on) {
+        const { error } = await supabase
+          .from('customer_trucks')
+          .insert({ customer_id: customerId, truck_id: truckId })
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('customer_trucks')
+          .delete()
+          .eq('customer_id', customerId)
+          .eq('truck_id', truckId)
+        if (error) throw error
+      }
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['customer_trucks'] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  return (
+    <Card className="max-w-2xl">
+      <CardHeader
+        title="המשאיות של הלקוח"
+        subtitle={mine.size === 0 ? 'לא הוגדרה רשימה — כל המשאיות זמינות' : `${mine.size} מתוך ${active.length}`}
+        icon={<Truck size={ICON.md} strokeWidth={STROKE} />}
+      />
+      <CardBody className="space-y-4">
+        {active.length === 0 ? (
+          <EmptyState
+            compact
+            art="box"
+            title="לא הוגדרו משאיות"
+            description="ניתן להגדיר אותן במסך ההגדרות"
+          />
+        ) : (
+          <>
+            <p className="type-caption text-ink-secondary">
+              מה שמסומן כאן הוא מה שהלקוח יראה בבורר המשאיות בלו״ז. כל עוד לא
+              סומנה אף משאית — הרשימה שלו היא הקטלוג כולו, ולא רשימה ריקה.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {active.map((t) => (
+                <label
+                  key={t.id}
+                  className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg border border-line-subtle p-2.5 transition-colors hover:bg-hover"
+                >
+                  <Checkbox
+                    label={t.plate_number ? `${t.name} · ${t.plate_number}` : t.name}
+                    checked={mine.has(t.id)}
+                    onChange={(v) => toggle.mutate({ truckId: t.id, on: v })}
+                    disabled={!canEdit}
+                  />
+                </label>
+              ))}
+            </div>
           </>
         )}
       </CardBody>

@@ -78,6 +78,19 @@ export interface Contractor {
   deleted_at: string | null
 }
 
+/** פירוט חישוב מחיר הקבלן למשימה, מ-task_contractor_terms.price_parts (0093). */
+export interface ContractorPriceParts {
+  base: number
+  surcharge: number
+  worker_count: number
+  transport: boolean
+  late_count: number
+  late_penalty_each: number
+  noshow_count: number
+  noshow_penalty_each: number
+  penalty_total: number
+}
+
 export interface ContractorWorker {
   id: string
   contractor_id: string
@@ -333,6 +346,41 @@ export interface UserFormField {
   state: FieldState
 }
 
+/**
+ * מה שלקוח עושה עם שדה בלו״ז (0109).
+ *
+ * שלוש מדרגות ולא שתיים: "נראה" אינו "ניתן לעריכה", וזו בדיוק ההבחנה
+ * שמנהל המערכת מבקש לעשות — להראות ללקוח את השעות בלי לתת לו להזיז אותן.
+ */
+export type BoardFieldState = 'hidden' | 'visible' | 'editable'
+
+/** שורה בקטלוג שדות הלו״ז — מזינה את מסך "שדות הלו״ז" בכרטיס הלקוח. */
+export interface BoardFieldDef {
+  field_key: string
+  label_he: string
+  /** העמודה ב-tasks שהשדה כותב. null = לקריאה, נגזר, או נכתב לטבלה אחרת. */
+  column_name: string | null
+  sort_order: number
+}
+
+export interface CustomerBoardField {
+  customer_id: string
+  field_key: string
+  state: BoardFieldState
+}
+
+/**
+ * המשאיות שזמינות ללקוח מסוים בלו״ז (0116).
+ *
+ * רשימה ריקה אינה "אין משאיות" אלא **אין הגבלה** — בדיוק כמו `board_config`
+ * שחוזרת ריקה לאיש צוות. המשרד קובע אותה; הלקוח משבץ מתוכה בלבד, והשרת
+ * אוכף זאת ב-`app.enforce_customer_trucks` ולא רק הבורר שבמסך.
+ */
+export interface CustomerTruck {
+  customer_id: string
+  truck_id: string
+}
+
 export interface EventRow {
   id: string
   customer_id: string
@@ -352,6 +400,9 @@ export interface EventRow {
   no_parking: boolean
   porterage: boolean
   supplier_pickup: boolean
+  /** מתי מנהל המערכת אישר את האירוע לביצוע (0109). null = לא אושר. */
+  approved_at: string | null
+  approved_by: string | null
   /** values of this customer's custom form fields, keyed by field_key */
   custom_fields: Record<string, CustomFieldValue>
   created_by: string | null
@@ -370,6 +421,9 @@ export type EventActivityKind =
   | 'task_removed'
   | 'spec_added'
   | 'spec_removed'
+  | 'customer_signed'
+  | 'price_addon_added'
+  | 'price_addon_removed'
 
 /**
  * A line of an event's activity log, as `event_activity_feed` returns it: a
@@ -414,6 +468,24 @@ export interface EventSpec {
   uploader_name: string | null
   created_at: string
   deleted_at: string | null
+}
+
+/**
+ * חתימת לקוח על האירוע (0107) — שם החותם והחתימה עצמה כ-data URL. רשומה קבועה:
+ * החתמה חוזרת אינה דורסת אלא מוסיפה שורה, והאחרונה לפי `created_at` היא הפעילה.
+ * זהות המחתים (`signed_by`) נכפית מהשרת.
+ */
+export interface EventSignature {
+  id: string
+  event_id: string
+  /** שם הלקוח כפי שהוקלד בעת ההחתמה */
+  signer_name: string
+  /** data URL של תמונת החתימה (PNG מקנבס) */
+  signature_data: string
+  /** מי החתים בפועל — ראש הצוות, הלקוח, או מנהל המערכת */
+  signed_by: string | null
+  signed_by_name: string | null
+  created_at: string
 }
 
 export interface TaskRow {
@@ -468,6 +540,34 @@ export interface AssignmentPerson {
   work_site?: 'field' | 'warehouse'
 }
 
+/**
+ * שורת terms של קבלן במשימה (0096). משימה יכולה לשאת כמה כאלה — אחת לכל קבלן
+ * שהואצל אליו — כל אחת עם המחיר, התעריף-לעובד, כמות העובדים ונקודת ההתחלה שלה.
+ */
+export interface TaskContractorTerms {
+  task_id: string
+  contractor_id: string
+  price: number | null
+  price_per_worker: number | null
+  contractor_worker_count: number | null
+  work_site: WorkSite
+  paid_at: string | null
+  paid_amount: number | null
+  price_parts: ContractorPriceParts | null
+  created_at: string
+}
+
+/** תמצית שורת terms כפי ש-work_board_view מרכיב אותה ל-contractor_list. */
+export interface TaskContractorTermsSummary {
+  contractor_id: string
+  name: string
+  /** null כשלמשתמש אין contractors.view_pricing. */
+  price: number | null
+  price_per_worker: number | null
+  work_site: WorkSite | null
+  worker_count: number | null
+}
+
 export interface WorkBoardRow {
   id: string
   event_id: string | null
@@ -517,17 +617,29 @@ export interface WorkBoardRow {
   team_lead_name: string | null
   workers: AssignmentPerson[] | null
   drivers: AssignmentPerson[] | null
-  contractor_worker_list: { id: string; name: string; work_site?: 'field' | 'warehouse' }[] | null
+  contractor_worker_list:
+    | { id: string; name: string; contractor_id: string; work_site?: 'field' | 'warehouse' }[]
+    | null
   /** null גם כשקיים מחיר, אם למשתמש אין pricing.view — הקבלן תמיד כאן. */
   customer_price: number | null
   price_is_manual: boolean | null
   price_breakdown: PriceBreakdown | null
-  /** התשלום לקבלן על המשימה. null למי שאין לו contractors.view_pricing (0091). */
+  /**
+   * התשלום לקבלן על המשימה. null למי שאין לו contractors.view_pricing (0091).
+   * לקורא-קבלן זהו המחיר שלו; למשרד — סכום כל הקבלנים במשימה (0096).
+   */
   contractor_price: number | null
-  /** התעריף-לעובד שנקבע למשימה זו (דריסה לברירת המחדל של הקבלן). null = יורש. */
+  /**
+   * המחיר הראשי — נקודת ההתחלה, התעריף-לעובד, וכמות העובדים — של הקבלן ה"נראה"
+   * (הקבלן עצמו לקורא-קבלן, אחרת הראשי). הפירוט המלא לכל הקבלנים ב-contractor_list.
+   */
   contractor_price_per_worker: number | null
   /** נקודת ההתחלה שהמשרד קבע לקבלן; חלה על עובדיו (0091). */
   contractor_work_site: 'field' | 'warehouse' | null
+  /** כמה עובדים הקבלן צריך להביא (0095). */
+  contractor_worker_count: number | null
+  /** כל הקבלנים המואצלים למשימה (0096). ריק/‏null כשאין קבלן. */
+  contractor_list: TaskContractorTermsSummary[] | null
   travel_hours: number | null
   requires_team_lead: boolean | null
 }
@@ -692,6 +804,37 @@ export interface TaskPricing {
   calculated_at: string | null
 }
 
+/**
+ * תוספת מחיר על משימה, עם המשפט שמסביר אותה ללקוח (0113).
+ *
+ * שורה ולא עמודה על `task_pricing`: אירוע חורג נושא יותר מחריגה אחת, ותוספת
+ * בלי פירוט היא בדיוק המספר חסר ההסבר שהיא באה להחליף. הסכום חי לצד המחיר
+ * ולא בתוכו — מחיר שחושב מהמחשבון נכתב מחדש בכל `recalculate_task_price`,
+ * ותוספת שהתמזגה לתוכו הייתה נמחקת שם.
+ */
+export interface TaskPriceAddon {
+  id: string
+  task_id: string
+  /** שלילי מותר: הנחה היא אותה ישות עם אותו משפט מוצג */
+  amount: number
+  note: string
+  created_by: string | null
+  creator_name: string | null
+  created_at: string
+  deleted_at: string | null
+}
+
+/** שורת `event_price_addons` — אותה תוספת, עם שם המשימה שהיא יושבת עליה. */
+export interface EventPriceAddon {
+  id: string
+  task_id: string
+  task_label: string
+  amount: number
+  note: string
+  created_at: string
+  creator_name: string | null
+}
+
 export interface CustomerPricingRule {
   id: string
   customer_id: string
@@ -844,6 +987,11 @@ export interface MyPermissions {
   scopes: MyScope[]
   /** company form config already intersected with this user's overrides */
   form_config: { field_key: string; state: FieldState }[]
+  /**
+   * מה שהלקוח של הקורא רואה ועורך בלו״ז (0109). ריק לאיש צוות — הלוח שלו
+   * נשלט במפתחות, ולא בקונפיגורציה פר-לקוח.
+   */
+  board_config: { field_key: string; state: BoardFieldState }[]
 }
 
 /**
@@ -944,6 +1092,27 @@ export interface NotificationPolicy {
 export interface NotificationPolicyOverride extends Omit<NotificationPolicy, 'audience'> {
   profile_id: string
   note: string | null
+}
+
+/**
+ * תחולת התראות (0110): על אילו ישויות סוג התראה חל.
+ * ‏customer = customers, ‏contractor = contractors, ‏worker = profiles (סגל).
+ */
+export type NotificationScopeKind = 'customer' | 'contractor' | 'worker'
+
+/** אין שורה = 'all'. שורה קיימת רק כשמנהל צמצם. */
+export interface NotificationScopeMode {
+  id: string
+  type: string
+  entity_kind: NotificationScopeKind
+  mode: 'all' | 'selected'
+}
+
+export interface NotificationScope {
+  id: string
+  type: string
+  entity_kind: NotificationScopeKind
+  entity_id: string
 }
 
 /** תא בודד כפי ש-my_notification_settings מחזיר אותו. */
@@ -1097,8 +1266,9 @@ export interface ShiftTaskRow {
   /** כל משאיות המשימה לפי סדר. null כשאין משאיות משובצות (אז יש truck_name). */
   truck_list: { id: string; name: string }[] | null
   execution_method_name: string | null
-  /** null לעובד קבלן, שאין לו שורת task_assignments ולכן אין לו תפקיד */
-  my_role: StaffRole | null
+  /** כל התפקידים של העובד במשימה, מסודרים ראש צוות > נהג > עובד (0094).
+   *  null/ריק לעובד קבלן, שאין לו שורת task_assignments ולכן אין לו תפקיד. */
+  my_role: StaffRole[] | null
   worker_count: number | null
   assigned_count: number
   /** null למי שאין לו board.view_staffing. מאז 0083 גם נקודת ההתחלה של כל אחד */

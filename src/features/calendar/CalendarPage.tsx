@@ -75,6 +75,8 @@ interface CalEvent {
   supplier_pickup: boolean
   customer_id: string
   status_id: string | null
+  /** מתי מנהל המערכת אישר את האירוע לביצוע (0109). null = לא אושר. */
+  approved_at: string | null
   customers: { name: string; color: string } | null
   statuses: { name: string; color: string; code: string | null } | null
 }
@@ -201,7 +203,7 @@ export default function CalendarPage() {
       const { data, error } = await supabase
         .from('events')
         .select(
-          'id, event_date, end_client_name, event_number, location_text, volume_m, truck_count, notes, no_parking, porterage, supplier_pickup, customer_id, status_id, customers(name, color), statuses(name, color, code)',
+          'id, event_date, end_client_name, event_number, location_text, volume_m, truck_count, notes, no_parking, porterage, supplier_pickup, customer_id, status_id, approved_at, customers(name, color), statuses(name, color, code)',
         )
         .gte('event_date', period!.from)
         .lte('event_date', period!.to)
@@ -452,6 +454,10 @@ export default function CalendarPage() {
          than one customer to tell apart. */
       const paint = chipPaint(status?.color ?? ev.customers?.color)
       const cancelled = status?.code === CANCELLED
+      /* ‏0109: ווי, לא צבע. הצבע של הצ׳יפ שייך לסטטוס, וסימון האישור חייב
+         להיקרא *לצידו* — לקוח שרואה ווי יודע שהעבודה שלו ננעלה, בלי לשאול
+         מה הסטטוס אומר. */
+      const approved = !!ev.approved_at
       const showCustomerDot = customers.length > 1 && !!ev.customers
 
       const contextItems = [
@@ -512,6 +518,14 @@ export default function CalendarPage() {
               className="size-2 shrink-0 rounded-full"
               style={{ background: status?.color ?? ev.customers?.color ?? NEUTRAL }}
             />
+            {approved && (
+              <Check
+                size={ICON.sm}
+                strokeWidth={3}
+                className="shrink-0 text-success"
+                aria-label="מאושר לביצוע"
+              />
+            )}
             <span className={cx('truncate font-medium', cancelled && 'line-through opacity-70')}>{label}</span>
             {ev.customers && <span className="truncate type-caption text-ink-tertiary">{ev.customers.name}</span>}
             {ev.location_text && (
@@ -536,6 +550,7 @@ export default function CalendarPage() {
               {ev.truck_count != null && <span className="block opacity-80">🚚 {ev.truck_count} משאיות</span>}
               {ev.volume_m != null && <span className="block opacity-80">נפח {ev.volume_m}</span>}
               {status && <span className="block opacity-80">● {status.name}</span>}
+              {approved && <span className="block font-semibold">✓ מאושר לביצוע</span>}
               {ev.event_number && <span className="block opacity-60">#{ev.event_number}</span>}
             </span>
           }
@@ -569,6 +584,14 @@ export default function CalendarPage() {
                 className={cx('size-1.5 shrink-0 rounded-full ring-1 ring-white/40', !isMobile && 'ms-1')}
                 style={{ background: ev.customers!.color }}
                 title={ev.customers!.name}
+              />
+            )}
+            {approved && (
+              <Check
+                size={isMobile ? 9 : ICON.xs}
+                strokeWidth={3.5}
+                className={cx('shrink-0', !isMobile && !showCustomerDot && 'ms-1')}
+                aria-label="מאושר לביצוע"
               />
             )}
             <span
