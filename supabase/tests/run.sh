@@ -285,6 +285,16 @@ OUT="$OUT
 $OUT26"
 
 echo
+echo "== customer trucks and status suite =="
+# 27 מקימה לקוח, אירוע, משאיות ומשימות משלה, ב-current_date+430. היא רצה
+# אחרונה כי היא פותחת שדות לו״ז ללקוח שלה ומזריעה משאיות גלובליות שאינן
+# מנוקות אחריה.
+OUT27=$($PSQL -d vl -f "$HERE/27_customer_trucks_and_status.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT27"
+OUT="$OUT
+$OUT27"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
