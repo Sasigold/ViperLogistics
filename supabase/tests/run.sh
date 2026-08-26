@@ -275,6 +275,16 @@ OUT="$OUT
 $OUT25"
 
 echo
+echo "== cancelled events and price add-ons suite =="
+# 26 מקימה לקוח, שלושה אירועים ומשימות משלה, והאירועים שלה יושבים ב-
+# current_date+420 — מעבר לכל טווח קודם, כדי שכל מספר בה יהיה של השורות שלה
+# בלבד. היא רצה אחרונה כי היא מזריעה תוספות מחיר שאינן מנוקות אחריה.
+OUT26=$($PSQL -d vl -f "$HERE/26_cancelled_and_addons.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT26"
+OUT="$OUT
+$OUT26"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
