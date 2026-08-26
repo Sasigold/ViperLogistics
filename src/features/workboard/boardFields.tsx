@@ -5,10 +5,20 @@ import { fmtHours, fmtTime } from '../../lib/dates'
 import { shortAddress } from '../../lib/address'
 import type { ExecutionMethod, Status, Truck, WorkBoardRow } from '../../types/domain'
 import { PERM } from '../../lib/permissions'
+import { statusOptions } from './statusOptions'
 
 export interface BoardLookups {
   statuses: Status[]
   trucks: Truck[]
+  /**
+   * המשאיות שהלקוח *של השורה* רשאי לקבל (0116).
+   *
+   * פונקציה ולא מערך: הלוח מציג משימות של כמה לקוחות, ולכל שורה הרשימה
+   * שלה. רשימה ריקה אצל הלקוח אינה "אין משאיות" אלא **אין הגבלה**, ואז
+   * חוזר הקטלוג כולו — אותה סמנטיקה של `board_config` הריקה של איש צוות.
+   * זה סינון ולא אכיפה: `app.enforce_customer_trucks` הוא הגבול.
+   */
+  trucksFor: (customerId: string | null) => Truck[]
   methods: ExecutionMethod[]
   /**
    * Whether the reader may pick a delegated contractor's staff.
@@ -496,7 +506,10 @@ function TruckCell({ row, canEdit, patch, lookups }: CellContext) {
         {
           key: 'trucks',
           multi: true,
-          options: lookups.trucks
+          options: lookups
+            .trucksFor(row.customer_id)
+            /* משאית שכבר שובצה לשורה נשארת בבורר גם אם הושבתה או הוסרה
+               מרשימת הלקוח — אחרת היא הייתה נעלמת מהתא בלי שאיש הסיר אותה */
             .filter((t) => t.is_active || selected.includes(t.id))
             .map((t) => ({ id: t.id, label: t.name, checked: selected.includes(t.id) })),
         },
@@ -532,11 +545,13 @@ function MethodCell({ row, canEdit, patch, lookups }: CellContext) {
 
 function StatusCell({ row, canEdit, can, patch, lookups }: CellContext) {
   // פרסום ("משובץ") הוא מפתח נפרד מ-tasks.change_status. מי שאינו רשאי לפרסם
-  // לא רואה את האפשרות — אך היא נשארת כשזה הסטטוס הנוכחי של השורה.
+  // לא רואה את האפשרות — אך היא נשארת כשזה הסטטוס הנוכחי של השורה. ומאז 0117
+  // גם היציאה ממנה שמורה לו, ולכן שורה שכבר פורסמה נעולה בפניו לגמרי.
   const canPublish = can(PERM.TASKS_PUBLISH)
+  const { locked, options } = statusOptions(lookups.statuses, row.status_id, canPublish)
   return (
     <PickCell
-      canEdit={canEdit}
+      canEdit={canEdit && !locked}
       view={
         <span className="flex justify-center px-1.5 py-0.5">
           <StatusPill color={row.status_color}>{row.status_name}</StatusPill>
@@ -547,9 +562,7 @@ function StatusCell({ row, canEdit, can, patch, lookups }: CellContext) {
         {
           key: 'statuses',
           multi: false,
-          options: lookups.statuses
-            .filter((s) => canPublish || s.code !== 'assigned' || s.id === row.status_id)
-            .map((s) => ({ id: s.id, label: s.name, checked: s.id === row.status_id })),
+          options: options.map((s) => ({ id: s.id, label: s.name, checked: s.id === row.status_id })),
         },
       ]}
       /* a status is mandatory, so re-picking the current one is a no-op */

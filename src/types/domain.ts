@@ -369,6 +369,18 @@ export interface CustomerBoardField {
   state: BoardFieldState
 }
 
+/**
+ * המשאיות שזמינות ללקוח מסוים בלו״ז (0116).
+ *
+ * רשימה ריקה אינה "אין משאיות" אלא **אין הגבלה** — בדיוק כמו `board_config`
+ * שחוזרת ריקה לאיש צוות. המשרד קובע אותה; הלקוח משבץ מתוכה בלבד, והשרת
+ * אוכף זאת ב-`app.enforce_customer_trucks` ולא רק הבורר שבמסך.
+ */
+export interface CustomerTruck {
+  customer_id: string
+  truck_id: string
+}
+
 export interface EventRow {
   id: string
   customer_id: string

@@ -11,6 +11,8 @@
  * ייווצרו שתי אמיתות שיכולות להיפרד זו מזו.
  */
 import type {
+  PriceCond,
+  PriceTest,
   PricingAfterWorkers,
   PricingComponent,
   PricingConfig,
@@ -44,6 +46,10 @@ export const PRICING_VARS: PricingVarDef[] = [
   { key: 'porterage', label: 'סבלות', kind: 'boolean', source: 'מהאירוע' },
   { key: 'supplier_pickup', label: 'איסוף מספקים', kind: 'boolean', source: 'מהאירוע' },
   { key: 'requires_team_lead', label: 'נדרש ראש צוות', kind: 'boolean', source: 'קבוע במחשבון' },
+  /* ‏0118: הדגל של אופן הביצוע, ולא השם. `is_transport_only` היא אותה עמודה
+     שמנוע מחירי הקבלנים קורא מאז 0092, והשם "הובלה בלבד" ניתן לעריכה
+     במסך ההגדרות ולכן אינו זהות. */
+  { key: 'is_transport_only', label: 'הובלה בלבד', kind: 'boolean', source: 'מאופן הביצוע' },
   { key: 'is_weekend', label: 'סוף שבוע', kind: 'boolean', source: 'מתאריך המשימה' },
   { key: 'has_truck', label: 'שובצה משאית', kind: 'boolean', source: 'מהמשימה' },
 ]
@@ -241,4 +247,38 @@ export const PREVIEW_DEFAULTS: Record<string, number | boolean> = {
   requires_team_lead: false,
   is_weekend: false,
   has_truck: true,
+}
+
+/* ===== התנאי הבוליאני, בשלושה מצבים ======================================= */
+
+/**
+ * מצב של משתנה בוליאני בתוך תנאי: לא רלוונטי / חייב להתקיים / חייב שלא.
+ *
+ * עד 0118 העורך הכיר שני מצבים בלבד — תיבת סימון שכותבת `is_true` או מוחקת
+ * את השורה — ולכן "רק כשזו **אינה** הובלה בלבד" לא היה ניתן לביטוי כלל,
+ * אף שהמנוע תומך ב-`is_false` מאז 0017.
+ */
+export type CondTri = 'off' | 'true' | 'false'
+
+const isBoolTest = (t: PriceTest, key: string) =>
+  t.field === key && (t.op === 'is_true' || t.op === 'is_false')
+
+export function condState(tests: PriceTest[], key: string): CondTri {
+  const t = tests.find((x) => isBoolTest(x, key))
+  return t ? (t.op === 'is_true' ? 'true' : 'false') : 'off'
+}
+
+/**
+ * בונה מחדש את התנאי עם המצב החדש של משתנה אחד.
+ *
+ * הסינון הוא על הצמד (שדה, אופרטור בוליאני) ולא על השדה לבדו, ולכן מבחן
+ * מספרי על אותו שדה — למשל `travel_hours gt 2` — שורד את העריכה. זה מה
+ * שמאפשר לעורך להמשיך להציג תנאי מעורב במקום לדחוף אותו למסלול "מותאם
+ * אישית, נשמר כפי שהוא".
+ */
+export function setCondState(tests: PriceTest[], key: string, next: CondTri): PriceCond {
+  const rest = tests.filter((t) => !isBoolTest(t, key))
+  const list: PriceTest[] =
+    next === 'off' ? rest : [...rest, { field: key, op: next === 'true' ? 'is_true' : 'is_false' }]
+  return list.length ? { all: list } : null
 }

@@ -46,6 +46,7 @@ import {
   useContractorWorkerAssign,
   useContractors,
   useStaff,
+  useCustomerTrucks,
   useTrucks,
 } from '../../lib/queries'
 import { useWarehouses } from '../attendance/attendanceQueries'
@@ -430,6 +431,7 @@ interface TaskPanelTask {
   title: string | null
   worker_count: number | null
   warehouse_id: string | null
+  customer_id: string | null
   customer_name: string | null
   end_client_name: string | null
   task_type_name: string
@@ -471,7 +473,7 @@ function useTaskPanelData(taskId: string | null, enabled: boolean) {
         supabase
           .from('work_board_view')
           .select(
-            'id, task_date, title, worker_count, customer_name, end_client_name, task_type_name, contractor_id, contractor_name',
+            'id, task_date, title, worker_count, customer_id, customer_name, end_client_name, task_type_name, contractor_id, contractor_name',
           )
           .eq('id', taskId)
           .single(),
@@ -612,6 +614,7 @@ export function StaffingPanel({
   const { data, isLoading } = useTaskPanelData(taskId, open)
   const { data: staff = [] } = useStaff()
   const { data: trucks = [] } = useTrucks()
+  const { data: customerTrucks = [] } = useCustomerTrucks()
   const { data: warehouses = [] } = useWarehouses()
   /* רק לשמות. מנהל קבלן אינו מחזיק `contractors.view`, ולכן היא חוזרת ריקה
      אצלו — והשם נלקח אז מהשיקוף שעל המשימה. */
@@ -659,6 +662,17 @@ export function StaffingPanel({
   )
 
   const needed = data?.task.worker_count ?? 0
+
+  /* ‏0116: המשאיות של הלקוח של המשימה. אותו כלל של הלוח והכרטיס —
+     רשימה ריקה = אין הגבלה — כדי שלא יהיו שלושה מסכים עם שלוש תשובות. */
+  const availableTrucks = useMemo(() => {
+    const customerId = data?.task.customer_id
+    if (!customerId) return trucks
+    const ids = new Set(
+      customerTrucks.filter((r) => r.customer_id === customerId).map((r) => r.truck_id),
+    )
+    return ids.size === 0 ? trucks : trucks.filter((t) => ids.has(t.id))
+  }, [trucks, customerTrucks, data?.task.customer_id])
   const assignedCount = byRole('worker').length + byRole('driver').length + contractorWorkers.length
 
   /* איזה קבלנים יש למשימה, משלושה מקורות שאף אחד מהם אינו זמין תמיד:
@@ -813,7 +827,7 @@ export function StaffingPanel({
                         className="w-36 shrink-0"
                       >
                         <option value="">בלי משאית</option>
-                        {trucks
+                        {availableTrucks
                           .filter((t) => t.is_active || t.id === a.truck_id)
                           .map((t) => (
                             <option key={t.id} value={t.id}>

@@ -8,6 +8,7 @@ import type {
   ContractorWorker,
   Customer,
   CustomerBoardField,
+  CustomerTruck,
   CustomerIncomeSplit,
   CustomerPricingRule,
   IncomeCategory,
@@ -61,6 +62,27 @@ export function useStatuses(entity?: 'task' | 'event') {
 
 export function useTrucks() {
   return useQuery({ queryKey: ['trucks', 'list'], queryFn: () => fetchList<Truck>('trucks') })
+}
+
+/**
+ * רשימות המשאיות פר-לקוח (0116) — **כל** השורות שהקורא רשאי לראות, ולא של
+ * לקוח אחד.
+ *
+ * הלוח מציג משימות של כמה לקוחות בבת אחת, והרשימה הרלוונטית לכל שורה היא של
+ * הלקוח **של המשימה** ולא של הקורא. ‏RLS כבר עושה את החיתוך הנכון לשני
+ * הקהלים — המשרד מקבל הכול, ומשתמש לקוח את שלו — ולכן שאילתה אחת משרתת את
+ * שניהם ואין שני מקורות שיכולים להיפרד.
+ */
+export function useCustomerTrucks() {
+  return useQuery({
+    queryKey: ['customer_trucks'],
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('customer_trucks').select('*')
+      if (error) throw error
+      return data as CustomerTruck[]
+    },
+  })
 }
 
 /**

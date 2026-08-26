@@ -47,6 +47,7 @@ import {
   useStaff,
   useStatuses,
   useTaskTypes,
+  useCustomerTrucks,
   useTrucks,
 } from '../../lib/queries'
 import { fmtDate, fmtMonth, fmtTime, fmtWeekday, fmtWeekdayShort, toISODate } from '../../lib/dates'
@@ -62,9 +63,9 @@ import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { BOARD_FIELDS } from './boardFields'
 import type { BoardLookups } from './boardFields'
-import { COLOR_BY_OPTIONS, buildTones, clusterDay } from './grouping'
+import { COLOR_BY_OPTIONS, buildTones, byTaskTime, clusterDay } from './grouping'
 import type { Cluster, ColorBy, GroupTone } from './grouping'
-import type { TaskRow, WorkBoardRow } from '../../types/domain'
+import type { CustomerTruck, TaskRow, Truck, WorkBoardRow } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
 /* ── geometry ─────────────────────────────────────────────────────────────
@@ -182,6 +183,8 @@ const PREFS_KEY = 'vl-board-prefs'
  * קבוע יחיד שומר על זהות יציבה, והשרשרת נחה עד שיש נתונים אמיתיים.
  */
 const EMPTY: never[] = []
+/* מפורד מ-EMPTY כדי שההיסק לא ייפול על never[] בשדה מוטיפס */
+const EMPTY_CT: CustomerTruck[] = []
 
 interface Prefs {
   hidden?: string[]
@@ -401,6 +404,7 @@ export default function WorkBoardPage() {
   const { data: contractors = EMPTY } = useContractors()
   const { data: methods = EMPTY } = useExecutionMethods()
   const { data: trucks = EMPTY } = useTrucks()
+  const { data: customerTrucks = EMPTY_CT } = useCustomerTrucks()
   /* למסנן העובדים שמעל הלוח. הבוררים שהיו בתאים עברו לפאנלים (0108), והם
      שולפים את הסגל בעצמם — אבל המסנן נשאר כאן, ומגודר באותו מפתח. */
   const { data: staff = EMPTY } = useStaff(has(PERM.BOARD_VIEW_STAFFING))
@@ -543,9 +547,34 @@ export default function WorkBoardPage() {
     return Math.min(MAX_NOTE_LINES, Math.max(2, most))
   }, [rows, metrics, boardFontSize])
 
+  /**
+   * ‏0116: המשאיות של הלקוח *של השורה*.
+   *
+   * המפה נבנית פעם אחת מכל השורות שה-RLS החזירה — המשרד מקבל את כולן, ומשתמש
+   * לקוח את שלו בלבד — ולכן אותה פונקציה משרתת את שני הקהלים. לקוח שאין לו
+   * רשימה אינו מוגבל, וזה מה שהופך את התכונה לשקטה עד שמישהו מגדיר אותה.
+   */
+  const trucksFor = useMemo(() => {
+    const byCustomer = new Map<string, Set<string>>()
+    for (const row of customerTrucks) {
+      let set = byCustomer.get(row.customer_id)
+      if (!set) byCustomer.set(row.customer_id, (set = new Set()))
+      set.add(row.truck_id)
+    }
+    const cache = new Map<string, Truck[]>()
+    return (customerId: string | null) => {
+      if (!customerId) return trucks
+      const allowed = byCustomer.get(customerId)
+      if (!allowed) return trucks
+      let list = cache.get(customerId)
+      if (!list) cache.set(customerId, (list = trucks.filter((t) => allowed.has(t.id))))
+      return list
+    }
+  }, [trucks, customerTrucks])
+
   const lookups = useMemo<BoardLookups>(
-    () => ({ statuses, trucks, methods, canAssignContractor, noteLines, openPanel }),
-    [statuses, trucks, methods, canAssignContractor, noteLines, openPanel],
+    () => ({ statuses, trucks, trucksFor, methods, canAssignContractor, noteLines, openPanel }),
+    [statuses, trucks, trucksFor, methods, canAssignContractor, noteLines, openPanel],
   )
 
   /** one height array drives both the legend and every task column, so the
@@ -618,17 +647,10 @@ export default function WorkBoardPage() {
       if (sortBy === 'customer') return (a.customer_name ?? '').localeCompare(b.customer_name ?? '', 'he')
       if (sortBy === 'status') return a.status_name.localeCompare(b.status_name, 'he')
       if (sortBy === 'type') return a.task_type_name.localeCompare(b.task_type_name, 'he')
-      /* the hour the crew is due on site, and only that one: a warehouse
-         call at 05:00 is not what the day is read by, and letting it stand
-         in for a missing on-site time put those tasks first */
-      const at = a.onsite_start_time ?? '99:99'
-      const bt = b.onsite_start_time ?? '99:99'
-      if (at !== bt) return at.localeCompare(bt)
-      /* same on-site hour (or none at all) — leaving is the next thing that
-         separates them, then the name, so the order never wobbles */
-      const aw = a.warehouse_start_time ?? '99:99'
-      const bw = b.warehouse_start_time ?? '99:99'
-      if (aw !== bw) return aw.localeCompare(bw)
+      /* השעה — הכלל עצמו יושב ב-grouping.ts, כי דף האירוע נשאל אותו גם הוא */
+      const byTime = byTaskTime(a, b)
+      if (byTime !== 0) return byTime
+      /* אותה שעה לגמרי — השם, כדי שהסדר לא יתנדנד בין רינדורים */
       return (a.customer_name ?? '').localeCompare(b.customer_name ?? '', 'he')
     }
 

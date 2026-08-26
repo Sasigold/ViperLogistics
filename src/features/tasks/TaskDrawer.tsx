@@ -36,6 +36,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
+import { statusOptions } from '../workboard/statusOptions'
 import {
   useAllowedExecutionMethods,
   useContractorDelegate,
@@ -43,6 +44,7 @@ import {
   useStaff,
   useStatuses,
   useTaskTypes,
+  useCustomerTrucks,
   useTrucks,
 } from '../../lib/queries'
 import { Breakdown } from '../customers/PricingTab'
@@ -163,6 +165,7 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
   const { data: taskTypes = [] } = useTaskTypes()
   const { data: statuses = [] } = useStatuses('task')
   const { data: trucks = [] } = useTrucks()
+  const { data: customerTrucks = [] } = useCustomerTrucks()
   const { data: contractors = [] } = useContractors()
   const { data: staff = [] } = useStaff()
   const { data: warehouses = [] } = useWarehouses()
@@ -311,6 +314,19 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
   })
 
   const allowedMethods = useAllowedExecutionMethods(form.task_type_id, form.customer_id)
+
+  /* אותו כלל בדיוק שהתא בלו״ז מציית לו, מאותה פונקציה (0117) */
+  const statusPick = statusOptions(statuses, form.status_id ?? null, canPublish)
+
+  /* ‏0116: המשאיות של הלקוח של המשימה. רשימה ריקה = אין הגבלה, כמו בלוח.
+     סינון בלבד — הגבול הוא app.enforce_customer_trucks בשרת. */
+  const availableTrucks = useMemo(() => {
+    if (!form.customer_id) return trucks
+    const allowed = customerTrucks.filter((r) => r.customer_id === form.customer_id)
+    if (allowed.length === 0) return trucks
+    const ids = new Set(allowed.map((r) => r.truck_id))
+    return trucks.filter((t) => ids.has(t.id))
+  }, [trucks, customerTrucks, form.customer_id])
 
   /* משימות שנשמרו לפני ריבוי המשאיות מגיעות עם truck_id בלבד */
   const truckIds = useMemo(
@@ -590,12 +606,17 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
                   </Select>
                 </Field>
                 <Field label="סטטוס">
-                  <Select value={form.status_id ?? ''} onChange={(e) => set({ status_id: e.target.value })} disabled={!canChangeStatus}>
+                  {/* מסתירים את "משובץ" ממי שאינו רשאי לפרסם — אך משאירים אותו
+                      כשזה הסטטוס הנוכחי, כדי שמשימה שכבר פורסמה תוצג נכון.
+                      ומאז 0117 גם היציאה ממנו שמורה לו, ולכן משימה שפורסמה
+                      נעולה בפניו: בורר פתוח שכל בחירה בו נדחית גרוע מבורר סגור. */}
+                  <Select
+                    value={form.status_id ?? ''}
+                    onChange={(e) => set({ status_id: e.target.value })}
+                    disabled={!canChangeStatus || statusPick.locked}
+                  >
                     <option value="">ברירת מחדל</option>
-                    {statuses
-                      // מסתירים את "משובץ" ממי שאינו רשאי לפרסם — אך משאירים אותו
-                      // כשזה הסטטוס הנוכחי, כדי שמשימה שכבר פורסמה תוצג נכון.
-                      .filter((s) => canPublish || s.code !== 'assigned' || s.id === form.status_id)
+                    {statusPick.options
                       .map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name}
@@ -702,7 +723,7 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
                     שנשמרת גם ב-truck_id, ולפיה מחושבים המחיר והנוכחות. */}
                 <Field label="משאיות" hint={truckIds.length > 1 ? `הראשונה: ${firstTruckName}` : undefined}>
                   <MultiSelect
-                    options={trucks
+                    options={availableTrucks
                       .filter((t) => t.is_active || truckIds.includes(t.id))
                       .map((t) => ({ id: t.id, label: t.name }))}
                     values={truckIds}
@@ -869,7 +890,7 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
                         disabled={!has(PERM.TASKS_ASSIGN_TRUCK)}
                       >
                         <option value="">ללא משאית</option>
-                        {trucks
+                        {availableTrucks
                           .filter((t) => t.is_active)
                           .map((t) => (
                             <option key={t.id} value={t.id}>

@@ -20,6 +20,7 @@ import {
   SlidersHorizontal,
   Star,
   Trash2,
+  Truck,
   User,
 } from '../../components/ui/icons'
 import {
@@ -54,12 +55,14 @@ import {
   useBoardFields,
   useCustomerBoardConfig,
   useCustomerExecutionMethods,
+  useCustomerTrucks,
   useCustomerFormConfig,
   useExecutionMethods,
   useFormFields,
   useSuppliers,
   useTaskTypeMethods,
   useTaskTypes,
+  useTrucks,
 } from '../../lib/queries'
 import { usePageTitle } from '../../app/breadcrumbs'
 import PricingTab from './PricingTab'
@@ -82,6 +85,10 @@ const TABS = [
      ולא מפתח במרשם — מפתח אפשר להעניק, ו"רק מנהל מערכת" נאמר כדי שלא. */
   { key: 'board', label: 'שדות הלו״ז', icon: <ClipboardList size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW, adminOnly: true },
   { key: 'methods', label: 'אופני ביצוע', icon: <Boxes size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
+  /* ‏0116: אינה adminOnly כמו "שדות הלו״ז" — זו החלטה תפעולית על קטלוג, לא
+     גבול הרשאות, ולכן יש לה מפתח: אותו `settings.trucks` שפותח את הקטלוג
+     הגלובלי במסך ההגדרות. */
+  { key: 'trucks', label: 'משאיות', icon: <Truck size={ICON.sm} />, perm: PERM.SETTINGS_TRUCKS },
   { key: 'suppliers', label: 'ספקים', icon: <Package size={ICON.sm} />, perm: PERM.CUSTOMERS_VIEW },
   { key: 'pricing', label: 'תמחור', icon: <Calculator size={ICON.sm} />, perm: PERM.PRICING_MANAGE_RULES },
   { key: 'income', label: 'חלוקת הכנסות', icon: <Percent size={ICON.sm} />, perm: PERM.FINANCE_MANAGE_SPLITS },
@@ -145,6 +152,7 @@ export default function CustomerDetailPage() {
         {tab === 'fields' && <FieldsTab customerId={customer.id} />}
         {tab === 'board' && <BoardFieldsTab customerId={customer.id} />}
         {tab === 'methods' && <MethodsTab customerId={customer.id} />}
+        {tab === 'trucks' && <CustomerTrucksTab customerId={customer.id} />}
         {tab === 'suppliers' && <SuppliersTab customerId={customer.id} />}
         {tab === 'pricing' && <PricingTab customer={customer} />}
         {tab === 'income' && <IncomeSplitTab customerId={customer.id} />}
@@ -834,6 +842,95 @@ function MethodsTab({ customerId }: { customerId: string }) {
                 </div>
               </div>
             ))}
+          </>
+        )}
+      </CardBody>
+    </Card>
+  )
+}
+
+/* ===== המשאיות של הלקוח (0116) ============================================ */
+
+/**
+ * אילו משאיות מהקטלוג הגלובלי זמינות ללקוח הזה בלו״ז.
+ *
+ * **ריק אינו "אין משאיות" אלא "אין הגבלה"**, וזו ההכרעה שמאפשרת לתכונה
+ * לעלות בלי לגעת באף לקוח קיים. הכותרת אומרת זאת במפורש, כי מסך שמראה אפס
+ * מסומנים ולא מסביר נקרא כמסך שאוסר הכול.
+ *
+ * האכיפה אינה כאן: `app.enforce_customer_trucks` דוחה שיבוץ של משאית שאינה
+ * ברשימה גם כשהוא מגיע בלי לעבור במסך.
+ */
+function CustomerTrucksTab({ customerId }: { customerId: string }) {
+  const qc = useQueryClient()
+  const toast = useToast()
+  const { has } = useAuth()
+  const canEdit = has(PERM.SETTINGS_TRUCKS)
+  const { data: trucks = [] } = useTrucks()
+  const { data: rows = [] } = useCustomerTrucks()
+
+  const mine = useMemo(
+    () => new Set(rows.filter((r) => r.customer_id === customerId).map((r) => r.truck_id)),
+    [rows, customerId],
+  )
+  const active = useMemo(() => trucks.filter((t) => t.is_active || mine.has(t.id)), [trucks, mine])
+
+  const toggle = useMutation({
+    mutationFn: async ({ truckId, on }: { truckId: string; on: boolean }) => {
+      if (on) {
+        const { error } = await supabase
+          .from('customer_trucks')
+          .insert({ customer_id: customerId, truck_id: truckId })
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('customer_trucks')
+          .delete()
+          .eq('customer_id', customerId)
+          .eq('truck_id', truckId)
+        if (error) throw error
+      }
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['customer_trucks'] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  return (
+    <Card className="max-w-2xl">
+      <CardHeader
+        title="המשאיות של הלקוח"
+        subtitle={mine.size === 0 ? 'לא הוגדרה רשימה — כל המשאיות זמינות' : `${mine.size} מתוך ${active.length}`}
+        icon={<Truck size={ICON.md} strokeWidth={STROKE} />}
+      />
+      <CardBody className="space-y-4">
+        {active.length === 0 ? (
+          <EmptyState
+            compact
+            art="box"
+            title="לא הוגדרו משאיות"
+            description="ניתן להגדיר אותן במסך ההגדרות"
+          />
+        ) : (
+          <>
+            <p className="type-caption text-ink-secondary">
+              מה שמסומן כאן הוא מה שהלקוח יראה בבורר המשאיות בלו״ז. כל עוד לא
+              סומנה אף משאית — הרשימה שלו היא הקטלוג כולו, ולא רשימה ריקה.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {active.map((t) => (
+                <label
+                  key={t.id}
+                  className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg border border-line-subtle p-2.5 transition-colors hover:bg-hover"
+                >
+                  <Checkbox
+                    label={t.plate_number ? `${t.name} · ${t.plate_number}` : t.name}
+                    checked={mine.has(t.id)}
+                    onChange={(v) => toggle.mutate({ truckId: t.id, on: v })}
+                    disabled={!canEdit}
+                  />
+                </label>
+              ))}
+            </div>
           </>
         )}
       </CardBody>

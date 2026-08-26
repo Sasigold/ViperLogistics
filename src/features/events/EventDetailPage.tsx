@@ -50,6 +50,7 @@ import { PERM } from '../../lib/permissions'
 import { useCustomFormFields, useStatuses } from '../../lib/queries'
 import { errorMessage } from '../../lib/errors'
 import { fmtDate, fmtDateLong, fmtHours, fmtTime } from '../../lib/dates'
+import { byTaskDateTime } from '../workboard/grouping'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { EventFormModal } from './EventFormModal'
 import { formatCustomValue } from './CustomFieldInput'
@@ -99,7 +100,16 @@ export default function EventDetailPage() {
   const { data: tasks = [], isLoading: loadingTasks, error: tasksError, refetch: refetchTasks } = useQuery({
     queryKey: ['workboard', 'byEvent', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('work_board_view').select('*').eq('event_id', id).order('task_date')
+      const { data, error } = await supabase
+        .from('work_board_view')
+        .select('*')
+        .eq('event_id', id)
+        /* התאריך ואז השעה. בלי השעה, הקמה ופירוק שנופלים על אותו יום חוזרים
+           בסדר שרירותי — ובאירוע שבו הפירוק ב-06:00 וההקמה ב-18:00 המסך סיפר
+           את היום הפוך. `DataTable` מחזיר את השורות כפי שהן כשאין מיון פעיל,
+           ולכן זה לבדו מסדר את הטבלה. */
+        .order('task_date')
+        .order('onsite_start_time', { nullsFirst: false })
       if (error) throw error
       return data as WorkBoardRow[]
     },
@@ -450,6 +460,30 @@ export default function EventDetailPage() {
     )
   }
 
+  /**
+   * שתי שורות הסיכום, לפי מי שקודם.
+   *
+   * הסדר "הקמה ואז פירוק" נכון כמעט תמיד, ולכן הוא היה מקובע — אבל כשהשניים
+   * נופלים על אותו יום הוא מקובע גם כשהוא הפוך: פירוק ב-06:00 של ציוד מאתמול
+   * והקמה ב-18:00 לערב הם יום אחד שמתחיל בפירוק. המיון הוא כרונולוגי לגמרי
+   * (תאריך ואז שעה), ולכן בתאריכים שונים הוא ממילא נותן את הסדר המוכר.
+   *
+   * ‏`byTaskDateTime` הוא אותו כלל שהלו״ז ממיין בו את היום — שם שעה חסרה
+   * שוקעת לתחתית, וכאן זה אומר שהבלוק שאין לו שעה יורד למטה. תיקו מלא (אין
+   * שעות לשניהם) משאיר את סדר המקור, כלומר הקמה ואז פירוק.
+   */
+  /* בלי useMemo: הקטע הזה יושב אחרי היציאות המוקדמות של הקומפוננטה, והוק
+     שנקרא אחרי `return` מותנה נקרא בסדר שונה בין רינדורים. שני איברים אינם
+     שווים את המחיר הזה ממילא. */
+  const sectionRows: [string, React.ReactNode][] = (
+    [
+      ['הקמה', 'setup', tasks.find((x) => x.task_type_code === 'setup')],
+      ['פירוק', 'teardown', tasks.find((x) => x.task_type_code === 'teardown')],
+    ] as [string, 'setup' | 'teardown', WorkBoardRow | undefined][]
+  )
+    .sort((a, b) => (a[2] && b[2] ? byTaskDateTime(a[2], b[2]) : 0))
+    .map(([label, code]) => [label, sectionLine(code)])
+
   /* The same rule that shapes the form shapes the read view: a field the
      reader's company configured off, or their field permissions hide, should
      not reappear here. `showsEventField` answers both at once. */
@@ -493,8 +527,7 @@ export default function EventDetailPage() {
           ],
         ] as [string, React.ReactNode][])
       : []),
-    ['הקמה', sectionLine('setup')],
-    ['פירוק', sectionLine('teardown')],
+    ...sectionRows,
     ...(show('notes') ? ([['הערות', event.notes]] as [string, React.ReactNode][]) : []),
     /* the customer's own fields, under the same rule as everything above */
     ...(customFields
