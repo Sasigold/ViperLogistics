@@ -304,6 +304,42 @@ OUT="$OUT
 $OUT28"
 
 echo
+echo "== performed-by (arko) suite =="
+# 29 מקימה לקוח ארקו, אירוע ומשימות משלה ב-current_date+450. היא רצה אחרונה
+# כי משימות ארקו מוסתרות מוייפר ב-RLS, וכל ספירה שלה היא של השורות שלה בלבד.
+OUT29=$($PSQL -d vl -f "$HERE/29_performed_by_arko.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT29"
+OUT="$OUT
+$OUT29"
+
+echo
+echo "== event notes visibility suite =="
+# 30 מקימה לקוח, אירוע וארבע דמויות משלה ב-current_date+460, ובודקת מי רואה
+# מלל חופשי ומי רק רשומות מערכת.
+OUT30=$($PSQL -d vl -f "$HERE/30_event_notes_visibility.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT30"
+OUT="$OUT
+$OUT30"
+
+echo
+echo "== recycle / status-approval suite =="
+# 31 מקימה לקוח, אירוע ומשימות משלה ב-current_date+470: אירוע שנמחק יורד
+# מהלו״ז, ביטול יורד במחיקה, מחיקה לצמיתות, ושינוי סטטוס אינו מפיל אישור.
+OUT31=$($PSQL -d vl -f "$HERE/31_recycle_and_status_approval.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT31"
+OUT="$OUT
+$OUT31"
+
+echo
+echo "== contractor worker roles suite =="
+# 32 מקימה קבלן, לקוח, אירוע ומשימה משלה ב-current_date+480, ובודקת הגדרת
+# תפקידי עובד קבלן ושיבוץ לפיהם.
+OUT32=$($PSQL -d vl -f "$HERE/32_contractor_worker_roles.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT32"
+OUT="$OUT
+$OUT32"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

@@ -18,6 +18,8 @@ export interface Customer {
   pricing_mode: PricingMode
   /** המחסן שממנו יוצאים למשימות של הלקוח הזה */
   warehouse_id: string | null
+  /** האם בורר "בוצע ע"י" (ארקו/וייפר) מופעל אצל הלקוח (0120) */
+  performed_by_enabled: boolean
   is_active: boolean
   deleted_at: string | null
 }
@@ -102,6 +104,8 @@ export interface ContractorWorker {
   lateness_tracked: boolean
   is_active: boolean
   deleted_at: string | null
+  /** תפקידי העובד — ראש צוות ו/או נהג (0121). */
+  roles?: StaffRole[]
 }
 
 export interface Profile {
@@ -407,7 +411,7 @@ export interface EventRow {
   custom_fields: Record<string, CustomFieldValue>
   created_by: string | null
   deleted_at: string | null
-  customers?: { name: string; color: string }
+  customers?: { name: string; color: string; performed_by_enabled?: boolean }
   statuses?: { name: string; color: string } | null
 }
 
@@ -618,7 +622,7 @@ export interface WorkBoardRow {
   workers: AssignmentPerson[] | null
   drivers: AssignmentPerson[] | null
   contractor_worker_list:
-    | { id: string; name: string; contractor_id: string; work_site?: 'field' | 'warehouse' }[]
+    | { id: string; name: string; contractor_id: string; work_site?: 'field' | 'warehouse'; role?: StaffRole | null }[]
     | null
   /** null גם כשקיים מחיר, אם למשתמש אין pricing.view — הקבלן תמיד כאן. */
   customer_price: number | null
@@ -642,7 +646,11 @@ export interface WorkBoardRow {
   contractor_list: TaskContractorTermsSummary[] | null
   travel_hours: number | null
   requires_team_lead: boolean | null
+  /** מי מבצע את המשימה — 'viper' (ברירת מחדל) או 'arko' (0120). */
+  performed_by: PerformedBy
 }
+
+export type PerformedBy = 'viper' | 'arko'
 
 /* ===== תמחור ============================================================== */
 

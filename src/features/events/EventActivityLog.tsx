@@ -154,7 +154,11 @@ export function EventActivityLog({
       return false
     }
   })
-  const canWrite = has(PERM.EVENTS_ACTIVITY_NOTE) || !!canNote
+  // ‏0122: שטח וקבלנים רואים רק רשומות מערכת. בלי events.activity_note_view
+  // אין מלל חופשי — לא לקריאה (השרת מסנן ממילא) ולא לכתיבה (הערה שאי אפשר
+  // לראות היא חסרת טעם, ולכן גם המחבר יורד).
+  const canViewNotes = has(PERM.EVENTS_ACTIVITY_NOTE_VIEW)
+  const canWrite = canViewNotes && (has(PERM.EVENTS_ACTIVITY_NOTE) || !!canNote)
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['event_activity', eventId],
@@ -193,8 +197,15 @@ export function EventActivityLog({
   })
 
   const entries = useMemo(
-    () => toEntries(notesOnly ? rows.filter((r) => r.kind === 'note') : rows),
-    [rows, notesOnly],
+    () =>
+      toEntries(
+        !canViewNotes
+          ? rows.filter((r) => r.kind !== 'note')
+          : notesOnly
+            ? rows.filter((r) => r.kind === 'note')
+            : rows,
+      ),
+    [rows, notesOnly, canViewNotes],
   )
 
   return (
@@ -205,22 +216,24 @@ export function EventActivityLog({
         icon={<History size={ICON.md} strokeWidth={STROKE} />}
         actions={
           <span className="flex items-center gap-2">
-            <SegmentedControl
-              items={[
-                { key: 'all', label: 'הכול' },
-                { key: 'notes', label: 'הערות בלבד' },
-              ]}
-              value={notesOnly ? 'notes' : 'all'}
-              onChange={(k) => {
-                const next = k === 'notes'
-                setNotesOnly(next)
-                try {
-                  localStorage.setItem('vl-activity-notes-only', next ? '1' : '0')
-                } catch {
-                  /* פרטי/חסום — ההעדפה פשוט לא תישמר */
-                }
-              }}
-            />
+            {canViewNotes && (
+              <SegmentedControl
+                items={[
+                  { key: 'all', label: 'הכול' },
+                  { key: 'notes', label: 'הערות בלבד' },
+                ]}
+                value={notesOnly ? 'notes' : 'all'}
+                onChange={(k) => {
+                  const next = k === 'notes'
+                  setNotesOnly(next)
+                  try {
+                    localStorage.setItem('vl-activity-notes-only', next ? '1' : '0')
+                  } catch {
+                    /* פרטי/חסום — ההעדפה פשוט לא תישמר */
+                  }
+                }}
+              />
+            )}
             <span className="type-caption tabular text-ink-tertiary">{entries.length}</span>
           </span>
         }

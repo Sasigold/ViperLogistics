@@ -22,6 +22,8 @@ export interface Column<T> {
   sticky?: boolean
   /** exclude from the column picker — always visible */
   fixed?: boolean
+  /** let the cell wrap to several lines instead of truncating with an ellipsis */
+  wrap?: boolean
   className?: string
   headerClassName?: string
 }
@@ -397,7 +399,8 @@ export function DataTable<T>({
                         <td
                           key={c.key}
                           className={cx(
-                            'truncate bg-inherit px-3 type-table',
+                            c.wrap ? 'whitespace-normal break-words' : 'truncate',
+                            'bg-inherit px-3 type-table',
                             dense ? 'py-1.5' : 'py-2.5',
                             ALIGN[c.align ?? 'start'],
                             c.sticky && 'sticky z-10',

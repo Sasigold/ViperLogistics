@@ -47,7 +47,7 @@ import { EmployeeWorkSettingsCard } from '../attendance/EmployeeWorkSettingsCard
 import { usePageTitle } from '../../app/breadcrumbs'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
-import type { Contractor, ContractorWorker } from '../../types/domain'
+import type { Contractor, ContractorWorker, StaffRole } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
 interface ContractorTaskRow {
@@ -380,6 +380,28 @@ export function WorkersTab({
     }
   }
 
+  /* תפקידי עובד הקבלן — ראש צוות ו/או נהג (0121). כתיבה ישירה ל-
+     contractor_worker_roles; ה-RLS מתירה למשרד ולקבלן על הסגל שלו. */
+  const toggleRole = useMutation({
+    mutationFn: async ({ id, role, on }: { id: string; role: StaffRole; on: boolean }) => {
+      if (on) {
+        const { error } = await supabase
+          .from('contractor_worker_roles')
+          .insert({ contractor_worker_id: id, role })
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('contractor_worker_roles')
+          .delete()
+          .eq('contractor_worker_id', id)
+          .eq('role', role)
+        if (error) throw error
+      }
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['contractor_workers'] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
   /* קנס האיחור של הקבלן חל רק על עובדים שסומנו כאן (0091). */
   const toggleLateness = useMutation({
     mutationFn: async ({ id, on }: { id: string; on: boolean }) => {
@@ -450,6 +472,20 @@ export function WorkersTab({
                     {[w.phone, w.id_number].filter(Boolean).join(' · ') || '—'}
                   </p>
                 </div>
+                {mayManage && (
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      checked={(w.roles ?? []).includes('team_lead')}
+                      onChange={(on) => toggleRole.mutate({ id: w.id, role: 'team_lead', on })}
+                      label="ראש צוות"
+                    />
+                    <Switch
+                      checked={(w.roles ?? []).includes('driver')}
+                      onChange={(on) => toggleRole.mutate({ id: w.id, role: 'driver', on })}
+                      label="נהג"
+                    />
+                  </div>
+                )}
                 {mayManageTerms && (
                   <Switch
                     checked={w.lateness_tracked}

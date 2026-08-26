@@ -104,6 +104,7 @@ export const PERM = {
   EVENTS_EDIT_NOTES: 'events.edit_notes',
   EVENTS_ACTIVITY_LOG: 'events.activity_log',
   EVENTS_ACTIVITY_NOTE: 'events.activity_note',
+  EVENTS_ACTIVITY_NOTE_VIEW: 'events.activity_note_view',
   EVENTS_SPECS_VIEW: 'events.specs_view',
   /* העלאה והסרה נפרדו ב-0113: המפרט נולד אצל הלקוח, ולכן ההעלאה פתוחה לו
      בברירת המחדל של סוג המשתמש — וההסרה מההיסטוריה נשארה של מי שמנהל את
