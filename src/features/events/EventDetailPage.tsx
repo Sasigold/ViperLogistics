@@ -34,6 +34,7 @@ import {
   MenuLabel,
   PageHeader,
   Popover,
+  Select,
   SkeletonCard,
   ErrorState,
   SkeletonTable,
@@ -61,7 +62,7 @@ import { CustomerSignatureModal } from './CustomerSignatureModal'
 import { useEventSpecs } from './specQueries'
 import { sumAddons, useEventPriceAddons } from '../pricing/addonQueries'
 import { useEventSignatures } from './signatureQueries'
-import type { EventPriceAddon, EventRow, WorkBoardRow } from '../../types/domain'
+import type { EventPriceAddon, EventRow, PerformedBy, WorkBoardRow } from '../../types/domain'
 
 type TaskTab = 'all' | 'setup' | 'teardown' | 'other'
 type TaskViewMode = 'cards' | 'table'
@@ -84,7 +85,7 @@ export default function EventDetailPage() {
     queryKey: ['events', 'one', id],
     queryFn: async () => {
       const [e, contact, sup] = await Promise.all([
-        supabase.from('events').select('*, customers(name, color), statuses(name, color)').eq('id', id).single(),
+        supabase.from('events').select('*, customers(name, color, performed_by_enabled), statuses(name, color)').eq('id', id).single(),
         supabase.from('event_contacts').select('*').eq('event_id', id).maybeSingle(),
         supabase.from('event_suppliers').select('supplier_id, suppliers(name)').eq('event_id', id),
       ])
@@ -211,6 +212,20 @@ export default function EventDetailPage() {
      not staff. An always-blank column reads as a broken table rather than as
      one that isn't theirs, so the key decides whether it exists. */
   const showStaffing = has(PERM.BOARD_VIEW_STAFFING)
+  // הלקוח אינו רואה את משבצת "צוות משובץ" — מי מבצע בשטח אינו עניינו של הלקוח.
+  const isCustomerUser = me?.profile.user_kind === 'customer_user'
+
+  // ‏0120: בורר "בוצע ע"י" מופיע רק אצל לקוח שהאפשרות מופעלת אצלו (ארקו).
+  const performedByEnabled = !!data?.event.customers?.performed_by_enabled
+  const canSetPerformedBy = !!me?.profile.is_admin || has(PERM.TASKS_EDIT) || isCustomerUser
+  const setPerformedBy = useMutation({
+    mutationFn: async ({ taskId, value }: { taskId: string; value: PerformedBy }) => {
+      const { error } = await supabase.rpc('set_task_performed_by', { p_task_id: taskId, p_value: value })
+      if (error) throw error
+    },
+    onSuccess: () => void refetchTasks(),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
   /**
    * כרטיס המשימה הוא מסך עריכה, ואותו מפתח ששולט בו בלו״ז שולט בו גם כאן
    * (0079). בלעדיו שורת המשימה נשארת מה שהיא — מידע — ואינה מציעה לחיצה
@@ -254,8 +269,9 @@ export default function EventDetailPage() {
       {
         key: 'type',
         header: 'משימה',
-        width: 160,
+        width: 180,
         fixed: true,
+        wrap: true,
         sortValue: (t) => t.title ?? t.task_type_name,
         render: (t) => <span className="font-medium">{t.title || t.task_type_name}</span>,
       },
@@ -344,6 +360,30 @@ export default function EventDetailPage() {
         sortValue: (t) => t.status_name,
         render: (t) => <StatusPill color={t.status_color}>{t.status_name}</StatusPill>,
       },
+      ...(performedByEnabled
+        ? ([
+            {
+              key: 'performed_by',
+              header: 'בוצע ע"י',
+              width: 130,
+              sortValue: (t) => t.performed_by,
+              render: (t) => (
+                <Select
+                  selectSize="sm"
+                  aria-label={'בוצע ע"י'}
+                  value={t.performed_by}
+                  disabled={!canSetPerformedBy || setPerformedBy.isPending}
+                  onChange={(e) =>
+                    setPerformedBy.mutate({ taskId: t.id, value: e.target.value as PerformedBy })
+                  }
+                >
+                  <option value="viper">וייפר</option>
+                  <option value="arko">ארקו</option>
+                </Select>
+              ),
+            },
+          ] as Column<WorkBoardRow>[])
+        : []),
       ...(pricing
         ? ([
             {
@@ -364,7 +404,7 @@ export default function EventDetailPage() {
           ] as Column<WorkBoardRow>[])
         : []),
     ],
-    [pricing, showStaffing],
+    [pricing, showStaffing, performedByEnabled, canSetPerformedBy, setPerformedBy],
   )
 
   if (isLoading || !data) {
@@ -765,7 +805,14 @@ export default function EventDetailPage() {
           {/* Redesigned Tasks Section */}
           <div className="space-y-4">
             {/* Tasks Summary KPI Bar */}
-            <div className={cx('grid grid-cols-2 gap-3', canSeePricing ? 'sm:grid-cols-4' : 'sm:grid-cols-3')}>
+            <div
+              className={cx(
+                'grid grid-cols-2 gap-3',
+                { 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'sm:grid-cols-4' }[
+                  2 + (isCustomerUser ? 0 : 1) + (canSeePricing ? 1 : 0)
+                ],
+              )}
+            >
               <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
                 <span className="type-caption text-ink-tertiary">סך משימות</span>
                 <div className="flex items-baseline gap-2 mt-1">
@@ -782,14 +829,16 @@ export default function EventDetailPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
-                <span className="type-caption text-ink-tertiary">צוות משובץ</span>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <Users size={ICON.sm} className="text-ink-tertiary" />
-                  <span className="type-title text-lg font-bold">{taskStats.totalWorkers}</span>
-                  <span className="type-caption text-ink-tertiary">עובדים</span>
+              {!isCustomerUser && (
+                <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
+                  <span className="type-caption text-ink-tertiary">צוות משובץ</span>
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <Users size={ICON.sm} className="text-ink-tertiary" />
+                    <span className="type-title text-lg font-bold">{taskStats.totalWorkers}</span>
+                    <span className="type-caption text-ink-tertiary">עובדים</span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* לא "—" למי שאינו רשאי לראות כסף: משבצת ריקה נקראת כמחיר
                   שלא הוזן, וזו אמירה על האירוע ולא על הקורא. */}
@@ -984,6 +1033,28 @@ export default function EventDetailPage() {
                                 </span>
                               )}
                             </div>
+
+                            {/* בוצע ע"י (0120) — רק אצל לקוח שהאפשרות מופעלת אצלו */}
+                            {performedByEnabled && (
+                              <div
+                                className="flex items-center gap-2 pt-1"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <span className="type-caption text-ink-tertiary">בוצע ע"י</span>
+                                <Select
+                                  selectSize="sm"
+                                  aria-label={'בוצע ע"י'}
+                                  value={t.performed_by}
+                                  disabled={!canSetPerformedBy || setPerformedBy.isPending}
+                                  onChange={(e) =>
+                                    setPerformedBy.mutate({ taskId: t.id, value: e.target.value as PerformedBy })
+                                  }
+                                >
+                                  <option value="viper">וייפר</option>
+                                  <option value="arko">ארקו</option>
+                                </Select>
+                              </div>
+                            )}
 
                             {/* Team Lead & Contractor info if available */}
                             {(t.team_lead_name || t.contractor_name || t.execution_method_name) && (

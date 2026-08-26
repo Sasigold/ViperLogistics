@@ -186,13 +186,14 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
         supabase.from('task_pricing').select('*').eq('task_id', taskId).maybeSingle(),
         supabase
           .from('task_contractor_workers')
-          .select('contractor_worker_id, no_show, contractor_workers!inner(contractor_id)')
+          .select('contractor_worker_id, no_show, role, contractor_workers!inner(contractor_id)')
           .eq('task_id', taskId),
       ])
       if (t.error) throw t.error
       const cwRows = (cw.data ?? []) as unknown as {
         contractor_worker_id: string
         no_show: boolean
+        role: StaffRole | null
         contractor_workers: { contractor_id: string } | null
       }[]
       return {
@@ -204,6 +205,7 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
           worker_id: r.contractor_worker_id,
           contractor_id: r.contractor_workers?.contractor_id ?? null,
           no_show: r.no_show,
+          role: r.role ?? null,
         })),
       }
     },
@@ -1032,6 +1034,7 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
                       term={term}
                       contractor={contractor}
                       assignedWorkerIds={mine.map((w) => w.worker_id)}
+                      workerRoles={Object.fromEntries(mine.map((w) => [w.worker_id, w.role]))}
                       noShow={new Set(mine.filter((w) => w.no_show).map((w) => w.worker_id))}
                       canDelegate={canDelegate}
                       canEditPricing={canEditPricing}
@@ -1105,6 +1108,11 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
                   assignedWorkerIds={chosenContractorWorkers
                     .filter((w) => w.contractor_id === myContractorId)
                     .map((w) => w.worker_id)}
+                  workerRoles={Object.fromEntries(
+                    chosenContractorWorkers
+                      .filter((w) => w.contractor_id === myContractorId)
+                      .map((w) => [w.worker_id, w.role]),
+                  )}
                   noShow={new Set()}
                   canMarkNoShow={false}
                 />

@@ -19,6 +19,7 @@ import type {
   FieldState,
   FormField,
   Profile,
+  StaffRole,
   Status,
   Supplier,
   TaskType,
@@ -222,12 +223,17 @@ export function useContractorWorkers(contractorId?: string | null) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('contractor_workers')
-        .select('*')
+        .select('*, contractor_worker_roles(role)')
         .eq('contractor_id', contractorId)
         .is('deleted_at', null)
         .order('full_name')
       if (error) throw error
-      return data as ContractorWorker[]
+      return (data ?? []).map((w) => {
+        const { contractor_worker_roles, ...rest } = w as ContractorWorker & {
+          contractor_worker_roles?: { role: StaffRole }[]
+        }
+        return { ...rest, roles: (contractor_worker_roles ?? []).map((r) => r.role) } as ContractorWorker
+      })
     },
   })
 }
@@ -251,6 +257,8 @@ export interface AssignableContractorWorker {
   full_name: string
   phone: string | null
   has_login: boolean
+  /** תפקידי העובד — ראש צוות ו/או נהג (0121). */
+  roles: StaffRole[]
 }
 
 export function useContractorAssignableWorkers(contractorId?: string | null) {
@@ -285,6 +293,8 @@ export function useContractorWorkerAssign() {
       profileId?: string | null
       on: boolean
       workSite?: 'field' | 'warehouse'
+      /* null = עובד רגיל; 'team_lead'/'driver' דורש שהעובד מוגדר בתפקיד (0121). */
+      role?: StaffRole | null
     }) => {
       const { error } = await supabase.rpc('contractor_assign_worker', {
         p_task_id: v.taskId,
@@ -293,6 +303,7 @@ export function useContractorWorkerAssign() {
         p_on: v.on,
         /* null = ירושה מנקודת ההתחלה שהמשרד קבע לקבלן במשימה (0091). */
         p_work_site: v.workSite ?? null,
+        p_role: v.role ?? null,
       })
       if (error) throw error
     },

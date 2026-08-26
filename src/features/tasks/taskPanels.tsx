@@ -72,6 +72,7 @@ export function ContractorCrew({
   contractorId,
   contractorName,
   assignedWorkerIds,
+  workerRoles,
   noShow,
   canMarkNoShow,
 }: {
@@ -79,6 +80,8 @@ export function ContractorCrew({
   contractorId: string
   contractorName: string | null
   assignedWorkerIds: string[]
+  /** התפקיד שכל עובד קבלן משובץ בו על המשימה (0121), לפי worker_id. */
+  workerRoles?: Record<string, StaffRole | null>
   noShow: Set<string>
   canMarkNoShow: boolean
 }) {
@@ -134,6 +137,48 @@ export function ContractorCrew({
         <p className="mt-1 type-caption text-ink-tertiary">אין עדיין עובדים בסגל של הקבלן.</p>
       )}
 
+      {/* תפקידי עובדי הקבלן על המשימה (0121): מי מהמשובצים שמוגדר ראש צוות /
+          נהג יכול להיות משובץ בתפקיד. עובד רגיל = ללא תפקיד. */}
+      {(() => {
+        const eligible = assignable.filter(
+          (w) =>
+            w.worker_id &&
+            assignedSet.has(w.worker_id) &&
+            (w.roles.includes('team_lead') || w.roles.includes('driver')),
+        )
+        if (eligible.length === 0) return null
+        return (
+          <div className="mt-3 space-y-1.5 border-t border-line-subtle pt-3">
+            <div className="type-overline">תפקידי הצוות</div>
+            {eligible.map((w) => (
+              <label key={w.worker_id} className="flex items-center justify-between gap-2 type-caption">
+                <span className="truncate">{w.full_name}</span>
+                <Select
+                  selectSize="sm"
+                  className="w-32"
+                  value={workerRoles?.[w.worker_id!] ?? ''}
+                  onChange={(e) =>
+                    contractorAssign.mutate(
+                      {
+                        taskId,
+                        workerId: w.worker_id,
+                        on: true,
+                        role: (e.target.value || null) as StaffRole | null,
+                      },
+                      { onError: (err) => toast.error(errorMessage(err)) },
+                    )
+                  }
+                >
+                  <option value="">עובד</option>
+                  {w.roles.includes('team_lead') && <option value="team_lead">ראש צוות</option>}
+                  {w.roles.includes('driver') && <option value="driver">נהג</option>}
+                </Select>
+              </label>
+            ))}
+          </div>
+        )
+      })()}
+
       {/* סימון אי-התייצבות למנהל/משרד (0093). מפעיל את קנס אי-ההתייצבות. */}
       {canMarkNoShow && assignedWorkerIds.length > 0 && (
         <div className="mt-3 space-y-1.5 border-t border-line-subtle pt-3">
@@ -168,6 +213,7 @@ export function ContractorDelegationCard({
   term,
   contractor,
   assignedWorkerIds,
+  workerRoles,
   noShow,
   canDelegate,
   canEditPricing,
@@ -181,6 +227,7 @@ export function ContractorDelegationCard({
   term: TaskContractorTerms
   contractor: Contractor | undefined
   assignedWorkerIds: string[]
+  workerRoles?: Record<string, StaffRole | null>
   noShow: Set<string>
   canDelegate: boolean
   canEditPricing: boolean
@@ -402,6 +449,7 @@ export function ContractorDelegationCard({
             contractorId={term.contractor_id}
             contractorName={contractor?.name ?? null}
             assignedWorkerIds={assignedWorkerIds}
+            workerRoles={workerRoles}
             noShow={noShow}
             canMarkNoShow={canMarkNoShow}
           />
@@ -456,6 +504,7 @@ interface PanelContractorWorker {
   full_name: string
   work_site: WorkSite
   no_show: boolean
+  role: StaffRole | null
 }
 
 /**
@@ -485,7 +534,7 @@ function useTaskPanelData(taskId: string | null, enabled: boolean) {
         supabase
           .from('task_contractor_workers')
           .select(
-            'contractor_worker_id, work_site, no_show, contractor_workers!inner(contractor_id, full_name)',
+            'contractor_worker_id, work_site, no_show, role, contractor_workers!inner(contractor_id, full_name)',
           )
           .eq('task_id', taskId),
       ])
@@ -497,6 +546,7 @@ function useTaskPanelData(taskId: string | null, enabled: boolean) {
         contractor_worker_id: string
         work_site: WorkSite | null
         no_show: boolean
+        role: StaffRole | null
         contractor_workers: { contractor_id: string; full_name: string } | null
       }[]
       return {
@@ -515,6 +565,7 @@ function useTaskPanelData(taskId: string | null, enabled: boolean) {
           full_name: r.contractor_workers?.full_name ?? '',
           work_site: r.work_site ?? 'field',
           no_show: r.no_show,
+          role: r.role ?? null,
         })) as PanelContractorWorker[],
       }
     },
@@ -889,6 +940,9 @@ export function StaffingPanel({
                     assignedWorkerIds={contractorWorkers
                       .filter((w) => w.contractor_id === cid)
                       .map((w) => w.worker_id)}
+                    workerRoles={Object.fromEntries(
+                      contractorWorkers.filter((w) => w.contractor_id === cid).map((w) => [w.worker_id, w.role]),
+                    )}
                     noShow={new Set()}
                     canMarkNoShow={false}
                   />
@@ -970,6 +1024,7 @@ export function ContractorPanel({
                 term={term}
                 contractor={contractors.find((c) => c.id === term.contractor_id)}
                 assignedWorkerIds={mine.map((w) => w.worker_id)}
+                workerRoles={Object.fromEntries(mine.map((w) => [w.worker_id, w.role]))}
                 noShow={new Set(mine.filter((w) => w.no_show).map((w) => w.worker_id))}
                 canDelegate={canDelegate}
                 canEditPricing={canEditPricing}

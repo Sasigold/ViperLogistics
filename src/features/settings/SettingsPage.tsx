@@ -770,6 +770,7 @@ function RecycleBinTab() {
   const { me } = useAuth()
   const qc = useQueryClient()
   const toast = useToast()
+  const { confirm, dialog } = useConfirm()
   const [table, setTable] = useState('events')
 
   const { data: rows = [], isLoading } = useQuery({
@@ -794,6 +795,18 @@ function RecycleBinTab() {
     },
     onSuccess: () => {
       toast.success('שוחזר בהצלחה')
+      void qc.invalidateQueries({ queryKey: ['recycle'] })
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  const purge = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.rpc('hard_delete', { p_table: table, p_id: id })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('נמחק לצמיתות')
       void qc.invalidateQueries({ queryKey: ['recycle'] })
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -841,11 +854,29 @@ function RecycleBinTab() {
                   <RotateCcw size={ICON.sm} strokeWidth={STROKE} />
                   שחזור
                 </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  loading={purge.isPending}
+                  onClick={async () => {
+                    if (
+                      await confirm(`למחוק לצמיתות את "${labelOf(r)}"? לא ניתן לשחזר לאחר מכן.`, {
+                        title: 'מחיקה לצמיתות',
+                        confirmLabel: 'מחיקה לצמיתות',
+                      })
+                    )
+                      purge.mutate(r.id as string)
+                  }}
+                >
+                  <Trash2 size={ICON.sm} strokeWidth={STROKE} />
+                  לצמיתות
+                </Button>
               </li>
             ))}
           </ul>
         )}
       </CardBody>
+      {dialog}
     </Card>
   )
 }
