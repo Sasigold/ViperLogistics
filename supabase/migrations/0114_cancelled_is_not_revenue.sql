@@ -464,8 +464,18 @@ begin
 end $$;
 
 
-create or replace function dashboard_stats(p_from date, p_to date)
-returns jsonb language sql stable security invoker set search_path = public as $$
+-- ‏**הגוף מ-0105 ולא מ-0069.** ‏0105 הגדירה את הפונקציה מחדש באותיות
+-- גדולות (`CREATE OR REPLACE FUNCTION public.dashboard_stats`, בתבנית
+-- הפלט של pg_get_functiondef), ולכן חיפוש רגיש-רישיות מפספס אותה.
+-- ההעתקה מ-0069 הייתה מחזירה בשקט את `by_contractor` לספירה דרך העמודה
+-- המשוקפת במקום דרך שורות ה-terms שריבוי הקבלנים הצריך — כלומר משימה
+-- שהואצלה לשני קבלנים הייתה נספרת אצל אחד.
+CREATE OR REPLACE FUNCTION public.dashboard_stats(p_from date, p_to date)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
   select jsonb_build_object(
     'events_count', (select count(*) from app.live_events
        where deleted_at is null and event_date between p_from and p_to),
@@ -506,7 +516,12 @@ returns jsonb language sql stable security invoker set search_path = public as $
       else null end,
     'by_contractor', case when app.has('dashboard.contractors') then
       (select coalesce(jsonb_agg(row_to_json(x)), '[]') from (
-         select ct.name, count(*) as cnt from app.live_tasks t join contractors ct on ct.id = t.contractor_id
+         -- 0105: דרך שורות ה-terms ולא דרך העמודה המשוקפת — משימה שהואצלה
+         -- לשני קבלנים נספרת אצל שניהם, וזו בדיוק השאלה שהאריח שואל.
+         select ct.name, count(*) as cnt
+           from task_contractor_terms tct
+           join app.live_tasks t on t.id = tct.task_id
+           join contractors ct on ct.id = tct.contractor_id
          where t.deleted_at is null and t.task_date between p_from and p_to
          group by ct.name order by cnt desc limit 12) x)
       else null end,
@@ -566,8 +581,7 @@ returns jsonb language sql stable security invoker set search_path = public as $
        from app.live_events e
        where e.deleted_at is null and e.event_date >= current_date
        order by e.event_date limit 5) x))
-$$;
-
+$function$;
 
 create or replace function dashboard_sections(
   p_sections text[], p_from date, p_to date, p_opts jsonb default '{}'::jsonb)
