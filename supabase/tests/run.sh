@@ -295,6 +295,15 @@ OUT="$OUT
 $OUT27"
 
 echo
+echo "== transport-only pricing suite =="
+# 28 מקימה לקוח, אופני ביצוע, מחשבון ומשימות משלה ב-current_date+440. היא רצה
+# אחרונה כי היא מזריעה אופני ביצוע גלובליים ומחשבון שאינם מנוקים אחריה.
+OUT28=$($PSQL -d vl -f "$HERE/28_transport_only_pricing.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT28"
+OUT="$OUT
+$OUT28"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
