@@ -241,3 +241,105 @@ select set_config('request.jwt.claim.sub', '', false);
 select t_eq('והשדות התרוקנו',
   (select approved_at is null and approved_by is null
      from events where id = '30000000-0000-0000-0000-00000000023a'), true);
+
+-- ===== 4. ‏0115: עריכה של הלקוח מבטלת את האישור ===========================
+--
+-- הדמויות והאירוע של סעיף 3 ממשיכים. ‏a1 הוא מנהל הלקוח, a3 מנהל המערכת,
+-- ו-a4 רכז עם `events.edit` — כלומר "המשרד".
+
+\echo '--- והאישור יורד כשהלקוח משנה ---'
+
+-- מאשרים מחדש: סעיף 3 הסתיים בביטול אישור
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000023a3', false);
+select t_expect_ok('מנהל המערכת מאשר שוב',
+  $$select set_event_approved('30000000-0000-0000-0000-00000000023a', true)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- ── המשרד עורך: האישור שורד ──────────────────────────────────────────────
+-- אילו כל שמירה של מנהל הייתה מורידה את האישור, האישור היה צעד שאי אפשר
+-- להשלים: מסמנים, מתקנים פסיק, והסימון נעלם.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000023a4', false);
+select t_expect_ok('המשרד עורך את האירוע', $$
+  select update_event('30000000-0000-0000-0000-00000000023a',
+                      '{"notes":"הערה שהמשרד כתב אחרי האישור"}'::jsonb)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('והאישור שורד — המשרד הוא מי שאישר',
+  (select approved_at is not null from events where id = '30000000-0000-0000-0000-00000000023a'),
+  true);
+
+-- ── הלקוח שומר בלי לשנות דבר: האישור שורד ────────────────────────────────
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000023a1', false);
+select t_expect_ok('הלקוח שומר את אותו ערך בדיוק', $$
+  select update_event('30000000-0000-0000-0000-00000000023a',
+                      '{"end_client_name":"לקוח קצה 23"}'::jsonb)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('שמירה שלא שינתה דבר אינה מבטלת',
+  (select approved_at is not null from events where id = '30000000-0000-0000-0000-00000000023a'),
+  true);
+
+-- ── הלקוח משנה באמת: האישור יורד ─────────────────────────────────────────
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000023a1', false);
+select t_expect_ok('הלקוח משנה שם לקוח קצה', $$
+  select update_event('30000000-0000-0000-0000-00000000023a',
+                      '{"end_client_name":"שם אחר לגמרי"}'::jsonb)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('והאישור ירד',
+  (select approved_at is null and approved_by is null
+     from events where id = '30000000-0000-0000-0000-00000000023a'), true);
+
+select t_eq('והיומן מספר גם על הירידה, לא רק על העלייה',
+  (select new_value is null from event_activity
+    where event_id = '30000000-0000-0000-0000-00000000023a' and field_key = 'approved_at'
+    order by id desc limit 1), true);
+
+-- ── והלו״ז, שאינו עובר ב-update_event ────────────────────────────────────
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000023a3', false);
+select t_expect_ok('מנהל המערכת מאשר בשלישית',
+  $$select set_event_approved('30000000-0000-0000-0000-00000000023a', true)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- שדה "משך" נפתח ללקוח הזה בסעיף 2, ולכן הכתיבה עוברת את 0109
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000023a1', false);
+select t_expect_ok('הלקוח משנה משך מתא בלו״ז', $$
+  update tasks set hours_count = 11 where id = '61000000-0000-0000-0000-000000023001'$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('וגם זה מבטל — זה בדיוק מה שהאישור אישר',
+  (select approved_at is null from events where id = '30000000-0000-0000-0000-00000000023a'),
+  true);
+
+-- ── אבל סטטוס המשימה הוא תכנון, ולא מפרט ─────────────────────────────────
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000023a3', false);
+select t_expect_ok('מנהל המערכת מאשר ברביעית',
+  $$select set_event_approved('30000000-0000-0000-0000-00000000023a', true)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000023a3', false);
+select t_expect_ok('ומעביר את המשימה ל"מתוכנן"', $$
+  update tasks set status_id = (select id from statuses
+                                 where entity = 'task' and code = 'planned' and deleted_at is null)
+   where id = '61000000-0000-0000-0000-000000023001'$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('שינוי סטטוס אינו מבטל את האישור',
+  (select approved_at is not null from events where id = '30000000-0000-0000-0000-00000000023a'),
+  true);
