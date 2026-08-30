@@ -7,7 +7,7 @@ import LoginPage from '../features/auth/LoginPage'
 import ResetPasswordPage from '../features/auth/ResetPasswordPage'
 import { RequireAuth } from '../features/auth/guards'
 import { PERM } from '../lib/permissions'
-import { forContractors, forEmployees } from './nav'
+import { forContractors, forEmployees, forSelfPerformingCustomers } from './nav'
 import { lazyPage } from '../lib/lazyPage'
 import { ErrorBoundary, Skeleton } from '../components/ui'
 
@@ -32,6 +32,7 @@ const VehiclesPage = lazyPage(() => import('../features/vehicles/VehiclesPage'))
 const VehicleDetailPage = lazyPage(() => import('../features/vehicles/VehicleDetailPage'))
 const PortalPage = lazyPage(() => import('../features/portal/PortalPage'))
 const MyStaffPage = lazyPage(() => import('../features/contractors/MyStaffPage'))
+const MyCrewPage = lazyPage(() => import('../features/customers/MyCrewPage'))
 const SettingsPage = lazyPage(() => import('../features/settings/SettingsPage'))
 const TimeClockPage = lazyPage(() => import('../features/attendance/TimeClockPage'))
 const MySchedulePage = lazyPage(() => import('../features/attendance/MySchedulePage'))
@@ -121,6 +122,13 @@ export const router = createBrowserRouter([
             path: '/my/staff',
             handle: { perm: PERM.PORTAL_MANAGE_WORKERS, audience: forContractors },
             element: page(<MyStaffPage />),
+          },
+          /* המקבילה של הלקוח שמבצע בעצמו (0133), על אותה הכרעה: המפתח ניתן
+             לתפקיד `customer_manager` כולו, והדגל פר-לקוח הוא הגדר. */
+          {
+            path: '/my/crew',
+            handle: { perm: PERM.CUSTOMERS_MANAGE_OWN_STAFF, audience: forSelfPerformingCustomers },
+            element: page(<MyCrewPage />),
           },
           { path: '/calendar', handle: { perm: PERM.CALENDAR_VIEW }, element: page(<CalendarPage />) },
           { path: '/board', handle: { perm: PERM.BOARD_VIEW }, element: page(<WorkBoardPage />) },

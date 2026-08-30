@@ -112,6 +112,7 @@ const adminAudience = (isEmployee: boolean): NavAudience => ({
   isAdmin: true,
   isEmployee,
   isContractor: false,
+  isSelfPerformingCustomer: false,
 })
 
 function adminSees(isEmployee: boolean): string[] {
@@ -272,10 +273,27 @@ describe('מנהל מערכת', () => {
   it('"העובדים שלי" הוא מסך של קבלן, ולא של מי שמחזיק את המפתח', () => {
     expect(adminSees(true)).not.toContain('/my/staff')
     expect(
-      visibleNavSections(adminHas, { isAdmin: true, isEmployee: true, isContractor: true }).flatMap((s) =>
-        s.items.map((i) => i.to),
-      ),
+      visibleNavSections(adminHas, {
+        isAdmin: true,
+        isEmployee: true,
+        isContractor: true,
+        isSelfPerformingCustomer: false,
+      }).flatMap((s) => s.items.map((i) => i.to)),
     ).toContain('/my/staff')
+  })
+
+  // ‏0133: אותו כלל בדיוק על "הסגל שלי" — המפתח ניתן לתפקיד `customer_manager`
+  // כולו, והדגל פר-לקוח הוא מה שמכריע.
+  it('"הסגל שלי" הוא מסך של לקוח שמבצע בעצמו', () => {
+    expect(adminSees(true)).not.toContain('/my/crew')
+    expect(
+      visibleNavSections(adminHas, {
+        isAdmin: true,
+        isEmployee: true,
+        isContractor: false,
+        isSelfPerformingCustomer: true,
+      }).flatMap((s) => s.items.map((i) => i.to)),
+    ).toContain('/my/crew')
   })
 
   it('ורשומה אחת בלבד מובילה אל /attendance', () => {

@@ -164,7 +164,10 @@ select t_expect_ok('CAN grant attendance.clock',
   $$insert into user_permission_grants values ('20000000-0000-0000-0000-0000000000c2','attendance.clock',true)$$);
 select t_expect_fail('cannot grant attendance.view_all',
   $$insert into user_permission_grants values ('20000000-0000-0000-0000-0000000000c2','attendance.view_all',true)$$);
-select t_expect_fail('cannot grant board.inline_edit',
+-- 0131 handed board.inline_edit to customer_manager so the client can move a
+-- task between draft and planned; the escalation rule is unchanged — a granter
+-- may hand on exactly what it holds, and now it holds this.
+select t_expect_ok('CAN grant board.inline_edit (0131)',
   $$insert into user_permission_grants values ('20000000-0000-0000-0000-0000000000c2','board.inline_edit',true)$$);
 select t_expect_fail('cannot grant users.set_admin',
   $$insert into user_permission_grants values ('20000000-0000-0000-0000-0000000000c2','users.set_admin',true)$$);

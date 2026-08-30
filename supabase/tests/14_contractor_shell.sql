@@ -185,7 +185,9 @@ select t_eq('עובד קבלן: אינו רואה את שם איש הקשר',
   app.can_view_field('event', 'contact_name'), false);
 select t_eq('עובד קבלן: ולא את הטלפון',
   app.can_view_field('event', 'contact_phone'), false);
-select t_eq('עובד קבלן: אינו כותב ביומן האירוע',   app.has('events.activity_note'), false);
+-- ‏0129: הקהל כולו מתעד ורואה הערות; מה שנשאר סגור הוא רשומות המערכת.
+select t_eq('עובד קבלן: כותב ביומן האירוע (0129)', app.has('events.activity_note'), true);
+select t_eq('עובד קבלן: אך לא רשומות מערכת',       app.has('events.activity_system_view'), false);
 select t_eq('עובד קבלן: ואינו קובע הגדרות לאיש',   app.has('portal.worker_settings'), false);
 select t_eq('עובד קבלן: אין בורר תצוגה בלו״ז',     app.has('board.columns'), false);
 select t_eq('עובד קבלן: ואין שורת סינון',           app.has('board.filter'), false);

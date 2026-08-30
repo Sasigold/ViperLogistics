@@ -340,6 +340,16 @@ OUT="$OUT
 $OUT32"
 
 echo
+echo "== customer own staff suite =="
+# 33 מקימה שני לקוחות, אירוע, סגל עובדים ושלוש דמויות משלה ב-current_date+490.
+# היא רצה אחרונה כי היא מזריעה סגל ושיבוצים שאינם מנוקים, ומשנה את משימת
+# ההקמה של האירוע שלה ל"בוצע ע"י ארקו".
+OUT33=$($PSQL -d vl -f "$HERE/33_customer_own_staff.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT33"
+OUT="$OUT
+$OUT33"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

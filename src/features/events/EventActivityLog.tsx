@@ -154,11 +154,12 @@ export function EventActivityLog({
       return false
     }
   })
-  // ‏0122: שטח וקבלנים רואים רק רשומות מערכת. בלי events.activity_note_view
-  // אין מלל חופשי — לא לקריאה (השרת מסנן ממילא) ולא לכתיבה (הערה שאי אפשר
-  // לראות היא חסרת טעם, ולכן גם המחבר יורד).
-  const canViewNotes = has(PERM.EVENTS_ACTIVITY_NOTE_VIEW)
-  const canWrite = canViewNotes && (has(PERM.EVENTS_ACTIVITY_NOTE) || !!canNote)
+  // ‏0129 הפך את 0122: ההערה נכתבת אל מי שנוסע לאירוע ולכן היא של כולם, ומה
+  // שדורש מפתח הוא דווקא רשומות המערכת. מי שאין לו — השטח, ראשי הצוות
+  // והקבלנים — רואה הערות בלבד, והבורר שלמטה אינו מוצג לו כי אין לו במה
+  // לבחור. השרת מסנן ממילא; זו רק תצוגה שלא תשקר.
+  const canViewSystem = has(PERM.EVENTS_ACTIVITY_SYSTEM_VIEW)
+  const canWrite = has(PERM.EVENTS_ACTIVITY_NOTE) || !!canNote
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['event_activity', eventId],
@@ -199,24 +200,24 @@ export function EventActivityLog({
   const entries = useMemo(
     () =>
       toEntries(
-        !canViewNotes
-          ? rows.filter((r) => r.kind !== 'note')
+        !canViewSystem
+          ? rows.filter((r) => r.kind === 'note')
           : notesOnly
             ? rows.filter((r) => r.kind === 'note')
             : rows,
       ),
-    [rows, notesOnly, canViewNotes],
+    [rows, notesOnly, canViewSystem],
   )
 
   return (
     <Card className={`flex flex-col h-full ${className ?? ''}`}>
       <CardHeader
         title="יומן פעילות"
-        subtitle="כל שינוי באירוע, ומה שרשמתם עליו"
+        subtitle={canViewSystem ? 'כל שינוי באירוע, ומה שרשמתם עליו' : 'ההערות שנרשמו על האירוע'}
         icon={<History size={ICON.md} strokeWidth={STROKE} />}
         actions={
           <span className="flex items-center gap-2">
-            {canViewNotes && (
+            {canViewSystem && (
               <SegmentedControl
                 items={[
                   { key: 'all', label: 'הכול' },

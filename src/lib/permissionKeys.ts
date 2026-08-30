@@ -64,6 +64,11 @@ export const PERM = {
   CUSTOMERS_VIEW_CONTACT: 'customers.view_contact',
   CUSTOMERS_EDIT_CONTACT: 'customers.edit_contact',
   CUSTOMERS_MANAGE_FORM_FIELDS: 'customers.manage_form_fields',
+  /* ‏0133: לקוח שמבצע בעצמו מנהל רשומת סגל משלו, ומשבץ ממנה למשימות
+     שסומנו שהוא מבצע אותן. השער בפועל הוא `customers.performed_by_enabled`,
+     ולכן המפתחות רחבים והדגל צר. */
+  CUSTOMERS_MANAGE_OWN_STAFF: 'customers.manage_own_staff',
+  CUSTOMERS_ASSIGN_OWN_STAFF: 'customers.assign_own_staff',
   CUSTOMERS_MANAGE_EXECUTION_METHODS: 'customers.manage_execution_methods',
   CUSTOMERS_MANAGE_SUPPLIERS: 'customers.manage_suppliers',
   CUSTOMERS_ALLOW_EVENT_CREATION: 'customers.allow_event_creation',
@@ -104,7 +109,10 @@ export const PERM = {
   EVENTS_EDIT_NOTES: 'events.edit_notes',
   EVENTS_ACTIVITY_LOG: 'events.activity_log',
   EVENTS_ACTIVITY_NOTE: 'events.activity_note',
-  EVENTS_ACTIVITY_NOTE_VIEW: 'events.activity_note_view',
+  /* ‏0129: השער התהפך. ההערה גלויה לכל מי שרואה את היומן — היא נכתבת אל מי
+     שנוסע לאירוע — ומה שדורש מפתח הוא ההיסטוריה האוטומטית שלצדה.
+     ‏`events.activity_note_view` (0122) ירד מהמרשם הפעיל ואינו נשאל עוד. */
+  EVENTS_ACTIVITY_SYSTEM_VIEW: 'events.activity_system_view',
   EVENTS_SPECS_VIEW: 'events.specs_view',
   /* העלאה והסרה נפרדו ב-0113: המפרט נולד אצל הלקוח, ולכן ההעלאה פתוחה לו
      בברירת המחדל של סוג המשתמש — וההסרה מההיסטוריה נשארה של מי שמנהל את

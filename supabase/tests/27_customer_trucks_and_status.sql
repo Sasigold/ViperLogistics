@@ -199,3 +199,16 @@ select t_expect_ok('רכז שמחזיק tasks.publish כן מוריד מפרסו
    where id = '61000000-0000-0000-0000-000000027001'$$);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+-- ===== 4. ומה שהמסך שואל, ולא רק השרת (0131) =============================
+--
+-- השרת הרשה את המעבר עוד קודם — שכבת הרשאות השדה ענתה כן — אבל תא הסטטוס
+-- בלו״ז נשען על שני מפתחות שלא היו בידי `customer_manager`, ולכן הוא נצבע
+-- לקריאה בלבד והלקוח לא הצליח להזיז דבר. ‏0131 העניק אותם לתפקיד.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000027a1', false);
+select t_eq('מנהל אצל הלקוח מחזיק tasks.change_status', app.has('tasks.change_status'), true);
+select t_eq('ומחזיק board.inline_edit',                 app.has('board.inline_edit'),   true);
+select t_eq('ואינו מחזיק tasks.publish',                app.has('tasks.publish'),       false);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);

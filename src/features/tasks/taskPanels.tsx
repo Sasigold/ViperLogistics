@@ -45,6 +45,8 @@ import {
   useContractorDelegate,
   useContractorWorkerAssign,
   useContractors,
+  useCustomerAssignableWorkers,
+  useCustomerWorkerAssign,
   useStaff,
   useCustomerTrucks,
   useTrucks,
@@ -54,9 +56,11 @@ import { fmtDate } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 import type {
   Contractor,
+  PerformedBy,
   Profile,
   StaffRole,
   TaskContractorTerms,
+  Truck,
   WorkSite,
 } from '../../types/domain'
 
@@ -73,6 +77,7 @@ export function ContractorCrew({
   contractorName,
   assignedWorkerIds,
   workerRoles,
+  hasStaffLead,
   noShow,
   canMarkNoShow,
 }: {
@@ -82,6 +87,8 @@ export function ContractorCrew({
   assignedWorkerIds: string[]
   /** התפקיד שכל עובד קבלן משובץ בו על המשימה (0121), לפי worker_id. */
   workerRoles?: Record<string, StaffRole | null>
+  /** האם על המשימה כבר יושב ראש צוות פנימי (0128) — הוא חוסם ראש צוות של קבלן. */
+  hasStaffLead?: boolean
   noShow: Set<string>
   canMarkNoShow: boolean
 }) {
@@ -147,34 +154,46 @@ export function ContractorCrew({
             (w.roles.includes('team_lead') || w.roles.includes('driver')),
         )
         if (eligible.length === 0) return null
+        /* ‏0128: ראש צוות אחד למשימה — פנימי או של קבלן. השרת דוחה בהודעה
+           מפורשת, והמסך פשוט אינו מציע את מה שיידחה. */
+        const crewLead = Object.entries(workerRoles ?? {}).find(([, r]) => r === 'team_lead')?.[0]
+        const leadTaken = hasStaffLead || !!crewLead
         return (
           <div className="mt-3 space-y-1.5 border-t border-line-subtle pt-3">
             <div className="type-overline">תפקידי הצוות</div>
-            {eligible.map((w) => (
-              <label key={w.worker_id} className="flex items-center justify-between gap-2 type-caption">
-                <span className="truncate">{w.full_name}</span>
-                <Select
-                  selectSize="sm"
-                  className="w-32"
-                  value={workerRoles?.[w.worker_id!] ?? ''}
-                  onChange={(e) =>
-                    contractorAssign.mutate(
-                      {
-                        taskId,
-                        workerId: w.worker_id,
-                        on: true,
-                        role: (e.target.value || null) as StaffRole | null,
-                      },
-                      { onError: (err) => toast.error(errorMessage(err)) },
-                    )
-                  }
-                >
-                  <option value="">עובד</option>
-                  {w.roles.includes('team_lead') && <option value="team_lead">ראש צוות</option>}
-                  {w.roles.includes('driver') && <option value="driver">נהג</option>}
-                </Select>
-              </label>
-            ))}
+            {eligible.map((w) => {
+              const iAmLead = crewLead === w.worker_id
+              return (
+                <label key={w.worker_id} className="flex items-center justify-between gap-2 type-caption">
+                  <span className="truncate">{w.full_name}</span>
+                  <Select
+                    selectSize="sm"
+                    className="w-32"
+                    value={workerRoles?.[w.worker_id!] ?? ''}
+                    onChange={(e) =>
+                      contractorAssign.mutate(
+                        {
+                          taskId,
+                          workerId: w.worker_id,
+                          on: true,
+                          role: (e.target.value || null) as StaffRole | null,
+                        },
+                        { onError: (err) => toast.error(errorMessage(err)) },
+                      )
+                    }
+                  >
+                    <option value="">עובד</option>
+                    {w.roles.includes('team_lead') && (!leadTaken || iAmLead) && (
+                      <option value="team_lead">ראש צוות</option>
+                    )}
+                    {w.roles.includes('driver') && <option value="driver">נהג</option>}
+                  </Select>
+                </label>
+              )
+            })}
+            {hasStaffLead && (
+              <p className="type-caption text-ink-tertiary">למשימה כבר מוגדר ראש צוות.</p>
+            )}
           </div>
         )
       })()}
@@ -204,6 +223,148 @@ export function ContractorCrew({
 }
 
 /**
+ * הסגל של לקוח שמבצע בעצמו, על משימה שסומנה ככזו (0133).
+ *
+ * מקבילה מבנית ל-`ContractorCrew`, ומאותו נימוק: `task_customer_workers`
+ * אינה עמודה של המשימה ואינה נפתחת ב-UPDATE ללקוח, ולכן כל כתיבה עוברת
+ * ב-`customer_assign_worker` — שם גם נבדק שהמשימה באמת שלו לבצע.
+ */
+export function CustomerCrew({
+  taskId,
+  customerId,
+  assigned,
+  trucks,
+  hasStaffLead,
+}: {
+  taskId: string
+  customerId: string
+  assigned: PanelCustomerWorker[]
+  /** המשאיות שהלקוח רשאי לבחור מהן (0116) — אותה רשימה של תא הלו״ז. */
+  trucks: Truck[]
+  hasStaffLead?: boolean
+}) {
+  const toast = useToast()
+  const { data: assignable = [] } = useCustomerAssignableWorkers(customerId)
+  const assign = useCustomerWorkerAssign()
+  const fail = (e: unknown) => toast.error(errorMessage(e))
+  const assignedMap = new Map(assigned.map((w) => [w.worker_id, w]))
+  const crewLead = assigned.find((w) => w.role === 'team_lead')?.worker_id
+  const leadTaken = hasStaffLead || !!crewLead
+
+  return (
+    <>
+      <MultiSelect
+        options={assignable.map((w) => ({ id: w.worker_id, label: w.full_name }))}
+        values={assigned.map((w) => w.worker_id)}
+        onToggle={(id) =>
+          assign.mutate(
+            { taskId, workerId: id, on: !assignedMap.has(id) },
+            { onError: fail },
+          )
+        }
+        placeholder="בחירת עובדים מהסגל..."
+      />
+      {assignable.length === 0 && (
+        <p className="mt-1 type-caption text-ink-tertiary">
+          אין עדיין עובדים בסגל. אפשר להוסיף אותם במסך "הסגל שלי".
+        </p>
+      )}
+
+      {assigned.length > 0 && (
+        <div className="mt-3 space-y-1.5 border-t border-line-subtle pt-3">
+          <div className="type-overline">תפקידי הצוות</div>
+          {assigned.map((w) => {
+            const def = assignable.find((x) => x.worker_id === w.worker_id)
+            const iAmLead = crewLead === w.worker_id
+            return (
+              <div key={w.worker_id} className="flex flex-wrap items-center justify-between gap-2 type-caption">
+                <span className="min-w-24 flex-1 truncate">{w.full_name}</span>
+                <Select
+                  selectSize="sm"
+                  className="w-28"
+                  value={w.role ?? ''}
+                  onChange={(e) =>
+                    assign.mutate(
+                      {
+                        taskId,
+                        workerId: w.worker_id,
+                        on: true,
+                        workSite: w.work_site,
+                        role: (e.target.value || null) as StaffRole | null,
+                        truckId: e.target.value === 'driver' ? w.truck_id : null,
+                      },
+                      { onError: fail },
+                    )
+                  }
+                >
+                  <option value="">עובד</option>
+                  {def?.roles.includes('team_lead') && (!leadTaken || iAmLead) && (
+                    <option value="team_lead">ראש צוות</option>
+                  )}
+                  {def?.roles.includes('driver') && <option value="driver">נהג</option>}
+                </Select>
+                {/* המשאית היא של הנהג, בדיוק כמו ב-task_assignments.truck_id */}
+                {w.role === 'driver' && (
+                  <Select
+                    selectSize="sm"
+                    className="w-32"
+                    value={w.truck_id ?? ''}
+                    onChange={(e) =>
+                      assign.mutate(
+                        {
+                          taskId,
+                          workerId: w.worker_id,
+                          on: true,
+                          workSite: w.work_site,
+                          role: w.role,
+                          truckId: e.target.value || null,
+                        },
+                        { onError: fail },
+                      )
+                    }
+                  >
+                    <option value="">בלי משאית</option>
+                    {trucks
+                      .filter((t) => t.is_active || t.id === w.truck_id)
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                  </Select>
+                )}
+                <Select
+                  selectSize="sm"
+                  className="w-28"
+                  value={w.work_site}
+                  onChange={(e) =>
+                    assign.mutate(
+                      {
+                        taskId,
+                        workerId: w.worker_id,
+                        on: true,
+                        workSite: e.target.value as WorkSite,
+                        role: w.role,
+                        truckId: w.truck_id,
+                      },
+                      { onError: fail },
+                    )
+                  }
+                >
+                  <option value="field">מגיע לשטח</option>
+                  <option value="warehouse">יוצא מהמחסן</option>
+                </Select>
+              </div>
+            )
+          })}
+          {hasStaffLead && <p className="type-caption text-ink-tertiary">למשימה כבר מוגדר ראש צוות.</p>}
+        </div>
+      )}
+    </>
+  )
+}
+
+/**
  * כרטיס האצלה של קבלן אחד במשימה (0096). משימה יכולה לשאת כמה כאלה. שדות
  * ה-terms (נקודת התחלה, כמות עובדים, תעריף/מחיר) נכתבים מיד ל-terms של אותו
  * קבלן; שורה ששולם עליה ננעלת לעריכה. שיבוץ עובדי הקבלן דרך `ContractorCrew`.
@@ -214,6 +375,7 @@ export function ContractorDelegationCard({
   contractor,
   assignedWorkerIds,
   workerRoles,
+  hasStaffLead,
   noShow,
   canDelegate,
   canEditPricing,
@@ -228,6 +390,8 @@ export function ContractorDelegationCard({
   contractor: Contractor | undefined
   assignedWorkerIds: string[]
   workerRoles?: Record<string, StaffRole | null>
+  /** ראש צוות פנימי כבר על המשימה (0128) — נמסר הלאה ל-`ContractorCrew`. */
+  hasStaffLead?: boolean
   noShow: Set<string>
   canDelegate: boolean
   canEditPricing: boolean
@@ -450,6 +614,7 @@ export function ContractorDelegationCard({
             contractorName={contractor?.name ?? null}
             assignedWorkerIds={assignedWorkerIds}
             workerRoles={workerRoles}
+            hasStaffLead={hasStaffLead}
             noShow={noShow}
             canMarkNoShow={canMarkNoShow}
           />
@@ -488,6 +653,8 @@ interface TaskPanelTask {
      ה-terms, ו-`tct_select` סוגרת אותן למי שאין לו את מפתח המחירים. */
   contractor_id: string | null
   contractor_name: string | null
+  /** מי מבצע: וייפר או הלקוח עצמו (0120). קובע אם כרטיס "הסגל של הלקוח" מוצג. */
+  performed_by: PerformedBy | null
 }
 
 interface PanelAssignment {
@@ -507,6 +674,15 @@ interface PanelContractorWorker {
   role: StaffRole | null
 }
 
+/** עובד מסגל הלקוח שמבצע בעצמו, כפי שהוא משובץ למשימה (0133). */
+interface PanelCustomerWorker {
+  worker_id: string
+  full_name: string
+  work_site: WorkSite
+  role: StaffRole | null
+  truck_id: string | null
+}
+
 /**
  * מה ששני הפאנלים קוראים: המשימה, השיבוץ, שורות ההאצלה ועובדי הקבלן.
  *
@@ -518,11 +694,11 @@ function useTaskPanelData(taskId: string | null, enabled: boolean) {
     queryKey: ['tasks', 'staffing', taskId],
     enabled: enabled && !!taskId,
     queryFn: async () => {
-      const [t, a, terms, cw] = await Promise.all([
+      const [t, a, terms, cw, ow] = await Promise.all([
         supabase
           .from('work_board_view')
           .select(
-            'id, task_date, title, worker_count, customer_id, customer_name, end_client_name, task_type_name, contractor_id, contractor_name',
+            'id, task_date, title, worker_count, customer_id, customer_name, end_client_name, task_type_name, contractor_id, contractor_name, performed_by',
           )
           .eq('id', taskId)
           .single(),
@@ -536,6 +712,11 @@ function useTaskPanelData(taskId: string | null, enabled: boolean) {
           .select(
             'contractor_worker_id, work_site, no_show, role, contractor_workers!inner(contractor_id, full_name)',
           )
+          .eq('task_id', taskId),
+        /* סגל הלקוח שמבצע בעצמו (0133). ריק לכל משימה שאינה כזו. */
+        supabase
+          .from('task_customer_workers')
+          .select('customer_worker_id, work_site, role, truck_id, customer_workers!inner(full_name)')
           .eq('task_id', taskId),
       ])
       if (t.error) throw t.error
@@ -567,6 +748,19 @@ function useTaskPanelData(taskId: string | null, enabled: boolean) {
           no_show: r.no_show,
           role: r.role ?? null,
         })) as PanelContractorWorker[],
+        customerWorkers: ((ow.data ?? []) as unknown as {
+          customer_worker_id: string
+          work_site: WorkSite | null
+          role: StaffRole | null
+          truck_id: string | null
+          customer_workers: { full_name: string } | null
+        }[]).map((r) => ({
+          worker_id: r.customer_worker_id,
+          full_name: r.customer_workers?.full_name ?? '',
+          work_site: (r.work_site ?? 'field') as WorkSite,
+          role: r.role ?? null,
+          truck_id: r.truck_id,
+        })) as PanelCustomerWorker[],
       }
     },
   })
@@ -701,6 +895,13 @@ export function StaffingPanel({
 
   const assignments = data?.assignments ?? []
   const contractorWorkers = data?.contractorWorkers ?? []
+  const customerWorkers = data?.customerWorkers ?? []
+  /* ‏0133: הכרטיס מוצג רק על משימה שסומנה שהלקוח מבצע אותה — זה גם התנאי
+     שהשרת בודק, ומסך שמציע יותר ממה שייכתב הוא מסך שמשקר. */
+  const showCustomerCrew =
+    data?.task.performed_by === 'arko' &&
+    !!data?.task.customer_id &&
+    (has(PERM.CUSTOMERS_ASSIGN_OWN_STAFF) || has(PERM.TASKS_ASSIGN_WORKER))
   const nameOf = (id: string) => staff.find((p) => p.id === id)?.full_name ?? '—'
   const byRole = (role: StaffRole) => assignments.filter((a) => a.role === role)
   const options = useMemo(
@@ -724,7 +925,15 @@ export function StaffingPanel({
     )
     return ids.size === 0 ? trucks : trucks.filter((t) => ids.has(t.id))
   }, [trucks, customerTrucks, data?.task.customer_id])
-  const assignedCount = byRole('worker').length + byRole('driver').length + contractorWorkers.length
+  /* ראש צוות הוא ראש ועובד בעת ובעונה אחת, והמכסה בשרת סופרת שורות ולא
+     תפקידים — ולכן הוא נספר. עד 0128 המונה כאן השמיט אותו ואילו זה שבכרטיס
+     המשימה כלל אותו, ושני מסכים הראו שני מספרים לאותה משימה. */
+  const assignedCount =
+    byRole('worker').length +
+    byRole('driver').length +
+    byRole('team_lead').length +
+    contractorWorkers.length +
+    customerWorkers.length
 
   /* איזה קבלנים יש למשימה, משלושה מקורות שאף אחד מהם אינו זמין תמיד:
      שורות ה-terms (חסומות בלי מפתח מחירים), הקבלן המשוקף על המשימה, והקבלנים
@@ -902,6 +1111,10 @@ export function StaffingPanel({
                   <div key={w.worker_id} className="flex flex-wrap items-center gap-2">
                     <span className="min-w-28 flex-1 truncate type-body">
                       👷 {w.full_name}
+                      {/* התפקיד שהקבלן נתן לו על המשימה (0121). בלעדיו כל
+                          הסגל נראה כאן זהה, וראש הצוות של הקבלן נעלם. */}
+                      {w.role === 'team_lead' && <Badge tone="info">ראש צוות</Badge>}
+                      {w.role === 'driver' && <Badge tone="info">נהג</Badge>}
                       {w.no_show && <Badge tone="error">לא התייצב</Badge>}
                     </span>
                     {site(
@@ -915,6 +1128,28 @@ export function StaffingPanel({
                     )}
                   </div>
                 ))}
+              </CardBody>
+            </Card>
+          )}
+
+          {/* הסגל של הלקוח שמבצע בעצמו (0133). הוא יושב לפני כרטיסי הקבלן
+              מפני שעל משימת ארקו אין קבלן — 0135 מסירה את ההאצלה — ולכן זה
+              הכרטיס היחיד שיהיה שם. */}
+          {showCustomerCrew && (
+            <Card>
+              <CardHeader
+                title="הסגל של הלקוח"
+                subtitle="העובדים, ראשי הצוות והנהגים של הלקוח שמבצע את המשימה — נשמר מיד"
+                icon={<HardHat size={ICON.md} strokeWidth={STROKE} />}
+              />
+              <CardBody>
+                <CustomerCrew
+                  taskId={taskId!}
+                  customerId={data!.task.customer_id!}
+                  assigned={customerWorkers}
+                  trucks={availableTrucks}
+                  hasStaffLead={byRole('team_lead').length > 0}
+                />
               </CardBody>
             </Card>
           )}
@@ -943,6 +1178,7 @@ export function StaffingPanel({
                     workerRoles={Object.fromEntries(
                       contractorWorkers.filter((w) => w.contractor_id === cid).map((w) => [w.worker_id, w.role]),
                     )}
+                    hasStaffLead={byRole('team_lead').length > 0}
                     noShow={new Set()}
                     canMarkNoShow={false}
                   />
@@ -1025,6 +1261,7 @@ export function ContractorPanel({
                 contractor={contractors.find((c) => c.id === term.contractor_id)}
                 assignedWorkerIds={mine.map((w) => w.worker_id)}
                 workerRoles={Object.fromEntries(mine.map((w) => [w.worker_id, w.role]))}
+                hasStaffLead={(data.assignments ?? []).some((a) => a.role === 'team_lead')}
                 noShow={new Set(mine.filter((w) => w.no_show).map((w) => w.worker_id))}
                 canDelegate={canDelegate}
                 canEditPricing={canEditPricing}

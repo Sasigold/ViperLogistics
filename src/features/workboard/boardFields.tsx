@@ -31,6 +31,15 @@ export interface BoardLookups {
    */
   canAssignContractor: boolean
   /**
+   * האם הקורא רשאי לשבץ את סגל הלקוח שמבצע בעצמו (0133).
+   *
+   * נוסע כאן ולא ב-`can()` מאותו נימוק בדיוק של השורה שמעל: משתמש הלקוח
+   * מחזיק `board.inline_edit` מ-0131, אבל תא "צוות" הוא שדה בלי `column_name`
+   * — ולכן `boardFieldState` שלו נשאר `visible` ו-`canEditField` היה מנטרל
+   * את הדבר האחד שהוא כן משבץ.
+   */
+  canAssignOwnStaff: boolean
+  /**
    * לפתוח את הפאנל הממוקד של התא (0108).
    *
    * שיבוץ, נקודת התחלה, האצלה, כמות עובדים ותעריף אינם עמודות של המשימה —
@@ -593,11 +602,26 @@ function ContractorCell({ row, canEdit, lookups }: CellContext) {
   )
 }
 
+/**
+ * ראש הצוות — פנימי או של קבלן (0128). עד אז התא קרא רק שיבוץ פנימי, וראש
+ * הצוות שהקבלן מינה נבלע ברשימת "צוות" עם כל השאר.
+ */
 function TeamLeadCell({ row, canEdit, lookups }: CellContext) {
+  const canOwnStaff = lookups.canAssignOwnStaff && row.performed_by === 'arko'
   return (
     <PanelCell
-      canEdit={canEdit}
-      view={row.team_lead_name ? <Clip>{row.team_lead_name}</Clip> : <Muted />}
+      canEdit={canEdit || canOwnStaff}
+      view={
+        row.team_lead_name ? (
+          <span className="flex items-center justify-center gap-0.5 overflow-hidden">
+            {row.team_lead_kind === 'contractor' && <span className="shrink-0 text-[9px]">👷</span>}
+            {row.team_lead_kind === 'customer' && <span className="shrink-0 text-[9px]">🏢</span>}
+            <Clip>{row.team_lead_name}</Clip>
+          </span>
+        ) : (
+          <Muted />
+        )
+      }
       onOpen={() => lookups.openPanel(row.id, 'staffing')}
     />
   )
@@ -616,9 +640,14 @@ function TeamLeadCell({ row, canEdit, lookups }: CellContext) {
 function TeamCell({ row, canEdit, can, lookups }: CellContext) {
   const canDriver = can(PERM.TASKS_ASSIGN_DRIVER)
   const contractorWorkers = row.contractor_worker_list ?? []
+  /* סגל של לקוח שמבצע בעצמו (0134). אותו תא בדיוק — בשטח הם צוות אחד. */
+  const customerWorkers = row.customer_worker_list ?? []
   /* שיבוץ עובדי קבלן אינו עובר ב-`canEdit`: היא מכפילה ב-`board.inline_edit`,
      שאין למנהל קבלן — והתא הזה הוא הדבר האחד שהוא כן עורך. */
   const canContractor = lookups.canAssignContractor && !!row.contractor_id
+  /* ‏0133: על משימה שסומנה "ארקו" זה הכרטיס היחיד שיהיה בפאנל, ולכן זה גם
+     התנאי היחיד שפותח את התא לצד ההרשאות המשרדיות. */
+  const canOwnStaff = lookups.canAssignOwnStaff && row.performed_by === 'arko'
 
   /* אותו אדם ששובץ גם כעובד וגם כנהג מופיע פעם אחת, עם שני האייקונים (0094).
      איחוד לפי profile_id; עובד קבלן נשאר נפרד (מרחב זהות אחר). */
@@ -650,7 +679,24 @@ function TeamCell({ row, canEdit, can, lookups }: CellContext) {
             : '',
       site: e.site,
     })),
-    ...contractorWorkers.map((w) => ({ key: `c:${w.id}`, name: w.name, mark: '👷', site: w.work_site })),
+    /* ראש צוות של קבלן יושב מ-0128 בשורה של ראש הצוות, ולכן אינו חוזר כאן:
+       אדם אחד, מקום אחד. שאר הסגל — נהג הקבלן ועובדיו — נשאר. */
+    ...contractorWorkers
+      .filter((w) => w.role !== 'team_lead')
+      .map((w) => ({
+        key: `c:${w.id}`,
+        name: w.name,
+        mark: w.role === 'driver' ? '👷🚚' : '👷',
+        site: w.work_site,
+      })),
+    ...customerWorkers
+      .filter((w) => w.role !== 'team_lead')
+      .map((w) => ({
+        key: `o:${w.id}`,
+        name: w.truck_name ? `${w.name} · ${w.truck_name}` : w.name,
+        mark: w.role === 'driver' ? '🏢🚚' : '🏢',
+        site: w.work_site,
+      })),
   ]
 
   const view =
@@ -678,7 +724,7 @@ function TeamCell({ row, canEdit, can, lookups }: CellContext) {
 
   return (
     <PanelCell
-      canEdit={canEdit || canDriver || canContractor}
+      canEdit={canEdit || canDriver || canContractor || canOwnStaff}
       view={view}
       onOpen={() => lookups.openPanel(row.id, 'staffing')}
     />

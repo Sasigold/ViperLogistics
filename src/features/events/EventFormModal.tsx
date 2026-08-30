@@ -150,6 +150,16 @@ export function EventFormModal({
      ממילא אצלו השדה מוסתר בברירת מחדל, והשרת הוא זה שמכריע. */
   const autoPriced = customers.find((c) => c.id === effectiveCustomerId)?.pricing_mode === 'auto'
   /**
+   * הלקוח מבצע את המשימות שלו בעצמו (0120) — ורק אז יש שאלה "מי מבצע".
+   *
+   * שני מקורות ולא אחד, מאותה סיבה שכתובה שורה מעלה על התמחור: איש משרד
+   * קורא את שורת הלקוח מ-`useCustomers`, ומשתמש לקוח אינו קורא אותה כלל —
+   * אצלו הדגל מגיע עם ההרשאות (0133).
+   */
+  const performedByEnabled =
+    !!customers.find((c) => c.id === effectiveCustomerId)?.performed_by_enabled ||
+    (me?.customer?.id === effectiveCustomerId && !!me?.customer?.performed_by_enabled)
+  /**
    * המחיר אינו שדה של הלקוח.
    *
    * השרת קבע את זה מ-0111: הענף שכותב `<code>_price` שואל `user_kind = 'staff'`
@@ -261,23 +271,31 @@ export function EventFormModal({
 
   /**
    * אופן הביצוע שהלקוח עובד בו בדרך כלל (0111) — מוקדם לבורר באירוע חדש.
+   * מ-0130 יש אחד להקמה ואחד לפירוק, ולכל בלוק נזרע שלו: בשטח הם כמעט אף
+   * פעם אינם אותו אופן, ועד כה מי שהגדיר ברירת מחדל אחת תיקן ידנית את השני.
    *
    * רק כשהשדה ריק, ורק ביצירה: באירוע קיים ערך ריק פירושו שמישהו ניקה אותו,
    * ומילוי מחדש היה מחזיר לו את מה שהוא הוריד. השרת ממלא בכל מקרה בטריגר
    * ‏`tasks_default_method`, ולכן זו הקדמה של מה שיקרה ממילא — ולא הכלל עצמו.
    */
   const defaultMethod = useCustomerDefaultExecutionMethod(effectiveCustomerId)
+  const setupDefault = defaultMethod.setup ?? defaultMethod.general
+  const teardownDefault = defaultMethod.teardown ?? defaultMethod.general
   useEffect(() => {
-    if (!open || event || !defaultMethod) return
+    if (!open || event) return
     setForm((f) => {
       const patch: Partial<EventForm> = {}
-      if (!f.setup_execution_method && setupMethods.some((m) => m.id === defaultMethod))
-        patch.setup_execution_method = defaultMethod
-      if (!f.teardown_execution_method && teardownMethods.some((m) => m.id === defaultMethod))
-        patch.teardown_execution_method = defaultMethod
+      if (setupDefault && !f.setup_execution_method && setupMethods.some((m) => m.id === setupDefault))
+        patch.setup_execution_method = setupDefault
+      if (
+        teardownDefault &&
+        !f.teardown_execution_method &&
+        teardownMethods.some((m) => m.id === teardownDefault)
+      )
+        patch.teardown_execution_method = teardownDefault
       return Object.keys(patch).length ? { ...f, ...patch } : f
     })
-  }, [open, event, defaultMethod, setupMethods, teardownMethods])
+  }, [open, event, setupDefault, teardownDefault, setupMethods, teardownMethods])
 
   // auto-save draft for new events
   useEffect(() => {
@@ -436,6 +454,9 @@ export function EventFormModal({
           // אצל לקוח אוטומטי המחיר מגיע מהמחשבון; שליחתו הייתה נועלת אותו.
           // ומשתמש לקוח אינו שולח מחיר כלל — השרת משליך אותו ממילא (0111).
           if (key.endsWith('_price') && (autoPriced || priceIsReadOnly)) continue
+          // ‏0136: "בוצע ע״י" אינו שאלה אצל לקוח שאינו מבצע בעצמו, והשרת
+          // דוחה אותו במפורש — ולכן הוא גם לא נשלח.
+          if (key.endsWith('_performed_by') && (!performedByEnabled || !form[key])) continue
           // task_date is NOT NULL — omitting an empty date keeps the current one
           if (key.endsWith('_date') && !form[key]) continue
           payload[key] = form[key]
@@ -818,6 +839,7 @@ export function EventFormModal({
                 allMethods={allMethods}
                 autoPriced={autoPriced}
                 priceIsReadOnly={priceIsReadOnly}
+                performedByEnabled={performedByEnabled}
               />
             ) : null,
           )}
@@ -919,6 +941,7 @@ function TaskSection({
   allMethods,
   autoPriced,
   priceIsReadOnly,
+  performedByEnabled,
 }: {
   code: 'setup' | 'teardown'
   title: string
@@ -933,6 +956,8 @@ function TaskSection({
   autoPriced: boolean
   /** משתמש לקוח: השדה מוצג ואינו ניתן למילוי */
   priceIsReadOnly: boolean
+  /** הלקוח מסומן כמבצע בעצמו (0120) — רק אז יש בורר "בוצע ע״י" (0136) */
+  performedByEnabled: boolean
 }) {
   const dateKey = `${code}_date` as const
   const timeKey = `${code}_time` as const
@@ -940,6 +965,7 @@ function TaskSection({
   const hoursKey = `${code}_hours_count` as const
   const methodKey = `${code}_execution_method` as const
   const priceKey = `${code}_price` as const
+  const performedKey = `${code}_performed_by` as const
 
   if (!sectionFields(code).some(show)) return null
 
@@ -1034,6 +1060,20 @@ function TaskSection({
                   {orphan.name} (אינו זמין יותר)
                 </option>
               )}
+            </Select>
+          </Field>
+        )}
+        {/* ‏0136: מי מבצע — כבר כאן, ולא רק בדף האירוע אחרי שהמשימות נולדו.
+            מוצג רק ללקוח שסומן כמבצע בעצמו; לכל האחרים אין שאלה כזו. */}
+        {performedByEnabled && show(performedKey) && (
+          <Field label="בוצע ע״י" required={req(performedKey)} error={err(performedKey, form[performedKey])}>
+            <Select
+              value={form[performedKey] || 'viper'}
+              onChange={(e) => set({ [performedKey]: e.target.value })}
+              disabled={ro(performedKey)}
+            >
+              <option value="viper">וייפר</option>
+              <option value="arko">ארקו</option>
             </Select>
           </Field>
         )}

@@ -1035,6 +1035,7 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
                       contractor={contractor}
                       assignedWorkerIds={mine.map((w) => w.worker_id)}
                       workerRoles={Object.fromEntries(mine.map((w) => [w.worker_id, w.role]))}
+                      hasStaffLead={byRole('team_lead').length > 0}
                       noShow={new Set(mine.filter((w) => w.no_show).map((w) => w.worker_id))}
                       canDelegate={canDelegate}
                       canEditPricing={canEditPricing}
@@ -1113,6 +1114,7 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
                       .filter((w) => w.contractor_id === myContractorId)
                       .map((w) => [w.worker_id, w.role]),
                   )}
+                  hasStaffLead={byRole('team_lead').length > 0}
                   noShow={new Set()}
                   canMarkNoShow={false}
                 />

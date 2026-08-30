@@ -286,10 +286,20 @@ select t_eq('ואינו רואה את איש הקשר',
   (select count(*)::int from event_contacts
     where event_id = '30000000-0000-0000-0000-000000000017'), 0);
 
-select t_rows('ואינו יכול לתעד', $$
+-- ‏0129: העובד כן מתעד. ההערה היא מה שנכתב אל מי שנוסע לאירוע, ולכן היא
+-- בדיוק מה שהשטח צריך — ומה שנשאר סגור בפניו הוא רשומות המערכת.
+select t_expect_ok('והוא כן מתעד (0129)', $$
   insert into event_activity (event_id, kind, actor_profile_id, note)
   values ('30000000-0000-0000-0000-000000000017', 'note',
-          '20000000-0000-0000-0000-0000000017a1', 'לא אמור להיכתב')$$, 0);
+          '20000000-0000-0000-0000-0000000017a1', 'הגעתי לשער ואין מי שיפתח')$$);
+
+select t_eq('ורואה את ההערה שכתב',
+  (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-000000000017' and kind = 'note'), 1);
+
+select t_eq('אך לא את רשומות המערכת',
+  (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-000000000017' and kind <> 'note'), 0);
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
@@ -306,12 +316,15 @@ select t_expect_ok('והוא מתעד', $$
   values ('30000000-0000-0000-0000-000000000017', 'note',
           '20000000-0000-0000-0000-0000000017a3', 'הצוות יצא מהמחסן בזמן')$$);
 
--- ‏0122: ראש צוות שטח רואה בתיעוד רק רשומות מערכת. הוא כתב הערה (מותר לו),
--- אך אינו רואה את המלל החופשי — אין לו `events.activity_note_view` (נגזר
--- מ-`events.edit`, שאין לו).
-select t_eq('אך אינו רואה את המלל החופשי שכתב (רק רשומות מערכת, 0122)',
+-- ‏0129 הפך את 0122: ראש צוות השטח רואה בתיעוד את ההערות, ורק אותן. שתיים
+-- כאן — זו של העובד וזו שלו.
+select t_eq('ורואה את המלל החופשי, שלו ושל העובד (0129)',
   (select count(*)::int from event_activity
-    where event_id = '30000000-0000-0000-0000-000000000017' and kind = 'note'), 0);
+    where event_id = '30000000-0000-0000-0000-000000000017' and kind = 'note'), 2);
+
+select t_eq('אך לא את רשומות המערכת',
+  (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-000000000017' and kind <> 'note'), 0);
 
 select t_eq('ורואה את שם איש הקשר',
   (select contact_name from event_contacts
