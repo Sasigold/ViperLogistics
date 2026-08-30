@@ -607,7 +607,7 @@ function ContractorCell({ row, canEdit, lookups }: CellContext) {
  * הצוות שהקבלן מינה נבלע ברשימת "צוות" עם כל השאר.
  */
 function TeamLeadCell({ row, canEdit, lookups }: CellContext) {
-  const canOwnStaff = lookups.canAssignOwnStaff && row.performed_by === 'arko'
+  const canOwnStaff = lookups.canAssignOwnStaff && row.customer_self_performing
   return (
     <PanelCell
       canEdit={canEdit || canOwnStaff}
@@ -645,9 +645,9 @@ function TeamCell({ row, canEdit, can, lookups }: CellContext) {
   /* שיבוץ עובדי קבלן אינו עובר ב-`canEdit`: היא מכפילה ב-`board.inline_edit`,
      שאין למנהל קבלן — והתא הזה הוא הדבר האחד שהוא כן עורך. */
   const canContractor = lookups.canAssignContractor && !!row.contractor_id
-  /* ‏0133: על משימה שסומנה "ארקו" זה הכרטיס היחיד שיהיה בפאנל, ולכן זה גם
-     התנאי היחיד שפותח את התא לצד ההרשאות המשרדיות. */
-  const canOwnStaff = lookups.canAssignOwnStaff && row.performed_by === 'arko'
+  /* ‏0140: הסגל של הלקוח משרת גם את משימות וייפר שלו, ולכן התנאי הוא הדגל
+     של הלקוח ולא `performed_by` של השורה. */
+  const canOwnStaff = lookups.canAssignOwnStaff && row.customer_self_performing
 
   /* אותו אדם ששובץ גם כעובד וגם כנהג מופיע פעם אחת, עם שני האייקונים (0094).
      איחוד לפי profile_id; עובד קבלן נשאר נפרד (מרחב זהות אחר). */

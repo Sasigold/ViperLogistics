@@ -34,6 +34,12 @@ select t_eq('הקטלוג מכיר את עשרים הסוגים הפעילים',
 select t_eq('ובהם המעבר בין ארקו לוייפר (0136)',
   (select entity_type from notification_types where key = 'task_performed_by_changed'), 'task');
 
+-- ‏0142: `opt_in` ⇒ לא נשלח (0086), ולכן שורת הפעמון נכתבה ודבר לא הופיע
+-- במכשיר. כל שאר הסוגים הם `opt_out`, וזה היה היחיד שנשאר בחוץ.
+select t_eq('וההתראה עליו קופצת גם למכשיר (0142)',
+  (select default_mode_push::text from notification_types
+    where key = 'task_performed_by_changed'), 'opt_out');
+
 select t_eq('שלושת הסוגים שפרשו עדיין מוכרים, כבויים',
   (select count(*)::int from notification_types
     where key in ('task_changed','event_status_changed','contractor_task')

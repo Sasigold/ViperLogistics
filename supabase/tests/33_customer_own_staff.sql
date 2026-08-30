@@ -3,7 +3,7 @@
 
 -- ===========================================================================
 -- 33: סגל העובדים של לקוח שמבצע בעצמו (0133), הלו״ז שמכיר אותו (0134),
---     והשדות שנפתחים לו בו (0138).
+--     השדות שנפתחים לו בו (0138), והסגל שמשרת גם את משימות וייפר (0140).
 --
 -- החלון הוא current_date + 490, מעבר ל-480 של 32.
 -- ===========================================================================
@@ -131,8 +131,10 @@ select t_expect_fail('ואין ראש צוות שני', $$
        and t.deleted_at is null limit 1),
     'cf000000-0000-0000-0000-0000003300b1', true, null, 'team_lead')$$);
 
--- והמשימה של וייפר אינה שלו לשבץ בה
-select t_expect_fail('ומשימה שנשארה על וייפר אינה פתוחה לסגל שלו', $$
+-- ‏0140: גם משימה שוייפר מבצעת פתוחה לסגל הלקוח. עד אז התנאי היה שהמשימה
+-- מסומנת "ארקו", ואחרי 0139 — שסוגרת את המשימות האלה בפני המשרד — הוא הפך
+-- את הסגל לבלתי-שביץ בידי מנהל המערכת לחלוטין.
+select t_expect_ok('וגם משימה שנשארה על וייפר פתוחה לסגל שלו (0140)', $$
   select customer_assign_worker(
     (select t.id from tasks t where t.event_id = '30000000-0000-0000-0000-00000000033a'
        and t.task_type_id = (select id from task_types where code='teardown' limit 1)
@@ -196,10 +198,61 @@ select t_expect_ok('והלקוח מסיר עובד מהמשימה', $$
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
-select t_eq('ונשאר אחד',
+-- אחד על ההקמה (ראש הצוות), ואחד על הפירוק שוייפר מבצעת.
+select t_eq('ונשארו שניים',
   (select count(*)::int from task_customer_workers tcuw
      join tasks t on t.id = tcuw.task_id
-    where t.event_id = '30000000-0000-0000-0000-00000000033a'), 1);
+    where t.event_id = '30000000-0000-0000-0000-00000000033a'), 2);
+
+-- ===== 6. הכיוונים של המעבר (0139 / 0140) ================================
+
+\echo '--- מנהל המערכת אינו רואה משימת ארקו (0139) ---'
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000033a1', false);
+select t_eq('האדמין אינו רואה את משימת ההקמה שסומנה ארקו',
+  (select count(*)::int from tasks t
+    where t.event_id = '30000000-0000-0000-0000-00000000033a'
+      and t.task_type_id = (select id from task_types where code='setup' limit 1)), 0);
+select t_eq('אך כן את משימת הפירוק שוייפר מבצעת',
+  (select count(*)::int from tasks t
+    where t.event_id = '30000000-0000-0000-0000-00000000033a'
+      and t.task_type_id = (select id from task_types where code='teardown' limit 1)), 1);
+select t_eq('והאירוע גלוי לו, כי יש בו עבודה של וייפר',
+  (select count(*)::int from events where id = '30000000-0000-0000-0000-00000000033a'), 1);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+\echo '--- והחזרה לוייפר מסירה את שמות העובדים (0140) ---'
+update tasks set performed_by = 'viper'
+ where event_id = '30000000-0000-0000-0000-00000000033a'
+   and task_type_id = (select id from task_types where code = 'setup' limit 1);
+
+select t_eq('סגל הלקוח ירד מהמשימה שחזרה לוייפר',
+  (select count(*)::int from task_customer_workers tcuw
+     join tasks t on t.id = tcuw.task_id
+    where t.event_id = '30000000-0000-0000-0000-00000000033a'
+      and t.task_type_id = (select id from task_types where code='setup' limit 1)), 0);
+select t_eq('ומה שעל משימת הוייפר נשאר',
+  (select count(*)::int from task_customer_workers tcuw
+     join tasks t on t.id = tcuw.task_id
+    where t.event_id = '30000000-0000-0000-0000-00000000033a'
+      and t.task_type_id = (select id from task_types where code='teardown' limit 1)), 1);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000033a1', false);
+select t_eq('ועכשיו האדמין רואה את שתי המשימות',
+  (select count(*)::int from tasks t
+    where t.event_id = '30000000-0000-0000-0000-00000000033a' and t.deleted_at is null), 2);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+\echo '--- והלוח מסמן למי יש סגל (0140) ---'
+select t_eq('שורות הלקוח שמבצע בעצמו מסומנות בלוח',
+  (select bool_and(customer_self_performing) from work_board_view
+    where customer_id = '10000000-0000-0000-0000-00000000033a'), true);
+select t_eq('ושל לקוח רגיל — לא',
+  (select coalesce(bool_or(customer_self_performing), false) from work_board_view
+    where customer_id = '10000000-0000-0000-0000-00000000033b'), false);
 
 \echo '--- ולקוח שאינו מבצע בעצמו אינו מקבל רשימה ---'
 set role authenticated;

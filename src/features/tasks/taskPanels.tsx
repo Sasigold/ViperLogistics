@@ -653,8 +653,10 @@ interface TaskPanelTask {
      ה-terms, ו-`tct_select` סוגרת אותן למי שאין לו את מפתח המחירים. */
   contractor_id: string | null
   contractor_name: string | null
-  /** מי מבצע: וייפר או הלקוח עצמו (0120). קובע אם כרטיס "הסגל של הלקוח" מוצג. */
+  /** מי מבצע: וייפר או הלקוח עצמו (0120). */
   performed_by: PerformedBy | null
+  /** ללקוח של המשימה יש סגל משלו (0140) — זה מה שפותח את כרטיס "הסגל של הלקוח". */
+  customer_self_performing: boolean | null
 }
 
 interface PanelAssignment {
@@ -698,7 +700,7 @@ function useTaskPanelData(taskId: string | null, enabled: boolean) {
         supabase
           .from('work_board_view')
           .select(
-            'id, task_date, title, worker_count, customer_id, customer_name, end_client_name, task_type_name, contractor_id, contractor_name, performed_by',
+            'id, task_date, title, worker_count, customer_id, customer_name, end_client_name, task_type_name, contractor_id, contractor_name, performed_by, customer_self_performing',
           )
           .eq('id', taskId)
           .single(),
@@ -896,10 +898,12 @@ export function StaffingPanel({
   const assignments = data?.assignments ?? []
   const contractorWorkers = data?.contractorWorkers ?? []
   const customerWorkers = data?.customerWorkers ?? []
-  /* ‏0133: הכרטיס מוצג רק על משימה שסומנה שהלקוח מבצע אותה — זה גם התנאי
-     שהשרת בודק, ומסך שמציע יותר ממה שייכתב הוא מסך שמשקר. */
+  /* ‏0140: הכרטיס מוצג לכל משימה של לקוח שיש לו סגל משלו — גם כזו שוייפר
+     מבצעת. זה גם התנאי שהשרת בודק, ומסך שמציע יותר ממה שייכתב הוא מסך
+     שמשקר. (עד 0140 התנאי היה `performed_by = 'arko'`, ואחרי 0139 — שסוגרת
+     את המשימות האלה בפני המשרד — הוא הפך את הכרטיס לבלתי-נגיש למנהל.) */
   const showCustomerCrew =
-    data?.task.performed_by === 'arko' &&
+    !!data?.task.customer_self_performing &&
     !!data?.task.customer_id &&
     (has(PERM.CUSTOMERS_ASSIGN_OWN_STAFF) || has(PERM.TASKS_ASSIGN_WORKER))
   const nameOf = (id: string) => staff.find((p) => p.id === id)?.full_name ?? '—'

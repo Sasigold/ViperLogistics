@@ -78,6 +78,16 @@ select t_eq('והסיבה נרשמת בפירוט',
   (select breakdown ->> 'reason' from task_pricing where task_id = '61000000-0000-0000-0000-000000029001'),
   'performed_by_arko');
 
+\echo '--- הסתרה מרכז המשרד, ומ-0139 גם ממנהל המערכת ---'
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000029a1', false);
+select t_eq('גם מנהל המערכת אינו רואה את משימת ארקו (0139)',
+  (select count(*)::int from tasks where id = '61000000-0000-0000-0000-000000029001'), 0);
+select t_eq('אבל כן את משימת וייפר שלצדה',
+  (select count(*)::int from tasks where id = '61000000-0000-0000-0000-000000029002'), 1);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
 \echo '--- הסתרה מרכז המשרד (staff לא-admin) ---'
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000029a2', false);
@@ -98,6 +108,13 @@ update tasks set performed_by = 'arko' where id = '61000000-0000-0000-0000-00000
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000029a2', false);
 select t_eq('הרכז אינו רואה אירוע שכולו ארקו',
+  (select count(*)::int from events where id = '30000000-0000-0000-0000-00000000029a'), 0);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000029a1', false);
+select t_eq('וגם מנהל המערכת אינו רואה אותו (0139)',
   (select count(*)::int from events where id = '30000000-0000-0000-0000-00000000029a'), 0);
 
 reset role;

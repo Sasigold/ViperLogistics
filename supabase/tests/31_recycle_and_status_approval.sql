@@ -178,16 +178,35 @@ update customers set deleted_at = null where id = '10000000-0000-0000-0000-00000
 insert into event_activity (event_id, kind, actor_profile_id, actor_name, note)
 values ('30000000-0000-0000-0000-00000000031c', 'note',
         '20000000-0000-0000-0000-0000000031a1', 'מנהל 31', 'הערה שתלך עם האירוע');
+
+-- ‏0141: **שני אלה הם הבדיקה.** ל-`event_suppliers` ול-`event_contacts` יש
+-- טריגר `after delete` שכותב שורת יומן, וב-cascade הוא רץ אחרי שהאירוע כבר
+-- נמחק — כלומר מנסה לכתוב ל-`event_activity` על אירוע שאינו קיים. זה מה
+-- שהפיל את המחיקה בפרודקשן.
+--
+-- הזרעת הספק כאן נכתבה קודם כ-`from (insert … returning)`, תחביר שאינו חוקי
+-- מחוץ ל-CTE. החבילה אינה רצה עם ON_ERROR_STOP, ולכן היא נכשלה בשקט והמחיקה
+-- נבדקה על אירוע בלי ספקים — ולכן הבאג עבר. כאן היא `with` תקין.
+with s as (
+  insert into suppliers (customer_id, name)
+  values ('10000000-0000-0000-0000-00000000031a', 'ספק 31')
+  returning id
+)
 insert into event_suppliers (event_id, supplier_id)
-select '30000000-0000-0000-0000-00000000031c', s.id
-  from (insert into suppliers (customer_id, name)
-        values ('10000000-0000-0000-0000-00000000031a', 'ספק 31') returning id) s;
+select '30000000-0000-0000-0000-00000000031c', s.id from s;
+
+select t_eq('לאירוע יש ספק לפני המחיקה',
+  (select count(*)::int from event_suppliers
+    where event_id = '30000000-0000-0000-0000-00000000031c'), 1);
+
+insert into event_contacts (event_id, contact_name, contact_phone)
+values ('30000000-0000-0000-0000-00000000031c', 'איש קשר 31', '050-0000031');
 
 update events set deleted_at = now() where id = '30000000-0000-0000-0000-00000000031c';
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000031a1', false);
-select t_expect_ok('admin מוחק לצמיתות אירוע עם משימות, יומן וספקים',
+select t_expect_ok('admin מוחק לצמיתות אירוע עם משימות, יומן, ספק ואיש קשר',
   $$select hard_delete('events', '30000000-0000-0000-0000-00000000031c')$$);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
@@ -198,4 +217,9 @@ select t_eq('והמשימה שלו איתו',
   (select count(*)::int from tasks where id = '61000000-0000-0000-0000-000000031001'), 0);
 select t_eq('וגם שורות היומן',
   (select count(*)::int from event_activity
+    where event_id = '30000000-0000-0000-0000-00000000031c'), 0);
+select t_eq('והספק ואיש הקשר',
+  (select count(*)::int from event_suppliers
+    where event_id = '30000000-0000-0000-0000-00000000031c')
+  + (select count(*)::int from event_contacts
     where event_id = '30000000-0000-0000-0000-00000000031c'), 0);

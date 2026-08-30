@@ -484,24 +484,19 @@ export default function EventDetailPage() {
     navigate(`/events/${newId}`)
   }
 
-  const sectionLine = (code: 'setup' | 'teardown') => {
-    const t = tasks.find((x) => x.task_type_code === code)
-    if (!t) return null
-    return (
-      [
-        fmtDate(t.task_date),
-        fmtTime(t.onsite_start_time),
-        t.worker_count ? `${t.worker_count} עובדים` : null,
-        t.hours_count != null ? `${fmtHours(t.hours_count)} שעות` : null,
-        t.execution_method_name,
-      ]
-        .filter(Boolean)
-        .join(' · ') || null
-    )
-  }
+  const sectionLine = (t: WorkBoardRow) =>
+    [
+      fmtDate(t.task_date),
+      fmtTime(t.onsite_start_time),
+      t.worker_count ? `${t.worker_count} עובדים` : null,
+      t.hours_count != null ? `${fmtHours(t.hours_count)} שעות` : null,
+      t.execution_method_name,
+    ]
+      .filter(Boolean)
+      .join(' · ') || null
 
   /**
-   * שתי שורות הסיכום, לפי מי שקודם.
+   * שורת סיכום לכל משימה, לפי מי שקודם.
    *
    * הסדר "הקמה ואז פירוק" נכון כמעט תמיד, ולכן הוא היה מקובע — אבל כשהשניים
    * נופלים על אותו יום הוא מקובע גם כשהוא הפוך: פירוק ב-06:00 של ציוד מאתמול
@@ -509,20 +504,25 @@ export default function EventDetailPage() {
    * (תאריך ואז שעה), ולכן בתאריכים שונים הוא ממילא נותן את הסדר המוכר.
    *
    * ‏`byTaskDateTime` הוא אותו כלל שהלו״ז ממיין בו את היום — שם שעה חסרה
-   * שוקעת לתחתית, וכאן זה אומר שהבלוק שאין לו שעה יורד למטה. תיקו מלא (אין
-   * שעות לשניהם) משאיר את סדר המקור, כלומר הקמה ואז פירוק.
+   * שוקעת לתחתית, וכאן זה אומר שמשימה בלי שעה יורדת למטה.
+   *
+   * **שורה לכל משימה, ולא שתיים.** עד כאן זה היה זוג מקובע עם `find` על שני
+   * הקודים, ולכן אירוע עם משימה שלישית — או עם הקמה שנייה — הציג במיכל הזה
+   * פחות ממה שהמונה שמעליו סופר. התווית היא הכותרת כשיש, ואחרת שם סוג
+   * המשימה; משימה שנייה מאותו סוג מקבלת מספר סידורי כדי ששתי שורות לא
+   * ייקראו כאותה שורה.
    */
   /* בלי useMemo: הקטע הזה יושב אחרי היציאות המוקדמות של הקומפוננטה, והוק
-     שנקרא אחרי `return` מותנה נקרא בסדר שונה בין רינדורים. שני איברים אינם
-     שווים את המחיר הזה ממילא. */
-  const sectionRows: [string, React.ReactNode][] = (
-    [
-      ['הקמה', 'setup', tasks.find((x) => x.task_type_code === 'setup')],
-      ['פירוק', 'teardown', tasks.find((x) => x.task_type_code === 'teardown')],
-    ] as [string, 'setup' | 'teardown', WorkBoardRow | undefined][]
-  )
-    .sort((a, b) => (a[2] && b[2] ? byTaskDateTime(a[2], b[2]) : 0))
-    .map(([label, code]) => [label, sectionLine(code)])
+     שנקרא אחרי `return` מותנה נקרא בסדר שונה בין רינדורים. */
+  const sectionRows: [string, React.ReactNode][] = (() => {
+    const seen = new Map<string, number>()
+    return [...tasks].sort(byTaskDateTime).map((t) => {
+      const base = t.title?.trim() || t.task_type_name || 'משימה'
+      const n = (seen.get(base) ?? 0) + 1
+      seen.set(base, n)
+      return [n > 1 ? `${base} ${n}` : base, sectionLine(t)] as [string, React.ReactNode]
+    })
+  })()
 
   /* The same rule that shapes the form shapes the read view: a field the
      reader's company configured off, or their field permissions hide, should
@@ -822,7 +822,10 @@ export default function EventDetailPage() {
 
               <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
                 <span className="type-caption text-ink-tertiary">חלוקת משימות</span>
-                <div className="flex items-center gap-1.5 mt-1">
+                {/* ‏`flex-wrap`: התג השלישי מופיע בדיוק כשיש משימה שאינה
+                    הקמה/פירוק, והאריח צר מכדי להחזיק שלושה בשורה — ואז
+                    ה-truncate שבתוך Badge מקצר את התוויות. */}
+                <div className="flex flex-wrap items-center gap-1.5 mt-1">
                   <Badge tone="info">הקמה {taskStats.setupCount}</Badge>
                   <Badge tone="warning">פירוק {taskStats.teardownCount}</Badge>
                   {taskStats.otherCount > 0 && <Badge>אחר {taskStats.otherCount}</Badge>}
@@ -858,14 +861,16 @@ export default function EventDetailPage() {
             <Card>
               {/* Header & Controls Toolbar */}
               <div className="p-4 border-b border-line-subtle flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
+                {/* ‏`flex-wrap` ו-`min-w-0`: לשונית "אחר" הרביעית נוספת באותו
+                    תנאי בדיוק, והרצועה בלעדיהם דוחסת את כל הכפתורים. */}
+                <div className="flex min-w-0 flex-wrap items-center gap-3">
                   <h2 className="type-title font-semibold flex items-center gap-2">
                     <span>משימות האירוע</span>
                     <Badge tone="neutral" className="tabular">{filteredTasks.length}</Badge>
                   </h2>
 
                   {/* Filter Tabs */}
-                  <div className="flex items-center rounded-lg bg-subtle p-1 border border-line-subtle text-xs">
+                  <div className="flex flex-wrap items-center rounded-lg bg-subtle p-1 border border-line-subtle text-xs">
                     <button
                       type="button"
                       onClick={() => setActiveTab('all')}
