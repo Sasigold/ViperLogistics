@@ -46,6 +46,7 @@ function task(over: Partial<EventAutoTask> & { code: 'setup' | 'teardown' }): Ev
     worker_count: 0,
     execution_method_id: null,
     price: null,
+    performed_by: null,
     task_types: { code },
     ...rest,
   }
@@ -143,7 +144,7 @@ describe('sectionValuesFromTasks', () => {
   })
 
   /* מפתח נעדר היה משאיר בטופס את מה שכבר היה בו — בדיוק התקלה שהמנגנון מונע. */
-  it('writes six empty fields for a section that has no task', () => {
+  it('writes seven empty fields for a section that has no task', () => {
     const patch = sectionValuesFromTasks([task({ code: 'setup', task_date: '2026-09-01' })])
     expect(patch.teardown_date).toBe('')
     expect(patch.teardown_time).toBe('')
@@ -151,12 +152,21 @@ describe('sectionValuesFromTasks', () => {
     expect(patch.teardown_hours_count).toBe('')
     expect(patch.teardown_execution_method).toBe('')
     expect(patch.teardown_price).toBe('')
+    /* ‏0136 הוסיפה שדה שביעי לכל סעיף: "בוצע ע״י". */
+    expect(patch.teardown_performed_by).toBe('')
   })
 
-  it('empties all twelve when there are no tasks at all', () => {
+  it('empties all fourteen when there are no tasks at all', () => {
     const patch = sectionValuesFromTasks([])
-    expect(Object.keys(patch)).toHaveLength(12)
+    expect(Object.keys(patch)).toHaveLength(14)
     expect(Object.values(patch).every((v) => v === '')).toBe(true)
+  })
+
+  /* המשימה נושאת ארקו, והטופס טוען את זה — אחרת עריכה הייתה מחזירה אותה
+     לוייפר בשקט (0136). */
+  it('carries performed_by into the form', () => {
+    const patch = sectionValuesFromTasks([task({ code: 'setup', performed_by: 'arko' })])
+    expect(patch.setup_performed_by).toBe('arko')
   })
 })
 

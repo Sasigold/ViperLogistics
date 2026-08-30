@@ -41,12 +41,14 @@ export type EventForm = {
   setup_hours_count: string
   setup_price: string
   setup_execution_method: string
+  setup_performed_by: string
   teardown_date: string
   teardown_time: string
   teardown_worker_count: string
   teardown_hours_count: string
   teardown_price: string
   teardown_execution_method: string
+  teardown_performed_by: string
   /** values of the customer's custom fields, keyed by field_key */
   custom: Record<string, CustomFormValue>
   /** category income amounts (0068), keyed by income_categories.id */
@@ -59,9 +61,9 @@ export const emptyEventForm: EventForm = {
   location_notes: '', volume_m: '', truck_count: '', contact_name: '', contact_phone: '',
   notes: '', status_id: '', no_parking: false, porterage: false, supplier_pickup: false, supplier_ids: [],
   setup_date: '', setup_time: '', setup_worker_count: '', setup_hours_count: '', setup_execution_method: '',
-  setup_price: '',
+  setup_price: '', setup_performed_by: '',
   teardown_date: '', teardown_time: '', teardown_worker_count: '', teardown_hours_count: '', teardown_execution_method: '',
-  teardown_price: '',
+  teardown_price: '', teardown_performed_by: '',
   custom: {},
   income: {},
 }
@@ -81,6 +83,7 @@ export const sectionFields = (code: 'setup' | 'teardown') =>
     `${code}_hours_count`,
     `${code}_execution_method`,
     `${code}_price`,
+    `${code}_performed_by`,
   ] as const
 
 /**
@@ -145,6 +148,7 @@ export function sectionValuesFromTasks(tasks: EventAutoTask[]): Partial<EventFor
     patch[`${code}_hours_count`] = t?.hours_count != null ? String(t.hours_count) : ''
     patch[`${code}_execution_method`] = t?.execution_method_id ?? ''
     patch[`${code}_price`] = t?.price != null ? String(t.price) : ''
+    patch[`${code}_performed_by`] = t?.performed_by ?? ''
   }
   return patch
 }

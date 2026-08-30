@@ -64,6 +64,11 @@ export const PERM = {
   CUSTOMERS_VIEW_CONTACT: 'customers.view_contact',
   CUSTOMERS_EDIT_CONTACT: 'customers.edit_contact',
   CUSTOMERS_MANAGE_FORM_FIELDS: 'customers.manage_form_fields',
+  /* ‏0133: לקוח שמבצע בעצמו מנהל רשומת סגל משלו, ומשבץ ממנה למשימות
+     שסומנו שהוא מבצע אותן. השער בפועל הוא `customers.performed_by_enabled`,
+     ולכן המפתחות רחבים והדגל צר. */
+  CUSTOMERS_MANAGE_OWN_STAFF: 'customers.manage_own_staff',
+  CUSTOMERS_ASSIGN_OWN_STAFF: 'customers.assign_own_staff',
   CUSTOMERS_MANAGE_EXECUTION_METHODS: 'customers.manage_execution_methods',
   CUSTOMERS_MANAGE_SUPPLIERS: 'customers.manage_suppliers',
   CUSTOMERS_ALLOW_EVENT_CREATION: 'customers.allow_event_creation',

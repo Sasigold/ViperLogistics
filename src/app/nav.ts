@@ -38,17 +38,26 @@ export interface NavAudience {
   isEmployee: boolean
   /** קבלן, או עובד שמביא גם סגל משלו (0075) */
   isContractor: boolean
+  /** לקוח שמבצע את המשימות שלו בעצמו, ולכן מנהל סגל משלו (0133) */
+  isSelfPerformingCustomer: boolean
 }
 
 /** בלי הקשר — הכול פתוח. ברירת המחדל של בדיקות ושל קריאות ישנות. */
-export const ANY_AUDIENCE: NavAudience = { isAdmin: false, isEmployee: true, isContractor: true }
+export const ANY_AUDIENCE: NavAudience = {
+  isAdmin: false,
+  isEmployee: true,
+  isContractor: true,
+  isSelfPerformingCustomer: true,
+}
 
 export function navAudience(me: MyPermissions | null): NavAudience {
-  if (!me) return { isAdmin: false, isEmployee: false, isContractor: false }
+  if (!me)
+    return { isAdmin: false, isEmployee: false, isContractor: false, isSelfPerformingCustomer: false }
   return {
     isAdmin: me.profile.is_admin,
     isEmployee: (me.roles ?? []).length > 0,
     isContractor: !!me.profile.contractor_id || me.profile.user_kind === 'contractor_user',
+    isSelfPerformingCustomer: !!me.customer?.performed_by_enabled,
   }
 }
 
@@ -63,6 +72,15 @@ export const forEmployees = (a: NavAudience) => !a.isAdmin || a.isEmployee
 
 /** מסך של קבלן, ולא של מי שמחזיק במקרה את המפתח שלו. */
 export const forContractors = (a: NavAudience) => a.isContractor
+
+/**
+ * מסך של לקוח שמבצע בעצמו (0133).
+ *
+ * אותו נימוק של `forContractors`: המפתח ניתן לתפקיד `customer_manager` כולו,
+ * כי השער האמיתי הוא הדגל פר-לקוח — ובלי הגדר הזו כל מנהל אצל לקוח היה רואה
+ * רשומת סגל שתמיד תישאר ריקה.
+ */
+export const forSelfPerformingCustomers = (a: NavAudience) => a.isSelfPerformingCustomer
 
 export interface NavItem {
   to: string
@@ -166,6 +184,14 @@ export const NAV_SECTIONS: NavSection[] = [
          מערכת (שעוקף כל מפתח) ולכל איש משרד שקיבל אותו בטעות, ולשניהם אין
          סגל משלהם — `my_contractor_workers` היה מחזיר להם רשימה ריקה. */
       { to: '/my/staff', label: 'העובדים שלי', icon: Users, perm: PERM.PORTAL_MANAGE_WORKERS, audience: forContractors },
+      /* המקבילה של הלקוח שמבצע בעצמו (0133) — אותה רשומה, מאגר אחר. */
+      {
+        to: '/my/crew',
+        label: 'הסגל שלי',
+        icon: Users,
+        perm: PERM.CUSTOMERS_MANAGE_OWN_STAFF,
+        audience: forSelfPerformingCustomers,
+      },
       { to: '/my/notifications', label: 'התראות', icon: Bell, perm: PERM.NOTIFICATIONS_PREFERENCES },
     ],
   },
@@ -265,6 +291,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/my/attendance': 'שעון נוכחות',
   '/my/notifications': 'התראות',
   '/my/staff': 'העובדים שלי',
+  '/my/crew': 'הסגל שלי',
   '/settings': 'הגדרות',
   '/portal': 'כספים ותשלומים',
 }

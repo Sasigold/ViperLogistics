@@ -7,8 +7,10 @@ import type {
   Contractor,
   ContractorWorker,
   Customer,
+  AssignableCustomerWorker,
   CustomerBoardField,
   CustomerExecutionMethodRow,
+  CustomerWorker,
   CustomerTruck,
   CustomerIncomeSplit,
   CustomerPricingRule,
@@ -272,6 +274,94 @@ export function useContractorAssignableWorkers(contractorId?: string | null) {
       })
       if (error) throw error
       return (data ?? []) as AssignableContractorWorker[]
+    },
+  })
+}
+
+/**
+ * סגל העובדים של הלקוח שמבצע בעצמו (0133) — הרשימה כפי שהיא ניתנת לשיבוץ,
+ * עם התפקידים שהוגדרו לכל אחד.
+ *
+ * בלי ארגומנט היא מחזירה את הסגל של הלקוח של הקורא; המשרד נוקב במזהה.
+ */
+export function useCustomerAssignableWorkers(customerId?: string | null) {
+  return useQuery({
+    queryKey: ['customer_assignable', customerId ?? 'mine'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('customer_assignable_workers', {
+        p_customer_id: customerId ?? null,
+      })
+      if (error) throw error
+      return (data ?? []) as AssignableCustomerWorker[]
+    },
+  })
+}
+
+/** רשומת הסגל עצמה, לעריכה במסך "הסגל שלי" (0133). */
+export function useCustomerWorkers(customerId?: string | null) {
+  return useQuery({
+    queryKey: ['customer_workers', customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customer_workers')
+        .select('*')
+        .eq('customer_id', customerId)
+        .is('deleted_at', null)
+        .order('full_name')
+      if (error) throw error
+      return data as CustomerWorker[]
+    },
+  })
+}
+
+/** התפקידים שהוגדרו לעובדי הסגל (0133) — הגדרה, לא שיבוץ. */
+export function useCustomerWorkerRoles(customerId?: string | null) {
+  return useQuery({
+    queryKey: ['customer_worker_roles', customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customer_worker_roles')
+        .select('customer_worker_id, role')
+      if (error) throw error
+      return data as { customer_worker_id: string; role: StaffRole }[]
+    },
+  })
+}
+
+/**
+ * שיבוץ עובד מסגל הלקוח למשימה שסומנה שהוא מבצע אותה, והסרתו (0133).
+ *
+ * דרך RPC ולא בכתיבה ישירה, מאותה סיבה של הקבלן: השרת הוא זה שמוודא שהמשימה
+ * אכן סומנה, שהעובד של אותו לקוח, ושראש הצוות אחד למשימה.
+ */
+export function useCustomerWorkerAssign() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: {
+      taskId: string
+      workerId: string
+      on: boolean
+      workSite?: 'field' | 'warehouse' | null
+      role?: StaffRole | null
+      truckId?: string | null
+    }) => {
+      const { error } = await supabase.rpc('customer_assign_worker', {
+        p_task_id: v.taskId,
+        p_worker_id: v.workerId,
+        p_on: v.on,
+        p_work_site: v.workSite ?? null,
+        p_role: v.role ?? null,
+        p_truck_id: v.truckId ?? null,
+      })
+      if (error) throw error
+    },
+    onSettled: (_d, _e, v) => {
+      void qc.invalidateQueries({ queryKey: ['workboard'] })
+      void qc.invalidateQueries({ queryKey: ['tasks', 'one', v.taskId] })
+      void qc.invalidateQueries({ queryKey: ['tasks', 'staffing', v.taskId] })
+      void qc.invalidateQueries({ queryKey: ['customer_assignable'] })
     },
   })
 }
@@ -627,7 +717,7 @@ export function useEventAutoTasks(eventId?: string | null) {
         .from('tasks')
         .select(
           'id, task_date, onsite_start_time, hours_count, worker_count, execution_method_id,' +
-            ' task_types!inner(code), task_pricing(price, is_manual)',
+            ' performed_by, task_types!inner(code), task_pricing(price, is_manual)',
         )
         .eq('event_id', eventId)
         .is('deleted_at', null)

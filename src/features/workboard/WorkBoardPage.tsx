@@ -329,6 +329,8 @@ export default function WorkBoardPage() {
    * `task_contractor_workers` כבר מכירות: הקבלן את שלו, והמשרד את של כולם.
    */
   const canAssignContractor = has(PERM.PORTAL_ASSIGN_WORKERS) || has(PERM.CONTRACTORS_ASSIGN_WORKERS)
+  /* ‏0133: אותו נימוק, מאגר אחר — הסגל של לקוח שמבצע את המשימות שלו בעצמו. */
+  const canAssignOwnStaff = has(PERM.CUSTOMERS_ASSIGN_OWN_STAFF)
   /**
    * מי רשאי לפתוח את הפאנלים — נדרש רק בכרטיס הנייד, שאין בו תאים ולכן אין בו
    * ‏`canEdit` פר-תא. בטבלה השאלה כבר נענית בתא עצמו.
@@ -338,7 +340,8 @@ export default function WorkBoardPage() {
     (has(PERM.TASKS_ASSIGN_WORKER) ||
       has(PERM.TASKS_ASSIGN_DRIVER) ||
       has(PERM.TASKS_ASSIGN_TEAM_LEAD) ||
-      canAssignContractor)
+      canAssignContractor ||
+      canAssignOwnStaff)
   const canOpenDelegation = has(PERM.BOARD_VIEW_STAFFING) && has(PERM.TASKS_DELEGATE)
   const [params, setParams] = useSearchParams()
   const prefs = useRef(loadPrefs())
@@ -573,8 +576,17 @@ export default function WorkBoardPage() {
   }, [trucks, customerTrucks])
 
   const lookups = useMemo<BoardLookups>(
-    () => ({ statuses, trucks, trucksFor, methods, canAssignContractor, noteLines, openPanel }),
-    [statuses, trucks, trucksFor, methods, canAssignContractor, noteLines, openPanel],
+    () => ({
+      statuses,
+      trucks,
+      trucksFor,
+      methods,
+      canAssignContractor,
+      canAssignOwnStaff,
+      noteLines,
+      openPanel,
+    }),
+    [statuses, trucks, trucksFor, methods, canAssignContractor, canAssignOwnStaff, noteLines, openPanel],
   )
 
   /** one height array drives both the legend and every task column, so the

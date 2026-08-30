@@ -149,6 +149,35 @@ export interface ExecutionMethod {
  * שורת ההרשאה של אופן ביצוע אצל לקוח (0002), ושלוש ברירות המחדל שעליה (0130):
  * אחת להקמה, אחת לפירוק, ואחת כללית לכל שאר סוגי המשימות.
  */
+/** עובד מסגל הלקוח שמבצע בעצמו (0133). */
+export interface CustomerWorker {
+  id: string
+  customer_id: string
+  full_name: string
+  phone: string | null
+  id_number: string | null
+  is_active: boolean
+  deleted_at: string | null
+}
+
+/** אותו עובד כפי שהוא משובץ למשימה (0133) — כולל התפקיד והמשאית שלו. */
+export interface CustomerWorkerOnTask {
+  id: string
+  name: string
+  work_site?: 'field' | 'warehouse'
+  role?: StaffRole | null
+  truck_id?: string | null
+  truck_name?: string | null
+}
+
+/** שורה של `customer_assignable_workers` (0133): שם ומערך התפקידים שהוגדרו. */
+export interface AssignableCustomerWorker {
+  worker_id: string
+  full_name: string
+  phone: string | null
+  roles: StaffRole[]
+}
+
 export interface CustomerExecutionMethodRow {
   execution_method_id: string
   is_default: boolean
@@ -543,6 +572,8 @@ export interface EventAutoTask {
   execution_method_id: string | null
   /** null גם כשקיים מחיר, אם למשתמש אין pricing.view */
   price: number | null
+  /** וייפר או ארקו (0120). הטופס טוען אותו כדי שעריכה לא תדרוס אותו. */
+  performed_by: PerformedBy | null
   task_types: { code: 'setup' | 'teardown' }
 }
 
@@ -631,15 +662,18 @@ export interface WorkBoardRow {
   team_lead_id: string | null
   team_lead_name: string | null
   /**
-   * מאיפה הגיע ראש הצוות (0128): שיבוץ פנימי, או עובד של קבלן שסומן ככזה.
-   * ‏null כשאין ראש צוות. שיבוץ פנימי גובר כששניהם קיימים.
+   * מאיפה הגיע ראש הצוות (0128, 0134): שיבוץ פנימי, עובד של קבלן, או עובד
+   * מסגל הלקוח שמבצע בעצמו. ‏null כשאין ראש צוות, וסדר ההכרעה הוא סדר
+   * המנייה — שיבוץ פנימי גובר.
    */
-  team_lead_kind: 'staff' | 'contractor' | null
+  team_lead_kind: 'staff' | 'contractor' | 'customer' | null
   workers: AssignmentPerson[] | null
   drivers: AssignmentPerson[] | null
   contractor_worker_list:
     | { id: string; name: string; contractor_id: string; work_site?: 'field' | 'warehouse'; role?: StaffRole | null }[]
     | null
+  /** סגל הלקוח שמבצע בעצמו, על המשימה (0134). */
+  customer_worker_list: CustomerWorkerOnTask[] | null
   /** null גם כשקיים מחיר, אם למשתמש אין pricing.view — הקבלן תמיד כאן. */
   customer_price: number | null
   price_is_manual: boolean | null
@@ -996,7 +1030,14 @@ export interface MyPermissions {
   roles: StaffRole[]
   /** the permission roles they belong to */
   app_roles: { id: string; key: string; name_he: string }[]
-  customer: { id: string; name: string; color: string; can_create_events: boolean } | null
+  customer: {
+    id: string
+    name: string
+    color: string
+    can_create_events: boolean
+    /** הלקוח מבצע בעצמו: בורר "בוצע ע״י" ורשומת סגל משלו (0120/0133). */
+    performed_by_enabled: boolean
+  } | null
   /** legacy nested shape, kept so `can(resource, action)` call sites still work */
   permissions: Record<string, Partial<Record<PermissionAction, boolean>>>
   /** every registry key, already resolved by the server */

@@ -69,6 +69,8 @@ const SCOPE_MAP: Record<string, NotificationScopeKind[]> = {
   event_updated: ['customer'],
   event_cancelled: ['customer'],
   spec_uploaded: ['customer'],
+  /* ‏0136: המעבר בין זרועות הביצוע נבדק מול תחולת הלקוח, כמו שאר האירוע. */
+  task_performed_by_changed: ['customer'],
   task_published: ['worker', 'contractor'],
   task_unpublished: ['worker', 'contractor'],
   task_assigned: ['worker', 'contractor'],
