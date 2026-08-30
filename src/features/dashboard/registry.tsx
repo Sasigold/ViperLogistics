@@ -96,6 +96,11 @@ import {
 } from './widgets/incomeWidgets'
 import { CustomerSpendWidget, SpendByEventWidget, SpendTrendWidget } from './widgets/spendWidgets'
 import {
+  CustomerCommissionWidget,
+  CustomerEventsTotalWidget,
+  CustomerMonthsWidget,
+} from './widgets/customerMonthlyWidgets'
+import {
   MyClockWidget,
   MyHoursWidget,
   MyNextShiftWidget,
@@ -315,6 +320,59 @@ export const WIDGETS: WidgetDef[] = [
     usesRange: true,
     sections: ['spend.summary'],
     Component: SpendTrendWidget,
+  },
+
+  /* ── כספים: הסיכום החודשי של הלקוח (0143) ────────────────────────────────
+     שלושתם על סקשן אחד, כמו שלישיית ההוצאה שמעליהם, ומאותו נימוק. ‏`kinds`
+     לצד `perms` הוא החצי הקליינטי של הגדר שהסקשן מעמיד בשרת: `app.has`
+     מחזיר true לאדמין בהגדרה, ובלי הגדר הזאת "האירועים שלי" היה מופיע אצלו
+     על נתוני כל החברה. */
+  {
+    id: 'finance.my_events_total',
+    title: 'סכום האירועים שלי',
+    description: 'סך החיוב על האירועים שלך בטווח — ועמלה, למי שיש לו',
+    group: 'finance',
+    icon: icon(HandCoins),
+    perms: [PERM.FINANCE_CUSTOMER_MONTHLY],
+    kinds: ['customer_user'],
+    sizes: ['sm'],
+    defaultOn: true,
+    usesRange: true,
+    wantsDelta: true,
+    sections: ['customer.monthly'],
+    Component: CustomerEventsTotalWidget,
+  },
+  {
+    id: 'finance.my_commission',
+    title: 'עמלה',
+    description: 'העמלה שמגיעה לך על האירועים שחצו את הסף. מוצג רק למי שסוכמה לו עמלה',
+    group: 'finance',
+    icon: icon(Percent),
+    perms: [PERM.FINANCE_CUSTOMER_MONTHLY],
+    kinds: ['customer_user'],
+    sizes: ['sm'],
+    defaultOn: true,
+    usesRange: true,
+    wantsDelta: true,
+    sections: ['customer.monthly'],
+    Component: CustomerCommissionWidget,
+  },
+  {
+    id: 'cust.my_months',
+    title: 'אירועים לפי חודש',
+    /* הטבלה אינה קוראת את הטווח במכוון (`usesRange` כבוי): החלון שלה הוא
+       שנים־עשר חודשים, ולקוח שנעול על החודש הנוכחי היה רואה שורה אחת.
+       אותו נימוק בדיוק של שני כרטיסי הצי ב-0090. */
+    description: 'כמה אירועים, כמה כסף וכמה עמלה — בכל אחד מ-12 החודשים האחרונים',
+    group: 'customers',
+    icon: icon(CalendarDays),
+    perms: [PERM.FINANCE_CUSTOMER_MONTHLY],
+    kinds: ['customer_user'],
+    sizes: ['md', 'lg'],
+    defaultOn: true,
+    resizableHeight: true,
+    sections: ['customer.monthly'],
+    Component: CustomerMonthsWidget,
   },
 
   /* ── תפעול ─────────────────────────────────────────────────────────────── */
@@ -1192,6 +1250,8 @@ export const BUILT_IN_DEFAULT: DashboardLayout = {
     /* הצד של הלקוח (0074). יושב באותה שורה ולא בסקשן משלו: אצל הלקוח כל
        השורה שמעליו נעלמת, ואצל איש משרד נעלם רק הוא. */
     { id: 'finance.my_spend', size: 'sm' },
+    { id: 'finance.my_events_total', size: 'sm' },
+    { id: 'finance.my_commission', size: 'sm' },
 
     { id: 'me.quick_actions', size: 'xl' },
 
@@ -1211,6 +1271,7 @@ export const BUILT_IN_DEFAULT: DashboardLayout = {
     { id: 'finance.income_mix', size: 'md' },
     { id: 'finance.profit_summary', size: 'md' },
 
+    { id: 'cust.my_months', size: 'md' },
     { id: 'finance.my_spend_by_event', size: 'md' },
     { id: 'finance.my_spend_trend', size: 'md' },
   ],

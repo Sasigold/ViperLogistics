@@ -20,6 +20,10 @@ export interface Customer {
   warehouse_id: string | null
   /** האם בורר "בוצע ע"י" (ארקו/וייפר) מופעל אצל הלקוח (0120) */
   performed_by_enabled: boolean
+  /** אחוז העמלה על אירוע שחצה את הסף. null = אין עמלה, ולא אפס (0143) */
+  commission_pct: number | null
+  /** הסכום שאירוע צריך לעבור ממש כדי לזכות בעמלה. 0 = כל אירוע (0143) */
+  commission_min_event: number
   is_active: boolean
   deleted_at: string | null
 }

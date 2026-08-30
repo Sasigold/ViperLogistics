@@ -80,6 +80,9 @@ export const PERM = {
   DASHBOARD_CONTRACTORS: 'dashboard.contractors',
   DASHBOARD_EXPORT: 'dashboard.export',
   DASHBOARD_CUSTOMIZE: 'dashboard.customize',
+  /* ‏0144. מפתח ולא תנאי על `user_kind`: בורר הטווח הוא מסך בלבד, אבל כך
+     המשרד יכול לפתוח אותו ללקוח אחד בלי לגעת באחרים. */
+  DASHBOARD_CHANGE_RANGE: 'dashboard.change_range',
   DASHBOARD_CONTRACTOR_COST: 'dashboard.contractor_cost',
   DASHBOARD_PAYROLL: 'dashboard.payroll',
   DASHBOARD_MARGIN: 'dashboard.margin',
@@ -132,6 +135,9 @@ export const PERM = {
   /* הצד של הלקוח באותו `task_pricing.price` שאיש משרד רואה כהכנסה. מפתח
      נפרד ולא נגזר: משמעותו תלויה במי שואל, ולכן הוא ניתן ולא יורש. */
   FINANCE_CUSTOMER_SPEND: 'finance.customer_spend',
+  /* הסיכום החודשי שלו (0143) — כמות, סכום ועמלה. ניתן ולא נגזר, מאותו
+     נימוק בדיוק: "האירועים שלי" בידי איש משרד הם כל החברה. */
+  FINANCE_CUSTOMER_MONTHLY: 'finance.customer_monthly',
   /* צי הרכב (0089). `fleet.view` הוא מפתח שורש בכוונה — הוא אינו נגזר
      מ-`settings.trucks`, כי כרטיס הרכב מחזיק מחירי רכישה וליסינג. */
   FLEET_VIEW: 'fleet.view',

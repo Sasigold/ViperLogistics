@@ -350,6 +350,15 @@ OUT="$OUT
 $OUT33"
 
 echo
+echo "== customer monthly / locked dashboard suite =="
+# 34 מקימה שני לקוחות משלה ב-current_date+500 — אחד עם עמלה ואחד בלי — ובודקת
+# את הסיכום החודשי, את הסף החמור, ואת הדשבורד שנסגר ללקוח.
+OUT34=$($PSQL -d vl -f "$HERE/34_customer_monthly_and_locked_dashboard.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT34"
+OUT="$OUT
+$OUT34"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
