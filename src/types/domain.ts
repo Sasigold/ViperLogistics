@@ -674,6 +674,13 @@ export interface WorkBoardRow {
     | null
   /** סגל הלקוח שמבצע בעצמו, על המשימה (0134). */
   customer_worker_list: CustomerWorkerOnTask[] | null
+  /**
+   * האם ללקוח של השורה יש סגל משלו (0140).
+   *
+   * מ-0140 הסגל הזה משובץ גם למשימות שוייפר מבצעת, ולכן התא נפתח לפי הדגל
+   * של הלקוח ולא לפי `performed_by` של המשימה.
+   */
+  customer_self_performing: boolean
   /** null גם כשקיים מחיר, אם למשתמש אין pricing.view — הקבלן תמיד כאן. */
   customer_price: number | null
   price_is_manual: boolean | null
