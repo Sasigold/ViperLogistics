@@ -2,7 +2,8 @@
 \pset format unaligned
 
 -- ===========================================================================
--- 33: סגל העובדים של לקוח שמבצע בעצמו (0133), והלו״ז שמכיר אותו (0134).
+-- 33: סגל העובדים של לקוח שמבצע בעצמו (0133), הלו״ז שמכיר אותו (0134),
+--     והשדות שנפתחים לו בו (0138).
 --
 -- החלון הוא current_date + 490, מעבר ל-480 של 32.
 -- ===========================================================================
@@ -206,3 +207,34 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000033a3
 select t_eq('רשימת הסגל שלו ריקה', customer_assignable_workers(), '[]'::jsonb);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+-- ===== 5. שדות הלוח של מי שמבצע בעצמו (0138) ============================
+
+\echo '--- המשאיות והסטטוס פתוחים לו, ורק לו ---'
+select t_eq('שדה המשאיות פתוח לעריכה ללקוח שמבצע בעצמו',
+  (select state::text from customer_board_fields
+    where customer_id = '10000000-0000-0000-0000-00000000033a' and field_key = 'truck'), 'editable');
+select t_eq('וגם שדה הסטטוס',
+  (select state::text from customer_board_fields
+    where customer_id = '10000000-0000-0000-0000-00000000033a' and field_key = 'status'), 'editable');
+select t_eq('ואצל לקוח רגיל הם נשארים כפי שהמשרד קבע',
+  (select state::text from customer_board_fields
+    where customer_id = '10000000-0000-0000-0000-00000000033b' and field_key = 'truck'), 'visible');
+
+-- ובפועל: הלקוח מזיז טיוטה↔מתוכנן על המשימה שלו (0131 + 0138)
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000033a2', false);
+select t_expect_ok('והוא מזיז את המשימה שלו למתוכנן', $$
+  update tasks set status_id = (select id from statuses
+                                 where entity = 'task' and code = 'planned' and deleted_at is null)
+   where event_id = '30000000-0000-0000-0000-00000000033a'
+     and task_type_id = (select id from task_types where code = 'setup' limit 1)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- והדגל הוא שפותח: לקוח שנדלק אחרי הלידה מקבל אותם בטריגר
+update customers set performed_by_enabled = true where id = '10000000-0000-0000-0000-00000000033b';
+select t_eq('לקוח שהדגל שלו נדלק מאוחר מקבל אותם בטריגר',
+  (select state::text from customer_board_fields
+    where customer_id = '10000000-0000-0000-0000-00000000033b' and field_key = 'truck'), 'editable');
+update customers set performed_by_enabled = false where id = '10000000-0000-0000-0000-00000000033b';
