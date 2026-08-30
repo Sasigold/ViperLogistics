@@ -53,7 +53,14 @@ export const CustomerEventsTotalWidget = sectionKpi<Monthly>({
   delta: true,
   select: (v) => Number(v.total),
   format: (v) => fmtMoney(v),
-  hint: (v) => (v.events > 0 ? `${v.events} אירועים בטווח` : 'אין אירועים בטווח'),
+  /* ואותו הבדל גם כאן: אצל לקוח עמלה הספירה היא של מה שהוא גובה עליו, ואצל
+     לקוח שמשלם — של כל מה שהיה לו. המילה משתנה כי המספר משתנה. */
+  hint: (v) =>
+    v.events === 0
+      ? 'אין אירועים בטווח'
+      : v.commission_pct === null
+        ? `${v.events} אירועים בטווח`
+        : `${v.events} אירועים נגבים בטווח`,
 })
 
 /* ‏`select` מחזיר null ללקוח בלי עמלה, ו-`sectionKpi` אינו מצייר דבר — אותו

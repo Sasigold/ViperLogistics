@@ -17,6 +17,8 @@
 --     הטווח היה יורד מתחת לסף מסיבה טכנית, ומאבד ללקוח כסף.
 --   * שלקוח בלי עמלה מקבל `commission` = null, ולא אפס — זה ההבדל בין
 --     כרטיס שנעלם לכרטיס שכתוב בו 0 ₪.
+--   * שלקוח עמלה סופר רק אירועים שהוא גובה עליהם, ולקוח שמשלם סופר גם
+--     אירוע בלי חיוב. זו ההכרעה היחידה בסקשן שאינה זהה לשני הצדדים.
 --   * שהלקוח אינו יכול לכתוב את הפריסה שלו. עד 0144 `dl_write_own` לא שאלה
 --     מפתח כלל, ולכן הנעילה הייתה מסך בלבד ובקשה ישירה הייתה עוברת.
 --
@@ -108,6 +110,33 @@ insert into task_pricing (task_id, price, is_manual) values
   ('60000000-0000-0000-0000-000000000346', 1300, true),
   ('60000000-0000-0000-0000-000000000347', 1200, true);
 
+-- **אירוע בלי חיוב, לכל אחד משני הלקוחות.** זה מה שמפריד בין שני הצדדים:
+-- לקוח עמלה גובה על אירועים, ואירוע ב-0 לא הביא לו עסקה; לקוח שמשלם לוייפר
+-- שואל "כמה אירועים היו לי", ואירוע שאין עליו מה לשלם הוא עדיין אירוע שהיה.
+insert into events (id, customer_id, event_number, event_date, end_client_name, status_id)
+select v.ev, v.cust, v.num, current_date + 500, 'אירוע בלי חיוב',
+       (select id from statuses where entity = 'event' and deleted_at is null
+         order by sort_order limit 1)
+  from (values ('30000000-0000-0000-0000-000000000348'::uuid,
+                '10000000-0000-0000-0000-000000000341'::uuid, '9348'),
+               ('30000000-0000-0000-0000-000000000349'::uuid,
+                '10000000-0000-0000-0000-000000000342'::uuid, '9349')) as v(ev, cust, num);
+
+insert into tasks (id, event_id, customer_id, task_type_id, task_date, hours_count, worker_count, status_id)
+select v.tk, v.ev, v.cust, (select id from task_types where code = 'setup' limit 1),
+       current_date + 500, 4, 2,
+       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null)
+  from (values ('60000000-0000-0000-0000-000000000348'::uuid,
+                '30000000-0000-0000-0000-000000000348'::uuid,
+                '10000000-0000-0000-0000-000000000341'::uuid),
+               ('60000000-0000-0000-0000-000000000349'::uuid,
+                '30000000-0000-0000-0000-000000000349'::uuid,
+                '10000000-0000-0000-0000-000000000342'::uuid)) as v(tk, ev, cust);
+
+insert into task_pricing (task_id, price, is_manual) values
+  ('60000000-0000-0000-0000-000000000348', 0, true),
+  ('60000000-0000-0000-0000-000000000349', 0, true);
+
 set role authenticated;
 
 
@@ -135,8 +164,8 @@ select t_eq('ולאיש צוות הסקשן חוזר null — אין לו "אי�
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000034a1', false);
 
 -- ‏5000 + 2000 + 2000.01 + 2500 (החוצה טווח) = 11500.01. האירוע שבוטל אינו
--- נספר, ושל הלקוח האחר אינו נראה כלל.
-select t_eq('ארבעה אירועים חיים בטווח — הביטול והלקוח האחר אינם בהם',
+-- נספר, של הלקוח האחר אינו נראה כלל, ושאין עליו חיוב אינו נגבה.
+select t_eq('ארבעה אירועים נגבים בטווח — הביטול, הלקוח האחר וחסר החיוב אינם בהם',
   ((dashboard_sections(array['customer.monthly'], current_date + 499, current_date + 501)
       -> 'customer.monthly' ->> 'events')::int), 4);
 
@@ -192,9 +221,11 @@ select t_eq('והסכום שלו אינו נפגע מכך',
   ((dashboard_sections(array['customer.monthly'], current_date + 499, current_date + 501)
       -> 'customer.monthly' ->> 'total')::numeric), 9000.00::numeric);
 
-select t_eq('והוא רואה את האירוע שלו בלבד',
+-- ושני אירועים, כי אצלו גם אירוע בלי חיוב נספר: הוא שואל כמה אירועים היו לו,
+-- לא על כמה הוא גובה. זו ההכרעה היחידה בסקשן שאינה זהה לשני הצדדים.
+select t_eq('והוא רואה את שני האירועים שלו, כולל זה שאין עליו מה לשלם',
   ((dashboard_sections(array['customer.monthly'], current_date + 499, current_date + 501)
-      -> 'customer.monthly' ->> 'events')::int), 1);
+      -> 'customer.monthly' ->> 'events')::int), 2);
 
 
 -- ===== §6: הדשבורד אינו שלו לסדר (0144) ===================================

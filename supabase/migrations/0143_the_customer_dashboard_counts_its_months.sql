@@ -618,6 +618,9 @@ begin
          `total <= v_com_min` ⇒ 0. והעיגול הוא **פר אירוע** ואז סכימה, כדי
          שהמספר החודשי יהיה סך מה שכל אירוע באמת מזכה בו.
 
+       • **ולקוח עמלה סופר רק את מה שהוא גובה עליו** — ראו `billed` למטה.
+         זו ההכרעה היחידה כאן שאינה זהה לשני הצדדים, ובכוונה.
+
        `months` הוא חלון של שנים־עשר חודשים המסתיים בחודש של `p_to`, ובאיחוד
        עם הטווח שנבחר. הוא אינו נחתך ב-`p_from` במכוון: הלקוח נעול על החודש
        הנוכחי (0144), וטבלה חודשית שהטווח חותך אותה הייתה מציגה שורה אחת.
@@ -646,13 +649,25 @@ begin
       ), ec as (
         select ev.*,
                case when v_com_pct is null or ev.total <= v_com_min then 0
-                    else round(ev.total * v_com_pct / 100, 2) end as commission
+                    else round(ev.total * v_com_pct / 100, 2) end as commission,
+               /* לקוח עמלה סופר רק את מה שהוא גובה עליו. שני הצדדים אינם
+                  אותה שאלה: מי שמשלם לוייפר (ארקו) שואל "כמה אירועים היו לי",
+                  ואירוע שאין עליו מה לשלם הוא עדיין אירוע שהיה; מי שמביא
+                  עבודה ומקבל עליה עמלה שואל "על כמה אני גובה", ואירוע בלי
+                  חיוב לא הביא לו עסקה. ספירתו הייתה מנפחת את "כמה אירועים"
+                  מול "כמה כסף" בדיוק אצל מי שקורא את שניהם זה מול זה.
+
+                  הדגל הוא שמכריע, לא השם: `commission_pct` הוא מה שהופך לקוח
+                  לצד הגובה, וזה מה שנשאל כאן. */
+               (v_com_pct is null or ev.total > 0) as billed
           from ev
       )
       select jsonb_build_object(
-        'events',     (select count(*) from ec where event_date between p_from and p_to),
+        'events',     (select count(*) from ec where billed and event_date between p_from and p_to),
         'total',      (select round(coalesce(sum(total), 0), 2)
-                         from ec where event_date between p_from and p_to),
+                         from ec where billed and event_date between p_from and p_to),
+        /* העמלה אינה זקוקה ל-`billed`: אירוע שחצה את הסף נושא חיוב בהגדרה,
+           והתנאי כאן היה מסתיר את זה במקום להסביר. */
         'commission', case when v_com_pct is null then null
                            else (select round(coalesce(sum(commission), 0), 2)
                                    from ec where event_date between p_from and p_to) end,
@@ -664,7 +679,7 @@ begin
                    round(sum(total), 2) as total,
                    case when v_com_pct is null then null
                         else round(sum(commission), 2) end as commission
-              from ec group by month) m))
+              from ec where billed group by month) m))
         into v_val;
 
     /* צי הרכב (0089). שני הסקשנים אינם קוראים את p_from/p_to במכוון: תוקף
