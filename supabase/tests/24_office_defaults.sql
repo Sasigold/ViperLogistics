@@ -70,23 +70,46 @@ insert into task_type_execution_methods (task_type_id, execution_method_id)
 select t.id, '13000000-0000-0000-0000-000000024002' from task_types t where t.code = 'setup'
 on conflict do nothing;
 
-insert into customer_execution_methods (customer_id, execution_method_id, is_default) values
-  ('10000000-0000-0000-0000-00000000024a', '13000000-0000-0000-0000-000000024001', true),
-  ('10000000-0000-0000-0000-00000000024a', '13000000-0000-0000-0000-000000024002', false)
-on conflict (customer_id, execution_method_id) do update set is_default = excluded.is_default;
+-- ...וגם לסוג משימה שאינו הקמה/פירוק, כדי שברירת המחדל הכללית (0130) תהיה
+-- ברת-בחירה עבורו: החיתוך "מותר לסוג המשימה" נשמר גם אחרי הפיצול.
+insert into task_type_execution_methods (task_type_id, execution_method_id)
+select t.id, '13000000-0000-0000-0000-000000024001' from task_types t where t.name = 'סידור'
+on conflict do nothing;
+
+-- ‏0130: שלוש ברירות מחדל — הקמה, פירוק, וכללית לשאר. "אופן 24" הוא הכללית
+-- וגם זו של הפירוק; "אופן 24 — הקמה בלבד" הוא זו של ההקמה.
+insert into customer_execution_methods
+  (customer_id, execution_method_id, is_default, is_default_setup, is_default_teardown) values
+  ('10000000-0000-0000-0000-00000000024a', '13000000-0000-0000-0000-000000024001', true,  false, true),
+  ('10000000-0000-0000-0000-00000000024a', '13000000-0000-0000-0000-000000024002', false, true,  false)
+on conflict (customer_id, execution_method_id) do update set
+  is_default = excluded.is_default,
+  is_default_setup = excluded.is_default_setup,
+  is_default_teardown = excluded.is_default_teardown;
 
 -- ===== 1. אופן ביצוע ברירת מחדל ==========================================
 
 \echo '--- אופן ביצוע ברירת מחדל ---'
 
-select t_eq('ברירת מחדל אחת לכל היותר לכל לקוח', (
+select t_eq('ברירת מחדל כללית אחת לכל היותר לכל לקוח', (
   select count(*)::int from customer_execution_methods
    where customer_id = '10000000-0000-0000-0000-00000000024a' and is_default), 1);
+select t_eq('ואחת להקמה', (
+  select count(*)::int from customer_execution_methods
+   where customer_id = '10000000-0000-0000-0000-00000000024a' and is_default_setup), 1);
+select t_eq('ואחת לפירוק', (
+  select count(*)::int from customer_execution_methods
+   where customer_id = '10000000-0000-0000-0000-00000000024a' and is_default_teardown), 1);
 
 select t_expect_fail('ושנייה נדחית באינדקס', $$
   update customer_execution_methods set is_default = true
    where customer_id = '10000000-0000-0000-0000-00000000024a'
      and execution_method_id = '13000000-0000-0000-0000-000000024002'$$);
+
+select t_expect_fail('וגם ברירת מחדל שנייה להקמה (0130)', $$
+  update customer_execution_methods set is_default_setup = true
+   where customer_id = '10000000-0000-0000-0000-00000000024a'
+     and execution_method_id = '13000000-0000-0000-0000-000000024001'$$);
 
 insert into events (id, customer_id, event_number, event_date, status_id)
 values ('30000000-0000-0000-0000-00000000024a', '10000000-0000-0000-0000-00000000024a', 'EV-24',
@@ -100,8 +123,30 @@ select '61000000-0000-0000-0000-000000024001', '30000000-0000-0000-0000-00000000
        (select id from statuses where entity = 'task' and code = 'draft' and deleted_at is null)
   from task_types t where t.code = 'setup';
 
-select t_eq('משימה חדשה נולדת עם ברירת המחדל של הלקוח',
+select t_eq('משימת הקמה נולדת עם ברירת המחדל של ההקמה (0130)',
   (select execution_method_id from tasks where id = '61000000-0000-0000-0000-000000024001'),
+  '13000000-0000-0000-0000-000000024002'::uuid);
+
+-- ...ומשימת פירוק באותו אירוע נולדת עם אופן אחר לגמרי. זה כל הסיפור של 0130.
+insert into tasks (id, event_id, customer_id, task_type_id, task_date, worker_count, status_id)
+select '61000000-0000-0000-0000-000000024004', '30000000-0000-0000-0000-00000000024a',
+       '10000000-0000-0000-0000-00000000024a', t.id, current_date + 400, 2,
+       (select id from statuses where entity = 'task' and code = 'draft' and deleted_at is null)
+  from task_types t where t.code = 'teardown';
+
+select t_eq('ומשימת פירוק עם ברירת המחדל של הפירוק',
+  (select execution_method_id from tasks where id = '61000000-0000-0000-0000-000000024004'),
+  '13000000-0000-0000-0000-000000024001'::uuid);
+
+-- סוג משימה שאינו הקמה ופירוק נופל לברירת המחדל הכללית.
+insert into tasks (id, event_id, customer_id, task_type_id, task_date, worker_count, status_id)
+select '61000000-0000-0000-0000-000000024005', '30000000-0000-0000-0000-00000000024a',
+       '10000000-0000-0000-0000-00000000024a', t.id, current_date + 400, 2,
+       (select id from statuses where entity = 'task' and code = 'draft' and deleted_at is null)
+  from task_types t where t.name = 'סידור' limit 1;
+
+select t_eq('וסוג משימה אחר נופל לברירת המחדל הכללית',
+  (select execution_method_id from tasks where id = '61000000-0000-0000-0000-000000024005'),
   '13000000-0000-0000-0000-000000024001'::uuid);
 
 -- בחירה מפורשת גוברת עליה

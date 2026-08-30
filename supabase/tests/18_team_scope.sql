@@ -93,7 +93,8 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000018a2
 select t_eq('הנהג פותח את דף האירוע', app.has('events.view'), true);
 -- ההכרעה של 0079 נשמרת: לראות את האירוע, לא לערוך אותו ולא לקרוא את יומנו
 select t_eq('אך אינו עורך אותו',       app.has('events.edit'), false);
-select t_eq('ואינו קורא את היומן',      app.has('events.activity_log'), false);
+select t_eq('ואת היומן הוא כן קורא (0129)', app.has('events.activity_log'), true);
+select t_eq('אך לא את רשומות המערכת שבו',   app.has('events.activity_system_view'), false);
 -- ‏0102 הוציא את המפרט מהדחייה הגורפת: מי שנוסע לאירוע קורא את המסמך שלו
 select t_eq('ואת המפרט הוא כן רואה',    app.has('events.specs_view'), true);
 select t_eq('אך אינו מעלה אותו',        app.has('events.specs_manage'), false);
@@ -104,7 +105,8 @@ set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000018a3', false);
 select t_eq('ראש הצוות פותח את דף האירוע', app.has('events.view'), true);
 select t_eq('אף הוא אינו עורך',             app.has('events.edit'), false);
-select t_eq('ואינו קורא את היומן',           app.has('events.activity_log'), false);
+select t_eq('ואת היומן הוא כן קורא (0129)',   app.has('events.activity_log'), true);
+select t_eq('אך לא את רשומות המערכת שבו',    app.has('events.activity_system_view'), false);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 

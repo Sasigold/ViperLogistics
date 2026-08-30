@@ -718,7 +718,6 @@ function MethodsTab({ customerId }: { customerId: string }) {
   const { data: methods = [] } = useExecutionMethods()
   const { data: enabledRows = [] } = useCustomerExecutionMethods(customerId)
   const enabled = useMemo(() => enabledRows.map((r) => r.execution_method_id), [enabledRows])
-  const defaultId = enabledRows.find((r) => r.is_default)?.execution_method_id ?? null
   const { data: taskTypes = [] } = useTaskTypes()
   const { data: typeMethods = [] } = useTaskTypeMethods()
 
@@ -732,12 +731,21 @@ function MethodsTab({ customerId }: { customerId: string }) {
     }
     const setupIds = idsFor('setup')
     const teardownIds = idsFor('teardown')
+    /* ‏0130: לכל קבוצה ברירת מחדל משלה, ולכן גם עמודה משלה. הקבוצה השלישית
+       נושאת את הכללית — היא מה שנשאר מ-0111. */
     return [
-      { label: 'הקמה', items: methods.filter((m) => setupIds.has(m.id)) },
-      { label: 'פירוק', items: methods.filter((m) => teardownIds.has(m.id)) },
-      { label: 'סוגי משימות אחרים', items: methods.filter((m) => !setupIds.has(m.id) && !teardownIds.has(m.id)) },
+      { label: 'הקמה', col: 'is_default_setup' as const, items: methods.filter((m) => setupIds.has(m.id)) },
+      { label: 'פירוק', col: 'is_default_teardown' as const, items: methods.filter((m) => teardownIds.has(m.id)) },
+      {
+        label: 'סוגי משימות אחרים',
+        col: 'is_default' as const,
+        items: methods.filter((m) => !setupIds.has(m.id) && !teardownIds.has(m.id)),
+      },
     ].filter((g) => g.items.length > 0)
   }, [methods, taskTypes, typeMethods])
+
+  const defaultFor = (col: 'is_default' | 'is_default_setup' | 'is_default_teardown') =>
+    enabledRows.find((r) => r[col])?.execution_method_id ?? null
 
   const toggle = useMutation({
     mutationFn: async ({ methodId, on }: { methodId: string; on: boolean }) => {
@@ -760,22 +768,28 @@ function MethodsTab({ customerId }: { customerId: string }) {
   })
 
   /**
-   * ברירת המחדל (0111). שתי כתיבות ולא אחת: האינדקס מתיר שורת `is_default`
-   * אחת ללקוח, ולכן הקודמת חייבת לרדת לפני שהחדשה עולה — באותה טרנזקציה זה
-   * היה נופל על האינדקס.
+   * ברירת המחדל (0111), ומ-0130 אחת לכל עמודה. שתי כתיבות ולא אחת: האינדקס
+   * מתיר שורה מסומנת אחת ללקוח בכל עמודה, ולכן הקודמת חייבת לרדת לפני
+   * שהחדשה עולה — באותה טרנזקציה זה היה נופל על האינדקס.
    */
   const setDefault = useMutation({
-    mutationFn: async (methodId: string | null) => {
+    mutationFn: async ({
+      methodId,
+      col,
+    }: {
+      methodId: string | null
+      col: 'is_default' | 'is_default_setup' | 'is_default_teardown'
+    }) => {
       const clear = await supabase
         .from('customer_execution_methods')
-        .update({ is_default: false })
+        .update({ [col]: false })
         .eq('customer_id', customerId)
-        .eq('is_default', true)
+        .eq(col, true)
       if (clear.error) throw clear.error
       if (!methodId) return
       const { error } = await supabase
         .from('customer_execution_methods')
-        .update({ is_default: true })
+        .update({ [col]: true })
         .eq('customer_id', customerId)
         .eq('execution_method_id', methodId)
       if (error) throw error
@@ -798,8 +812,9 @@ function MethodsTab({ customerId }: { customerId: string }) {
           <>
             <p className="type-caption text-ink-secondary">
               אופן ביצוע המשותף לשני הסעיפים מופיע בשניהם — כיבויו משפיע על שניהם.
-              הכוכב מסמן את ברירת המחדל: כל משימה חדשה של הלקוח נולדת איתה, גם
-              כשהיא נוצרת ממקום שאין בו בורר.
+              הכוכב מסמן את ברירת המחדל של אותו סעיף: משימת הקמה חדשה נולדת עם
+              זו שבקבוצת ההקמה, משימת פירוק עם זו שבפירוק, ושאר סוגי המשימות עם
+              הכללית — גם כשהן נוצרות ממקום שאין בו בורר.
             </p>
             {groups.map((g) => (
               <div key={g.label} className="space-y-2">
@@ -824,16 +839,27 @@ function MethodsTab({ customerId }: { customerId: string }) {
                           להיות אחד מהם, וזה מה שהאינדקס בשרת מבטיח (0111). */}
                       {enabled.includes(m.id) && (
                         <IconButton
-                          label={defaultId === m.id ? `${m.name} — ברירת המחדל` : `הגדרת ${m.name} כברירת מחדל`}
+                          label={
+                            defaultFor(g.col) === m.id
+                              ? `${m.name} — ברירת המחדל ל${g.label}`
+                              : `הגדרת ${m.name} כברירת מחדל ל${g.label}`
+                          }
                           size="sm"
                           bare
                           disabled={!canEdit || setDefault.isPending}
-                          onClick={() => setDefault.mutate(defaultId === m.id ? null : m.id)}
+                          onClick={() =>
+                            setDefault.mutate({
+                              methodId: defaultFor(g.col) === m.id ? null : m.id,
+                              col: g.col,
+                            })
+                          }
                         >
                           <Star
                             size={ICON.sm}
                             strokeWidth={STROKE}
-                            className={defaultId === m.id ? 'fill-warning text-warning' : 'text-ink-tertiary'}
+                            className={
+                              defaultFor(g.col) === m.id ? 'fill-warning text-warning' : 'text-ink-tertiary'
+                            }
                           />
                         </IconButton>
                       )}

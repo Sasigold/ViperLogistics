@@ -8,6 +8,7 @@ import type {
   ContractorWorker,
   Customer,
   CustomerBoardField,
+  CustomerExecutionMethodRow,
   CustomerTruck,
   CustomerIncomeSplit,
   CustomerPricingRule,
@@ -512,23 +513,32 @@ export function useCustomerExecutionMethods(customerId?: string | null) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('customer_execution_methods')
-        .select('execution_method_id, is_default')
+        .select('execution_method_id, is_default, is_default_setup, is_default_teardown')
         .eq('customer_id', customerId)
       if (error) throw error
-      return data as { execution_method_id: string; is_default: boolean }[]
+      return data as CustomerExecutionMethodRow[]
     },
   })
 }
 
 /**
- * אופן הביצוע שכל משימה חדשה של הלקוח נולדת איתו (0111).
+ * אופן הביצוע שכל משימה חדשה של הלקוח נולדת איתו (0111), ומ-0130 — שלושה:
+ * אחד להקמה, אחד לפירוק, ואחד כללי לשאר סוגי המשימות. בשטח ההקמה והפירוק
+ * כמעט אף פעם אינן אותו אופן.
  *
- * המסך מקדים בו את הבורר; השרת ממלא אותו בכל מקרה בטריגר `tasks_default_method`,
+ * המסך מקדים בהם את הבורר; השרת ממלא בכל מקרה בטריגר `tasks_default_method`,
  * ולכן זו נוחות ולא הכלל — משימה שנוצרה מדלת שאין בה בורר תקבל אותו בכל זאת.
  */
 export function useCustomerDefaultExecutionMethod(customerId?: string | null) {
   const { data: rows } = useCustomerExecutionMethods(customerId)
-  return useMemo(() => rows?.find((r) => r.is_default)?.execution_method_id ?? null, [rows])
+  return useMemo(
+    () => ({
+      setup: rows?.find((r) => r.is_default_setup)?.execution_method_id ?? null,
+      teardown: rows?.find((r) => r.is_default_teardown)?.execution_method_id ?? null,
+      general: rows?.find((r) => r.is_default)?.execution_method_id ?? null,
+    }),
+    [rows],
+  )
 }
 
 export function useTaskTypeMethods() {

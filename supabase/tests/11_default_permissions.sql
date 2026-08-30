@@ -297,7 +297,10 @@ select t_eq('צוות: אין reports.view (דוחות)',            app.has('re
 -- מהלו״ז. מה שנשאר סגור הוא כל השאר במודול, ובכלל זה מפתחות שנרשמו אחרי
 -- 0011 והיו נדלקים לו בהיסק מ-events.view.
 select t_eq('עובד: events.view נפתח (0079)',              app.has('events.view'), true);
-select t_eq('אך לא יומן הפעילות של האירוע',               app.has('events.activity_log'), false);
+-- ‏0129 הפך את הכלל: היומן נפתח לשטח, ומה שנשאר סגור הוא רשומות המערכת שבו.
+select t_eq('והיומן נפתח לו (0129)',                      app.has('events.activity_log'), true);
+select t_eq('אך לא רשומות המערכת שבו',                    app.has('events.activity_system_view'), false);
+select t_eq('והוא כן מתעד',                               app.has('events.activity_note'), true);
 select t_eq('ולא עריכה',                                  app.has('events.edit'), false);
 select t_eq('ולא ייצוא',                                  app.has('events.export'), false);
 -- המפרט הוא היוצא מן הכלל מאז 0102: שורת הדחייה הגורפת של 0079 נמחקה, והמפתח

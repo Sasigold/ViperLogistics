@@ -593,11 +593,24 @@ function ContractorCell({ row, canEdit, lookups }: CellContext) {
   )
 }
 
+/**
+ * ראש הצוות — פנימי או של קבלן (0128). עד אז התא קרא רק שיבוץ פנימי, וראש
+ * הצוות שהקבלן מינה נבלע ברשימת "צוות" עם כל השאר.
+ */
 function TeamLeadCell({ row, canEdit, lookups }: CellContext) {
   return (
     <PanelCell
       canEdit={canEdit}
-      view={row.team_lead_name ? <Clip>{row.team_lead_name}</Clip> : <Muted />}
+      view={
+        row.team_lead_name ? (
+          <span className="flex items-center justify-center gap-0.5 overflow-hidden">
+            {row.team_lead_kind === 'contractor' && <span className="shrink-0 text-[9px]">👷</span>}
+            <Clip>{row.team_lead_name}</Clip>
+          </span>
+        ) : (
+          <Muted />
+        )
+      }
       onOpen={() => lookups.openPanel(row.id, 'staffing')}
     />
   )
@@ -650,7 +663,16 @@ function TeamCell({ row, canEdit, can, lookups }: CellContext) {
             : '',
       site: e.site,
     })),
-    ...contractorWorkers.map((w) => ({ key: `c:${w.id}`, name: w.name, mark: '👷', site: w.work_site })),
+    /* ראש צוות של קבלן יושב מ-0128 בשורה של ראש הצוות, ולכן אינו חוזר כאן:
+       אדם אחד, מקום אחד. שאר הסגל — נהג הקבלן ועובדיו — נשאר. */
+    ...contractorWorkers
+      .filter((w) => w.role !== 'team_lead')
+      .map((w) => ({
+        key: `c:${w.id}`,
+        name: w.name,
+        mark: w.role === 'driver' ? '👷🚚' : '👷',
+        site: w.work_site,
+      })),
   ]
 
   const view =

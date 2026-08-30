@@ -73,6 +73,7 @@ export function ContractorCrew({
   contractorName,
   assignedWorkerIds,
   workerRoles,
+  hasStaffLead,
   noShow,
   canMarkNoShow,
 }: {
@@ -82,6 +83,8 @@ export function ContractorCrew({
   assignedWorkerIds: string[]
   /** התפקיד שכל עובד קבלן משובץ בו על המשימה (0121), לפי worker_id. */
   workerRoles?: Record<string, StaffRole | null>
+  /** האם על המשימה כבר יושב ראש צוות פנימי (0128) — הוא חוסם ראש צוות של קבלן. */
+  hasStaffLead?: boolean
   noShow: Set<string>
   canMarkNoShow: boolean
 }) {
@@ -147,34 +150,46 @@ export function ContractorCrew({
             (w.roles.includes('team_lead') || w.roles.includes('driver')),
         )
         if (eligible.length === 0) return null
+        /* ‏0128: ראש צוות אחד למשימה — פנימי או של קבלן. השרת דוחה בהודעה
+           מפורשת, והמסך פשוט אינו מציע את מה שיידחה. */
+        const crewLead = Object.entries(workerRoles ?? {}).find(([, r]) => r === 'team_lead')?.[0]
+        const leadTaken = hasStaffLead || !!crewLead
         return (
           <div className="mt-3 space-y-1.5 border-t border-line-subtle pt-3">
             <div className="type-overline">תפקידי הצוות</div>
-            {eligible.map((w) => (
-              <label key={w.worker_id} className="flex items-center justify-between gap-2 type-caption">
-                <span className="truncate">{w.full_name}</span>
-                <Select
-                  selectSize="sm"
-                  className="w-32"
-                  value={workerRoles?.[w.worker_id!] ?? ''}
-                  onChange={(e) =>
-                    contractorAssign.mutate(
-                      {
-                        taskId,
-                        workerId: w.worker_id,
-                        on: true,
-                        role: (e.target.value || null) as StaffRole | null,
-                      },
-                      { onError: (err) => toast.error(errorMessage(err)) },
-                    )
-                  }
-                >
-                  <option value="">עובד</option>
-                  {w.roles.includes('team_lead') && <option value="team_lead">ראש צוות</option>}
-                  {w.roles.includes('driver') && <option value="driver">נהג</option>}
-                </Select>
-              </label>
-            ))}
+            {eligible.map((w) => {
+              const iAmLead = crewLead === w.worker_id
+              return (
+                <label key={w.worker_id} className="flex items-center justify-between gap-2 type-caption">
+                  <span className="truncate">{w.full_name}</span>
+                  <Select
+                    selectSize="sm"
+                    className="w-32"
+                    value={workerRoles?.[w.worker_id!] ?? ''}
+                    onChange={(e) =>
+                      contractorAssign.mutate(
+                        {
+                          taskId,
+                          workerId: w.worker_id,
+                          on: true,
+                          role: (e.target.value || null) as StaffRole | null,
+                        },
+                        { onError: (err) => toast.error(errorMessage(err)) },
+                      )
+                    }
+                  >
+                    <option value="">עובד</option>
+                    {w.roles.includes('team_lead') && (!leadTaken || iAmLead) && (
+                      <option value="team_lead">ראש צוות</option>
+                    )}
+                    {w.roles.includes('driver') && <option value="driver">נהג</option>}
+                  </Select>
+                </label>
+              )
+            })}
+            {hasStaffLead && (
+              <p className="type-caption text-ink-tertiary">למשימה כבר מוגדר ראש צוות.</p>
+            )}
           </div>
         )
       })()}
@@ -214,6 +229,7 @@ export function ContractorDelegationCard({
   contractor,
   assignedWorkerIds,
   workerRoles,
+  hasStaffLead,
   noShow,
   canDelegate,
   canEditPricing,
@@ -228,6 +244,8 @@ export function ContractorDelegationCard({
   contractor: Contractor | undefined
   assignedWorkerIds: string[]
   workerRoles?: Record<string, StaffRole | null>
+  /** ראש צוות פנימי כבר על המשימה (0128) — נמסר הלאה ל-`ContractorCrew`. */
+  hasStaffLead?: boolean
   noShow: Set<string>
   canDelegate: boolean
   canEditPricing: boolean
@@ -450,6 +468,7 @@ export function ContractorDelegationCard({
             contractorName={contractor?.name ?? null}
             assignedWorkerIds={assignedWorkerIds}
             workerRoles={workerRoles}
+            hasStaffLead={hasStaffLead}
             noShow={noShow}
             canMarkNoShow={canMarkNoShow}
           />
@@ -724,7 +743,11 @@ export function StaffingPanel({
     )
     return ids.size === 0 ? trucks : trucks.filter((t) => ids.has(t.id))
   }, [trucks, customerTrucks, data?.task.customer_id])
-  const assignedCount = byRole('worker').length + byRole('driver').length + contractorWorkers.length
+  /* ראש צוות הוא ראש ועובד בעת ובעונה אחת, והמכסה בשרת סופרת שורות ולא
+     תפקידים — ולכן הוא נספר. עד 0128 המונה כאן השמיט אותו ואילו זה שבכרטיס
+     המשימה כלל אותו, ושני מסכים הראו שני מספרים לאותה משימה. */
+  const assignedCount =
+    byRole('worker').length + byRole('driver').length + byRole('team_lead').length + contractorWorkers.length
 
   /* איזה קבלנים יש למשימה, משלושה מקורות שאף אחד מהם אינו זמין תמיד:
      שורות ה-terms (חסומות בלי מפתח מחירים), הקבלן המשוקף על המשימה, והקבלנים
@@ -902,6 +925,10 @@ export function StaffingPanel({
                   <div key={w.worker_id} className="flex flex-wrap items-center gap-2">
                     <span className="min-w-28 flex-1 truncate type-body">
                       👷 {w.full_name}
+                      {/* התפקיד שהקבלן נתן לו על המשימה (0121). בלעדיו כל
+                          הסגל נראה כאן זהה, וראש הצוות של הקבלן נעלם. */}
+                      {w.role === 'team_lead' && <Badge tone="info">ראש צוות</Badge>}
+                      {w.role === 'driver' && <Badge tone="info">נהג</Badge>}
                       {w.no_show && <Badge tone="error">לא התייצב</Badge>}
                     </span>
                     {site(
@@ -943,6 +970,7 @@ export function StaffingPanel({
                     workerRoles={Object.fromEntries(
                       contractorWorkers.filter((w) => w.contractor_id === cid).map((w) => [w.worker_id, w.role]),
                     )}
+                    hasStaffLead={byRole('team_lead').length > 0}
                     noShow={new Set()}
                     canMarkNoShow={false}
                   />
@@ -1025,6 +1053,7 @@ export function ContractorPanel({
                 contractor={contractors.find((c) => c.id === term.contractor_id)}
                 assignedWorkerIds={mine.map((w) => w.worker_id)}
                 workerRoles={Object.fromEntries(mine.map((w) => [w.worker_id, w.role]))}
+                hasStaffLead={(data.assignments ?? []).some((a) => a.role === 'team_lead')}
                 noShow={new Set(mine.filter((w) => w.no_show).map((w) => w.worker_id))}
                 canDelegate={canDelegate}
                 canEditPricing={canEditPricing}

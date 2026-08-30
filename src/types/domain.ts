@@ -146,6 +146,17 @@ export interface ExecutionMethod {
 }
 
 /**
+ * שורת ההרשאה של אופן ביצוע אצל לקוח (0002), ושלוש ברירות המחדל שעליה (0130):
+ * אחת להקמה, אחת לפירוק, ואחת כללית לכל שאר סוגי המשימות.
+ */
+export interface CustomerExecutionMethodRow {
+  execution_method_id: string
+  is_default: boolean
+  is_default_setup: boolean
+  is_default_teardown: boolean
+}
+
+/**
  * מחזור החיים של משימה (0063). טיוטה ומתוכנן הם עבודה שעדיין בבנייה — העובד
  * המשובץ אינו רואה אותה בשום מסך ואינו מקבל עליה התראה; משובץ הוא הפרסום.
  */
@@ -619,6 +630,11 @@ export interface WorkBoardRow {
   updated_at: string
   team_lead_id: string | null
   team_lead_name: string | null
+  /**
+   * מאיפה הגיע ראש הצוות (0128): שיבוץ פנימי, או עובד של קבלן שסומן ככזה.
+   * ‏null כשאין ראש צוות. שיבוץ פנימי גובר כששניהם קיימים.
+   */
+  team_lead_kind: 'staff' | 'contractor' | null
   workers: AssignmentPerson[] | null
   drivers: AssignmentPerson[] | null
   contractor_worker_list:
