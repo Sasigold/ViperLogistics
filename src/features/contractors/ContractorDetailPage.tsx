@@ -718,7 +718,7 @@ function TasksTab({ contractorId }: { contractorId: string }) {
 
   /* סימון קבוצתי. ‏RPC ולא לולאת עדכונים: ‏`paid_amount` הוא ה-`price` של כל
      שורה בנפרד, ולכן `update().in()` יחיד אינו יכול לכתוב אותו — ועשרים
-     בקשות אינן אטומיות. ‏RLS ממשיכה להכריע בתוך הפונקציה (0143). */
+     בקשות אינן אטומיות. ‏RLS ממשיכה להכריע בתוך הפונקציה (0146). */
   const setPaidBulk = useMutation({
     mutationFn: async ({ taskIds, paid }: { taskIds: string[]; paid: boolean }) => {
       const { data, error } = await supabase.rpc('set_contractor_terms_paid', {

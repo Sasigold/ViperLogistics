@@ -106,7 +106,7 @@ const INLINE =
   'focus:border-primary focus:outline-none focus:ring-2 focus:ring-[var(--vl-focus-ring)]'
 
 /**
- * ‏0144: איסוף מספקים על המשימה.
+ * ‏0147: איסוף מספקים על המשימה.
  *
  * ההערה הזאת אינה נכתבת בתא — היא מגיעה מהאירוע, ולכן היא צ׳יפ שמונח מעל
  * ההערה הידנית ולא טקסט שמתערבב בה. ‏"יש איסוף" בלי "ממי" אינו מספיק כדי
@@ -933,7 +933,7 @@ export const BOARD_FIELDS: BoardField[] = [
         canEdit={canEdit}
         view={
           <>
-            {/* ‏0144: איסוף מספקים הוא הערה שהאירוע כותב, ולא המשתמש — ולכן
+            {/* ‏0147: איסוף מספקים הוא הערה שהאירוע כותב, ולא המשתמש — ולכן
                 הוא יושב מעל ההערה הידנית ואינו נכתב לתוכה. */}
             {row.supplier_pickup && <SupplierPickupChip names={row.supplier_names} />}
             {row.notes ? (

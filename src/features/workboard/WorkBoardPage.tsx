@@ -540,7 +540,7 @@ export default function WorkBoardPage() {
   const noteLines = useMemo(() => {
     const perLine = charsPerLine(metrics.col, parseFloat(boardFontSize) * 16)
     const most = rows.reduce((m, r) => {
-      /* ‏0144: הצ׳יפ של איסוף מספקים לוקח שורה משלו מעל ההערה, ולכן הוא
+      /* ‏0147: הצ׳יפ של איסוף מספקים לוקח שורה משלו מעל ההערה, ולכן הוא
          נספר כאן — אחרת התא היה גולש בדיוק בשורה הזאת. */
       const chip = r.supplier_pickup ? 1 : 0
       if (!r.notes) return Math.max(m, chip)
@@ -1691,7 +1691,7 @@ const MobileTaskCard = memo(function MobileTaskCard({
           </span>
         )}
 
-        {/* ‏0144: הכרטיס בנייד אינו מציג הערות, אבל האיסוף אינו הערה שנכתבה
+        {/* ‏0147: הכרטיס בנייד אינו מציג הערות, אבל האיסוף אינו הערה שנכתבה
             — הוא נתון של האירוע, ומי שעובד מהטלפון צריך אותו לא פחות. */}
         {row.supplier_pickup && <SupplierPickupChip names={row.supplier_names} />}
 

@@ -706,7 +706,7 @@ export interface WorkBoardRow {
   /** מי מבצע את המשימה — 'viper' (ברירת מחדל) או 'arko' (0120). */
   performed_by: PerformedBy
   /**
-   * ‏0144: באירוע של השורה יש איסוף מספקים. ‏null כשהשדה חסום לקורא
+   * ‏0147: באירוע של השורה יש איסוף מספקים. ‏null כשהשדה חסום לקורא
    * (`app.can_view_field('event','supplier_pickup')`).
    */
   supplier_pickup: boolean | null

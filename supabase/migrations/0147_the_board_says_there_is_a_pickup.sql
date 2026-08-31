@@ -1,4 +1,4 @@
--- 0144: הלוח אומר שיש איסוף מספקים, ומאיזה ספקים
+-- 0147: הלוח אומר שיש איסוף מספקים, ומאיזה ספקים
 --
 -- הדיווח: **"כשיש איסוף מספקים שתופיע הערה במשימה בלוז העבודה."**
 --
@@ -90,7 +90,7 @@ select
   -- ‏0140: האם ללקוח של השורה יש סגל משלו. עד כה התא נפתח לפי
   -- `performed_by = 'arko'`, וזה כבר אינו התנאי.
   (select app.customer_self_performing(t.customer_id)) as customer_self_performing,
-  -- ‏0144: איסוף מספקים מהאירוע, ומי הספקים.
+  -- ‏0147: איסוף מספקים מהאירוע, ומי הספקים.
   case when (select app.can_view_field('event', 'supplier_pickup'))
        then coalesce(e.supplier_pickup, false) end as supplier_pickup,
   case when (select app.can_view_field('event', 'supplier_pickup'))
