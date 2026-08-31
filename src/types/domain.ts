@@ -705,6 +705,16 @@ export interface WorkBoardRow {
   requires_team_lead: boolean | null
   /** מי מבצע את המשימה — 'viper' (ברירת מחדל) או 'arko' (0120). */
   performed_by: PerformedBy
+  /**
+   * ‏0144: באירוע של השורה יש איסוף מספקים. ‏null כשהשדה חסום לקורא
+   * (`app.can_view_field('event','supplier_pickup')`).
+   */
+  supplier_pickup: boolean | null
+  /**
+   * שמות הספקים לאיסוף, לפי א״ב. ‏null כשאין איסוף, וגם כשלקורא אין הרשאה
+   * לקרוא את קטלוג הספקים — הדגל עדיין דלוק, וההערה מוצגת בלי שמות.
+   */
+  supplier_names: string[] | null
 }
 
 export type PerformedBy = 'viper' | 'arko'

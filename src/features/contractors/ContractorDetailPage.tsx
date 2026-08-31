@@ -6,6 +6,7 @@ import {
   Briefcase,
   Clock,
   ICON,
+  MapPin,
   Plus,
   STROKE,
   SlidersHorizontal,
@@ -33,6 +34,7 @@ import {
   StatusPill,
   Switch,
   Tabs,
+  Tooltip,
   cx,
   useConfirm,
   useToast,
@@ -43,6 +45,7 @@ import { supabase, invokeFunction } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { useContractorAssignableWorkers, useContractorWorkers } from '../../lib/queries'
 import { fmtDate, fmtMoney } from '../../lib/dates'
+import { shortAddress } from '../../lib/address'
 import { EmployeeWorkSettingsCard } from '../attendance/EmployeeWorkSettingsCard'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { RequirePermission } from '../auth/guards'
@@ -59,10 +62,19 @@ interface ContractorTaskRow {
     id: string
     task_date: string
     title: string | null
+    /** המיקום של המשימה, שגובר על זה של האירוע — אותה הכרעה כמו בלוח. */
+    location_text: string | null
     task_types: { name: string } | null
     customers: { name: string } | null
     statuses: { name: string; color: string; is_terminal: boolean } | null
+    /** האירוע שהמשימה שייכת לו. ‏null למשימה עצמאית. */
+    events: { event_date: string; end_client_name: string | null; location_text: string | null } | null
   }
+}
+
+/** המיקום של המשימה גובר על זה של האירוע — אותה הכרעה כמו ב-`work_board_view`. */
+function locationOf(r: ContractorTaskRow) {
+  return r.tasks.location_text || r.tasks.events?.location_text || null
 }
 
 const TABS = [
@@ -664,6 +676,9 @@ function TasksTab({ contractorId }: { contractorId: string }) {
   const canMarkPaid = has(PERM.CONTRACTORS_MARK_PAID)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  /* מי שנבחר לסימון קבוצתי. מתאפס עם כל שינוי בטווח — הבחירה נעשתה על
+     רשימה אחת, ואינה אמורה לשרוד רשימה אחרת. */
+  const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const { data: rows = [], isLoading, error, refetch } = useQuery({
     queryKey: ['contractor_terms', contractorId, from, to],
@@ -671,7 +686,9 @@ function TasksTab({ contractorId }: { contractorId: string }) {
       let q = supabase
         .from('task_contractor_terms')
         .select(
-          'task_id, price, paid_at, paid_amount, tasks!inner(id, task_date, title, deleted_at, task_types(name), customers(name), statuses(name, color, is_terminal))',
+          /* האירוע נשלף יחד עם המשימה: תאריך האירוע, המיקום והלקוח הסופי הם
+             מה שמזהה את העבודה שמשלמים עליה — תאריך המשימה לבדו אינו. */
+          'task_id, price, paid_at, paid_amount, tasks!inner(id, task_date, title, location_text, deleted_at, task_types(name), customers(name), statuses(name, color, is_terminal), events(event_date, end_client_name, location_text))',
         )
         .eq('contractor_id', contractorId)
         .is('tasks.deleted_at', null)
@@ -696,6 +713,30 @@ function TasksTab({ contractorId }: { contractorId: string }) {
       if (error) throw error
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['contractor_terms'] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  /* סימון קבוצתי. ‏RPC ולא לולאת עדכונים: ‏`paid_amount` הוא ה-`price` של כל
+     שורה בנפרד, ולכן `update().in()` יחיד אינו יכול לכתוב אותו — ועשרים
+     בקשות אינן אטומיות. ‏RLS ממשיכה להכריע בתוך הפונקציה (0143). */
+  const setPaidBulk = useMutation({
+    mutationFn: async ({ taskIds, paid }: { taskIds: string[]; paid: boolean }) => {
+      const { data, error } = await supabase.rpc('set_contractor_terms_paid', {
+        p_contractor_id: contractorId,
+        p_task_ids: taskIds,
+        p_paid: paid,
+      })
+      if (error) throw error
+      return (data as number | null) ?? 0
+    },
+    /* מדווחים את מה שהפונקציה באמת עדכנה ולא את מה שנבחר: ‏RLS יכולה לחסום
+       שורה, והמסך לא יאמר שהיא שולמה. */
+    onSuccess: (count, v) => {
+      setSelected(new Set())
+      if (count === 0) toast.error('לא עודכנה אף שורה')
+      else toast.success(v.paid ? `${count} משימות סומנו כשולמו` : `הסימון הוסר מ-${count} משימות`)
+      void qc.invalidateQueries({ queryKey: ['contractor_terms'] })
+    },
     onError: (e) => toast.error(errorMessage(e)),
   })
 
@@ -727,6 +768,20 @@ function TasksTab({ contractorId }: { contractorId: string }) {
         render: (r) => <span className="tabular">{fmtDate(r.tasks.task_date)}</span>,
       },
       {
+        /* תאריך האירוע אינו תאריך המשימה: הקמה ופירוק של אותו אירוע יושבים
+           על שני ימים, והתשלום נקרא מול האירוע. שניהם מוצגים. */
+        key: 'event_date',
+        header: 'תאריך אירוע',
+        width: 110,
+        sortValue: (r) => r.tasks.events?.event_date,
+        render: (r) =>
+          r.tasks.events ? (
+            <span className="tabular">{fmtDate(r.tasks.events.event_date)}</span>
+          ) : (
+            <span className="text-ink-tertiary">—</span>
+          ),
+      },
+      {
         key: 'task',
         header: 'משימה',
         width: 180,
@@ -739,6 +794,34 @@ function TasksTab({ contractorId }: { contractorId: string }) {
         width: 150,
         sortValue: (r) => r.tasks.customers?.name,
         render: (r) => r.tasks.customers?.name ?? <span className="text-ink-tertiary">—</span>,
+      },
+      {
+        key: 'end_client',
+        header: 'לקוח סופי',
+        width: 160,
+        sortValue: (r) => r.tasks.events?.end_client_name,
+        render: (r) =>
+          r.tasks.events?.end_client_name ? (
+            <span className="block truncate">{r.tasks.events.end_client_name}</span>
+          ) : (
+            <span className="text-ink-tertiary">—</span>
+          ),
+      },
+      {
+        key: 'location',
+        header: 'מיקום',
+        width: 200,
+        sortValue: (r) => locationOf(r),
+        render: (r) => {
+          const loc = locationOf(r)
+          return loc ? (
+            <Tooltip content={loc}>
+              <span className="block truncate">{shortAddress(loc)}</span>
+            </Tooltip>
+          ) : (
+            <span className="text-ink-tertiary">—</span>
+          )
+        },
       },
       {
         key: 'status',
@@ -822,6 +905,36 @@ function TasksTab({ contractorId }: { contractorId: string }) {
         storageKey="contractor-terms"
         pageSize={20}
         defaultSort={{ key: 'date', dir: 'desc' }}
+        /* הבחירה המרובה נפתחת רק למי שרשאי לסמן תשלום — לאחרים אין מה
+           לעשות עם התיבות. */
+        selectable={canMarkPaid}
+        selected={selected}
+        onSelectedChange={setSelected}
+        bulkActions={
+          canMarkPaid
+            ? (ids) => (
+                <>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={setPaidBulk.isPending}
+                    onClick={() => setPaidBulk.mutate({ taskIds: ids, paid: true })}
+                  >
+                    <Banknote size={ICON.sm} strokeWidth={STROKE} />
+                    סימון כשולם
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={setPaidBulk.isPending}
+                    onClick={() => setPaidBulk.mutate({ taskIds: ids, paid: false })}
+                  >
+                    ביטול סימון תשלום
+                  </Button>
+                </>
+              )
+            : undefined
+        }
         mobileCard={(r) => (
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
@@ -833,8 +946,19 @@ function TasksTab({ contractorId }: { contractorId: string }) {
               )}
             </div>
             <p className="truncate type-body font-semibold">{r.tasks.title || r.tasks.task_types?.name}</p>
-            {r.tasks.customers?.name && (
-              <p className="truncate type-caption text-ink-tertiary">{r.tasks.customers.name}</p>
+            {r.tasks.events && (
+              <p className="type-caption text-ink-tertiary">אירוע: {fmtDate(r.tasks.events.event_date)}</p>
+            )}
+            {(r.tasks.customers?.name || r.tasks.events?.end_client_name) && (
+              <p className="truncate type-caption text-ink-tertiary">
+                {[r.tasks.customers?.name, r.tasks.events?.end_client_name].filter(Boolean).join(' · ')}
+              </p>
+            )}
+            {locationOf(r) && (
+              <p className="flex items-center gap-1 truncate type-caption text-ink-tertiary">
+                <MapPin size={ICON.sm} strokeWidth={STROKE} className="shrink-0" />
+                {shortAddress(locationOf(r)!)}
+              </p>
             )}
             <div className="flex items-center gap-2">
               <Input
@@ -874,10 +998,26 @@ function TasksTab({ contractorId }: { contractorId: string }) {
             {/* a fixed 9rem is narrower than a date control's own minimum on a
                 phone, so the two fields share the row and grow into it instead */}
             <Field label="מתאריך" className="grow basis-36 sm:w-36 sm:grow-0 sm:basis-auto">
-              <Input type="date" inputSize="sm" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <Input
+                type="date"
+                inputSize="sm"
+                value={from}
+                onChange={(e) => {
+                  setFrom(e.target.value)
+                  setSelected(new Set())
+                }}
+              />
             </Field>
             <Field label="עד תאריך" className="grow basis-36 sm:w-36 sm:grow-0 sm:basis-auto">
-              <Input type="date" inputSize="sm" value={to} onChange={(e) => setTo(e.target.value)} />
+              <Input
+                type="date"
+                inputSize="sm"
+                value={to}
+                onChange={(e) => {
+                  setTo(e.target.value)
+                  setSelected(new Set())
+                }}
+              />
             </Field>
           </div>
         }

@@ -350,6 +350,15 @@ OUT="$OUT
 $OUT33"
 
 echo
+echo "== group payment / supplier pickup suite =="
+# 34 מקימה לקוח, שני קבלנים, ספקים ושני אירועים משלה ב-current_date+500:
+# תשלום לקבוצה שלמה (0143), ואיסוף מספקים על הלו״ז (0144).
+OUT34=$($PSQL -d vl -f "$HERE/34_group_payment_and_supplier_pickup.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT34"
+OUT="$OUT
+$OUT34"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

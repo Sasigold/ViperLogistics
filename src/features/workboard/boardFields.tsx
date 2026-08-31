@@ -105,6 +105,29 @@ const INLINE =
   `w-full min-w-0 rounded border border-line bg-surface px-1.5 py-0.5 text-center ${FS} tabular ` +
   'focus:border-primary focus:outline-none focus:ring-2 focus:ring-[var(--vl-focus-ring)]'
 
+/**
+ * ‏0144: איסוף מספקים על המשימה.
+ *
+ * ההערה הזאת אינה נכתבת בתא — היא מגיעה מהאירוע, ולכן היא צ׳יפ שמונח מעל
+ * ההערה הידנית ולא טקסט שמתערבב בה. ‏"יש איסוף" בלי "ממי" אינו מספיק כדי
+ * לעבוד לפיו, ולכן השמות בפנים; כשהקורא אינו רשאי לראות את קטלוג הספקים
+ * (משתמש קבלן) חוזר `null` והצ׳יפ אומר את מה שהוא כן יודע.
+ *
+ * מיוצא כי הכרטיס בנייד מציג את אותו סימון, ושני המקומות חייבים לומר בדיוק
+ * את אותו דבר.
+ */
+export function SupplierPickupChip({ names, className }: { names: string[] | null; className?: string }) {
+  const list = names?.length ? names.join(', ') : null
+  const text = list ? `איסוף מספקים: ${list}` : 'איסוף מספקים'
+  return (
+    <span className={cx('block rounded bg-warning-subtle px-1 font-medium text-warning-text', FS, className)}>
+      {/* ‏`Clip` ולא `truncate` סתם: רשימת ספקים ארוכה נקראת במלואה בבועה,
+          בלחיצה גם בטלפון — ובלי בועה כשהיא נכנסת ממילא. */}
+      <Clip>{text}</Clip>
+    </span>
+  )
+}
+
 function Muted({ children }: { children?: ReactNode }) {
   return <span className={cx('block w-full px-1.5 text-center text-ink-tertiary', FS)}>{children ?? '—'}</span>
 }
@@ -909,21 +932,28 @@ export const BOARD_FIELDS: BoardField[] = [
       <Editable
         canEdit={canEdit}
         view={
-          row.notes ? (
-            /* הבועה נושאת את ההערה כפי שנכתבה, כולל ירידות שורה, כדי שגם מה
-               שלא נכנס בשורות שעל הלוח ייקרא במלואו */
-            <Clip
-              lines={lookups.noteLines}
-              /* אותה יחידת שורה שהגובה נמדד בה, אחרת השורה האחרונה נחתכת
-                 בשבריר פיקסל — `--vl-board-line` נקבע על מיכל הלוח. */
-              className="leading-[var(--vl-board-line,1rem)]"
-              title={<span className="block whitespace-pre-wrap text-start">{row.notes}</span>}
-            >
-              {row.notes}
-            </Clip>
-          ) : (
-            <Muted>{canEdit ? 'הוספת הערה' : undefined}</Muted>
-          )
+          <>
+            {/* ‏0144: איסוף מספקים הוא הערה שהאירוע כותב, ולא המשתמש — ולכן
+                הוא יושב מעל ההערה הידנית ואינו נכתב לתוכה. */}
+            {row.supplier_pickup && <SupplierPickupChip names={row.supplier_names} />}
+            {row.notes ? (
+              /* הבועה נושאת את ההערה כפי שנכתבה, כולל ירידות שורה, כדי שגם מה
+                 שלא נכנס בשורות שעל הלוח ייקרא במלואו */
+              <Clip
+                /* הצ׳יפ לקח שורה משלו, וההערה מוותרת עליה — אחרת התא היה
+                   גולש בדיוק בשורה הזאת. */
+                lines={row.supplier_pickup ? Math.max(1, lookups.noteLines - 1) : lookups.noteLines}
+                /* אותה יחידת שורה שהגובה נמדד בה, אחרת השורה האחרונה נחתכת
+                   בשבריר פיקסל — `--vl-board-line` נקבע על מיכל הלוח. */
+                className="leading-[var(--vl-board-line,1rem)]"
+                title={<span className="block whitespace-pre-wrap text-start">{row.notes}</span>}
+              >
+                {row.notes}
+              </Clip>
+            ) : (
+              !row.supplier_pickup && <Muted>{canEdit ? 'הוספת הערה' : undefined}</Muted>
+            )}
+          </>
         }
         /* ‏textarea ולא input: ההערה היא השדה היחיד בלוח שיש בו ירידות שורה,
            ו-`input` היה מוחק אותן בשקט בכל עריכה — גם כשלא נגעו בהן. */
