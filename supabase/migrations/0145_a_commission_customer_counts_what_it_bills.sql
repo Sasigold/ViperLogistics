@@ -1,75 +1,18 @@
--- 0143: הדשבורד של הלקוח סופר את החודשים שלו
+-- 0145: לקוח עמלה סופר רק את מה שהוא גובה עליו
 --
--- ללקוח יש היום כרטיס אחד שמדבר עליו — "הוצאה על אירועים" (0074) — והוא עונה
--- על הטווח שנבחר ותו לא. שתי שאלות שנשאלו נשארו בלי מסך:
+-- ‏0143 נתן לכל לקוח את "כמה אירועים היו לי, כמה כסף, וכמה עמלה" — וספר בשני
+-- הצדדים את אותם אירועים. זה נכון למי שמשלם לוייפר (ארקו): אירוע שאין עליו
+-- מה לשלם הוא עדיין אירוע שהיה, ו"כמה אירועים היו לי" הוא שאלה על מה קרה,
+-- לא על הכסף. אצל מי שגובה עמלה (קיסר) זו שאלה אחרת: "על כמה אני גובה" —
+-- ואירוע ב-0 לא הביא לו עסקה. ספירתו הייתה מנפחת את "כמה אירועים" מול "כמה
+-- כסף" בדיוק אצל מי שקורא את שני המספרים זה מול זה.
 --
---   • כמה אירועים היו לי החודש, וכמה אני חייב לוייפר.
---   • כמה אירועים, מה הסכום הכולל, וכמה עמלה מגיעה לי.
+-- **הדגל הוא שמכריע, לא השם**, כמו בכל מקום אחר בקובץ הזה: `commission_pct`
+-- הוא מה שהופך לקוח לצד הגובה, וזה מה שנשאל כאן — לא "האם זה קיסר".
 --
--- שתיהן אותה שאלה עם קונפיגורציה אחרת, ולכן הן סקשן אחד ולא שניים.
---
--- ‏**הדגל, לא השם.** ‏0120 קבעה את המוסכמה כשהיא חיברה את "בוצע ע״י" לארקו:
--- הלוגיקה בודקת עמודה על הלקוח, וההצמדה ללקוח מסוים היא עדכון נתונים
--- חד-פעמי. כאן זה חוזר מילה במילה — `commission_pct` הוא מה שנשאל בכל מקום,
--- ולקוח עמלה נוסף בעתיד לא ידרוש שורת קוד.
-
-
--- ===== 1. שתי העמודות ======================================================
---
--- ‏`commission_pct is null` פירושו "אין עמלה", ולא "אפס אחוז". ההבדל אינו
--- סמנטי: אפס היה מציג ללקוח כרטיס עמלה שכתוב בו 0 ₪ בכל חודש, ו-null מסיר
--- את הכרטיס ואת העמודה לגמרי. הסקשן מחזיר null באותה משמעות בדיוק, וזה אותו
--- חוזה שכל ווידג׳ט בדשבורד כבר מקיים.
---
--- הסף הוא עמודה ולא קבוע: "מעל 2,000" הוא תנאי מסחרי של לקוח אחד, ולקוח
--- שיסכם על 5,000 ישנה שורה במסד ולא מיגרציה.
-
-alter table customers
-  add column if not exists commission_pct numeric(5,2)
-    check (commission_pct >= 0 and commission_pct <= 100),
-  add column if not exists commission_min_event numeric(12,2) not null default 0
-    check (commission_min_event >= 0);
-
-comment on column customers.commission_pct is
-  'אחוז העמלה שמגיע ללקוח על אירוע שחצה את הסף. null = אין עמלה, והכרטיס אינו מוצג לו כלל (0143).';
-comment on column customers.commission_min_event is
-  'הסכום שאירוע צריך לעבור (ממש מעל) כדי לזכות בעמלה. 0 = כל אירוע (0143).';
-
--- נתון, לא קוד — כמו 0120. אין לקוח כזה (אשכול בדיקות) ⇒ אפס שורות.
-update customers set commission_pct = 10, commission_min_event = 2000
- where name ilike '%קיסר%' and deleted_at is null;
-
-
--- ===== 2. המפתח ============================================================
---
--- בלי `implied_by`, מאותו נימוק ש-0074 §3 מנסח על `finance.customer_spend`:
--- מפתח שמשמעותו תלויה במי שואל צריך להינתן ולא להיגזר. "האירועים שלי" בידי
--- איש משרד היה מציג את כל החברה תחת כותרת שאומרת "שלי".
---
--- ומוענק ל-`customer_manager` בלבד. ‏`customer_viewer` הוא צפייה בלי כסף —
--- ‏0074 §2 שוללת ממנו את כל המפתחות הכספיים, ו-`supabase/tests/15` טוענת
--- זאת במפורש. עמלה לצופה הייתה סותרת את השורה הזאת.
-
-select app.register_permission('finance.customer_monthly', 'finance',
-       'צפייה בסיכום החודשי של האירועים שלי',
-       p_description => 'כמות אירועים, סכום ועמלה — חודש בחודשו, מהצד של הלקוח',
-       p_category => 'access',
-       p_applies_to => array['customer_user']::user_kind[]);
-
-insert into role_permissions (role_id, permission_key, allowed)
-select r.id, 'finance.customer_monthly', true
-  from permission_roles r where r.key = 'customer_manager'
-on conflict (role_id, permission_key) do update set allowed = true;
-
-
--- ===== 3. הסקשן ============================================================
---
--- הגוף מועתק מ-0114 כלשונו, עם שני `declare` וענף אחד. זו המוסכמה של הקובץ
--- הזה — ‏0041 → 0069 → 0074 → 0090 → 0091 → 0114 עשו בדיוק את זה — ולכן מי
--- שיוסיף סקשן בעתיד ימשיך מכאן.
---
--- `security invoker` כמו קודמיו, ולכן RLS הוא שתוחם את השורות ללקוח הקורא;
--- הפונקציה אינה מסננת לפי `customer_id` בעצמה.
+-- העמלה עצמה אינה זקוקה לסינון: אירוע שחצה את הסף נושא חיוב בהגדרה. הגוף
+-- מועתק כלשונו מ-0143, לפי אותה מוסכמה (0041 → … → 0143), עם עמודת `billed`
+-- וסינוניה בלבד כהבדל.
 
 create or replace function dashboard_sections(
   p_sections text[], p_from date, p_to date, p_opts jsonb default '{}'::jsonb)
@@ -618,6 +561,9 @@ begin
          `total <= v_com_min` ⇒ 0. והעיגול הוא **פר אירוע** ואז סכימה, כדי
          שהמספר החודשי יהיה סך מה שכל אירוע באמת מזכה בו.
 
+       • **ולקוח עמלה סופר רק את מה שהוא גובה עליו** — ראו `billed` למטה.
+         זו ההכרעה היחידה כאן שאינה זהה לשני הצדדים, ובכוונה.
+
        `months` הוא חלון של שנים־עשר חודשים המסתיים בחודש של `p_to`, ובאיחוד
        עם הטווח שנבחר. הוא אינו נחתך ב-`p_from` במכוון: הלקוח נעול על החודש
        הנוכחי (0144), וטבלה חודשית שהטווח חותך אותה הייתה מציגה שורה אחת.
@@ -646,13 +592,25 @@ begin
       ), ec as (
         select ev.*,
                case when v_com_pct is null or ev.total <= v_com_min then 0
-                    else round(ev.total * v_com_pct / 100, 2) end as commission
+                    else round(ev.total * v_com_pct / 100, 2) end as commission,
+               /* לקוח עמלה סופר רק את מה שהוא גובה עליו. שני הצדדים אינם
+                  אותה שאלה: מי שמשלם לוייפר (ארקו) שואל "כמה אירועים היו לי",
+                  ואירוע שאין עליו מה לשלם הוא עדיין אירוע שהיה; מי שמביא
+                  עבודה ומקבל עליה עמלה שואל "על כמה אני גובה", ואירוע בלי
+                  חיוב לא הביא לו עסקה. ספירתו הייתה מנפחת את "כמה אירועים"
+                  מול "כמה כסף" בדיוק אצל מי שקורא את שניהם זה מול זה.
+
+                  הדגל הוא שמכריע, לא השם: `commission_pct` הוא מה שהופך לקוח
+                  לצד הגובה, וזה מה שנשאל כאן. */
+               (v_com_pct is null or ev.total > 0) as billed
           from ev
       )
       select jsonb_build_object(
-        'events',     (select count(*) from ec where event_date between p_from and p_to),
+        'events',     (select count(*) from ec where billed and event_date between p_from and p_to),
         'total',      (select round(coalesce(sum(total), 0), 2)
-                         from ec where event_date between p_from and p_to),
+                         from ec where billed and event_date between p_from and p_to),
+        /* העמלה אינה זקוקה ל-`billed`: אירוע שחצה את הסף נושא חיוב בהגדרה,
+           והתנאי כאן היה מסתיר את זה במקום להסביר. */
         'commission', case when v_com_pct is null then null
                            else (select round(coalesce(sum(commission), 0), 2)
                                    from ec where event_date between p_from and p_to) end,
@@ -664,7 +622,7 @@ begin
                    round(sum(total), 2) as total,
                    case when v_com_pct is null then null
                         else round(sum(commission), 2) end as commission
-              from ec group by month) m))
+              from ec where billed group by month) m))
         into v_val;
 
     /* צי הרכב (0089). שני הסקשנים אינם קוראים את p_from/p_to במכוון: תוקף
