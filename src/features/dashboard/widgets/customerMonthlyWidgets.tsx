@@ -1,6 +1,6 @@
 import { Card, CardBody, CardHeader, DataTable, EmptyState, fmtMoney } from '../../../components/ui'
 import type { Column } from '../../../components/ui'
-import { HandCoins, Percent } from '../../../components/ui/icons'
+import { CalendarDays, HandCoins, Percent } from '../../../components/ui/icons'
 import { fmtMonth } from '../../../lib/dates'
 import { parseISO } from 'date-fns'
 import { useSection } from '../dashboardContext'
@@ -42,6 +42,18 @@ interface Monthly {
   commission_min: number
   months: MonthRow[]
 }
+
+/* ‏"כמות אירועים לחודש" ככרטיס לחודש הנוכחי — הטבלה שמתחת נותנת אותו מספר
+   חודש בחודשו. אותו סקשן, ולכן ספירת ה-`billed` זהה: אצל לקוח עמלה זה מה
+   שהוא גובה עליו, ואצל לקוח שמשלם — כל מה שהיה לו. */
+export const CustomerEventsCountWidget = sectionKpi<Monthly>({
+  section: 'customer.monthly',
+  label: 'אירועים החודש',
+  icon: CalendarDays,
+  tone: '#3b82f6',
+  delta: true,
+  select: (v) => Number(v.events),
+})
 
 export const CustomerEventsTotalWidget = sectionKpi<Monthly>({
   section: 'customer.monthly',
