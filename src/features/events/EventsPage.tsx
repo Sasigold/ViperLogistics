@@ -12,12 +12,13 @@ import {
   Select,
   Spinner,
   StatusPill,
+  Switch,
   Tooltip,
 } from '../../components/ui'
 import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
-import { useCustomFormFields, useCustomers } from '../../lib/queries'
+import { useCustomFormFields, useCustomers, useStatuses } from '../../lib/queries'
 import { fmtDate } from '../../lib/dates'
 import { shortAddress } from '../../lib/address'
 import { EventFormModal } from './EventFormModal'
@@ -26,6 +27,16 @@ import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { lazyPage } from '../../lib/lazyPage'
 import type { EventRow } from '../../types/domain'
+
+/**
+ * שורת הרשימה. ‏`EventRow.statuses` נושא שם וצבע בלבד — כאן צריך גם את
+ * ה-`code`, כי הוא הזהות היציבה של "בוטל" (השם ניתן לעריכה בהגדרות). אותה
+ * הכרעה, ומאותו נימוק, כמו `CalEvent` בלוח השנה.
+ */
+type EventListRow = EventRow & { statuses: { name: string; color: string; code: string | null } | null }
+
+/** הסטטוס שהרשימה מסתירה כברירת מחדל. מזוהה ב-`code` ולא בשם. */
+const CANCELLED = 'cancelled'
 
 /* ExcelJS is ~1MB — keep it out of the initial bundle and load it only when
    the import/export dialog is actually opened. */
@@ -38,24 +49,41 @@ export default function EventsPage() {
   const [customer, setCustomer] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [excelOpen, setExcelOpen] = useState(false)
+  /* אירוע שבוטל אינו עבודה שתקרה, והרשימה היא רשימת עבודה — הוא נשאר במקומו
+     ובהיסטוריה שלו, ואינו מוצג עד שמבקשים אותו. אותו הסדר של לוח השנה. */
+  const [showCancelled, setShowCancelled] = useState(false)
   const { data: customers = [] } = useCustomers()
+  const { data: statuses = [] } = useStatuses('event')
+  const cancelledStatus = statuses.find((s) => s.code === CANCELLED)
 
   const { data: events = [], isLoading, error, refetch } = useQuery({
-    queryKey: ['events', 'list', q, customer],
+    queryKey: ['events', 'list', q, customer, showCancelled, cancelledStatus?.id ?? null],
     queryFn: async () => {
       let query = supabase
         .from('events')
-        .select('*, customers(name, color), statuses(name, color)')
+        .select('*, customers(name, color), statuses(name, color, code)')
         .is('deleted_at', null)
         .order('event_date', { ascending: false })
         .limit(200)
       if (customer) query = query.eq('customer_id', customer)
+      /* בשרת ולא בלקוח: לשאילתה יש תקרה של 200 שורות, וסינון אחרי החזרה היה
+         מבזבז ממנה מקומות על אירועים שאיש לא יראה. ‏`is.null` בתוך ה-`or`
+         כי `status_id <> x` הוא NULL לאירוע בלי סטטוס — והוא היה נופל. */
+      if (!showCancelled && cancelledStatus)
+        query = query.or(`status_id.is.null,status_id.neq.${cancelledStatus.id}`)
       if (q.trim()) query = query.or(`end_client_name.ilike.%${q}%,event_number.ilike.%${q}%,location_text.ilike.%${q}%`)
       const { data, error } = await query
       if (error) throw error
-      return data as EventRow[]
+      return data as EventListRow[]
     },
   })
+
+  /* חגורה שנייה על אותה הכרעה: תשובה מה-cache יכולה להגיע לפני שרשימת
+     הסטטוסים נטענה, וכשהיא נטענת השאילתה ממילא נשאלת מחדש. */
+  const visible = useMemo(
+    () => (showCancelled ? events : events.filter((e) => e.statuses?.code !== CANCELLED)),
+    [events, showCancelled],
+  )
 
   /* Two rules shape the table, and they are the same two that shape the form:
      a field the reader's company configured off should not reappear as a
@@ -75,14 +103,14 @@ export default function EventsPage() {
   const scopedCustomer = me?.profile.customer_id ?? customer ?? null
   const { data: customFields } = useCustomFormFields(scopedCustomer || null)
 
-  const columns = useMemo<Column<EventRow>[]>(() => {
+  const columns = useMemo<Column<EventListRow>[]>(() => {
     const hidden = new Set<string>()
     if (!showCustomer) hidden.add('customer')
     if (!showNumber) hidden.add('event_number')
     if (!showLocation) hidden.add('location_text')
     if (!showVolume) hidden.add('volume_m')
     if (!showTrucks) hidden.add('truck_count')
-    const all: Column<EventRow>[] = [
+    const all: Column<EventListRow>[] = [
       {
         key: 'event_date',
         header: 'תאריך',
@@ -168,7 +196,7 @@ export default function EventsPage() {
       },
       ...customFields
         .filter((f) => showsEventField(f.field_key))
-        .map<Column<EventRow>>((f) => ({
+        .map<Column<EventListRow>>((f) => ({
           key: f.field_key,
           header: f.label_he,
           width: 140,
@@ -182,14 +210,14 @@ export default function EventsPage() {
     return all.filter((c) => !hidden.has(c.key))
   }, [showCustomer, showNumber, showLocation, showVolume, showTrucks, customFields, showsEventField])
 
-  const filtered = !!q || !!customer
+  const filtered = !!q || !!customer || showCancelled
 
   return (
     <RequirePermission perm={PERM.EVENTS_VIEW}>
       <div className="space-y-4">
         <PageHeader
           title="אירועים"
-          subtitle={isLoading ? 'טוען...' : `${events.length} אירועים${filtered ? ' (מסונן)' : ''}`}
+          subtitle={isLoading ? 'טוען...' : `${visible.length} אירועים${filtered ? ' (מסונן)' : ''}`}
           actions={
             <>
               {(has(PERM.EVENTS_IMPORT) || has(PERM.EVENTS_EXPORT)) && (
@@ -213,6 +241,7 @@ export default function EventsPage() {
                 ? () => {
                     setQ('')
                     setCustomer('')
+                    setShowCancelled(false)
                   }
                 : undefined
             }
@@ -236,11 +265,18 @@ export default function EventsPage() {
                 ))}
               </Select>
             )}
+            {cancelledStatus && (
+              <Switch
+                checked={showCancelled}
+                onChange={setShowCancelled}
+                label={`הצגת אירועים בסטטוס "${cancelledStatus.name}"`}
+              />
+            )}
           </FilterBar>
         </PageHeader>
 
         <DataTable
-          rows={events}
+          rows={visible}
           columns={columns}
           getRowId={(e) => e.id}
           loading={isLoading}

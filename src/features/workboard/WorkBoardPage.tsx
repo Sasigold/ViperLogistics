@@ -5,7 +5,6 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { addMonths, differenceInCalendarDays, eachDayOfInterval, endOfMonth, isSameMonth, parseISO, startOfMonth } from 'date-fns'
 import {
   CalendarCheck,
-  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -62,11 +61,11 @@ import { TaskDrawer, useCanOpenTaskCard } from '../tasks/TaskDrawer'
 import { ContractorPanel, StaffingPanel } from '../tasks/taskPanels'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
-import { BOARD_FIELDS } from './boardFields'
+import { BOARD_FIELDS, SupplierPickupChip } from './boardFields'
 import type { BoardLookups } from './boardFields'
 import { COLOR_BY_OPTIONS, buildTones, byTaskTime, clusterDay } from './grouping'
 import type { Cluster, ColorBy, GroupTone } from './grouping'
-import type { CustomerTruck, TaskRow, Truck, WorkBoardRow } from '../../types/domain'
+import type { CustomerTruck, Truck, WorkBoardRow } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
 /* ── geometry ─────────────────────────────────────────────────────────────
@@ -362,7 +361,7 @@ export default function WorkBoardPage() {
   const from = toISODate(month)
   const to = toISODate(endOfMonth(month))
   const [filters, setFilters] = useState({ customer: '', status: '', type: '', contractor: '', worker: '', q: '' })
-  const [drawer, setDrawer] = useState<{ open: boolean; taskId: string | null; date?: string }>({
+  const [drawer, setDrawer] = useState<{ open: boolean; taskId: string | null }>({
     open: !!params.get('task'),
     taskId: params.get('task'),
   })
@@ -542,11 +541,14 @@ export default function WorkBoardPage() {
   const noteLines = useMemo(() => {
     const perLine = charsPerLine(metrics.col, parseFloat(boardFontSize) * 16)
     const most = rows.reduce((m, r) => {
-      if (!r.notes) return m
+      /* ‏0147: הצ׳יפ של איסוף מספקים לוקח שורה משלו מעל ההערה, ולכן הוא
+         נספר כאן — אחרת התא היה גולש בדיוק בשורה הזאת. */
+      const chip = r.supplier_pickup ? 1 : 0
+      if (!r.notes) return Math.max(m, chip)
       const lines = r.notes
         .split('\n')
         .reduce((n, seg) => n + Math.max(1, Math.ceil(seg.length / perLine)), 0)
-      return Math.max(m, lines)
+      return Math.max(m, lines + chip)
     }, 0)
     return Math.min(MAX_NOTE_LINES, Math.max(2, most))
   }, [rows, metrics, boardFontSize])
@@ -854,8 +856,6 @@ export default function WorkBoardPage() {
     },
     [canOpenTask, canOpenEvent, openEvent],
   )
-  /** an empty day's only affordance: start the day that isn't there yet */
-  const newTaskOn = useCallback((dayKey: string) => setDrawer({ open: true, taskId: null, date: dayKey }), [])
   const hoverGroup = useCallback((key: string | null) => setActiveGroup(key), [])
 
   const toggleDay = (dayKey: string) =>
@@ -1342,13 +1342,11 @@ export default function WorkBoardPage() {
               days={daysForList}
               today={today}
               holidays={holidays}
-              canCreate={canCreateTask}
               onOpen={openTask}
               onPanel={openPanel}
               canOpenStaffing={canOpenStaffing}
               canOpenDelegation={canOpenDelegation}
               onToggleDay={toggleDay}
-              onNewTask={newTaskOn}
             />
           ) : (
             <div
@@ -1520,10 +1518,6 @@ export default function WorkBoardPage() {
                         return (
                           <EmptyDayColumn
                             key={col.id}
-                            dayKey={col.dayKey}
-                            canCreate={canCreateTask}
-                            narrow={metrics.empty < 96}
-                            onNewTask={newTaskOn}
                             style={{ insetInlineStart: vi.start, width, height: bodyHeight }}
                           />
                         )
@@ -1576,7 +1570,6 @@ export default function WorkBoardPage() {
             }
           }}
           taskId={drawer.taskId}
-          initial={drawer.date ? ({ task_date: drawer.date } as Partial<TaskRow>) : undefined}
         />
         {/* הפאנלים הממוקדים של התאים (0108) — פתוחים לפי המפתחות שלהם,
             ולא לפי מי שרשאי לפתוח את הכרטיס המלא. */}
@@ -1605,27 +1598,23 @@ function MobileBoard({
   days,
   today,
   holidays,
-  canCreate,
   onOpen,
   onPanel,
   canOpenStaffing,
   canOpenDelegation,
   onToggleDay,
-  onNewTask,
 }: {
   /** so "go to today" can find a day's section without a global id */
   containerRef: React.Ref<HTMLDivElement>
   days: DayLayout[]
   today: string
   holidays: Map<string, Holiday>
-  canCreate: boolean
   onOpen: (row: WorkBoardRow) => void
   /** הפאנלים הממוקדים (0108) — בטלפון אין תאים, ולכן הם נפתחים מהכרטיס */
   onPanel: (taskId: string, kind: 'staffing' | 'contractor') => void
   canOpenStaffing: boolean
   canOpenDelegation: boolean
   onToggleDay: (dayKey: string) => void
-  onNewTask: (dayKey: string) => void
 }) {
   return (
     <div ref={containerRef} className="h-full overflow-y-auto">
@@ -1699,18 +1688,6 @@ function MobileBoard({
                   </span>
                 </span>
               </button>
-              {/* a quiet day is one line, not a section — a week with four of
-                  them shouldn't push the actual work off the screen */}
-              {quiet && (
-                <>
-                  <span className="type-caption text-ink-tertiary">אין משימות</span>
-                  {canCreate && (
-                    <IconButton label={`משימה חדשה ל-${fmtDate(day.dayKey)}`} size="sm" bare onClick={() => onNewTask(day.dayKey)}>
-                      <Plus size={ICON.sm} strokeWidth={STROKE} />
-                    </IconButton>
-                  )}
-                </>
-              )}
             </h3>
 
             {!quiet &&
@@ -1826,6 +1803,10 @@ const MobileTaskCard = memo(function MobileTaskCard({
             <span className="truncate">{shortAddress(row.location_text)}</span>
           </span>
         )}
+
+        {/* ‏0147: הכרטיס בנייד אינו מציג הערות, אבל האיסוף אינו הערה שנכתבה
+            — הוא נתון של האירוע, ומי שעובד מהטלפון צריך אותו לא פחות. */}
+        {row.supplier_pickup && <SupplierPickupChip names={row.supplier_names} />}
 
         {/* every name, not a stack of initials: knowing who is on the job is
             the question this line exists to answer */}
@@ -1992,40 +1973,13 @@ function SpineHeader({ dayKey, count, onExpand }: { dayKey: string; count: numbe
 
 /* ===== a day with nothing on it =========================================== */
 
-function EmptyDayColumn({
-  dayKey,
-  canCreate,
-  narrow,
-  onNewTask,
-  style,
-}: {
-  dayKey: string
-  canCreate: boolean
-  /** at the narrowest widths the words do not fit — the icon has to carry it */
-  narrow: boolean
-  onNewTask: (dayKey: string) => void
-  style: React.CSSProperties
-}) {
-  return (
-    <div
-      className="absolute top-0 flex flex-col items-center justify-center gap-2 border-s border-line bg-subtle/40"
-      style={style}
-    >
-      <CalendarDays size={narrow ? ICON.md : ICON.lg} className="text-ink-tertiary/60" strokeWidth={STROKE} />
-      {!narrow && <span className="type-caption text-ink-tertiary">אין משימות</span>}
-      {canCreate &&
-        (narrow ? (
-          <IconButton label={`משימה חדשה ל-${fmtDate(dayKey)}`} size="sm" onClick={() => onNewTask(dayKey)}>
-            <Plus size={ICON.sm} strokeWidth={STROKE} />
-          </IconButton>
-        ) : (
-          <Button size="sm" variant="ghost" onClick={() => onNewTask(dayKey)}>
-            <Plus size={ICON.sm} strokeWidth={STROKE} />
-            משימה
-          </Button>
-        ))}
-    </div>
-  )
+/**
+ * יום ריק הוא יום ריק — הרוחב, הפס והרקע נשארים כדי שהרשת תחזיק, ובתוכם לא
+ * נרשם דבר. אייקון, המלל "אין משימות" וכפתור ההוספה שהיו כאן התחרו עם
+ * העבודה עצמה בחודש שרובו ריק; משימה חדשה נפתחת מהסרגל שמעל הלוח.
+ */
+function EmptyDayColumn({ style }: { style: React.CSSProperties }) {
+  return <div className="absolute top-0 border-s border-line bg-subtle/40" style={style} />
 }
 
 /* ===== one task's column of field cells =================================== */
