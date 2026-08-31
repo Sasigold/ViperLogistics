@@ -7,6 +7,8 @@ import { lazyPage } from '../lib/lazyPage'
 import { NAV_SECTIONS, navAudience, navItemVisible } from './nav'
 
 const DashboardPage = lazyPage(() => import('../features/dashboard/DashboardPage'))
+/* ‏הלקוח מקבל מסך ייעודי ומצומצם, לא את הרשת המשותפת — ראו CustomerDashboard. */
+const CustomerDashboard = lazyPage(() => import('../features/dashboard/CustomerDashboard'))
 
 /**
  * What `/` means depends on what you can open.
@@ -27,9 +29,12 @@ export default function HomeRoute() {
 
   if (!me) return <Skeleton className="h-32 w-full" />
   if (has(PERM.DASHBOARD_VIEW)) {
+    // הבדיקה מקוננת בתוך `dashboard.view` בכוונה: לקוח "אירועים בלבד" שאין לו
+    // את ההרשאה ממשיך ליפול לפריט הניווט הראשון שלו, בדיוק כמו קודם.
+    const Page = me.profile.user_kind === 'customer_user' ? CustomerDashboard : DashboardPage
     return (
       <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-        <DashboardPage />
+        <Page />
       </Suspense>
     )
   }
