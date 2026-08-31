@@ -365,6 +365,17 @@ export function WorkersTab({
       ),
     [assignable],
   )
+  /* חשבונות עובד ששויכו לקבלן במסך העובדים נושאים `contractor_id` בלי שורת
+     רוסטר (`contractor_worker_id` ריק), ולכן אינם ב-`contractor_workers` —
+     ‏`useContractorWorkers` לעיל לא ראה אותם, וזה מה שהסתיר עובד שהמשרד שייך
+     לקבלן מרשימת הסגל. ‏0072 §5 איחד את שתי הרשימות ב-RPC אבל חיבר אותו רק
+     לבורר השיבוץ; כאן משלימים את התצוגה. ‏`worker_id === null` הוא בדיוק החשבון
+     שאין לו עדיין שורת סגל — `contractor_assign_worker` יוצר לו אותה בשיבוץ
+     הראשון למשימה, וממנו ואילך הוא יופיע ברוסטר עם התפקידים והבקרות המלאות. */
+  const accountOnly = useMemo(
+    () => assignable.filter((a) => !a.worker_id && a.profile_id),
+    [assignable],
+  )
   const canSettings = has(PERM.ATTENDANCE_MANAGE_PAY) || has(PERM.ATTENDANCE_MANAGE_CLOCK) || has(PERM.PORTAL_WORKER_SETTINGS)
   const [settingsFor, setSettingsFor] = useState<{ name: string; profileId: string } | null>(null)
 
@@ -429,7 +440,7 @@ export function WorkersTab({
       {dialog}
       <CardHeader
         title="סגל העובדים"
-        subtitle={`${workers.length} עובדים`}
+        subtitle={`${workers.length + accountOnly.length} עובדים`}
         icon={<User size={ICON.md} strokeWidth={STROKE} />}
       />
       {mayManage && (
@@ -466,7 +477,7 @@ export function WorkersTab({
           <div className="p-4">
             <Skeleton className="h-24 w-full" />
           </div>
-        ) : workers.length === 0 ? (
+        ) : workers.length === 0 && accountOnly.length === 0 ? (
           <EmptyState
             compact
             art="people"
@@ -532,6 +543,35 @@ export function WorkersTab({
                     <Trash2 size={ICON.sm} strokeWidth={STROKE} />
                   </IconButton>
                 )}
+              </li>
+            ))}
+            {/* חשבונות ששויכו לקבלן במסך העובדים ואין להם עדיין שורת סגל. הם
+                מוצגים כדי שהעובד ששויך ייראה מיד, אבל התפקידים, מעקב האיחורים
+                וההסרה נכתבים מול `contractor_workers.id` שאין להם — לכן אינם
+                מוצגים כאן. שורת הסגל (והבקרות שאיתה) נוצרת בשיבוץ הראשון
+                למשימה. הגדרות השכר והשעון עובדות: הן יושבות על `profile_id`. */}
+            {accountOnly.map((a) => (
+              <li
+                key={`acct-${a.profile_id}`}
+                className="flex items-center gap-3 border-b border-line-subtle px-4 py-2.5 last:border-0 hover:bg-hover"
+              >
+                <Avatar name={a.full_name} size="md" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate type-body font-medium">{a.full_name}</p>
+                  <p className="truncate type-caption tabular text-ink-tertiary" dir="ltr">
+                    {a.phone || '—'}
+                  </p>
+                </div>
+                {canSettings && a.profile_id && (
+                  <IconButton
+                    label={`הגדרות שכר ושעון ל${a.full_name}`}
+                    size="sm"
+                    onClick={() => setSettingsFor({ name: a.full_name, profileId: a.profile_id! })}
+                  >
+                    <SlidersHorizontal size={ICON.sm} strokeWidth={STROKE} />
+                  </IconButton>
+                )}
+                <Badge tone="success">שעון נוכחות</Badge>
               </li>
             ))}
           </ul>
