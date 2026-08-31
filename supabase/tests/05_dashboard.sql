@@ -147,10 +147,10 @@ select t_expect_fail('טווח גדול מדי נדחה',
   $$select dashboard_sections(array['tasks.by_type'], current_date - 500, current_date, '{}')$$);
 select t_expect_fail('יותר מדי סקשנים בבקשה אחת נדחה',
   $$select dashboard_sections(
-      -- התקרה עלתה ל-48 ב-0069 (ששת סקשני ההכנסה), ול-50 ב-0090 (שני
-      -- כרטיסי הצי). הבדיקה רודפת אחריה במכוון: תקרה שעלתה בלי שאיש שם לב
-      -- היא בדיוק מה שהיא נועדה לתפוס.
-      (select array_agg('k' || g) from generate_series(1,51) g),
+      -- התקרה עלתה ל-48 ב-0069 (ששת סקשני ההכנסה), ל-50 ב-0090 (שני כרטיסי
+      -- הצי) ול-51 ב-0143 (`customer.monthly`). הבדיקה רודפת אחריה במכוון:
+      -- תקרה שעלתה בלי שאיש שם לב היא בדיוק מה שהיא נועדה לתפוס.
+      (select array_agg('k' || g) from generate_series(1,52) g),
       current_date - 5, current_date, '{}')$$);
 
 -- ================= as the owner admin =================

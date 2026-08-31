@@ -60,6 +60,10 @@ export default function DashboardPage() {
   const prev = useMemo(() => previousRange(range), [range])
   const layout = useDashboardLayout()
   const canCustomize = has(PERM.DASHBOARD_CUSTOMIZE)
+  /* ‏0144. הלקוח נשאר על `defaultRange()` — החודש הנוכחי — שהוא בדיוק מה
+     שהוא נשאל עליו. הכותרת ממשיכה לומר את התאריכים גם כשאין מה לשנות בהם:
+     טווח שלא כתוב הוא טווח שאפשר לטעות בו. */
+  const canChangeRange = has(PERM.DASHBOARD_CHANGE_RANGE)
   const custom = layout.customWidgets
   /* The catalogue is only needed by the builder, so it is fetched by the page
      rather than the drawer: opening the editor should not wait a round trip
@@ -172,36 +176,40 @@ export default function DashboardPage() {
             /* on a phone this is the widest control on the screen, so the
                presets scroll and the two date fields share one row */
             <div className="flex w-full flex-col gap-1.5 sm:w-auto sm:flex-row sm:items-center">
-              <div className="scroll-row gap-1">
-                {RANGE_PRESETS.map((p) => (
-                  <button
-                    key={p.label}
-                    onClick={() => setRange(p.range())}
-                    className="scroll-row-item rounded-md px-2 py-1 type-caption font-medium text-ink-tertiary transition-colors hover:bg-hover hover:text-ink"
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Input
-                  type="date"
-                  inputSize="sm"
-                  className="min-h-9 grow basis-32 tabular sm:min-h-0 sm:w-36 sm:grow-0 sm:basis-auto"
-                  value={range.from}
-                  onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
-                  aria-label="מתאריך"
-                />
-                <span className="shrink-0 type-caption text-ink-tertiary">–</span>
-                <Input
-                  type="date"
-                  inputSize="sm"
-                  className="min-h-9 grow basis-32 tabular sm:min-h-0 sm:w-36 sm:grow-0 sm:basis-auto"
-                  value={range.to}
-                  onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
-                  aria-label="עד תאריך"
-                />
-              </div>
+              {canChangeRange && (
+                <>
+                  <div className="scroll-row gap-1">
+                    {RANGE_PRESETS.map((p) => (
+                      <button
+                        key={p.label}
+                        onClick={() => setRange(p.range())}
+                        className="scroll-row-item rounded-md px-2 py-1 type-caption font-medium text-ink-tertiary transition-colors hover:bg-hover hover:text-ink"
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Input
+                      type="date"
+                      inputSize="sm"
+                      className="min-h-9 grow basis-32 tabular sm:min-h-0 sm:w-36 sm:grow-0 sm:basis-auto"
+                      value={range.from}
+                      onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
+                      aria-label="מתאריך"
+                    />
+                    <span className="shrink-0 type-caption text-ink-tertiary">–</span>
+                    <Input
+                      type="date"
+                      inputSize="sm"
+                      className="min-h-9 grow basis-32 tabular sm:min-h-0 sm:w-36 sm:grow-0 sm:basis-auto"
+                      value={range.to}
+                      onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
+                      aria-label="עד תאריך"
+                    />
+                  </div>
+                </>
+              )}
               <div className="flex items-center gap-1.5">
                 {has(PERM.DASHBOARD_EXPORT) && (
                   <Button size="sm" variant="ghost" onClick={() => void guard(exportXlsx)}>

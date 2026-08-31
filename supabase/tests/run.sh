@@ -350,8 +350,18 @@ OUT="$OUT
 $OUT33"
 
 echo
+echo "== customer monthly / locked dashboard suite =="
+# 34 מקימה שני לקוחות משלה ב-current_date+500 — אחד עם עמלה ואחד בלי — ובודקת
+# את הסיכום החודשי, את הסף החמור, ואת הדשבורד שנסגר ללקוח.
+OUT34=$($PSQL -d vl -f "$HERE/34_customer_monthly_and_locked_dashboard.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT34"
+OUT="$OUT
+$OUT34"
+
+echo
 echo "== group payment / supplier pickup suite =="
-# 35 מקימה לקוח, שני קבלנים, ספקים ושני אירועים משלה ב-current_date+500:
+# 35 מקימה לקוח, שני קבלנים, ספקים ושני אירועים משלה ב-current_date+500. היא
+# רצה אחרי 34, שחולקת איתה את החלון: שורות 35 אינן קיימות בזמן שהיא נמדדת.
 # תשלום לקבוצה שלמה (0146), ואיסוף מספקים על הלו״ז (0147).
 OUT35=$($PSQL -d vl -f "$HERE/35_group_payment_and_supplier_pickup.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
 echo "$OUT35"

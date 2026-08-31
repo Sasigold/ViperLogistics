@@ -65,7 +65,15 @@ interface Margin {
 
 export function sectionKpi<T>(cfg: {
   section: string
-  label: string
+  /**
+   * מחרוזת, או פונקציה של הנתון.
+   *
+   * ‏0143 הביא את המקרה שדרש את זה: אותו סכום בדיוק הוא "סכום לתשלום לוייפר"
+   * ללקוח שמבצע בעצמו, ו"סכום כולל של האירועים" ללקוח שמביא עבודה ומקבל
+   * עליה עמלה. הכרטיס זהה ורק המילים משתנות, ולכן זו כותרת ולא ווידג׳ט שני
+   * — והקונפיגורציה של הלקוח היא שמכריעה, לא שמו.
+   */
+  label: string | ((v: T) => string)
   icon: ComponentType<{ size?: number; strokeWidth?: number }>
   select: (v: T) => number | null | undefined
   format?: (v: number) => ReactNode
@@ -84,11 +92,12 @@ export function sectionKpi<T>(cfg: {
     if (value === null || value === undefined) return null
     const before = cfg.delta && prev ? cfg.select(prev) : null
     const Icon = cfg.icon
+    const label = typeof cfg.label === 'function' ? cfg.label(data) : cfg.label
 
     return (
       <StatCard
         icon={<Icon size={ICON.xl} strokeWidth={STROKE} />}
-        label={cfg.label}
+        label={label}
         value={cfg.format ? cfg.format(value) : value}
         tone={cfg.tone}
         invertDelta={cfg.invertDelta}
@@ -97,7 +106,7 @@ export function sectionKpi<T>(cfg: {
       />
     )
   }
-  SectionKpi.displayName = `SectionKpi(${cfg.label})`
+  SectionKpi.displayName = `SectionKpi(${cfg.section})`
   return SectionKpi
 }
 

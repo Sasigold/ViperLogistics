@@ -37,6 +37,8 @@ export const SECTIONS = [
   'finance.profit_summary',
   // הצד של הלקוח (0074) — הוצאה, לא הכנסה
   'spend.summary',
+  // ‏0143 — חודש בחודשו: כמה אירועים, כמה כסף, וכמה עמלה
+  'customer.monthly',
   // תפעול
   'tasks.by_type',
   'tasks.by_method',

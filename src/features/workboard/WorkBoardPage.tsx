@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -54,6 +54,7 @@ import { shortAddress } from '../../lib/address'
 import { NEUTRAL, readableOn } from '../../lib/colors'
 import { useIsMobile } from '../../lib/useMediaQuery'
 import { useDragScroll } from '../../lib/useDragScroll'
+import { HIGHLIGHT_CLASS } from '../../lib/deepLink'
 import { KIND_LABEL, holidaysInRange, isDayOff } from '../../lib/hebrewHolidays'
 import type { Holiday } from '../../lib/hebrewHolidays'
 import { TaskDrawer, useCanOpenTaskCard } from '../tasks/TaskDrawer'
@@ -649,7 +650,7 @@ export default function WorkBoardPage() {
 
   /* ── group by day, then lay the columns out in reading order ───────────── */
 
-  const { columns, bands, totalWidth, daysForList, sizeKey } = useMemo(() => {
+  const { columns, bands, totalWidth, daysForList, sizeKey, offsetById } = useMemo(() => {
     const byDay = new Map<string, WorkBoardRow[]>()
     for (const r of rows) {
       const list = byDay.get(r.task_date)
@@ -673,6 +674,10 @@ export default function WorkBoardPage() {
     /** the same layout the grid is built from, so the mobile list and the
      *  desktop grid can never disagree about order or colour */
     const dayList: DayLayout[] = []
+    /* ההיסט של כל עמודת משימה על המסילה, לפי מזהה. נבנה כאן ולא במעבר שני:
+       זה בדיוק המספר שהלולאה כבר צוברת, וחישוב מקביל במקום אחר היה יכול
+       להיפרד ממנו בשקט. ‏`?at=` גולל לפיו. */
+    const offsets = new Map<string, number>()
     let offset = 0
 
     for (const dayKey of dayKeys) {
@@ -698,6 +703,7 @@ export default function WorkBoardPage() {
               groupKey: cluster.groupKey,
               tone: cluster.tone,
             })
+            offsets.set(row.id, offset)
             offset += metrics.col
           })
         }
@@ -720,7 +726,9 @@ export default function WorkBoardPage() {
        render נוסף, וגם לא לולאה. */
     const sizeKey = `${metrics.col}/${metrics.empty}/${cols.map((c) => (c.gapAfter ? c.kind[0].toUpperCase() : c.kind[0])).join('')}`
 
-    return { columns: cols, bands: bandList, totalWidth: offset, daysForList: dayList, sizeKey }
+    /* ‏`offsetById` אינו נכנס ל-`sizeKey`: הוא נגזר מהרוחבים ואינו קלט שלהם,
+       ומדידה מחדש בגללו הייתה הלולאה שהמפתח הזה נועד למנוע. */
+    return { columns: cols, bands: bandList, totalWidth: offset, daysForList: dayList, sizeKey, offsetById: offsets }
   }, [rows, dayKeys, sortBy, collapsedDays, metrics.col, metrics.empty, colorBy, tones])
 
   /* ── horizontal virtualization (RTL-aware) ───────────────────────────── */
@@ -794,8 +802,47 @@ export default function WorkBoardPage() {
     if (taskParam && canOpenTask) setDrawer({ open: true, taskId: taskParam })
   }, [taskParam, canOpenTask])
 
+  /**
+   * "יצאתי לאירוע — תחזיר אותי לאן שהייתי."
+   *
+   * החזרה מהאירוע היא `navigate(-1)` (‏`BackButton` ב-`AppLayout`), כלומר היא
+   * נוחתת על **הכתובת** שממנה יצאנו. לכן די בכך שהלוח יכתוב לכתובת של עצמו
+   * את הנקודה לפני שהוא עוזב: ‏`?date=` מחזיר את החודש דרך ה-effect שלמעלה,
+   * ו-`?at=` — למטה — גולל לעמודה ומבזיק אותה. אותו idiom של `?task=`,
+   * ולא state חדש; אין בכל האפליקציה שימוש ב-`location.state`.
+   *
+   * ‏**למה `history.replaceState` ולא `setParams`**, ושתי הסיבות חשובות:
+   *
+   *   • ‏`setParams` הוא ניווט של הראוטר, וה-push לאירוע שבא אחריו באותו tick
+   *     קוטע אותו. הכתובת שחוזרים אליה הייתה יוצאת בלי העוגן — כלומר "עובד
+   *     אצלי, לא עובד אצל הלקוח".
+   *   • ‏`replace` של הראוטר מנפיק `location.key` חדש. ‏`BackButton` נשען על
+   *     `key === 'default'` כדי לזהות טאב שנפתח ישר על deep link ולחזור
+   *     הביתה במקום לצאת מהאפליקציה — והמפתח החדש היה מבטל את הזיהוי הזה.
+   */
+  const rememberAnchor = useCallback(
+    (row: WorkBoardRow) => {
+      const next = new URLSearchParams(params)
+      /* גם מרענן `?date=` שהתיישן: הוא נקרא באתחול בלבד, ודפדוף חודשים אינו
+         כותב אותו בחזרה. */
+      next.set('date', row.task_date)
+      next.set('at', row.id)
+      /* ‏`?at=` מסמן, ‏`?task=` פותח — שני דברים, ומגירה שנפתחת מעצמה בחזרה
+         היא לא מה שביקשו. */
+      next.delete('task')
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}?${next}`)
+    },
+    [params],
+  )
+
   /** stable, because TaskHeader is memoised on a shallow prop compare */
-  const openEvent = useCallback((id: string) => void navigate(`/events/${id}`), [navigate])
+  const openEvent = useCallback(
+    (id: string, row: WorkBoardRow) => {
+      rememberAnchor(row)
+      void navigate(`/events/${id}`)
+    },
+    [navigate, rememberAnchor],
+  )
   /**
    * מה קורה בלחיצה על משימה. כרטיס המשימה הוא מסך עריכה, ולכן מי שאין לו
    * `board.open_task` מגיע במקומו לדף האירוע — המקום היחיד שבו הוא באמת
@@ -805,7 +852,7 @@ export default function WorkBoardPage() {
   const openTask = useCallback(
     (row: WorkBoardRow) => {
       if (canOpenTask) return setDrawer({ open: true, taskId: row.id })
-      if (canOpenEvent && row.event_id) openEvent(row.event_id)
+      if (canOpenEvent && row.event_id) openEvent(row.event_id, row)
     },
     [canOpenTask, canOpenEvent, openEvent],
   )
@@ -864,6 +911,57 @@ export default function WorkBoardPage() {
     if (!scrollToToday()) toast.info('אין משימות היום בטווח המוצג')
     setJumpPending(false)
   }, [jumpPending, isLoading, scrollToToday, toast])
+
+  /* ── חזרה מהאירוע: הגלילה לעוגן ─────────────────────────────────────────
+     בצורת `jumpPending` שמעליו, ומאותה סיבה — החודש צריך לחזור מהשרת לפני
+     שיש עמודה לגלול אליה. שלוש הכרעות:
+
+       • **ניסיון אחד לכל עוגן.** ‏`restoredRef` נסגר גם כשנמצא וגם כשלא:
+         עוגן שהתיישן — הסינון השתנה, המשימה זזה חודש, מישהו מחק אותה —
+         עולה ניסיון ונעצר, ואינו נלחם בגלילה של המשתמש בכל render.
+       • **בלי toast.** בשונה מ"קפיצה להיום", איש לא לחץ כאן על כלום; הודעה
+         על כישלון של פעולה שלא התבקשה היא רעש.
+       • **בלי `behavior: 'smooth'`.** גלילה מונפשת על פני חודש שלם בחזרה
+         מהאירוע נקראת כמסך שנאבק בך, ולא כמסך שהחזיר אותך.           */
+  const atParam = params.get('at')
+  const restoredAt = useRef<string | null>(null)
+  useEffect(() => {
+    if (!atParam || isLoading) return
+    if (restoredAt.current === atParam) return
+
+    /* יום מקופל אינו נושא עמודה אלא שדרה ברוחב 46px. פותחים אותו ויוצאים —
+       ה-effect ירוץ שוב עם ההיסטים החדשים, בדיוק כמו הפתיחה המקדימה של
+       `goToToday`. */
+    const col = columns.find((c) => c.kind === 'task' && c.id === atParam)
+    if (col && collapsedDays.has(col.dayKey)) {
+      setCollapsedDays((s) => new Set([...s].filter((d) => d !== col.dayKey)))
+      return
+    }
+
+    if (asCards) {
+      const card = cardsRef.current?.querySelector(`[data-task="${atParam}"]`)
+      card?.scrollIntoView({ block: 'center' })
+      restoredAt.current = atParam
+      return
+    }
+
+    const el = scrollRef.current
+    const start = offsetById.get(atParam)
+    if (!el || start === undefined) {
+      /* המסילה עוד לא צוירה — נחכה ל-render הבא. עמודה שאינה קיימת בכלל
+         תיפול כאן בכל פעם, ולכן הסגירה היא על "אין `el`" בלבד ולא על
+         "אין היסט": הראשון חולף, השני קבוע. */
+      if (el) restoredAt.current = atParam
+      return
+    }
+    /* מרכוז, ולא `start - 8` של רצועת היום: היעד הוא עמודה אחת, והחלון
+       הזמין הוא הרוחב פחות הלגנדה הדביקה. ‏RTL כמו ב-`scrollToToday` —
+       ‏`virtualizer.scrollToIndex` שבור כאן, ראו ההערה שלמעלה. */
+    const room = el.clientWidth - metrics.legend - metrics.col
+    const offset = Math.max(0, start - Math.max(0, room) / 2)
+    el.scrollTo({ left: getComputedStyle(el).direction === 'rtl' ? -offset : offset })
+    restoredAt.current = atParam
+  }, [atParam, isLoading, asCards, columns, collapsedDays, offsetById, metrics])
 
   /* אין כאן ספירת איחורים, וזו הכרעה ולא השמטה.
 
@@ -1424,21 +1522,32 @@ export default function WorkBoardPage() {
                           />
                         )
                       return (
-                        <TaskColumn
-                          key={col.id}
-                          row={col.row}
-                          canEditCell={canEditCell}
-                          canEditField={canEditField}
-                          patch={patchCell}
-                          lookups={lookups}
-                          fields={fields}
-                          heights={rowHeights}
-                          tone={col.tone}
-                          groupKey={col.groupKey}
-                          active={activeGroup === col.groupKey}
-                          onHover={hoverGroup}
-                          style={{ insetInlineStart: vi.start, width }}
-                        />
+                        <Fragment key={col.id}>
+                          <TaskColumn
+                            row={col.row}
+                            canEditCell={canEditCell}
+                            canEditField={canEditField}
+                            patch={patchCell}
+                            lookups={lookups}
+                            fields={fields}
+                            heights={rowHeights}
+                            tone={col.tone}
+                            groupKey={col.groupKey}
+                            active={activeGroup === col.groupKey}
+                            onHover={hoverGroup}
+                            style={{ insetInlineStart: vi.start, width }}
+                          />
+                          {/* ההבזק על העמודה שחזרנו אליה. שכבה־אחות ולא prop
+                              על `TaskColumn`: למשווה ה-memo שלו יש רשימת שדות
+                              מפורשת, ושדה שנוסף בלעדיה פשוט לא היה מגיע. */}
+                          {col.id === atParam && (
+                            <div
+                              aria-hidden
+                              className={cx('pointer-events-none absolute top-0', HIGHLIGHT_CLASS)}
+                              style={{ insetInlineStart: vi.start, width, height: bodyHeight }}
+                            />
+                          )}
+                        </Fragment>
                       )
                     })}
                   </div>
@@ -1654,6 +1763,10 @@ const MobileTaskCard = memo(function MobileTaskCard({
 
   return (
     <div
+      /* ‏`data-task` הוא מה ששחזור ה-`?at=` מחפש כאן, במקבילה המדויקת ל-
+         `data-day` שקפיצה להיום מחפשת על ה-section. בתצוגת הכרטיסים אין
+         מסילה ואין היסטים — יש צומת, ולכן `scrollIntoView` הוא הכלי הנכון. */
+      data-task={row.id}
       className="flex items-stretch gap-1.5 px-2.5 py-1.5"
       style={tone ? { background: tone.tint } : undefined}
     >
@@ -1765,7 +1878,7 @@ const TaskHeader = memo(function TaskHeader({
   /** בלי המפתח אין לחיצה כפולה, וההמתנה שמאפשרת אותה נחסכת */
   canOpenTask: boolean
   onOpen: (row: WorkBoardRow) => void
-  onOpenEvent: (eventId: string) => void
+  onOpenEvent: (eventId: string, row: WorkBoardRow) => void
   onHover: (key: string | null) => void
 }) {
   /* שם הלקוח *במערכת* הוא מה שהכותרת אומרת — עד 0079 הוא היה מוסתר ממי שאין
@@ -1790,7 +1903,7 @@ const TaskHeader = memo(function TaskHeader({
   const onName = () => {
     /* בלי כרטיס משימה אין לחיצה שנייה לחכות לה, וההמתנה הייתה נקראת כתקיעה */
     if (!canOpenTask) {
-      if (eventId) onOpenEvent(eventId)
+      if (eventId) onOpenEvent(eventId, row)
       return
     }
     if (pending.current) {
@@ -1801,7 +1914,7 @@ const TaskHeader = memo(function TaskHeader({
     }
     pending.current = setTimeout(() => {
       pending.current = null
-      if (eventId) onOpenEvent(eventId)
+      if (eventId) onOpenEvent(eventId, row)
     }, HEADER_CLICK_MS)
   }
 
