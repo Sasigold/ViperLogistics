@@ -889,13 +889,37 @@
   font-weight: 600;
   padding: 0.375rem 0.5rem;
 }
+/* שורת התאריך היא שורה: המספר, ולידו שם החג. עיגול "היום" יושב על המספר
+   עצמו ולא על השורה, אחרת הוא היה בולע גם את שם החג. */
+.fc .fc-daygrid-day-top {
+  max-width: 100%;
+}
+.fc .fc-daygrid-day-number {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+/* ‏row-reverse בתוך שורת RTL: המספר ראשון בקריאה, והשם נפרש ימינה ממנו */
+.vl-day-top {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.vl-day-num {
+  flex: none;
+}
 .fc .fc-day-today .fc-daygrid-day-number {
+  padding: 0.25rem 0.5rem;
+}
+.fc .fc-day-today .vl-day-num {
   color: var(--vl-on-primary);
   background: var(--vl-primary);
   border-radius: 999px;
   min-width: 1.5rem;
   text-align: center;
-  margin: 0.25rem;
   padding: 0.125rem 0.375rem;
 }
 .fc .fc-day-other .fc-daygrid-day-number {
@@ -910,7 +934,7 @@
 }
 
 /* ── חגים ומועדים ─────────────────────────────────────────────────────────
-   הצ׳יפ נושא את השם, והתא נצבע כדי שהיום ייקרא כחג גם כשהצ׳יפ נבלע ב-"+3".
+   השם יושב בשורת התאריך, והתא נצבע כדי שהיום ייקרא כחג גם כשהשם נחתך.
    שבתון בלבד נצבע: חנוכה או ל״ג בעומר הם ימי עבודה, וצביעת שמונת ימי חנוכה
    הייתה הופכת חודש שלם לצהוב. הריחוף גובר, אחרת התא נראה מת. */
 .fc .fc-day.vl-holiday-day-off {
@@ -935,6 +959,15 @@
 }
 .vl-holiday-mark-off {
   background: var(--vl-warning);
+}
+/* השם עצמו, במסך הגדול: מה שהתא נותן ברוחב, ושלוש נקודות על מה שלא נכנס */
+.vl-holiday-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--vl-warning-text);
 }
 .vl-holiday-dot {
   width: 0.375rem;
@@ -1137,8 +1170,10 @@
     font-size: 0.5625rem;
   }
   .vl-calendar .fc-day-today .fc-daygrid-day-number {
+    padding: 0.125rem 0.25rem;
+  }
+  .vl-calendar .fc-day-today .vl-day-num {
     min-width: 1.25rem;
-    margin: 0.125rem;
     padding: 0.0625rem 0.25rem;
   }
   /* "+2" הוא הדרך היחידה לשאר היום בטלפון — הוא צריך להיראות כמו כפתור

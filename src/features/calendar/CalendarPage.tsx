@@ -280,34 +280,50 @@ export default function CalendarPage() {
   )
 
   /**
-   * החג ראשון בכל יום — הוא ההקשר שכל השאר נקרא בתוכו.
+   * החג יושב בראש התא, צמוד למספר היום — לא כצ׳יפ בשורת האירועים.
    *
-   * בטלפון לא בגריד: תא של יום הוא שם שלושה אירועים ברוחב אצבע, וצ׳יפ של
-   * "חול המועד סוכות" בלע אחד מהם על כל אחד משבעת הימים. שם החג יורד לנקודה
-   * ליד מספר היום, ולחיצה על היום אומרת מה הוא. ב"סדר יום" הוא נשאר צ׳יפ —
-   * שם ליום יש שורה משלו ואין במה להתחרות.
+   * בגריד הוא אינו אירוע: צ׳יפ של "חול המועד סוכות" אכל שורה מתוך ארבע על כל
+   * אחד משבעת הימים, ובטלפון אחת משלוש. כשהשם עולה לשורת התאריך הוא נקרא
+   * ראשון — כהקשר של היום — ולא לוקח מקום ממה שיש לתכנן בו. ב"סדר יום" הוא
+   * נשאר צ׳יפ: שם ליום יש שורה משלו ואין במה להתחרות.
    */
-  const holidaysAsChips = !isMobile || view === 'listMonth'
+  const holidaysAsChips = view === 'listMonth'
   const calEvents = useMemo(
     () => (holidaysAsChips ? [...holidayChips, ...eventChips] : eventChips),
     [holidaysAsChips, holidayChips, eventChips],
   )
 
-  /** מספר היום, ולידו נקודה כשיש בו חג — המסלול של הטלפון בלבד */
+  /**
+   * מספר היום, ולידו החג. בטלפון רק נקודה: תא ברוחב אצבע לא נושא גם שם, ולחיצה
+   * על היום אומרת מה הוא (`dateClick` למטה). במסך הגדול השם עצמו, מקוצץ לרוחב
+   * שהתא נותן.
+   */
   const renderDayCell = useCallback(
     (arg: DayCellContentArg) => {
       const h = holidays.get(toISODate(arg.date))
-      if (!h) return arg.dayNumberText
       return (
-        <span className="inline-flex items-center gap-1">
-          {arg.dayNumberText}
-          <span aria-hidden className={cx('vl-holiday-mark', isDayOff(h) && 'vl-holiday-mark-off')} />
-          {/* מה שהנקודה אומרת, למי שקורא את המסך ולא רואה אותה */}
-          <span className="sr-only">{`${h.name} — ${KIND_LABEL[h.kind]}`}</span>
+        <span className="vl-day-top">
+          <span className="vl-day-num">{arg.dayNumberText}</span>
+          {h && (
+            <>
+              <span aria-hidden className={cx('vl-holiday-mark', isDayOff(h) && 'vl-holiday-mark-off')} />
+              {!isMobile && (
+                <span
+                  className={cx('vl-holiday-name', isDayOff(h) && 'font-bold')}
+                  title={`${h.name} — ${KIND_LABEL[h.kind]}`}
+                >
+                  {h.name}
+                </span>
+              )}
+              {/* מה שהסימון אומר, למי שקורא את המסך ולא רואה אותו. במסך הגדול
+                  השם כבר כתוב, ונשאר רק סוג המועד */}
+              <span className="sr-only">{isMobile ? `${h.name} — ${KIND_LABEL[h.kind]}` : ` — ${KIND_LABEL[h.kind]}`}</span>
+            </>
+          )}
         </span>
       )
     },
-    [holidays],
+    [holidays, isMobile],
   )
 
   /** The key to the grid's colours: every status, whether or not the range
@@ -958,8 +974,8 @@ export default function CalendarPage() {
                 if (!h) return []
                 return isDayOff(h) ? ['vl-holiday-day', 'vl-holiday-day-off'] : ['vl-holiday-day']
               }}
-              /* בטלפון החג מצטמצם לנקודה ליד מספר היום — ראה למעלה */
-              dayCellContent={isMobile ? renderDayCell : undefined}
+              /* החג צמוד למספר היום — שם, ובטלפון נקודה. ראה למעלה */
+              dayCellContent={renderDayCell}
               dateClick={
                 isMobile
                   ? (info) => {

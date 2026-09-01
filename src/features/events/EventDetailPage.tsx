@@ -3,19 +3,19 @@ import { useNavigate, useParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Banknote,
-  Briefcase,
   Calendar,
   Check,
   ChevronDown,
-  Clock,
   Copy,
-  HardHat,
+  History,
   ICON,
   LayoutGrid,
   List,
+  MoreVertical,
   Paperclip,
   Pencil,
   PencilLine,
+  Phone,
   Plus,
   STROKE,
   Trash2,
@@ -28,19 +28,27 @@ import {
   CardBody,
   CardHeader,
   DataTable,
+  Drawer,
   EmptyState,
+  IconButton,
   LocationText,
   MenuItem,
   MenuLabel,
+  MenuSeparator,
   PageHeader,
   Popover,
+  SegmentedControl,
   Select,
+  Skeleton,
+  StatCard,
+  StatusPill,
+  Tabs,
+  cx,
+  fmtMoney,
+  relativeDayLabel,
   SkeletonCard,
   ErrorState,
   SkeletonTable,
-  StatusPill,
-  cx,
-  fmtMoney,
   useConfirm,
   useToast,
 } from '../../components/ui'
@@ -51,9 +59,9 @@ import { PERM } from '../../lib/permissions'
 import { useCustomFormFields, useStatuses } from '../../lib/queries'
 import { errorMessage } from '../../lib/errors'
 import { fmtDate, fmtDateLong, fmtHours, fmtTime } from '../../lib/dates'
-import { byTaskDateTime } from '../workboard/grouping'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { EventFormModal } from './EventFormModal'
+import { EventTaskCard } from './EventTaskCard'
 import { formatCustomValue } from './CustomFieldInput'
 import { TaskDrawer, useCanOpenTaskCard } from '../tasks/TaskDrawer'
 import { EventActivityLog } from './EventActivityLog'
@@ -77,6 +85,7 @@ export default function EventDetailPage() {
   const [editOpen, setEditOpen] = useState(false)
   const [specsOpen, setSpecsOpen] = useState(false)
   const [signOpen, setSignOpen] = useState(false)
+  const [logOpen, setLogOpen] = useState(false)
   const [taskDrawer, setTaskDrawer] = useState<{ open: boolean; taskId: string | null }>({ open: false, taskId: null })
   const [activeTab, setActiveTab] = useState<TaskTab>('all')
   const [viewMode, setViewMode] = useState<TaskViewMode>('cards')
@@ -410,16 +419,23 @@ export default function EventDetailPage() {
   if (isLoading || !data) {
     // ראה CustomerDetailPage: בלי זה כישלון טעינה נראה כטעינה שלא נגמרת.
     if (error) return <ErrorState error={error} onRetry={() => void refetch()} />
+    /* השלד מצייר את הפריסה האמיתית — כותרת, רצועת אריחים, ואז 2/3 משימות
+       מול 1/3 סרגל — כדי שהמעבר לנתונים לא יזיז את מה שכבר נקרא. */
     return (
       <div className="space-y-4">
         <SkeletonCard lines={1} />
-        <div className="grid gap-4 lg:grid-cols-12">
-          <div className="space-y-4 lg:col-span-8">
-            <SkeletonCard lines={6} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-xl" />
+          ))}
+        </div>
+        <div className="grid items-start gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-2">
             <SkeletonTable rows={5} cols={5} />
           </div>
-          <div className="lg:col-span-4">
-            <SkeletonCard lines={10} />
+          <div className="space-y-4">
+            <SkeletonCard lines={8} />
+            <SkeletonCard lines={4} />
           </div>
         </div>
       </div>
@@ -484,99 +500,10 @@ export default function EventDetailPage() {
     navigate(`/events/${newId}`)
   }
 
-  const sectionLine = (t: WorkBoardRow) =>
-    [
-      fmtDate(t.task_date),
-      fmtTime(t.onsite_start_time),
-      t.worker_count ? `${t.worker_count} עובדים` : null,
-      t.hours_count != null ? `${fmtHours(t.hours_count)} שעות` : null,
-      t.execution_method_name,
-    ]
-      .filter(Boolean)
-      .join(' · ') || null
-
-  /**
-   * שורת סיכום לכל משימה, לפי מי שקודם.
-   *
-   * הסדר "הקמה ואז פירוק" נכון כמעט תמיד, ולכן הוא היה מקובע — אבל כשהשניים
-   * נופלים על אותו יום הוא מקובע גם כשהוא הפוך: פירוק ב-06:00 של ציוד מאתמול
-   * והקמה ב-18:00 לערב הם יום אחד שמתחיל בפירוק. המיון הוא כרונולוגי לגמרי
-   * (תאריך ואז שעה), ולכן בתאריכים שונים הוא ממילא נותן את הסדר המוכר.
-   *
-   * ‏`byTaskDateTime` הוא אותו כלל שהלו״ז ממיין בו את היום — שם שעה חסרה
-   * שוקעת לתחתית, וכאן זה אומר שמשימה בלי שעה יורדת למטה.
-   *
-   * **שורה לכל משימה, ולא שתיים.** עד כאן זה היה זוג מקובע עם `find` על שני
-   * הקודים, ולכן אירוע עם משימה שלישית — או עם הקמה שנייה — הציג במיכל הזה
-   * פחות ממה שהמונה שמעליו סופר. התווית היא הכותרת כשיש, ואחרת שם סוג
-   * המשימה; משימה שנייה מאותו סוג מקבלת מספר סידורי כדי ששתי שורות לא
-   * ייקראו כאותה שורה.
-   */
-  /* בלי useMemo: הקטע הזה יושב אחרי היציאות המוקדמות של הקומפוננטה, והוק
-     שנקרא אחרי `return` מותנה נקרא בסדר שונה בין רינדורים. */
-  const sectionRows: [string, React.ReactNode][] = (() => {
-    const seen = new Map<string, number>()
-    return [...tasks].sort(byTaskDateTime).map((t) => {
-      const base = t.title?.trim() || t.task_type_name || 'משימה'
-      const n = (seen.get(base) ?? 0) + 1
-      seen.set(base, n)
-      return [n > 1 ? `${base} ${n}` : base, sectionLine(t)] as [string, React.ReactNode]
-    })
-  })()
-
   /* The same rule that shapes the form shapes the read view: a field the
      reader's company configured off, or their field permissions hide, should
      not reappear here. `showsEventField` answers both at once. */
   const show = showsEventField
-
-  const info: [string, React.ReactNode][] = [
-    [
-      'לקוח במערכת',
-      customer ? (
-        <span key="customer" className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full" style={{ background: customer.color ?? undefined }} />
-          {customer.name}
-        </span>
-      ) : null,
-    ],
-    ['שם לקוח האירוע', event.end_client_name],
-    ...(show('event_number') ? ([['מספר אירוע', event.event_number]] as [string, React.ReactNode][]) : []),
-    /* השדה נבנה רק כשיש כתובת — אלמנט הוא תמיד "לא ריק" מבחינת הפילטר למטה,
-       ובלעדי התנאי הזה הייתה נשארת שורת "מיקום" ריקה */
-    ...(show('location') && event.location_text
-      ? ([['מיקום', <LocationText key="location" value={event.location_text} />]] as [
-          string,
-          React.ReactNode,
-        ][])
-      : []),
-    ...(show('location_notes')
-      ? ([['הערות למיקום', event.location_notes]] as [string, React.ReactNode][])
-      : []),
-    ...(show('volume_m') ? ([['נפח במטר', event.volume_m]] as [string, React.ReactNode][]) : []),
-    ...(show('truck_count') ? ([['כמות משאיות', event.truck_count]] as [string, React.ReactNode][]) : []),
-    ...(canSeeContact
-      ? ([
-          ['איש קשר', contact?.contact_name],
-          [
-            'טלפון איש קשר',
-            contact?.contact_phone ? (
-              <a key="phone" href={`tel:${contact.contact_phone}`} dir="ltr" className="text-primary-text hover:underline">
-                {contact.contact_phone}
-              </a>
-            ) : null,
-          ],
-        ] as [string, React.ReactNode][])
-      : []),
-    ...sectionRows,
-    ...(show('notes') ? ([['הערות', event.notes]] as [string, React.ReactNode][]) : []),
-    /* the customer's own fields, under the same rule as everything above */
-    ...(customFields
-      .filter((f) => show(f.field_key))
-      .map((f) => [f.label_he, formatCustomValue(f, event.custom_fields?.[f.field_key])]) as [
-      string,
-      React.ReactNode,
-    ][]),
-  ]
 
   const addons = show('addons')
     ? [
@@ -585,6 +512,127 @@ export default function EventDetailPage() {
         event.supplier_pickup && 'איסוף מספקים',
       ].filter(Boolean)
     : []
+
+  type InfoRow = [string, React.ReactNode]
+  /** ‏`wide` — ערך שנקרא כפסקה ולא כערך קצר, ולכן אינו נדחס לצד התווית. */
+  type InfoGroup = { title: string; rows: InfoRow[]; wide?: boolean }
+
+  /**
+   * הפרטים כקבוצות ולא כרשימה שטוחה.
+   *
+   * עד כאן זה היה `<dl>` אחד של עד עשרים שורות במשקל ויזואלי זהה — זהות,
+   * מיקום, לוגיסטיקה, איש קשר, הערות ושדות הלקוח בערבוביה, ואי אפשר לסרוק
+   * את זה. הקיבוץ אינו מוסיף ואינו מסתיר מידע; הוא רק נותן לעין מקום לנחות.
+   *
+   * מה שכן ירד: שורת סיכום לכל משימה, שחזרה על מה שכרטיסי המשימות אומרים
+   * ממש באותו מסך, וכן מספר האירוע והמיקום — אלה יושבים בכותרת המשנה.
+   *
+   * כל תנאי ההרשאה (`show`, `canSeeContact`) נשארים כלשונם: זו אותה החלטה
+   * על מה מותר לקרוא, רק בסידור אחר.
+   */
+  const infoGroups: InfoGroup[] = ([
+    {
+      title: 'זהות',
+      rows: [
+        [
+          'לקוח במערכת',
+          customer ? (
+            <span key="customer" className="inline-flex items-center gap-1.5">
+              <span
+                className="size-2.5 shrink-0 rounded-full"
+                style={{ background: customer.color ?? undefined }}
+              />
+              {customer.name}
+            </span>
+          ) : null,
+        ],
+        ['שם לקוח האירוע', event.end_client_name],
+      ],
+    },
+    {
+      title: 'מיקום',
+      rows: [
+        /* השדה נבנה רק כשיש כתובת — אלמנט הוא תמיד "לא ריק" מבחינת הפילטר
+           למטה, ובלעדי התנאי הזה הייתה נשארת שורת "מיקום" ריקה */
+        ...(show('location') && event.location_text
+          ? ([['כתובת', <LocationText key="location" value={event.location_text} />]] as InfoRow[])
+          : []),
+        ...(show('location_notes') ? ([['הערות למיקום', event.location_notes]] as InfoRow[]) : []),
+      ],
+    },
+    {
+      title: 'לוגיסטיקה',
+      rows: [
+        ...(show('volume_m') ? ([['נפח במטר', event.volume_m]] as InfoRow[]) : []),
+        ...(show('truck_count') ? ([['כמות משאיות', event.truck_count]] as InfoRow[]) : []),
+        ...(addons.length > 0
+          ? ([
+              [
+                'תוספות',
+                <span key="addons" className="flex flex-wrap gap-1">
+                  {addons.map((a) => (
+                    <Badge key={String(a)} tone="info">
+                      {a}
+                    </Badge>
+                  ))}
+                </span>,
+              ],
+            ] as InfoRow[])
+          : []),
+        ...(suppliers.length > 0
+          ? ([
+              [
+                'ספקים לאיסוף',
+                <span key="suppliers" className="flex flex-wrap gap-1">
+                  {suppliers.map((s) => (
+                    <Badge key={s.supplier_id}>{s.suppliers.name}</Badge>
+                  ))}
+                </span>,
+              ],
+            ] as InfoRow[])
+          : []),
+      ],
+    },
+    {
+      title: 'איש קשר',
+      rows: canSeeContact
+        ? ([
+            ['שם', contact?.contact_name],
+            [
+              'טלפון',
+              contact?.contact_phone ? (
+                <a
+                  key="phone"
+                  href={`tel:${contact.contact_phone}`}
+                  dir="ltr"
+                  className="inline-flex items-center gap-1.5 rounded-md text-primary-text hover:underline focus-visible:outline-none focus-visible:focus-ring"
+                >
+                  <Phone size={ICON.xs} strokeWidth={STROKE} />
+                  {contact.contact_phone}
+                </a>
+              ) : null,
+            ],
+          ] as InfoRow[])
+        : [],
+    },
+    {
+      title: 'הערות',
+      wide: true,
+      rows: show('notes') ? ([['', event.notes]] as InfoRow[]) : [],
+    },
+    {
+      title: 'שדות נוספים',
+      wide: true,
+      /* the customer's own fields, under the same rule as everything above */
+      rows: customFields
+        .filter((f) => show(f.field_key))
+        .map((f) => [f.label_he, formatCustomValue(f, event.custom_fields?.[f.field_key])] as InfoRow),
+    },
+  ] as InfoGroup[])
+    /* שורה ריקה יורדת, וקבוצה שכל שורותיה ירדו אינה מרונדרת כלל — כותרת
+       קבוצה בלי תוכן היא הבטחה שלא מתקיימת. */
+    .map((g) => ({ ...g, rows: g.rows.filter(([, v]) => v != null && v !== '') }))
+    .filter((g) => g.rows.length > 0)
 
   return (
     <div className="space-y-5">
@@ -628,38 +676,50 @@ export default function EventDetailPage() {
             )}
           </span>
         }
+        /**
+         * שש פעולות בשורה אחת, שתיים מהן `primary` ומחיקה אדומה ביניהן, הן
+         * שורה בלי היררכיה: העין לא יודעת במה להתחיל. כאן יש ראשי אחד —
+         * עריכה — משניים לצידו, והנדיר וההרסני יורדים לתפריט גלישה.
+         *
+         * "אישור לביצוע" נשאר גלוי כשהוא עוד לא ניתן: זו פעולת השער שהלקוח
+         * ממתין לה (0109), ולקבור אותה בתפריט זו רגרסיה. אחרי שניתן, התג
+         * בכותרת כבר אומר את זה, וביטולו הוא פעולה נדירה — ולכן בתפריט.
+         *
+         * מתחת ל-sm הטקסטים נעלמים והכפתורים המשניים נשארים אייקונים, כדי
+         * שהשורה לא תתפרס על שלוש שורות בטלפון.
+         */
         actions={
           <>
             {has(PERM.EVENTS_SPECS_VIEW) && (
               <Button size="sm" onClick={() => setSpecsOpen(true)}>
                 <Paperclip size={ICON.sm} strokeWidth={STROKE} />
-                מפרט
+                <span className="max-sm:sr-only">מפרט</span>
                 {specs.length > 0 && <Badge tone="primary">{specs.length}</Badge>}
               </Button>
             )}
             {canViewSignature && (
               <Button size="sm" onClick={() => setSignOpen(true)}>
                 <PencilLine size={ICON.sm} strokeWidth={STROKE} />
-                החתמת לקוח
+                <span className="max-sm:sr-only">החתמת לקוח</span>
                 {signatures.length > 0 && <Badge tone="success">נחתם</Badge>}
               </Button>
             )}
-            {/* המתג עצמו הוא של מנהל המערכת, וה-RPC דוחה כל אחד אחר (0109). */}
-            {isAdmin && (
-              <Button
-                size="sm"
-                variant={event.approved_at ? 'ghost' : 'primary'}
-                loading={approve.isPending}
-                onClick={() => approve.mutate(!event.approved_at)}
-              >
-                <Check size={ICON.sm} strokeWidth={STROKE} />
-                {event.approved_at ? 'ביטול אישור לביצוע' : 'אישור לביצוע'}
+            {canSeeLog && (
+              <Button size="sm" onClick={() => setLogOpen(true)}>
+                <History size={ICON.sm} strokeWidth={STROKE} />
+                <span className="max-sm:sr-only">יומן פעילות</span>
               </Button>
             )}
-            {has(PERM.EVENTS_DUPLICATE) && (
-              <Button size="sm" onClick={() => void duplicate()}>
-                <Copy size={ICON.sm} strokeWidth={STROKE} />
-                שכפול
+            {/* המתג עצמו הוא של מנהל המערכת, וה-RPC דוחה כל אחד אחר (0109). */}
+            {isAdmin && !event.approved_at && (
+              <Button
+                size="sm"
+                variant="outlined"
+                loading={approve.isPending}
+                onClick={() => approve.mutate(true)}
+              >
+                <Check size={ICON.sm} strokeWidth={STROKE} />
+                אישור לביצוע
               </Button>
             )}
             {has(PERM.EVENTS_EDIT) && (
@@ -668,479 +728,354 @@ export default function EventDetailPage() {
                 עריכה
               </Button>
             )}
-            {has(PERM.EVENTS_DELETE) && (
-              <Button size="sm" variant="danger" onClick={() => void remove()}>
-                <Trash2 size={ICON.sm} strokeWidth={STROKE} />
-                מחיקה
-              </Button>
+            {/* התפריט קיים רק כשיש בו מה לפתוח — כפתור שנפתח לריק גרוע
+                מכפתור שאינו קיים. */}
+            {(has(PERM.EVENTS_DUPLICATE) || has(PERM.EVENTS_DELETE) || (isAdmin && event.approved_at)) && (
+              <Popover
+                align="end"
+                trigger={(p) => (
+                  <IconButton size="sm" variant="ghost" label="עוד פעולות" {...p}>
+                    <MoreVertical size={ICON.md} strokeWidth={STROKE} aria-hidden />
+                  </IconButton>
+                )}
+              >
+                {(close) => (
+                  <>
+                    {has(PERM.EVENTS_DUPLICATE) && (
+                      <MenuItem
+                        icon={<Copy size={ICON.sm} strokeWidth={STROKE} />}
+                        onClick={() => {
+                          close()
+                          void duplicate()
+                        }}
+                      >
+                        שכפול
+                      </MenuItem>
+                    )}
+                    {isAdmin && event.approved_at && (
+                      <MenuItem
+                        icon={<Check size={ICON.sm} strokeWidth={STROKE} />}
+                        onClick={() => {
+                          close()
+                          approve.mutate(false)
+                        }}
+                      >
+                        ביטול אישור לביצוע
+                      </MenuItem>
+                    )}
+                    {has(PERM.EVENTS_DELETE) && (
+                      <>
+                        <MenuSeparator />
+                        <MenuItem
+                          danger
+                          icon={<Trash2 size={ICON.sm} strokeWidth={STROKE} />}
+                          onClick={() => {
+                            close()
+                            void remove()
+                          }}
+                        >
+                          מחיקת אירוע
+                        </MenuItem>
+                      </>
+                    )}
+                  </>
+                )}
+              </Popover>
             )}
           </>
         }
       />
 
-      {/* Main 2-column grid layout: Right side = Content & Tasks; Left side = Activity Log full-height sidebar */}
-      <div className="grid gap-6 lg:grid-cols-12 items-start">
-        {/* Right Main Column (in RTL, lg:col-span-7 xl:col-span-8) */}
-        <div className="space-y-6 lg:col-span-7 xl:col-span-8">
-          {/* Top Cards Grid: Event Info + Pricing */}
-          <div className={`grid gap-4 ${pricing ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
+      {/* מבט מהיר: מתי, כמה משימות, כמה אנשים, כמה כסף — ארבע השאלות שכל מי
+          שנכנס לדף שואל לפני כל היתר. המונים לפי סוג ירדו ל-hint במקום אריח
+          נפרד, כי לשוניות הסינון שלמטה אומרות בדיוק את אותו דבר. */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          icon={<Calendar size={ICON.xl} strokeWidth={STROKE} />}
+          label="מועד האירוע"
+          value={fmtDate(event.event_date)}
+          hint={relativeDayLabel(event.event_date) ?? fmtDateLong(event.event_date)}
+        />
+        <StatCard
+          icon={<List size={ICON.xl} strokeWidth={STROKE} />}
+          label="משימות"
+          value={tasks.length}
+          tone="#1fa189"
+          hint={
+            [
+              taskStats.setupCount ? `${taskStats.setupCount} הקמה` : null,
+              taskStats.teardownCount ? `${taskStats.teardownCount} פירוק` : null,
+              taskStats.otherCount ? `${taskStats.otherCount} אחר` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ') || 'אין משימות'
+          }
+        />
+        {!isCustomerUser && (
+          <StatCard
+            icon={<Users size={ICON.xl} strokeWidth={STROKE} />}
+            label="צוות"
+            value={taskStats.totalWorkers}
+            tone="#f59e0b"
+            hint="עובדים משובצים"
+          />
+        )}
+        {/* לא "—" למי שאינו רשאי לראות כסף: משבצת ריקה נקראת כמחיר שלא הוזן,
+            וזו אמירה על האירוע ולא על הקורא. */}
+        {canSeePricing && (
+          <StatCard
+            icon={<Banknote size={ICON.xl} strokeWidth={STROKE} />}
+            label="תמחור"
+            value={pricing ? fmtMoney(pricing.total) : '—'}
+            tone="#16a34a"
+            hint={
+              pricing?.unpriced ? `${pricing.unpriced} משימות ללא מחיר` : 'המחיר שהלקוח משלם'
+            }
+          />
+        )}
+      </div>
+
+      {/* המשימות הן הסיבה שנכנסים לדף, ולכן הן שני שלישים; הפרטים והתמחור
+          יורדים לסרגל צר, שם פריסת תווית-מעל-ערך קריאה יותר מהצמדה לשוליים
+          שנשברה בעמודה של 300px. */}
+      <div className="grid items-start gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <Card>
+            {/* ‏`Tabs` ו-`SegmentedControl` מה-kit במקום כפתורים שנבנו כאן
+                ידנית: הם נותנים ניווט מקלדת, `aria-selected`, וגלילה צידית
+                בטלפון — וגם מתקנים בדרך את `text-ink-primary`, קלאס שאין לו
+                טוקן — ולכן הלשונית הפעילה איבדה צבע בשקט.
+
+                המונה שהיה כאן ליד הכותרת ירד: לשונית "הכול" נושאת אותו
+                מספר בדיוק, סנטימטרים ממנו. */}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-2 pt-3.5">
+              <h2 className="type-title">משימות האירוע</h2>
+
+              <div className="ms-auto flex items-center gap-2">
+                <SegmentedControl
+                  value={viewMode}
+                  onChange={setViewMode}
+                  items={[
+                    {
+                      key: 'cards',
+                      label: <span className="sr-only">תצוגת כרטיסים</span>,
+                      icon: <LayoutGrid size={ICON.sm} strokeWidth={STROKE} />,
+                    },
+                    {
+                      key: 'table',
+                      label: <span className="sr-only">תצוגת טבלה</span>,
+                      icon: <List size={ICON.sm} strokeWidth={STROKE} />,
+                    },
+                  ]}
+                />
+
+                {canCreateTask && (
+                  <Button size="sm" variant="primary" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
+                    <Plus size={ICON.sm} strokeWidth={STROKE} />
+                    משימה חדשה
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* לשוניות הסינון הן גם קו ההפרדה של ראש הכרטיס — `Tabs` נושא
+                `border-b` משלו, ולכן קו ידני נוסף כאן היה קו כפול. */}
+            <Tabs
+              size="sm"
+              className="px-4"
+              value={activeTab}
+              onChange={setActiveTab}
+              items={[
+                { key: 'all', label: 'הכול', badge: tasks.length },
+                { key: 'setup', label: 'הקמה', badge: taskStats.setupCount },
+                { key: 'teardown', label: 'פירוק', badge: taskStats.teardownCount },
+                /* לשונית רביעית רק כשיש משימה שאינה הקמה/פירוק */
+                ...(taskStats.otherCount > 0
+                  ? [{ key: 'other' as TaskTab, label: 'אחר', badge: taskStats.otherCount }]
+                  : []),
+              ]}
+            />
+
+            {/* הטבלה נוגעת בשולי הכרטיס (`padded={false}`) כמו בכל שאר
+                המסכים; הכרטיסים והמצב הריק צריכים את הריפוד. */}
+            <CardBody padded={viewMode === 'cards' || filteredTasks.length === 0 || loadingTasks}>
+              {loadingTasks ? (
+                <SkeletonTable rows={4} cols={4} />
+              ) : filteredTasks.length === 0 ? (
+                <EmptyState
+                  art="table"
+                  title="אין משימות להצגה"
+                  description={
+                    activeTab === 'all'
+                      ? 'עדיין לא נוספו משימות לאירוע'
+                      : 'אין משימות בסינון הזה — נסו לשונית אחרת'
+                  }
+                  action={
+                    canCreateTask && (
+                      <Button size="sm" variant="primary" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
+                        <Plus size={ICON.sm} strokeWidth={STROKE} />
+                        משימה חדשה
+                      </Button>
+                    )
+                  }
+                />
+              ) : viewMode === 'cards' ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {filteredTasks.map((t) => (
+                    <EventTaskCard
+                      key={t.id}
+                      task={t}
+                      onOpen={canOpenTask ? () => setTaskDrawer({ open: true, taskId: t.id }) : undefined}
+                      showStaffing={showStaffing}
+                      performedByEnabled={performedByEnabled}
+                      canSetPerformedBy={canSetPerformedBy}
+                      performedByPending={setPerformedBy.isPending}
+                      onPerformedBy={(value) => setPerformedBy.mutate({ taskId: t.id, value })}
+                    />
+                  ))}
+                </div>
+              ) : (
+                /* Table View */
+                <DataTable
+                  rows={filteredTasks}
+                  columns={columns}
+                  getRowId={(t) => t.id}
+                  loading={loadingTasks}
+                  error={tasksError}
+                  onRetry={() => void refetchTasks()}
+                  dense
+                  storageKey="event-tasks"
+                  onRowClick={canOpenTask ? (t) => setTaskDrawer({ open: true, taskId: t.id }) : undefined}
+                  defaultSort={{ key: 'date', dir: 'asc' }}
+                />
+              )}
+            </CardBody>
+          </Card>
+        </div>
+
+        {/* הסרגל: פרטים ואז כסף. `sticky` כדי שהתמחור יישאר בעין בזמן גלילה
+            ברשימת משימות ארוכה, ו-`self-start` כדי שהוא לא יימתח לגובה
+            העמודה שלצידו. */}
+        <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+          <Card>
+            <CardHeader title="פרטי האירוע" />
+            <CardBody>
+              <dl className="space-y-3.5">
+                {infoGroups.map((g) => (
+                  <div
+                    key={g.title}
+                    className="space-y-2 border-t border-line-subtle pt-3.5 first:border-0 first:pt-0"
+                  >
+                    <p className="type-overline">{g.title}</p>
+                    {g.rows.map(([k, v]) => (
+                      <div key={k || g.title} className={g.wide ? '' : 'grid gap-0.5'}>
+                        {k && <dt className="type-caption text-ink-tertiary">{k}</dt>}
+                        <dd
+                          className={cx(
+                            'min-w-0 type-body',
+                            /* טקסט חופשי נקרא כפסקה; בעמודה צרה, ערך ארוך
+                               שנדחק לצד תווית הופך לשתי מילים בשורה. */
+                            g.wide ? 'whitespace-pre-wrap' : 'font-medium',
+                          )}
+                        >
+                          {v}
+                        </dd>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </dl>
+            </CardBody>
+          </Card>
+
+          {pricing && (
             <Card>
-              <CardHeader title="פרטי האירוע" />
+              <CardHeader
+                title="תמחור"
+                subtitle="המחיר שהלקוח משלם"
+                icon={<Banknote size={ICON.md} strokeWidth={STROKE} />}
+              />
               <CardBody>
                 <dl className="divide-y divide-line-subtle">
-                  {info
-                    .filter(([, v]) => v != null && v !== '')
-                    .map(([k, v]) => (
-                      <div key={k} className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0">
-                        <dt className="shrink-0 type-caption text-ink-tertiary">{k}</dt>
-                        <dd className="min-w-0 text-end type-body font-medium">{v}</dd>
-                      </div>
-                    ))}
-                  {addons.length > 0 && (
-                    <div className="flex items-start justify-between gap-3 py-2">
-                      <dt className="shrink-0 type-caption text-ink-tertiary">תוספות</dt>
-                      <dd className="flex flex-wrap justify-end gap-1">
-                        {addons.map((a) => (
-                          <Badge key={String(a)} tone="info">
-                            {a}
-                          </Badge>
-                        ))}
-                      </dd>
-                    </div>
-                  )}
-                  {suppliers.length > 0 && (
-                    <div className="flex items-start justify-between gap-3 py-2 last:pb-0">
-                      <dt className="shrink-0 type-caption text-ink-tertiary">ספקים לאיסוף</dt>
-                      <dd className="flex flex-wrap justify-end gap-1">
-                        {suppliers.map((s) => (
-                          <Badge key={s.supplier_id}>{s.suppliers.name}</Badge>
-                        ))}
-                      </dd>
-                    </div>
-                  )}
-                </dl>
-              </CardBody>
-            </Card>
-
-            {pricing && (
-              <Card>
-                <CardHeader
-                  title="תמחור"
-                  subtitle="המחיר שהלקוח משלם"
-                  icon={<Banknote size={ICON.md} strokeWidth={STROKE} />}
-                />
-                <CardBody>
-                  <dl className="divide-y divide-line-subtle">
-                    {pricing.rows.map((r) => (
-                      <div key={r.id} className="py-2 first:pt-0">
-                        <div className="flex items-start justify-between gap-3">
-                          <dt className="min-w-0 shrink type-caption text-ink-tertiary">
-                            {r.label}
-                            {r.isManual && <span className="ms-1.5 text-warning-text">ידני</span>}
-                          </dt>
-                          <dd dir="ltr" className="shrink-0 tabular-nums type-body font-medium">
-                            {fmtMoney(r.price)}
-                          </dd>
-                        </div>
-                        {r.addons.map((a) => (
-                          <PriceAddonLine key={a.id} addon={a} />
-                        ))}
-                      </div>
-                    ))}
-                    {/* תוספת על משימה שעדיין אין לה מחיר. היא נספרת בסך הכול
-                        ממילא, ולכן היא חייבת להיראות — אחרת הסכום למטה גדול
-                        מסך השורות שמעליו בלי הסבר. */}
-                    {pricing.orphanAddons.length > 0 && (
-                      <div className="py-2">
-                        {pricing.orphanAddons.map((a) => (
-                          <PriceAddonLine key={a.id} addon={a} withTask />
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex items-baseline justify-between gap-3 pt-2">
-                      <dt className="type-body font-semibold">סך הכול</dt>
-                      <dd dir="ltr" className="tabular-nums type-title font-semibold text-primary">
-                        {fmtMoney(pricing.total)}
-                      </dd>
-                    </div>
-                  </dl>
-                  {pricing.unpriced > 0 && (
-                    <p className="mt-2 type-caption text-ink-tertiary">
-                      {pricing.unpriced} משימות ללא מחיר עדיין
-                    </p>
-                  )}
-                </CardBody>
-              </Card>
-            )}
-
-            {contractorPay && (
-              <Card>
-                <CardHeader
-                  title="התשלום שלך"
-                  subtitle="כמה אתה מקבל על האירוע"
-                  icon={<Banknote size={ICON.md} strokeWidth={STROKE} />}
-                />
-                <CardBody>
-                  <dl className="divide-y divide-line-subtle">
-                    {contractorPay.rows.map((r) => (
-                      <div key={r.id} className="flex items-start justify-between gap-3 py-2 first:pt-0">
-                        <dt className="min-w-0 shrink type-caption text-ink-tertiary">{r.label}</dt>
+                  {pricing.rows.map((r) => (
+                    <div key={r.id} className="py-2 first:pt-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <dt className="min-w-0 shrink type-caption text-ink-tertiary">
+                          {r.label}
+                          {r.isManual && <span className="ms-1.5 text-warning-text">ידני</span>}
+                        </dt>
                         <dd dir="ltr" className="shrink-0 tabular-nums type-body font-medium">
                           {fmtMoney(r.price)}
                         </dd>
                       </div>
-                    ))}
-                    <div className="flex items-baseline justify-between gap-3 pt-2">
-                      <dt className="type-body font-semibold">סך הכול</dt>
-                      <dd dir="ltr" className="tabular-nums type-title font-semibold text-success-text">
-                        {fmtMoney(contractorPay.total)}
-                      </dd>
+                      {r.addons.map((a) => (
+                        <PriceAddonLine key={a.id} addon={a} />
+                      ))}
                     </div>
-                  </dl>
-                </CardBody>
-              </Card>
-            )}
-          </div>
-
-          {/* Redesigned Tasks Section */}
-          <div className="space-y-4">
-            {/* Tasks Summary KPI Bar */}
-            <div
-              className={cx(
-                'grid grid-cols-2 gap-3',
-                { 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'sm:grid-cols-4' }[
-                  2 + (isCustomerUser ? 0 : 1) + (canSeePricing ? 1 : 0)
-                ],
-              )}
-            >
-              <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
-                <span className="type-caption text-ink-tertiary">סך משימות</span>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="type-title text-xl font-bold">{tasks.length}</span>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
-                <span className="type-caption text-ink-tertiary">חלוקת משימות</span>
-                {/* ‏`flex-wrap`: התג השלישי מופיע בדיוק כשיש משימה שאינה
-                    הקמה/פירוק, והאריח צר מכדי להחזיק שלושה בשורה — ואז
-                    ה-truncate שבתוך Badge מקצר את התוויות. */}
-                <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                  <Badge tone="info">הקמה {taskStats.setupCount}</Badge>
-                  <Badge tone="warning">פירוק {taskStats.teardownCount}</Badge>
-                  {taskStats.otherCount > 0 && <Badge>אחר {taskStats.otherCount}</Badge>}
-                </div>
-              </div>
-
-              {!isCustomerUser && (
-                <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
-                  <span className="type-caption text-ink-tertiary">צוות משובץ</span>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <Users size={ICON.sm} className="text-ink-tertiary" />
-                    <span className="type-title text-lg font-bold">{taskStats.totalWorkers}</span>
-                    <span className="type-caption text-ink-tertiary">עובדים</span>
-                  </div>
-                </div>
-              )}
-
-              {/* לא "—" למי שאינו רשאי לראות כסף: משבצת ריקה נקראת כמחיר
-                  שלא הוזן, וזו אמירה על האירוע ולא על הקורא. */}
-              {canSeePricing && (
-                <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
-                  <span className="type-caption text-ink-tertiary">סך תמחור</span>
-                  <div className="flex items-center gap-1.5 mt-1" dir="ltr">
-                    <span className="type-title text-lg font-bold text-success-text">
-                      {pricing ? fmtMoney(pricing.total) : '—'}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Tasks Container Card */}
-            <Card>
-              {/* Header & Controls Toolbar */}
-              <div className="p-4 border-b border-line-subtle flex flex-wrap items-center justify-between gap-3">
-                {/* ‏`flex-wrap` ו-`min-w-0`: לשונית "אחר" הרביעית נוספת באותו
-                    תנאי בדיוק, והרצועה בלעדיהם דוחסת את כל הכפתורים. */}
-                <div className="flex min-w-0 flex-wrap items-center gap-3">
-                  <h2 className="type-title font-semibold flex items-center gap-2">
-                    <span>משימות האירוע</span>
-                    <Badge tone="neutral" className="tabular">{filteredTasks.length}</Badge>
-                  </h2>
-
-                  {/* Filter Tabs */}
-                  <div className="flex flex-wrap items-center rounded-lg bg-subtle p-1 border border-line-subtle text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('all')}
-                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                        activeTab === 'all'
-                          ? 'bg-surface text-ink-primary shadow-xs'
-                          : 'text-ink-tertiary hover:text-ink-primary'
-                      }`}
-                    >
-                      הכול
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('setup')}
-                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                        activeTab === 'setup'
-                          ? 'bg-surface text-ink-primary shadow-xs'
-                          : 'text-ink-tertiary hover:text-ink-primary'
-                      }`}
-                    >
-                      הקמה ({taskStats.setupCount})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('teardown')}
-                      className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                        activeTab === 'teardown'
-                          ? 'bg-surface text-ink-primary shadow-xs'
-                          : 'text-ink-tertiary hover:text-ink-primary'
-                      }`}
-                    >
-                      פירוק ({taskStats.teardownCount})
-                    </button>
-                    {taskStats.otherCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('other')}
-                        className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                          activeTab === 'other'
-                            ? 'bg-surface text-ink-primary shadow-xs'
-                            : 'text-ink-tertiary hover:text-ink-primary'
-                        }`}
-                      >
-                        אחר ({taskStats.otherCount})
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 ms-auto">
-                  {/* View Switcher */}
-                  <div className="flex items-center rounded-lg bg-subtle p-1 border border-line-subtle">
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('cards')}
-                      title="תצוגת כרטיסים"
-                      className={`p-1.5 rounded-md transition-all ${
-                        viewMode === 'cards'
-                          ? 'bg-surface text-primary shadow-xs'
-                          : 'text-ink-tertiary hover:text-ink-primary'
-                      }`}
-                    >
-                      <LayoutGrid size={ICON.sm} strokeWidth={STROKE} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('table')}
-                      title="תצוגת טבלה"
-                      className={`p-1.5 rounded-md transition-all ${
-                        viewMode === 'table'
-                          ? 'bg-surface text-primary shadow-xs'
-                          : 'text-ink-tertiary hover:text-ink-primary'
-                      }`}
-                    >
-                      <List size={ICON.sm} strokeWidth={STROKE} />
-                    </button>
-                  </div>
-
-                  {canCreateTask && (
-                    <Button size="sm" variant="primary" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
-                      <Plus size={ICON.sm} strokeWidth={STROKE} />
-                      משימה חדשה
-                    </Button>
+                  ))}
+                  {/* תוספת על משימה שעדיין אין לה מחיר. היא נספרת בסך הכול
+                      ממילא, ולכן היא חייבת להיראות — אחרת הסכום למטה גדול
+                      מסך השורות שמעליו בלי הסבר. */}
+                  {pricing.orphanAddons.length > 0 && (
+                    <div className="py-2">
+                      {pricing.orphanAddons.map((a) => (
+                        <PriceAddonLine key={a.id} addon={a} withTask />
+                      ))}
+                    </div>
                   )}
-                </div>
-              </div>
-
-              {/* Tasks Body Content */}
-              <CardBody className="p-4">
-                {loadingTasks ? (
-                  <SkeletonTable rows={4} cols={4} />
-                ) : filteredTasks.length === 0 ? (
-                  <EmptyState
-                    art="table"
-                    title="אין משימות להצגה"
-                    description="נסה לשנות את הסינון או להוסיף משימה חדשה"
-                    action={
-                      canCreateTask && (
-                        <Button size="sm" variant="primary" onClick={() => setTaskDrawer({ open: true, taskId: null })}>
-                          <Plus size={ICON.sm} />
-                          משימה חדשה
-                        </Button>
-                      )
-                    }
-                  />
-                ) : viewMode === 'cards' ? (
-                  /* Cards / Visual Grid View */
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {filteredTasks.map((t) => {
-                      const names = [
-                        ...(t.workers ?? []).map((w) => w.name),
-                        ...(t.drivers ?? []).map((d) => d.name),
-                        ...(t.contractor_worker_list ?? []).map((w) => w.name),
-                      ]
-                      return (
-                        <div
-                          key={t.id}
-                          onClick={canOpenTask ? () => setTaskDrawer({ open: true, taskId: t.id }) : undefined}
-                          className={cx(
-                            'group relative flex flex-col justify-between rounded-xl border border-line-subtle bg-surface p-4 transition-all duration-200',
-                            canOpenTask && 'cursor-pointer hover:border-primary/50 hover:shadow-md',
-                          )}
-                        >
-                          <div className="space-y-3">
-                            {/* Card Top Row: Task Type / Code Badge + Status */}
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5">
-                                {t.task_type_code === 'setup' ? (
-                                  <Badge tone="info">הקמה</Badge>
-                                ) : t.task_type_code === 'teardown' ? (
-                                  <Badge tone="warning">פירוק</Badge>
-                                ) : (
-                                  <Badge tone="neutral">משימה</Badge>
-                                )}
-                                <StatusPill color={t.status_color}>{t.status_name}</StatusPill>
-                              </div>
-                              {t.customer_price != null && (
-                                <span dir="ltr" className="type-caption font-bold text-success-text tabular">
-                                  {fmtMoney(t.customer_price)}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Task Title */}
-                            <div>
-                              <h3 className="type-title font-semibold text-ink-primary group-hover:text-primary transition-colors">
-                                {t.title || t.task_type_name}
-                              </h3>
-                            </div>
-
-                            {/* Date & Time Badges */}
-                            <div className="flex flex-wrap items-center gap-2 type-caption text-ink-secondary">
-                              <span className="inline-flex items-center gap-1 bg-subtle px-2 py-1 rounded-md border border-line-subtle tabular">
-                                <Calendar size={ICON.xs} className="text-ink-tertiary" />
-                                {fmtDate(t.task_date)}
-                              </span>
-                              <span className="inline-flex items-center gap-1 bg-subtle px-2 py-1 rounded-md border border-line-subtle tabular" dir="ltr">
-                                <Clock size={ICON.xs} className="text-ink-tertiary" />
-                                {fmtTime(t.onsite_start_time) || '—'}
-                                {t.onsite_end_time ? `–${fmtTime(t.onsite_end_time)}` : ''}
-                              </span>
-                              {t.hours_count != null && (
-                                <span className="type-caption tabular text-ink-tertiary">
-                                  ({fmtHours(t.hours_count)} שעות)
-                                </span>
-                              )}
-                            </div>
-
-                            {/* בוצע ע"י (0120) — רק אצל לקוח שהאפשרות מופעלת אצלו */}
-                            {performedByEnabled && (
-                              <div
-                                className="flex items-center gap-2 pt-1"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <span className="type-caption text-ink-tertiary">בוצע ע"י</span>
-                                <Select
-                                  selectSize="sm"
-                                  aria-label={'בוצע ע"י'}
-                                  value={t.performed_by}
-                                  disabled={!canSetPerformedBy || setPerformedBy.isPending}
-                                  onChange={(e) =>
-                                    setPerformedBy.mutate({ taskId: t.id, value: e.target.value as PerformedBy })
-                                  }
-                                >
-                                  <option value="viper">וייפר</option>
-                                  <option value="arko">ארקו</option>
-                                </Select>
-                              </div>
-                            )}
-
-                            {/* Team Lead & Contractor info if available */}
-                            {(t.team_lead_name || t.contractor_name || t.execution_method_name) && (
-                              <div className="flex flex-wrap items-center gap-1.5 type-caption pt-1 border-t border-line-subtle/60">
-                                {t.team_lead_name && (
-                                  <span className="inline-flex items-center gap-1 text-ink-secondary">
-                                    <HardHat size={ICON.xs} className="text-warning-text" />
-                                    <span>ר"צ: {t.team_lead_name}</span>
-                                  </span>
-                                )}
-                                {t.contractor_name && (
-                                  <span className="inline-flex items-center gap-1 text-ink-secondary">
-                                    <Briefcase size={ICON.xs} className="text-info-text" />
-                                    <span>{t.contractor_name}</span>
-                                  </span>
-                                )}
-                                {t.execution_method_name && !t.contractor_name && (
-                                  <span className="text-ink-tertiary">({t.execution_method_name})</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Card Footer: Team Assigned Avatars */}
-                          <div className="mt-4 pt-2.5 border-t border-line-subtle flex items-center justify-between">
-                            {names.length > 0 ? (
-                              <div className="flex flex-wrap items-center gap-1">
-                                {names.map((n) => (
-                                  <span
-                                    key={n}
-                                    className="rounded bg-subtle px-1.5 py-px type-caption text-ink-secondary"
-                                  >
-                                    {n}
-                                  </span>
-                                ))}
-                                <span className="type-caption tabular text-ink-tertiary">
-                                  {names.length}/{t.worker_count || '—'} עובדים
-                                </span>
-                              </div>
-                            ) : showStaffing ? (
-                              <span className="type-caption text-ink-tertiary">לא שובצו עובדים</span>
-                            ) : (
-                              <span />
-                            )}
-                            {canOpenTask && (
-                              <span className="type-caption text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">
-                                פרטים ←
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
+                  <div className="flex items-baseline justify-between gap-3 pt-2">
+                    <dt className="type-body font-semibold">סך הכול</dt>
+                    <dd dir="ltr" className="tabular-nums type-title font-semibold text-primary">
+                      {fmtMoney(pricing.total)}
+                    </dd>
                   </div>
-                ) : (
-                  /* Table View */
-                  <DataTable
-                    rows={filteredTasks}
-                    columns={columns}
-                    getRowId={(t) => t.id}
-                    loading={loadingTasks}
-                    error={tasksError}
-                    onRetry={() => void refetchTasks()}
-                    dense
-                    storageKey="event-tasks"
-                    onRowClick={canOpenTask ? (t) => setTaskDrawer({ open: true, taskId: t.id }) : undefined}
-                    defaultSort={{ key: 'date', dir: 'asc' }}
-                  />
+                </dl>
+                {pricing.unpriced > 0 && (
+                  <p className="mt-2 type-caption text-ink-tertiary">
+                    {pricing.unpriced} משימות ללא מחיר עדיין
+                  </p>
                 )}
               </CardBody>
             </Card>
-          </div>
-        </div>
+          )}
 
-        {/* Left Sidebar Column - Full Height Activity Log (in RTL, lg:col-span-5 xl:col-span-4) */}
-        {canSeeLog && (
-          <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-4 h-[calc(100vh-2rem)] flex flex-col">
-            <EventActivityLog eventId={event.id} canNote={isEventLead} className="h-full shadow-xs" />
-          </div>
-        )}
+          {contractorPay && (
+            <Card>
+              <CardHeader
+                title="התשלום שלך"
+                subtitle="כמה אתה מקבל על האירוע"
+                icon={<Banknote size={ICON.md} strokeWidth={STROKE} />}
+              />
+              <CardBody>
+                <dl className="divide-y divide-line-subtle">
+                  {contractorPay.rows.map((r) => (
+                    <div key={r.id} className="flex items-start justify-between gap-3 py-2 first:pt-0">
+                      <dt className="min-w-0 shrink type-caption text-ink-tertiary">{r.label}</dt>
+                      <dd dir="ltr" className="shrink-0 tabular-nums type-body font-medium">
+                        {fmtMoney(r.price)}
+                      </dd>
+                    </div>
+                  ))}
+                  <div className="flex items-baseline justify-between gap-3 pt-2">
+                    <dt className="type-body font-semibold">סך הכול</dt>
+                    <dd dir="ltr" className="tabular-nums type-title font-semibold text-success-text">
+                      {fmtMoney(contractorPay.total)}
+                    </dd>
+                  </div>
+                </dl>
+              </CardBody>
+            </Card>
+          )}
+        </div>
       </div>
+
+      {/* היומן הוא הקשר, לא תוכן ראשי: כעמודה קבועה הוא לקח 42% מהמסך ודחס
+          את מה שבגללו נכנסים. במגירה הוא במרחק לחיצה אחת ובגובה מלא. */}
+      {canSeeLog && (
+        <Drawer open={logOpen} onClose={() => setLogOpen(false)} title="יומן פעילות" width="max-w-lg">
+          <EventActivityLog bare eventId={event.id} canNote={isEventLead} />
+        </Drawer>
+      )}
 
       <EventFormModal
         open={editOpen}

@@ -26,6 +26,7 @@ import {
   StatusPill,
   Textarea,
   Tooltip,
+  cx,
   fmtRelative,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
@@ -130,6 +131,7 @@ function toEntries(rows: EventActivity[]): Entry[] {
 export function EventActivityLog({
   eventId,
   canNote,
+  bare,
   className,
 }: {
   eventId: string
@@ -139,6 +141,12 @@ export function EventActivityLog({
    * הפוליסה על `event_activity` בודקת בדיוק את אותו דבר בשרת.
    */
   canNote?: boolean
+  /**
+   * בלי מעטפת הכרטיס ובלי `CardHeader` — למי שכבר נותן כותרת משלו, כלומר
+   * ה-`Drawer` שהיומן נפתח בתוכו. הבורר "הכול / הערות בלבד" והמונה יורדים
+   * לשורה דקה מעל הרשימה, כי הם חלק מהיומן ולא מהמסגרת שהוא יושב בה.
+   */
+  bare?: boolean
   className?: string
 }) {
   const { has, me } = useAuth()
@@ -209,15 +217,9 @@ export function EventActivityLog({
     [rows, notesOnly, canViewSystem],
   )
 
-  return (
-    <Card className={`flex flex-col h-full ${className ?? ''}`}>
-      <CardHeader
-        title="יומן פעילות"
-        subtitle={canViewSystem ? 'כל שינוי באירוע, ומה שרשמתם עליו' : 'ההערות שנרשמו על האירוע'}
-        icon={<History size={ICON.md} strokeWidth={STROKE} />}
-        actions={
-          <span className="flex items-center gap-2">
-            {canViewSystem && (
+  const filterControl = (
+    <span className="flex items-center gap-2">
+      {canViewSystem && (
               <SegmentedControl
                 items={[
                   { key: 'all', label: 'הכול' },
@@ -235,13 +237,19 @@ export function EventActivityLog({
                 }}
               />
             )}
-            <span className="type-caption tabular text-ink-tertiary">{entries.length}</span>
-          </span>
-        }
-      />
+      <span className="type-caption tabular text-ink-tertiary">{entries.length}</span>
+    </span>
+  )
 
-      {canWrite && (
-        <div className="border-b border-line-subtle bg-subtle/40 p-3.5">
+  const composer = canWrite && (
+    <div
+      className={cx(
+        'shrink-0',
+        bare
+          ? 'mb-3 rounded-lg border border-line-subtle bg-subtle/40 p-3'
+          : 'border-b border-line-subtle bg-subtle/40 p-3.5',
+      )}
+    >
           <form
             className="flex flex-col gap-2"
             onSubmit={(e) => {
@@ -273,10 +281,11 @@ export function EventActivityLog({
           {addNote.isError && (
             <p className="mt-2 type-caption text-error-text">{errorMessage(addNote.error)}</p>
           )}
-        </div>
-      )}
+    </div>
+  )
 
-      <CardBody className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden">
+  const body = (
+    <>
         {isLoading ? (
           <div className="space-y-3">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -334,7 +343,9 @@ export function EventActivityLog({
 
                   {/* גם הערה חופשית וגם משימה שנוספה או ירדה הן משפט אחד */}
                   {e.note && (
-                    <p className="mt-2 whitespace-pre-wrap type-body text-ink-primary bg-subtle/30 p-2.5 rounded border border-line-subtle/50">{e.note}</p>
+                    <p className="mt-2 whitespace-pre-wrap rounded border border-line-subtle/50 bg-subtle/30 p-2.5 type-body text-ink">
+                      {e.note}
+                    </p>
                   )}
 
                   {e.changes.length > 0 && (
@@ -366,7 +377,37 @@ export function EventActivityLog({
             ))}
           </ol>
         )}
-      </CardBody>
+    </>
+  )
+
+  /* בתוך מגירה — הכותרת כבר ניתנה בחוץ, ולכן כאן רק הבורר, הטופס והרשימה.
+     גוף ה-Drawer הוא עמודת flex בגובה מוגדר, ולכן ה-`h-full` נפתר והגלילה
+     נשארת בתוך ה-`<ol>` במקום לגלגל את כל המגירה. */
+  if (bare) {
+    return (
+      <div className={cx('flex h-full min-h-0 flex-col', className)}>
+        <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
+          <span className="type-overline">
+            {canViewSystem ? 'כל שינוי באירוע, ומה שרשמתם עליו' : 'ההערות שנרשמו על האירוע'}
+          </span>
+          {filterControl}
+        </div>
+        {composer}
+        <div className="flex min-h-0 flex-1 flex-col">{body}</div>
+      </div>
+    )
+  }
+
+  return (
+    <Card className={cx('flex h-full flex-col', className)}>
+      <CardHeader
+        title="יומן פעילות"
+        subtitle={canViewSystem ? 'כל שינוי באירוע, ומה שרשמתם עליו' : 'ההערות שנרשמו על האירוע'}
+        icon={<History size={ICON.md} strokeWidth={STROKE} />}
+        actions={filterControl}
+      />
+      {composer}
+      <CardBody className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">{body}</CardBody>
     </Card>
   )
 }
