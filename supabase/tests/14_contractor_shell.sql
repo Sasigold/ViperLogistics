@@ -199,9 +199,12 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000014a1
 -- לרוב גם העובד הראשון של עצמו, ומי שרק מנהל פשוט לא נבחר מהרשימה.
 select t_eq('הרשימה מחזירה את שורת הרוסטר, את החשבון מהמשרד ואת המנהל',
   (select count(*)::int from jsonb_array_elements(contractor_assignable_workers())), 3);
-select t_eq('...והחשבון מהמשרד מגיע בלי worker_id',
+-- ‏0150 הפך את זה: השיוך *הוא* הקבלה לסגל, ולכן החשבון שהמשרד יצר נושא שורת
+-- סגל מרגע הכתיבה ולא מרגע השיבוץ. הטענה ההפוכה — שהוא מגיע בלי `worker_id` —
+-- היא בדיוק מה שהשאיר אותו בלי מתגי תפקיד במסך "העובדים שלי".
+select t_eq('...והחשבון מהמשרד נושא שורת סגל כבר עכשיו (0150)',
   (select count(*)::int from jsonb_array_elements(contractor_assignable_workers()) e
-    where e->>'full_name' = 'עובד שנרשם במשרד' and e->>'worker_id' is null), 1);
+    where e->>'full_name' = 'עובד שנרשם במשרד' and e->>'worker_id' is not null), 1);
 select t_eq('...ושורת הרוסטר מגיעה עם worker_id',
   (select e->>'worker_id' from jsonb_array_elements(contractor_assignable_workers()) e
     where e->>'full_name' = 'עובד מהרוסטר'), '12000000-0000-0000-0000-00000000014a');
@@ -231,11 +234,14 @@ select t_eq('...והשורה נוצרה',
     where task_id = '31000000-0000-0000-0000-000000140001'
       and contractor_worker_id = '12000000-0000-0000-0000-00000000014a'), 1);
 
-\echo '--- שיבוץ חשבון שאין לו שורת רוסטר: הגשר נוצר ---'
+\echo '--- שיבוץ חשבון שנרשם במשרד ---'
+-- עד 0150 שורת הסגל נוצרה כאן, בגשר של `contractor_assign_worker`; מאז היא
+-- כבר קיימת מרגע השיוך. הטענות זהות — שורה אחת, שיבוץ אחד, ומשמרת נגזרת —
+-- ומה שהשתנה הוא רק *מתי* היא נולדה.
 select t_expect_ok('מנהל קבלן משבץ עובד שנרשם במשרד', $$
   select contractor_assign_worker('31000000-0000-0000-0000-000000140001',
                                   null, '20000000-0000-0000-0000-0000000014a3') $$);
-select t_eq('נוצרה שורת סגל לאותו עובד',
+select t_eq('יש לו שורת סגל אחת, ואחת בלבד',
   (select count(*)::int from contractor_workers
     where contractor_id = '11000000-0000-0000-0000-00000000014a'
       and full_name = 'עובד שנרשם במשרד' and deleted_at is null), 1);

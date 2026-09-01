@@ -93,7 +93,14 @@ export default function EventDetailPage() {
       return {
         event: e.data as EventRow,
         contact: contact.data as { contact_name: string | null; contact_phone: string | null } | null,
-        suppliers: (sup.data ?? []) as unknown as { supplier_id: string; suppliers: { name: string } }[],
+        /* ‏`suppliers` הוא nullable, וזו אינה הגנת יתר: הפוליסה על
+           `event_suppliers` נגזרת מהאירוע, וזו שעל `suppliers` דורשת מפתח
+           משלה. קבלן שרואה את האירוע מקבל את שורות הקישור בלי הספק שמאחוריהן,
+           וקריאה עיוורת של `.name` היא בדיוק מה שהפיל לו את המסך. */
+        suppliers: (sup.data ?? []) as unknown as {
+          supplier_id: string
+          suppliers: { name: string } | null
+        }[],
       }
     },
   })
@@ -437,6 +444,8 @@ export default function EventDetailPage() {
   }
 
   const { event, contact, suppliers } = data
+  /** הספקים שהקורא באמת רשאי לקרוא את שמם — ראו ההערה בשאילתה. */
+  const namedSuppliers = suppliers.filter((s) => s.suppliers)
 
   /**
    * מי הלקוח *במערכת*, כפי שהמנהל רואה אותו — עכשיו גם למי שאינו פותח את
@@ -722,9 +731,16 @@ export default function EventDetailPage() {
                     <div className="flex items-start justify-between gap-3 py-2 last:pb-0">
                       <dt className="shrink-0 type-caption text-ink-tertiary">ספקים לאיסוף</dt>
                       <dd className="flex flex-wrap justify-end gap-1">
-                        {suppliers.map((s) => (
-                          <Badge key={s.supplier_id}>{s.suppliers.name}</Badge>
-                        ))}
+                        {/* אותה הכרעה של 0147 בלו״ז: מי שאינו רשאי לקרוא את
+                            טבלת הספקים עדיין צריך לדעת *שיש* איסוף — זה מה
+                            שמשנה לו את היום — ולא את שמו של הספק. */}
+                        {namedSuppliers.length > 0 ? (
+                          namedSuppliers.map((s) => (
+                            <Badge key={s.supplier_id}>{s.suppliers!.name}</Badge>
+                          ))
+                        ) : (
+                          <Badge tone="neutral">יש איסוף מספקים</Badge>
+                        )}
                       </dd>
                     </div>
                   )}

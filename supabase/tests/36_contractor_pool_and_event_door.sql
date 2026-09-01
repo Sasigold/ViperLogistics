@@ -19,6 +19,7 @@
 -- ===========================================================================
 
 insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000036a0', 'c36-admin@vl.test'),
   ('00000000-0000-0000-0000-0000000036a1', 'c36-manager@vl.test'),
   ('00000000-0000-0000-0000-0000000036a2', 'c36-worker@vl.test'),
   ('00000000-0000-0000-0000-0000000036a3', 'c36-staff@vl.test');
@@ -31,6 +32,10 @@ insert into contractors (id, name) values
 -- שורת סגל אחת ברוסטר — של עובד הקבלן שיש לו התחברות.
 insert into contractor_workers (id, contractor_id, full_name) values
   ('12000000-0000-0000-0000-00000000036a', '11000000-0000-0000-0000-00000000036a', 'עובד קבלן 36');
+
+insert into profiles (id, user_id, user_kind, is_admin, full_name) values
+  ('20000000-0000-0000-0000-0000000036a0', '00000000-0000-0000-0000-0000000036a0',
+   'staff', true, 'מנהל 36');
 
 insert into profiles (id, user_id, user_kind, full_name, contractor_id, contractor_worker_id) values
   -- מנהל הקבלן
@@ -77,10 +82,22 @@ select t.id, '12000000-0000-0000-0000-00000000036a', 'field'
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000036a1', false);
 
-select t_eq('איש הצוות המשויך מופיע במאגר, עדיין בלי שורת סגל',
+-- ‏0150: השיוך הוא הקבלה לסגל, ולכן יש לו שורת סגל כבר עכשיו — וזה מה
+-- שפותח עליו את מתגי התפקיד ומעקב האיחורים במסך "העובדים שלי".
+select t_eq('איש הצוות המשויך מופיע במאגר, עם שורת סגל',
   (select count(*)::int from jsonb_array_elements(contractor_assignable_workers()) x
     where x ->> 'profile_id' = '20000000-0000-0000-0000-0000000036a3'
-      and x ->> 'worker_id' is null), 1);
+      and x ->> 'worker_id' is not null), 1);
+
+-- והמתגים באמת ניתנים להגדרה: התפקיד נכתב על שורת הסגל שנוצרה.
+insert into contractor_worker_roles (contractor_worker_id, role)
+select p.contractor_worker_id, 'driver' from profiles p
+ where p.id = '20000000-0000-0000-0000-0000000036a3';
+
+select t_eq('ואפשר להגדיר עליו תפקיד נהג',
+  (select (x -> 'roles') @> '"driver"'::jsonb
+     from jsonb_array_elements(contractor_assignable_workers()) x
+    where x ->> 'profile_id' = '20000000-0000-0000-0000-0000000036a3'), true);
 
 select t_expect_ok('ומנהל הקבלן משבץ אותו על ההקמה',
   $$select contractor_assign_worker(
@@ -92,7 +109,9 @@ select t_expect_ok('ומנהל הקבלן משבץ אותו על ההקמה',
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
-select t_eq('השיבוץ גישר לו שורת סגל אצל הקבלן',
+-- ואחרי השיבוץ עדיין שורה אחת: הגשר של 0121 מוצא את מה ש-0150 כבר יצר,
+-- ואינו פותח שנייה לצדה.
+select t_eq('ועדיין שורת סגל אחת אצל הקבלן',
   (select count(*)::int from contractor_workers w
      join profiles p on p.contractor_worker_id = w.id
     where p.id = '20000000-0000-0000-0000-0000000036a3'
@@ -116,6 +135,30 @@ select t_eq('והוא רואה רק את המשימה שפורסמה',
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
+\echo '--- הספק שהקבלן אינו רשאי לקרוא (הקריסה של דף האירוע) ---'
+-- דף האירוע שולף `event_suppliers(supplier_id, suppliers(name))`. שתי הפוליסות
+-- אינן זהות: הקישור נגזר מהאירוע, והספק עצמו דורש מפתח משלו. הקבלן מקבל
+-- שורת קישור עם ספק `null`, וקריאה עיוורת של `.name` הפילה לו את המסך.
+-- אותה אסימטריה בדיוק כבר מוכרזת ב-0147 על הלו״ז (`supplier_names = null`).
+insert into suppliers (id, customer_id, name) values
+  ('5a000000-0000-0000-0000-000000000036', '10000000-0000-0000-0000-000000000036', 'ספק 36');
+insert into event_suppliers (event_id, supplier_id) values
+  ('30000000-0000-0000-0000-000000000036', '5a000000-0000-0000-0000-000000000036');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000036a1', false);
+
+select t_eq('מנהל הקבלן רואה את שורת הקישור לספק',
+  (select count(*)::int from event_suppliers
+    where event_id = '30000000-0000-0000-0000-000000000036'), 1);
+select t_eq('אך לא את הספק עצמו — ולכן ההטמעה חוזרת null',
+  (select count(*)::int from event_suppliers es
+     join suppliers s on s.id = es.supplier_id
+    where es.event_id = '30000000-0000-0000-0000-000000000036'), 0);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
 \echo '--- מנהל הקבלן לא איבד דבר ---'
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000036a1', false);
@@ -128,3 +171,47 @@ select t_eq('מנהל הקבלן ממשיך לראות את שתי המשימו�
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+\echo '--- החלפת קבלן: השורה הישנה נשארת, וחדשה נפתחת (0149+0150) ---'
+insert into contractors (id, name) values
+  ('11000000-0000-0000-0000-00000000036b', 'קבלן 36ב');
+
+-- שומרים את מזהה השורה הישנה, כדי לוודא שהקישור באמת עבר לשורה אחרת.
+create temp table t36_before as
+select contractor_worker_id as wid from profiles
+ where id = '20000000-0000-0000-0000-0000000036a3';
+
+update profiles set contractor_id = '11000000-0000-0000-0000-00000000036b'
+ where id = '20000000-0000-0000-0000-0000000036a3';
+
+select t_eq('הקישור לשורה הישנה נעזב לטובת שורה אצל הקבלן החדש',
+  (select w.contractor_id from profiles p
+     join contractor_workers w on w.id = p.contractor_worker_id
+    where p.id = '20000000-0000-0000-0000-0000000036a3'),
+  '11000000-0000-0000-0000-00000000036b'::uuid);
+
+select t_eq('וזו אינה השורה הישנה',
+  (select p.contractor_worker_id is distinct from b.wid
+     from profiles p, t36_before b
+    where p.id = '20000000-0000-0000-0000-0000000036a3'), true);
+
+select t_eq('ושורת הסגל הישנה נשארה אצל הקבלן הישן, כהיסטוריה',
+  (select count(*)::int from contractor_workers w
+    where w.contractor_id = '11000000-0000-0000-0000-00000000036a'
+      and w.full_name = 'איש צוות משויך 36' and w.deleted_at is null), 1);
+
+-- וחזרה לקבלן הראשון מתחברת לשורה שנעזבה, ולא פותחת שלישית.
+update profiles set contractor_id = '11000000-0000-0000-0000-00000000036a'
+ where id = '20000000-0000-0000-0000-0000000036a3';
+
+select t_eq('חזרה לקבלן הראשון מחזירה אותו לשורה שלו',
+  (select p.contractor_worker_id = b.wid
+     from profiles p, t36_before b
+    where p.id = '20000000-0000-0000-0000-0000000036a3'), true);
+
+select t_eq('ולא נפתחה שורה שלישית אצל הקבלן הראשון',
+  (select count(*)::int from contractor_workers w
+    where w.contractor_id = '11000000-0000-0000-0000-00000000036a'
+      and w.full_name = 'איש צוות משויך 36' and w.deleted_at is null), 1);
+
+drop table t36_before;
