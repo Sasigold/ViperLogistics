@@ -282,6 +282,17 @@ export default function WorkBoardPage() {
   /* מנהל הקבלן: עמודת "קבלן" מיותרת לו — אם הוא רואה את המשימה, היא שלו.
      במקומה הלוח מציג לו את "כמות עובדים" שהוא צריך להביא (0091). */
   const isContractor = !!me?.profile.contractor_id || me?.profile.user_kind === 'contractor_user'
+  /**
+   * ‏0148: הלו״ז של הקבלן הוא לוח עבודה שפורסם — סטטוס "משובץ" בלבד.
+   *
+   * ‏RLS ממשיכה להחזיר לו כל משימה שהואצלה לקבלן שלו, בכל סטטוס, כי מסך
+   * הכספים (`contractor_dashboard`) נשען עליה וטיוטה מתומחרת היא כסף צפוי.
+   * מה שמצטמצם הוא *הלוח*: תוכנית שטרם פורסמה אינה לו״ז לעבוד לפיו. הגדר
+   * על "אינו מתכנן" ולא על הקהל לבדו — דו-כובע שמחזיק tasks.create/edit
+   * מתכנן את הלוח בעצמו, וטיוטות הן בדיוק מה שהוא בא לראות.
+   */
+  const contractorScheduleOnly =
+    isContractor && !has(PERM.TASKS_CREATE) && !has(PERM.TASKS_EDIT)
   const canInline = has(PERM.BOARD_INLINE_EDIT)
   const canOpenEvent = has(PERM.EVENTS_VIEW)
   /**
@@ -414,7 +425,7 @@ export default function WorkBoardPage() {
   const inline = useInlineUpdate()
 
   const { data: rawRows = EMPTY, isLoading, error: rowsError, refetch: refetchRows } = useQuery({
-    queryKey: ['workboard', 'range', from, to, filters],
+    queryKey: ['workboard', 'range', from, to, filters, contractorScheduleOnly],
     queryFn: async () => {
       let q = supabase
         .from('work_board_view')
@@ -428,6 +439,8 @@ export default function WorkBoardPage() {
         .order('task_date')
         .order('onsite_start_time', { nullsFirst: false })
         .limit(2000)
+      /* ‏0148: לעיני קבלן הלו״ז מציג רק מה שפורסם — ראו contractorScheduleOnly */
+      if (contractorScheduleOnly) q = q.eq('status_code', 'assigned')
       if (filters.customer) q = q.eq('customer_id', filters.customer)
       if (filters.status) q = q.eq('status_id', filters.status)
       if (filters.type) q = q.eq('task_type_id', filters.type)

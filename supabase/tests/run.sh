@@ -369,6 +369,15 @@ OUT="$OUT
 $OUT35"
 
 echo
+echo "== contractor pool & event door suite =="
+# 36 מקימה לקוח, קבלן, אירוע ושלוש דמויות משלה ב-current_date+520, מעבר לכל
+# טווח אחר. היא משאירה אחריה שורת סגל מגושרת ושיבוצים שאינם מנוקים.
+OUT36=$($PSQL -d vl -f "$HERE/36_contractor_pool_and_event_door.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT36"
+OUT="$OUT
+$OUT36"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

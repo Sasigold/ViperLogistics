@@ -936,6 +936,35 @@
   padding: 0.375rem 0.5rem;
 }
 
+/* שורת התאריך היא שורה: המספר, ולידו שם החג. ‏row-reverse בתוך RTL — המספר
+   ראשון בקריאה והשם נפרש ימינה ממנו. עיגול "היום" יושב על המספר עצמו ולא על
+   השורה, אחרת היה בולע גם את השם. */
+.fc .fc-daygrid-day-top {
+  max-width: 100%;
+}
+
+.fc .fc-daygrid-day-number {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.vl-day-top {
+  display: flex;
+  /* ‏rtl מפורש ולא בירושה: כאן זה לא כיוון טקסט אלא הסדר עצמו — עם
+     row-reverse המספר שמאלה והשם ימינה ממנו, וירושה של ltr הייתה הופכת אותם */
+  direction: rtl;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.vl-day-num {
+  flex: none;
+}
+
 .fc .fc-day-today .fc-daygrid-day-number {
   padding: 0.25rem 0.5rem;
 }
@@ -982,6 +1011,9 @@
 /* הסימון של הטלפון: נקודה ליד מספר היום במקום צ׳יפ שאוכל שורה בתא.
    שבתון מלא, מועד רגיל טבעת — אותה הבחנה שהצבע עושה במסך הגדול. */
 .vl-holiday-mark {
+  /* inline-block ולא inline: על אלמנט inline הדפדפן מתעלם ממידות, והנקודה
+     נמתחת לפס דק — מה שקורה בכל הקשר שאינו flex */
+  display: inline-block;
   width: 0.3125rem;
   height: 0.3125rem;
   flex: none;

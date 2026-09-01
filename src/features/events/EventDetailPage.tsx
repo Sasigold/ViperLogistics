@@ -98,10 +98,18 @@ export default function EventDetailPage() {
     },
   })
 
+  /**
+   * ‏0148: אותה עדשה של הלו״ז — קבלן שאינו מתכנן רואה רק משימות שפורסמו.
+   * בלעדיה דף האירוע שנפתח *מהלו״ז* היה מציג לקבלן את הטיוטות שהלוח עצמו
+   * זה עתה הסתיר ממנו. דו-כובע עם tasks.create/edit נשאר עם התמונה המלאה.
+   */
+  const contractorScheduleOnly =
+    !!me?.profile.contractor_id && !has(PERM.TASKS_CREATE) && !has(PERM.TASKS_EDIT)
+
   const { data: tasks = [], isLoading: loadingTasks, error: tasksError, refetch: refetchTasks } = useQuery({
-    queryKey: ['workboard', 'byEvent', id],
+    queryKey: ['workboard', 'byEvent', id, contractorScheduleOnly],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('work_board_view')
         .select('*')
         .eq('event_id', id)
@@ -111,6 +119,8 @@ export default function EventDetailPage() {
            ולכן זה לבדו מסדר את הטבלה. */
         .order('task_date')
         .order('onsite_start_time', { nullsFirst: false })
+      if (contractorScheduleOnly) q = q.eq('status_code', 'assigned')
+      const { data, error } = await q
       if (error) throw error
       return data as WorkBoardRow[]
     },
