@@ -374,44 +374,52 @@
   font-weight: 700;
   letter-spacing: -0.022em;
 }
+
 @utility type-heading {
   font-size: 1.375rem;
   line-height: 1.875rem;
   font-weight: 700;
   letter-spacing: -0.018em;
 }
+
 @utility type-title {
   font-size: 1.0625rem;
   line-height: 1.5rem;
   font-weight: 600;
   letter-spacing: -0.011em;
 }
+
 @utility type-subtitle {
   font-size: 0.9375rem;
   line-height: 1.375rem;
   font-weight: 500;
 }
+
 @utility type-body {
   font-size: 0.875rem;
   line-height: 1.3125rem;
   font-weight: 400;
 }
+
 @utility type-caption {
   font-size: 0.75rem;
   line-height: 1rem;
   font-weight: 400;
 }
+
 @utility type-button {
   font-size: 0.875rem;
   line-height: 1.25rem;
   font-weight: 600;
   letter-spacing: -0.005em;
 }
+
 @utility type-table {
   font-size: 0.8125rem;
   line-height: 1.125rem;
   font-weight: 400;
 }
+
 @utility type-table-head {
   font-size: 0.75rem;
   line-height: 1rem;
@@ -419,6 +427,7 @@
   letter-spacing: 0.01em;
   color: var(--vl-text-tertiary);
 }
+
 @utility type-overline {
   font-size: 0.6875rem;
   line-height: 0.875rem;
@@ -439,16 +448,19 @@
   border: 1px solid var(--vl-border);
   border-radius: var(--radius-xl);
 }
+
 @utility surface-plain {
   background: var(--vl-surface);
   border: 1px solid var(--vl-border);
 }
+
 @utility surface-raised {
   background: var(--vl-raised);
   border: 1px solid var(--vl-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--vl-shadow-sm);
 }
+
 @utility surface-overlay {
   background: var(--vl-raised);
   border: 1px solid var(--vl-border);
@@ -476,12 +488,15 @@
 @utility pb-shell {
   padding-bottom: var(--vl-bottom-gap);
 }
+
 @utility bottom-shell {
   bottom: var(--vl-bottom-gap);
 }
+
 @utility pt-safe {
   padding-top: env(safe-area-inset-top, 0px);
 }
+
 @utility pb-safe {
   padding-bottom: var(--vl-safe-bottom);
 }
@@ -496,6 +511,7 @@
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
 }
+
 @utility scroll-row-item {
   flex: none;
 }
@@ -520,12 +536,12 @@
      already full-width and alone in its row, so there is no neighbour to line up
      with — capping there would trade a gap that does not exist for a scroll
      inside a scroll, which on a phone is the worse of the two. */
-  @media (width >= 64rem) {
+  @media (width >=64rem) {
     max-height: var(--panel-max, none);
   }
 
   /* the widget's own root — a Card for almost every one of them */
-  & > * {
+  &>* {
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -533,7 +549,7 @@
 
   /* CardBody marks itself, so this does not depend on child order: a card with
      a footer would hand the slack to the footer under a `:last-child` rule */
-  & > * > [data-card-body] {
+  &>*>[data-card-body] {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
@@ -541,7 +557,7 @@
 
   /* "nothing to show" is the whole body when it appears, so it centres in the
      slack rather than sitting at the top of a card kept tall by its neighbour */
-  & > * > [data-card-body] > [data-empty-state]:only-child {
+  &>*>[data-card-body]>[data-empty-state]:only-child {
     height: 100%;
   }
 }
@@ -557,6 +573,7 @@
 /* ── 6. base ──────────────────────────────────────────────────────────────── */
 
 @layer base {
+
   html,
   body,
   #root {
@@ -597,6 +614,7 @@
   /* Touch pointers get no hover, so controls sized for a cursor are too small.
      Every button-ish control keeps a 40px target on coarse pointers. */
   @media (pointer: coarse) {
+
     button,
     [role='button'],
     a[href],
@@ -612,6 +630,7 @@
      ~230px — wider than the box it sits in, so the value was being clipped.
      Page zoom is disabled outright now, so focus can no longer zoom either. */
   @media (max-width: 767.98px) {
+
     input:not([type='date']):not([type='time']):not([type='datetime-local']),
     select,
     textarea {
@@ -699,6 +718,7 @@
     -webkit-appearance: none;
     margin: 0;
   }
+
   input[type='number'] {
     -moz-appearance: textfield;
     appearance: textfield;
@@ -714,23 +734,28 @@
     scrollbar-width: thin;
     scrollbar-color: var(--vl-border-strong) transparent;
   }
+
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
   }
+
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+
   ::-webkit-scrollbar-thumb {
     background: var(--vl-border-strong);
     border-radius: 999px;
     border: 3px solid transparent;
     background-clip: content-box;
   }
+
   ::-webkit-scrollbar-thumb:hover {
     background: var(--vl-text-tertiary);
     background-clip: content-box;
   }
+
   ::-webkit-scrollbar-corner {
     background: transparent;
   }
@@ -740,49 +765,60 @@
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
 }
+
 @keyframes vl-scale-in {
   from {
     opacity: 0;
     transform: scale(0.97) translateY(-4px);
   }
+
   to {
     opacity: 1;
     transform: none;
   }
 }
+
 @keyframes vl-slide-in {
   from {
     transform: translateX(var(--vl-slide-from));
   }
+
   to {
     transform: none;
   }
 }
+
 @keyframes vl-slide-up {
   from {
     opacity: 0;
     transform: translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: none;
   }
 }
+
 @keyframes vl-shimmer {
   0% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.45;
   }
+
   100% {
     opacity: 1;
   }
 }
+
 /* מי שהגיע לכאן מהתראה כבר יודע מה הוא מחפש — ההבזק רק אומר לעין איפה זה.
    ‏box-shadow ולא border, כדי שהשורה לא תזוז בפיקסל בזמן ההדגשה. */
 @keyframes vl-highlight {
@@ -790,6 +826,7 @@
     background-color: var(--vl-primary-subtle);
     box-shadow: 0 0 0 2px var(--vl-primary);
   }
+
   100% {
     background-color: transparent;
     box-shadow: 0 0 0 2px transparent;
@@ -798,6 +835,7 @@
 
 /* Motion is a garnish, never a dependency. */
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {
@@ -829,6 +867,7 @@
 .fc .fc-toolbar {
   gap: 0.5rem;
 }
+
 .fc .fc-toolbar-title {
   font-size: 1.0625rem;
   line-height: 1.5rem;
@@ -843,6 +882,7 @@
   background: var(--vl-subtle);
   border-radius: var(--radius-lg);
 }
+
 .fc .fc-button {
   border-radius: var(--radius-md) !important;
   padding: 0.3rem 0.7rem;
@@ -853,14 +893,17 @@
     background-color var(--vl-dur-fast) var(--vl-ease),
     color var(--vl-dur-fast) var(--vl-ease);
 }
+
 .fc .fc-button-group .fc-button {
   background: transparent;
   border-color: transparent;
 }
+
 .fc .fc-button:focus-visible {
   outline: 2px solid var(--vl-primary);
   outline-offset: 1px;
 }
+
 .fc .fc-button-primary:not(:disabled).fc-button-active,
 .fc .fc-button-primary:not(:disabled):active {
   background: var(--vl-surface);
@@ -868,10 +911,12 @@
   color: var(--vl-text);
   box-shadow: var(--vl-shadow-xs) !important;
 }
+
 .fc .fc-button-group .fc-button-active {
   background: var(--vl-surface) !important;
   color: var(--vl-text) !important;
 }
+
 .fc .fc-button-primary:disabled {
   opacity: 0.45;
 }
@@ -881,6 +926,7 @@
   padding: 0.5rem 0;
   font-weight: 600;
 }
+
 .fc .fc-daygrid-day-number,
 .fc .fc-col-header-cell-cushion {
   color: var(--vl-text-secondary);
@@ -889,31 +935,11 @@
   font-weight: 600;
   padding: 0.375rem 0.5rem;
 }
-/* שורת התאריך היא שורה: המספר, ולידו שם החג. עיגול "היום" יושב על המספר
-   עצמו ולא על השורה, אחרת הוא היה בולע גם את שם החג. */
-.fc .fc-daygrid-day-top {
-  max-width: 100%;
-}
-.fc .fc-daygrid-day-number {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-}
-/* ‏row-reverse בתוך שורת RTL: המספר ראשון בקריאה, והשם נפרש ימינה ממנו */
-.vl-day-top {
-  display: flex;
-  flex-direction: row-reverse;
-  align-items: center;
-  gap: 0.25rem;
-  min-width: 0;
-  max-width: 100%;
-}
-.vl-day-num {
-  flex: none;
-}
+
 .fc .fc-day-today .fc-daygrid-day-number {
   padding: 0.25rem 0.5rem;
 }
+
 .fc .fc-day-today .vl-day-num {
   color: var(--vl-on-primary);
   background: var(--vl-primary);
@@ -922,6 +948,7 @@
   text-align: center;
   padding: 0.125rem 0.375rem;
 }
+
 .fc .fc-day-other .fc-daygrid-day-number {
   opacity: 0.4;
 }
@@ -929,6 +956,7 @@
 .fc .fc-daygrid-day-frame {
   padding: 1px;
 }
+
 .fc .fc-daygrid-day:hover {
   background: var(--vl-hover);
 }
@@ -940,14 +968,17 @@
 .fc .fc-day.vl-holiday-day-off {
   background: var(--vl-board-holiday-soft);
 }
+
 .fc .fc-day.vl-holiday-day-off:hover {
   background: var(--vl-hover);
 }
+
 .vl-holiday-chip {
   background: var(--vl-warning-subtle);
   color: var(--vl-warning-text);
   border: 1px solid var(--vl-warning-border);
 }
+
 /* הסימון של הטלפון: נקודה ליד מספר היום במקום צ׳יפ שאוכל שורה בתא.
    שבתון מלא, מועד רגיל טבעת — אותה הבחנה שהצבע עושה במסך הגדול. */
 .vl-holiday-mark {
@@ -957,9 +988,11 @@
   border-radius: 999px;
   border: 1px solid var(--vl-warning);
 }
+
 .vl-holiday-mark-off {
   background: var(--vl-warning);
 }
+
 /* השם עצמו, במסך הגדול: מה שהתא נותן ברוחב, ושלוש נקודות על מה שלא נכנס */
 .vl-holiday-name {
   min-width: 0;
@@ -969,6 +1002,7 @@
   font-weight: 500;
   color: var(--vl-warning-text);
 }
+
 .vl-holiday-dot {
   width: 0.375rem;
   height: 0.375rem;
@@ -986,33 +1020,41 @@
   margin: 1px 2px;
   cursor: pointer;
 }
+
 .fc .fc-event:focus-visible {
   outline: 2px solid var(--vl-primary);
   outline-offset: 1px;
 }
+
 .fc .fc-event .fc-event-main {
   padding: 0;
   color: inherit;
 }
+
 .fc .fc-daygrid-event-harness {
   margin-top: 2px;
 }
+
 .fc .fc-event-dragging {
   opacity: 0.65;
 }
+
 .fc .fc-event-resizing {
   opacity: 0.85;
 }
+
 .fc .fc-timegrid-event {
   border-radius: var(--radius-md);
   overflow: hidden;
 }
+
 .fc .fc-timegrid-slot-label-cushion,
 .fc .fc-timegrid-axis-cushion {
   font-size: 0.6875rem;
   color: var(--vl-text-tertiary);
   font-variant-numeric: tabular-nums;
 }
+
 .fc .fc-timegrid-now-indicator-line {
   border-width: 2px 0 0;
 }
@@ -1023,12 +1065,14 @@
   color: var(--vl-primary-text);
   padding: 0 0.25rem;
 }
+
 .fc .fc-popover {
   border-radius: var(--radius-lg);
   border-color: var(--vl-border);
   box-shadow: var(--vl-shadow-lg);
   overflow: hidden;
 }
+
 .fc .fc-popover-header {
   background: var(--vl-subtle);
   color: var(--vl-text);
@@ -1039,18 +1083,22 @@
 .fc .fc-list {
   border-radius: var(--radius-lg);
 }
+
 .fc .fc-list-day-cushion {
   background: var(--vl-subtle);
   font-size: 0.75rem;
   font-weight: 600;
 }
+
 .fc .fc-list-event:hover td {
   background: var(--vl-hover);
 }
+
 .fc .fc-list-event-time {
   font-variant-numeric: tabular-nums;
   color: var(--vl-text-secondary);
 }
+
 .fc .fc-list-empty {
   background: transparent;
   color: var(--vl-text-tertiary);
@@ -1081,14 +1129,17 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+
 .vl-calendar .fc-more-popover .vl-cal-chip {
   padding: 0.375rem 0.5rem;
   border-radius: var(--radius-md);
 }
-.vl-calendar .fc-more-popover .vl-cal-chip > span {
+
+.vl-calendar .fc-more-popover .vl-cal-chip>span {
   font-size: 0.8125rem;
   line-height: 1.25rem;
 }
+
 .vl-calendar .fc-more-popover .fc-daygrid-event-harness {
   margin-top: 0.25rem;
 }
@@ -1100,43 +1151,53 @@
     gap: 0.5rem;
     margin-bottom: 0.75rem;
   }
+
   .fc .fc-toolbar-chunk {
     display: flex;
     align-items: center;
     justify-content: center;
   }
+
   /* title first, then navigation, then the view switcher */
   .fc .fc-toolbar-chunk:nth-child(2) {
     order: -1;
   }
+
   .fc .fc-toolbar-title {
     font-size: 0.9375rem;
   }
+
   .fc .fc-button-group {
     width: 100%;
     justify-content: center;
   }
+
   .fc .fc-button-group .fc-button {
     flex: 1;
   }
+
   .fc .fc-button {
     min-height: 2.25rem;
     padding: 0.25rem 0.5rem;
     font-size: 0.75rem;
   }
+
   .fc .fc-col-header-cell-cushion,
   .fc .fc-daygrid-day-number {
     padding: 0.25rem 0.3125rem;
     font-size: 0.6875rem;
   }
+
   .fc .fc-daygrid-day-frame {
     min-height: 4.25rem;
   }
+
   .fc .fc-list-event-title,
   .fc .fc-list-event-time,
   .fc .fc-list-day-cushion {
     padding: 0.5rem 0.625rem;
   }
+
   /* a hidden time column would otherwise eat a third of the row */
   .fc .fc-list-event-graphic {
     display: none;
@@ -1155,27 +1216,34 @@
   .vl-calendar .fc-event {
     margin: 1px;
   }
+
   .vl-calendar .fc-daygrid-event-harness {
     margin-top: 1px;
   }
+
   .vl-calendar .fc-daygrid-day-events {
     margin-bottom: 0.125rem;
   }
+
   .vl-calendar .fc-daygrid-day-frame {
     min-height: 3.75rem;
   }
+
   .vl-calendar .fc-col-header-cell-cushion,
   .vl-calendar .fc-daygrid-day-number {
     padding: 0.125rem 0.25rem;
     font-size: 0.5625rem;
   }
+
   .vl-calendar .fc-day-today .fc-daygrid-day-number {
     padding: 0.125rem 0.25rem;
   }
+
   .vl-calendar .fc-day-today .vl-day-num {
     min-width: 1.25rem;
     padding: 0.0625rem 0.25rem;
   }
+
   /* "+2" הוא הדרך היחידה לשאר היום בטלפון — הוא צריך להיראות כמו כפתור
      ולהיות גדול מספיק כדי לפגוע בו באצבע */
   .vl-calendar .fc-daygrid-more-link {
@@ -1203,18 +1271,22 @@
   .vl-shiftcal {
     --vl-shift-fs: 0.6875rem;
   }
+
   /* שבעה ימים על ציר שעות אינם נדחסים לרוחב טלפון — הם נגללים */
   .vl-shiftcal .fc {
     min-width: 44rem;
   }
+
   .vl-shiftcal .fc-timegrid-slot-label-cushion,
   .vl-shiftcal .fc-col-header-cell-cushion {
     padding: 0.25rem 0.3125rem;
     font-size: 0.6875rem;
   }
+
   .vl-shiftcal .fc-timegrid-slot {
     height: 1.75rem;
   }
+
   .vl-shiftcal .fc-toolbar-title {
     font-size: 0.875rem;
   }
@@ -1230,25 +1302,30 @@
   min-width: 0;
   font-size: 0.6875rem;
 }
+
 .vl-myshifts .fc-timegrid-slot {
   height: auto;
 }
+
 .vl-myshifts .fc-timegrid-slot-label-cushion,
 .vl-myshifts .fc-col-header-cell-cushion {
   padding: 0.125rem 0.25rem;
   font-size: 0.625rem;
 }
+
 /* ציר השעות: מספיק בשביל "00:00" ולא יותר — כל פיקסל נוסף בא על חשבון יום */
 .vl-myshifts .fc-timegrid-axis,
 .vl-myshifts .fc-timegrid-slot-label {
   width: 2.6rem;
 }
+
 /* הצ׳יפ הוא כל האירוע, בלי מסגרת וריפוד של FullCalendar מסביבו */
 .vl-myshifts .fc-timegrid-event,
 .vl-myshifts .fc-event-main {
   padding: 0;
   box-shadow: none;
 }
+
 .vl-myshifts .fc-timegrid-event .fc-event-main {
   overflow: hidden;
 }
@@ -1257,21 +1334,25 @@
   .vl-myshifts {
     --vl-shift-fs: 0.5625rem;
   }
+
   .vl-myshifts .fc {
     font-size: 0.625rem;
   }
+
   .vl-myshifts .fc-timegrid-slot-label-cushion,
   .vl-myshifts .fc-col-header-cell-cushion {
     padding: 0.0625rem 0.125rem;
     font-size: 0.5625rem;
   }
+
   .vl-myshifts .fc-timegrid-axis,
   .vl-myshifts .fc-timegrid-slot-label {
     width: 2.1rem;
   }
+
   /* מה שנשאר מהצ׳יפ ברוחב עמודה של טלפון הוא השם והשעה — בלי ריפוד שגונב
      מהם את השורה */
-  .vl-myshifts .fc-timegrid-event .fc-event-main > * {
+  .vl-myshifts .fc-timegrid-event .fc-event-main>* {
     padding: 0.0625rem 0.1875rem;
     gap: 0;
   }
@@ -1283,18 +1364,22 @@
    קליפת האפליקציה היא כרום, לא תוכן. מה שמסך רוצה להסתיר נקודתית מקבל
    print:hidden אצלו. */
 @media print {
+
   aside,
   header,
   [data-bottom-nav] {
     display: none !important;
   }
+
   main {
     overflow: visible !important;
     padding: 0 !important;
   }
+
   body {
     background: #fff;
   }
+
   .print-panel {
     break-inside: avoid;
   }
