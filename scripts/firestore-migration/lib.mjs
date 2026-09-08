@@ -70,9 +70,14 @@ export function uuid5(name) {
 export const q = (v) => (v == null || v === '' ? 'null' : `'${String(v).replace(/'/g, "''")}'`)
 export const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? 'null' : String(Number(v)))
 export const bool = (v) => (v ? 'true' : 'false')
-export const json = (o) => `'${JSON.stringify(o).replace(/'/g, "''")}'::jsonb`
-export const uuidLit = (v) => (v ? `'${v}'::uuid` : 'null')
-export const uuidArr = (a) => (a?.length ? `array[${a.map((x) => `'${x}'`).join(',')}]::uuid[]` : `'{}'::uuid[]`)
+/*
+ * בלי `::uuid` / `::jsonb` מפורשים: בהקשר של INSERT פוסטגרס גוזר את הטיפוס
+ * של ליטרל מהעמודה שאליה הוא נכתב. ההשמטה חוסכת כמגה־בייט על פני הקבצים
+ * כולם, וזה משנה — הטעינה עוברת דרך ערוץ שכל בית בו נספר.
+ */
+export const json = (o) => `'${JSON.stringify(o).replace(/'/g, "''")}'`
+export const uuidLit = (v) => (v ? `'${v}'` : 'null')
+export const uuidArr = (a) => `'{${(a ?? []).join(',')}}'`
 
 /** מנקה רווחים כפולים וקצוות; מחזיר null למחרוזת ריקה. */
 export const txt = (v) => {

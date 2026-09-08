@@ -179,7 +179,7 @@ for (const e of events) {
   const updatedAt = msgs.at(-1) ?? createdAt
 
   rowsEvent.push([
-    `'${e.id}'::uuid`, `'${cat.customers[e.customer]}'::uuid`,
+    `'${e.id}'`, `'${cat.customers[e.customer]}'`,
     q(txt(f.name)), q(txt(f.makat)), q(ilDate(f.date)),
     q(txt(f.mikom)), q(txt(f.earotLmikom)),
     num(f.nefach), num(f.masaiot), q(txt(f.earot)),
@@ -192,13 +192,13 @@ for (const e of events) {
   ].join(','))
 
   const cname = txt(f.nameAishKesher), cphone = txt(f.aishKesher)
-  if (cname || cphone) rowsContact.push([`'${e.id}'::uuid`, q(cname), q(cphone)].join(','))
+  if (cname || cphone) rowsContact.push([`'${e.id}'`, q(cname), q(cphone)].join(','))
 
   ;(f.maseggges ?? []).forEach((m, i) => {
     const body = txt(String(m?.massege ?? '').replace(/<br\s*\/?>/gi, '\n'))
     if (!body) return
     const kind = i === 0 && m?.type === 'מערכת' ? 'created' : m?.type === 'הודעה' ? 'note' : 'changed'
-    rowsActivity.push([`'${e.id}'::uuid`, `'${kind}'::event_activity_kind`, q(txt(m?.name)), q(body), q(m?.timeCreate ?? createdAt)].join(','))
+    rowsActivity.push([`'${e.id}'`, `'${kind}'`, q(txt(m?.name)), q(body), q(m?.timeCreate ?? createdAt)].join(','))
   })
 
   /* מפרטים: `mifrat` (מערך עם time+url), `informationImage` (מערך URL-ים)
@@ -211,12 +211,12 @@ for (const e of events) {
   for (const u of f.informationImage ?? []) if (typeof u === 'string' && /^https?:\/\//.test(u)) specs.push({ url: u, at: null, title: 'תמונה' })
   for (const s of specs) {
     version += 1
-    rowsSpec.push([`'${uuid5(`${e.path}#spec${version}`)}'::uuid`, `'${e.id}'::uuid`, String(version),
+    rowsSpec.push([`'${uuid5(`${e.path}#spec${version}`)}'`, `'${e.id}'`, String(version),
       `'link'`, q(s.url), q(s.title), q(s.at ?? createdAt)].join(','))
   }
 
   if (f.sign?.sign && /^https?:\/\//.test(String(f.sign.sign))) {
-    rowsSign.push([`'${uuid5(`${e.path}#sign`)}'::uuid`, `'${e.id}'::uuid`,
+    rowsSign.push([`'${uuid5(`${e.path}#sign`)}'`, `'${e.id}'`,
       q(txt(f.sign.name) ?? 'לא נרשם שם'), q(f.sign.sign), q(txt(f.sign.name)), q(updatedAt ?? createdAt)].join(','))
   }
 }
@@ -256,13 +256,13 @@ function pushTask(t) {
   const notes = txt(f.earot) ?? txt(bySection('earotAkamaTifol', 'earotPirokTifol'))
 
   rowsTask.push([
-    `'${id}'::uuid`, uuidLit(eventId), uuidLit(customer ? cat.customers[customer] : null),
-    `'${tt.id}'::uuid`, q(tt.title), q(ilDate(f.date ?? f.dateStart)),
+    `'${id}'`, uuidLit(eventId), uuidLit(customer ? cat.customers[customer] : null),
+    `'${tt.id}'`, q(tt.title), q(ilDate(f.date ?? f.dateStart)),
     q(ilTime(f.start ?? f.dateStart)), q(txt(f.timeMachsan)),
     num(hours),
     String(Number(workers ?? 0) || 0),
     uuidLit(execMethod(ofen)), uuidArr(truckIds), q(free),
-    q(notes), `'${STATUS_TASK}'::uuid`, uuidLit(cab),
+    q(notes), `'${STATUS_TASK}'`, uuidLit(cab),
     q(txt(f.mikom) ?? txt(ev.mikom)), `'${performedBy}'`,
   ].join(','))
 
@@ -270,7 +270,7 @@ function pushTask(t) {
      mechirPirok); `mecir` של המשימה הוא הגיבוי, ועל משימה עצמאית — היחיד. */
   const price = sec === 'setup' ? (ev.mechirAkama ?? f.mecir)
     : sec === 'teardown' ? (ev.mechirPirok ?? f.mecir) : f.mecir
-  if (price != null && price !== '') rowsPricing.push([`'${id}'::uuid`, num(price), 'true'].join(','))
+  if (price != null && price !== '') rowsPricing.push([`'${id}'`, num(price), 'true'].join(','))
 
   /* עלות הקבלן: המערך `cablan` על המשימה, או cablan_akama/cablan_pirok על
      האירוע. הסכומים כאן הם מה שמשלמים לקבלן, לא מה שגובים מהלקוח. */
@@ -279,11 +279,11 @@ function pushTask(t) {
   for (const c of arr) {
     const cid = contractor(c?.name); if (!cid || seen.has(cid)) continue
     seen.add(cid)
-    rowsTerms.push([`'${id}'::uuid`, `'${cid}'::uuid`, num(c?.price ?? 0), `'field'`].join(','))
+    rowsTerms.push([`'${id}'`, `'${cid}'`, num(c?.price ?? 0), `'field'`].join(','))
   }
   if (!seen.size && cab) {
     const p = f.price ?? (sec === 'setup' ? ev.priceAkama : sec === 'teardown' ? ev.pricePirok : null)
-    if (p != null && p !== '') rowsTerms.push([`'${id}'::uuid`, `'${cab}'::uuid`, num(p), `'field'`].join(','))
+    if (p != null && p !== '') rowsTerms.push([`'${id}'`, `'${cab}'`, num(p), `'field'`].join(','))
   }
 }
 
@@ -322,14 +322,38 @@ for (const e of events) {
 }
 
 /* ── פליטה ───────────────────────────────────────────────────────────────── */
-const CHUNK = 200
-function emit(name, cols, rows, conflict) {
+/*
+ * הטעינה עוברת דרך ערוץ עם תקרה לגודל בקשה, ולכן כל פקודה נכתבת לקובץ
+ * משלה בתוך OUT/chunks — עם תקציב בתים ולא מספר שורות, כי אורך שורה משתנה
+ * פי עשרה בין טבלה לטבלה. הסדר הלקסיקוגרפי של השמות הוא סדר ההרצה.
+ */
+const CHUNK_BYTES = Number(process.env.CHUNK_BYTES ?? 180_000)
+mkdirSync(join(OUT, 'chunks'), { recursive: true })
+let seq = 0
+const chunkFiles = []
+function writeChunk(table, sql) {
+  const name = `${String(++seq).padStart(3, '0')}_${table}.sql`
+  writeFileSync(join(OUT, 'chunks', name), sql + '\n')
+  chunkFiles.push({ file: name, bytes: Buffer.byteLength(sql) })
+}
+function emit(name, cols, rows, conflict, prefix) {
   if (!rows.length) return
+  const head = `insert into ${name} (${cols}) values\n`
   const parts = []
-  for (let i = 0; i < rows.length; i += CHUNK) {
-    parts.push(`insert into ${name} (${cols}) values\n(${rows.slice(i, i + CHUNK).join('),\n(')})\n${conflict};`)
+  let batch = [], size = 0
+  const flush = () => {
+    if (!batch.length) return
+    parts.push(`${head}(${batch.join('),\n(')})\n${conflict};`)
+    batch = []; size = 0
   }
-  writeFileSync(join(OUT, `${name}.sql`), parts.join('\n\n') + '\n')
+  for (const r of rows) {
+    if (size && size + r.length > CHUNK_BYTES) flush()
+    batch.push(r); size += r.length + 3
+  }
+  flush()
+  writeFileSync(join(OUT, `${name}.sql`), (prefix ? prefix + '\n\n' : '') + parts.join('\n\n') + '\n')
+  if (prefix) writeChunk(name, prefix)
+  for (const p of parts) writeChunk(name, p)
   return rows.length
 }
 
@@ -351,10 +375,8 @@ emit('event_signatures', 'id,event_id,signer_name,signature_data,signed_by_name,
 /* ליומן אין מפתח טבעי. המחיקה מכוונת לאירועים שהקובץ הזה עומד לכתוב, ולא
    לכל היומן — כדי שהרצה חוזרת לא תכפיל שורות ולא תמחק יומן של אירוע שנוצר
    באפליקציה. */
-writeFileSync(join(OUT, 'event_activity.sql'),
-  `delete from event_activity where event_id in (${events.map((e) => `'${e.id}'`).join(',')});\n\n` +
-  Array.from({ length: Math.ceil(rowsActivity.length / CHUNK) }, (_, i) =>
-    `insert into event_activity (event_id,kind,actor_name,note,created_at) values\n(${rowsActivity.slice(i * CHUNK, i * CHUNK + CHUNK).join('),\n(')});`).join('\n\n') + '\n')
+emit('event_activity', 'event_id,kind,actor_name,note,created_at', rowsActivity, '',
+  `delete from event_activity where event_id in (${events.map((e) => `'${e.id}'`).join(',')});`)
 
 const legacyRows = legacy.map((l) => [q(l.path), q(l.coll), q(l.docId), uuidLit(l.eventId), uuidLit(l.taskId), json(l.data)].join(','))
 emit('legacy_firestore_docs', 'doc_path,collection,doc_id,event_id,task_id,data', legacyRows,
@@ -370,4 +392,5 @@ const stats = {
 console.log(JSON.stringify(stats, null, 2))
 if (warn.size) console.log('\nהערות:\n' + [...warn].sort((a, b) => b[1] - a[1]).map(([k, n]) => `  ${String(n).padStart(5)}  ${k}`).join('\n'))
 writeFileSync(join(OUT, '_stats.json'), JSON.stringify({ stats, warnings: Object.fromEntries(warn) }, null, 2))
-console.log('\nfiles:', readdirSync(OUT).join(', '))
+writeFileSync(join(OUT, 'chunks', '_manifest.json'), JSON.stringify(chunkFiles, null, 1))
+console.log(`\nchunks: ${chunkFiles.length}, largest ${Math.max(...chunkFiles.map((c) => c.bytes))} bytes`)
