@@ -309,24 +309,24 @@ describe('size, show and hide', () => {
   })
 
   it('hiding removes it from items and remembers the choice', () => {
-    const out = hideWidget(items, [], 'ops.a')
+    const out = hideWidget({ items, hidden: [] }, 'ops.a')
     expect(out.items.map((i) => i.id)).toEqual(['ops.b'])
     expect(out.hidden).toEqual(['ops.a'])
   })
 
   it('hiding twice does not duplicate the memory', () => {
-    expect(hideWidget(items, ['ops.a'], 'ops.a').hidden).toEqual(['ops.a'])
+    expect(hideWidget({ items, hidden: ['ops.a'] }, 'ops.a').hidden).toEqual(['ops.a'])
   })
 
   it('showing puts it back next to its own group and clears the memory', () => {
     const start: LayoutItem[] = [{ id: 'finance.money', size: 'sm' }, { id: 'ops.b', size: 'md' }]
-    const out = showWidget(start, ['ops.a'], byId.get('ops.a')!, byId)
+    const out = showWidget({ items: start, hidden: ['ops.a'] }, byId.get('ops.a')!, byId)
     expect(out.hidden).toEqual([])
     expect(out.items.map((i) => i.id)).toEqual(['finance.money', 'ops.b', 'ops.a'])
   })
 
   it('showing something already on the page is a no-op beyond clearing the memory', () => {
-    const out = showWidget(items, ['ops.a'], byId.get('ops.a')!, byId)
+    const out = showWidget({ items, hidden: ['ops.a'] }, byId.get('ops.a')!, byId)
     expect(out.items).toHaveLength(2)
     expect(out.hidden).toEqual([])
   })
@@ -421,7 +421,7 @@ describe('a custom widget through the layout maths', () => {
       { id: 'ops.a', size: 'sm' },
       { id: 'me.optin', size: 'md' },
     ]
-    const out = showWidget(start, ['custom.deadbeef'], CUSTOM, mergedById)
+    const out = showWidget({ items: start, hidden: ['custom.deadbeef'] }, CUSTOM, mergedById)
     expect(out.items.map((i) => i.id).at(-1)).toBe('custom.deadbeef')
   })
 })
@@ -457,9 +457,17 @@ describe('normalizeView', () => {
     expect(normalizeView({ range: { from: '2026-01-01' } })?.range).toBeUndefined()
   })
 
-  it('drops an auto-refresh of zero rather than storing "off" as a number', () => {
-    expect(normalizeView({ refresh: 0 })).toBeUndefined()
+  /* Zero is kept, and it has to be: the view inherits from the published org
+     default one key at a time, so "off" written as an absent key would be
+     handed the company's five-minute refresh back on the next load. */
+  it('keeps an explicit "off" for the auto-refresh, and clamps the rest', () => {
+    expect(normalizeView({ refresh: 0 })?.refresh).toBe(0)
     expect(normalizeView({ refresh: 5 })?.refresh).toBe(5)
+    expect(normalizeView({ refresh: 999 })?.refresh).toBe(120)
+    /* Junk is dropped rather than clamped: an unreadable value is "no opinion",
+       not "off", and the two inherit differently. */
+    expect(normalizeView({ refresh: -3 })).toBeUndefined()
+    expect(normalizeView({ refresh: 'often' })).toBeUndefined()
   })
 })
 
@@ -552,7 +560,7 @@ describe("the administrator's lock", () => {
 
   it('refuses both routes out of the page', () => {
     const items: LayoutItem[] = [{ id: 'ops.b', size: 'md', lock: true }]
-    const out = hideWidget(items, [], 'ops.b')
+    const out = hideWidget({ items, hidden: [] }, 'ops.b')
     expect(out.items).toHaveLength(1)
     expect(out.hidden).toEqual([])
   })
@@ -597,5 +605,35 @@ describe('packing', () => {
   it('falls back to the default when the view says nothing', () => {
     expect(packingOf(undefined)).toBe(DEFAULT_PACKING)
     expect(packingOf({ packing: 'aligned' })).toBe('aligned')
+  })
+})
+
+/* The reason these two take the whole state: they change `items` and `hidden`
+   together, so a caller that spread only those two silently dropped the view —
+   and the view is what "the screen I saved" means. */
+describe('show and hide carry the rest of the state', () => {
+  const state = {
+    items: [
+      { id: 'ops.a', size: 'sm' as const },
+      { id: 'ops.b', size: 'md' as const },
+    ],
+    hidden: [],
+    view: { packing: 'aligned' as const, bucket: 'month' as const },
+  }
+
+  it('keeps the view when a widget is removed', () => {
+    expect(hideWidget(state, 'ops.a').view).toEqual(state.view)
+  })
+
+  it('keeps the view when one is put back', () => {
+    const hiddenState = { ...state, items: [state.items[1]], hidden: ['ops.a'] }
+    expect(showWidget(hiddenState, byId.get('ops.a')!, byId).view).toEqual(state.view)
+  })
+
+  it('keeps the view even when the lock refuses the removal', () => {
+    const locked = { ...state, items: [{ ...state.items[0], lock: true as const }] }
+    const out = hideWidget(locked, 'ops.a')
+    expect(out.items).toHaveLength(1)
+    expect(out.view).toEqual(state.view)
   })
 })

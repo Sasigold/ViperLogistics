@@ -31,6 +31,9 @@ export const TOP_OPTION: OptionSpec = {
   label: 'כמה שורות',
   min: 3,
   max: 20,
+  /* Unset is "everything the server sent", not three. Saying so is what makes
+     three reachable — stepping below the minimum returns here. */
+  unsetLabel: 'הכול',
   hint: 'מתוך מה שכבר נטען — בלי פנייה נוספת לשרת',
 }
 
@@ -50,6 +53,10 @@ export const VALUES_OPTION: OptionSpec = {
   key: 'values',
   label: 'הצגת המספרים',
   hint: 'בטבלה וברשימה',
+  /* On is the default, so *off* is the opinion worth storing — `SeriesCard`
+     reads `opts.values !== false`, and without this the switch could only ever
+     write the value that changes nothing. */
+  defaultOn: true,
 }
 
 /** what a categorical series offers; a time series drops the sort, which would scramble it */

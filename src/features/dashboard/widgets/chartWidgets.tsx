@@ -243,9 +243,12 @@ export function CustomerMixWidget({ height, opts }: WidgetProps) {
       onRetry={() => void refetch()}
       form={pickForm(MIX_FORMS, opts)}
       height={height}
-      /* six was the hard-coded slice before it was a setting; keeping it as the
-         default means the card looks the same until somebody changes it */
-      opts={{ top: 6, ...opts }}
+      /* The raw bag, and not `{top: 6, ...opts}`. Six was this card's hard-coded
+         slice before it was a setting, and injecting it here would have made the
+         menu — which is fed the stored bag — say "הכול" while the card drew six.
+         A control that misreports the thing it controls is worse than a card
+         that shows one row more than it used to. */
+      opts={opts}
       seriesName="הכנסות"
       format={fmtMoney}
       emptyTitle="אין הכנסות בטווח"

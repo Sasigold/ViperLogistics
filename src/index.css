@@ -588,14 +588,24 @@
    *item*, so the frame sets `self-start` on the slot in this mode. Here we only
    stop the card from claiming a height it was not given. */
 @utility widget-cap {
+  /* The ceiling goes on the **card**, in absolute units, and not as
+     `max-height: 100%` on it — a percentage max-height resolves against the
+     parent's *height*, and this wrapper deliberately has none (that is what
+     makes the card stand at its content's height). Against `height: auto` the
+     percentage computes to `none`, so the cap silently did nothing and a long
+     list ran past the bottom of its slot.
+
+     Same qualifier as `widget-fill`: a root that is not a card keeps its own
+     layout and is only stopped from overflowing. */
   @media (width >=64rem) {
     max-height: var(--panel-max, none);
+
+    &>* {
+      max-height: var(--panel-max, none);
+    }
   }
 
-  /* Same qualifier as `widget-fill`, for the same reason: a root that is not a
-     card keeps its own layout and is only stopped from overflowing. */
   &>*:has(>[data-card-body]) {
-    max-height: 100%;
     display: flex;
     flex-direction: column;
   }
@@ -603,6 +613,18 @@
   &>*>[data-card-body] {
     min-height: 0;
     overflow-y: auto;
+  }
+}
+
+/* A dashboard slot whose frame draws its own control in the card's end corner.
+   The card's header puts its `actions` in exactly that corner, so without this
+   the frame's settings button would sit on top of them — and on a user-built
+   widget those actions are the disclosure that says the number is an estimate.
+   Reserved permanently rather than on hover: room that appears under the
+   pointer moves the thing you were about to click. */
+@utility widget-corner {
+  & [data-card-actions] {
+    padding-inline-end: 1.75rem;
   }
 }
 

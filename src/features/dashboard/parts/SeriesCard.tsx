@@ -156,9 +156,16 @@ function SeriesBody({
     name: timeAxis ? fmtDate(r.label) : r.label,
     fill: r.color ?? fill ?? PALETTE[i % PALETTE.length],
   }))
-  /* recharts hands the datum straight back on a click, so the row travels with
-     the mark and nothing has to be looked up by index */
-  const pick = onSelect ? (d: unknown) => onSelect(d as SeriesRow) : undefined
+  /* recharts hands a `Bar` cell and a `Pie` slice the datum itself, spread onto
+     the shape; an `activeDot` gets its own props with the datum under
+     `payload`. Unwrapping covers both, so a click on a line's dot carries the
+     same row a click on a bar does instead of a bag of coordinates. */
+  const pick = onSelect
+    ? (d: unknown) => {
+        const row = (d as { payload?: SeriesRow })?.payload ?? (d as SeriesRow)
+        if (row?.key) onSelect(row)
+      }
+    : undefined
   const clickable = !!onSelect
 
   if (form === 'table' || form === 'list') {
@@ -296,6 +303,10 @@ function RowsView({
   const max = rows.reduce((m, r) => Math.max(m, r.value), 0)
   const total = rows.reduce((s, r) => s + r.value, 0)
   const label = (r: SeriesRow) => (timeAxis ? fmtDate(r.label) : r.label)
+  /* The option's own hint says "בטבלה וברשימה", so it has to reach both. The
+     row's own hint still wins where it has one — it says something the number
+     does not (a date, a share) — and turning the numbers off removes the number
+     rather than the hint. */
   const showValues = opts.values !== false
 
   if (form === 'list') {
@@ -367,7 +378,9 @@ function RowsView({
                 </span>
                 {r.hint && <span className="block truncate type-caption text-ink-tertiary">{r.hint}</span>}
               </td>
-              <td className="px-4 py-2 text-end type-caption tabular font-semibold text-ink">{fmt(r.value)}</td>
+              <td className="px-4 py-2 text-end type-caption tabular font-semibold text-ink">
+                {showValues ? fmt(r.value) : null}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -375,7 +388,9 @@ function RowsView({
           <tfoot>
             <tr className="border-t border-line">
               <td className="px-4 py-2 type-caption text-ink-tertiary">סך הכול</td>
-              <td className="px-4 py-2 text-end type-caption tabular font-bold text-ink">{fmt(total)}</td>
+              <td className="px-4 py-2 text-end type-caption tabular font-bold text-ink">
+                {showValues ? fmt(total) : null}
+              </td>
             </tr>
           </tfoot>
         )}

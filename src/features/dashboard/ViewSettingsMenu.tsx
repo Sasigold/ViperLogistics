@@ -1,7 +1,7 @@
 import { Button, MenuLabel, MenuSeparator, Popover, Switch, cx } from '../../components/ui'
 import { ChevronDown, ICON, RefreshCw, STROKE, SlidersHorizontal } from '../../components/ui/icons'
 import { BUCKETS, BUCKET_LABELS, PACKINGS, PACKING_LABELS } from './dashboardTypes'
-import { DEFAULT_PACKING, LIMIT_MAX, LIMIT_MIN, packingOf } from './layout'
+import { LIMIT_MAX, LIMIT_MIN, packingOf } from './layout'
 import type { Bucket, Packing, ViewPrefs } from './dashboardTypes'
 
 /**
@@ -37,11 +37,17 @@ export function ViewSettingsMenu({
   const limit = view?.limit ?? 12
   const refresh = view?.refresh ?? 0
 
+  /* Every control here stores the value it was given, never "the default, as
+     an absent key". The view inherits from the published org default one key at
+     a time, so an absent key means "whatever the administrator said" — and a
+     reader who deliberately picks the app's own answer would otherwise be
+     handed the company's instead, with no way to refuse it. */
+
   return (
     <Popover
       align="end"
-      trigger={(p) => (
-        <Button size="sm" variant="ghost" {...p}>
+      trigger={({ toggle, ...aria }) => (
+        <Button size="sm" variant="ghost" onClick={toggle} {...aria}>
           <SlidersHorizontal size={ICON.sm} strokeWidth={STROKE} />
           תצוגה
           <ChevronDown size={ICON.sm} strokeWidth={STROKE} aria-hidden />
@@ -55,7 +61,7 @@ export function ViewSettingsMenu({
             value={packing}
             values={PACKINGS}
             label={(p: Packing) => PACKING_LABELS[p]}
-            onPick={(p) => onChange({ packing: p === DEFAULT_PACKING ? undefined : p })}
+            onPick={(p) => onChange({ packing: p })}
           />
           <p className="px-2.5 pb-1 type-caption text-ink-tertiary">
             {packing === 'compact'
@@ -69,18 +75,23 @@ export function ViewSettingsMenu({
             value={bucket}
             values={BUCKETS}
             label={(b: Bucket) => BUCKET_LABELS[b]}
-            onPick={(b) => onChange({ bucket: b === 'week' ? undefined : b })}
+            onPick={(b) => onChange({ bucket: b })}
           />
 
           <MenuSeparator />
           <Stepper
             label="שורות לכל דירוג"
-            hint="כמה שורות השרת מחזיר לכל כרטיס מדורג"
+            /* `p_opts` belongs to `dashboard_sections`. `dashboard_stats` takes
+               no options bag and hard-codes twelve, so the tiles it feeds — the
+               task and revenue rankings — are not governed by this. Saying
+               "every ranked card" would be a control that visibly does nothing
+               on half of them. */
+            hint="לכרטיסים שנשענים על סקשן — שעות לפי עובד, ניצולת, אירועים לפי לקוח"
             value={limit}
             min={LIMIT_MIN}
             max={LIMIT_MAX}
             step={1}
-            onChange={(n) => onChange({ limit: n === 12 ? undefined : n })}
+            onChange={(n) => onChange({ limit: n })}
           />
 
           <MenuSeparator />
@@ -93,7 +104,8 @@ export function ViewSettingsMenu({
             </span>
             <Switch
               checked={refresh > 0}
-              onChange={(v) => onChange({ refresh: v ? 5 : undefined })}
+              /* explicit zero, not an absent key — see above */
+              onChange={(v) => onChange({ refresh: v ? 5 : 0 })}
               aria-label="רענון אוטומטי"
             />
           </span>

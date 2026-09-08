@@ -164,6 +164,7 @@ export function WidgetFrame({
         style={maxHeight ? ({ '--panel-max': `${maxHeight}px` } as CSSProperties) : undefined}
         className={cx(
           maxHeight > 0 && (compact ? 'widget-cap' : 'widget-fill'),
+          !editing && settings && 'widget-corner',
           editing && 'pointer-events-none select-none',
         )}
       >
@@ -185,8 +186,15 @@ export function WidgetFrame({
         >
           <Popover
             align="end"
-            trigger={(p) => (
-              <IconButton size="sm" variant="ghost" label={`תצוגת ${def.title}`} {...p}>
+            trigger={({ toggle, ...aria }) => (
+              <IconButton
+                size="sm"
+                variant="ghost"
+                label={`תצוגת ${def.title}`}
+                onClick={toggle}
+                className="bg-raised/90 shadow-sm backdrop-blur"
+                {...aria}
+              >
                 <SlidersHorizontal size={ICON.md} strokeWidth={STROKE} aria-hidden />
               </IconButton>
             )}
@@ -309,8 +317,12 @@ function EditBar({
       <span className="flex shrink-0 items-center gap-0.5">
         <Popover
           align="end"
-          trigger={(p) => (
-            <IconButton size="sm" variant="ghost" label="עוד" {...p}>
+          /* `onClick={toggle}`, not `{...p}`: spreading the whole trigger
+             object put `toggle` on the DOM node, so this menu — the only route
+             to "move to the top", the size list on a phone and the height —
+             never opened at all. */
+          trigger={({ toggle, ...aria }) => (
+            <IconButton size="sm" variant="ghost" label="עוד" onClick={toggle} {...aria}>
               <MoreVertical size={ICON.md} strokeWidth={STROKE} aria-hidden />
             </IconButton>
           )}

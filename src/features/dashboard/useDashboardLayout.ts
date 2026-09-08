@@ -124,11 +124,14 @@ export function useDashboardLayout() {
        catalogue draw a switch that does nothing when it is turned off. */
     const locked = new Set(lockedIds(fallback))
     const hidden = (saved?.hidden ?? fallback.hidden).filter((h) => !locked.has(h))
-    /* The view is the user's when they have one and the published default's
-       otherwise — the same ladder the items climb, for the same reason: an
-       administrator who publishes a packing has published it to everyone who
-       never expressed an opinion, and to nobody who did. */
-    return { items, hidden, view: saved?.view ?? fallback.view }
+    /* The view climbs the same ladder the items do — but one key at a time.
+       A whole-object `saved?.view ?? fallback.view` reads "the user's view or
+       the company's", and that is wrong in both directions: a user who set a
+       single preference stopped inheriting every other one the administrator
+       published, and a user who set their last preference back to the app
+       default silently inherited the company's again. Per key, an absent key is
+       exactly what it says — no opinion — and it inherits. */
+    return { items, hidden, view: mergeView(fallback.view, saved?.view ?? {}) }
   }, [widgets, saved, fallback])
 
   const current = draft ?? resolved
@@ -143,7 +146,13 @@ export function useDashboardLayout() {
 
   /* ===== writes ========================================================== */
 
-  const invalidate = () => void qc.invalidateQueries({ queryKey: ['dashboard_layouts'] })
+  /* Returned rather than fired and forgotten: react-query awaits what
+     `onSuccess` returns, so `mutateAsync` resolves only once the row is back.
+     Without that, every caller that drops its draft on success — edit mode's
+     save bar and `commit` below — put the *pre-save* layout back on screen for
+     the length of a round trip, and a display form clicked in read mode
+     visibly flipped back and then forward again. */
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['dashboard_layouts'] })
 
   const save = useMutation({
     mutationFn: async (next: DraftState & { name?: string | null }) => {

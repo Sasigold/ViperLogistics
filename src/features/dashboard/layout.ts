@@ -166,8 +166,12 @@ export function normalizeView(raw: unknown): ViewPrefs | undefined {
   if (typeof o.limit === 'number' && Number.isFinite(o.limit)) {
     out.limit = Math.round(Math.max(LIMIT_MIN, Math.min(LIMIT_MAX, o.limit)))
   }
-  if (typeof o.refresh === 'number' && Number.isFinite(o.refresh) && o.refresh > 0) {
-    out.refresh = Math.round(Math.min(120, o.refresh))
+  /* Zero is kept, not dropped. It is the difference between "the administrator
+     published a five-minute refresh and I have not said otherwise" and "I turned
+     it off", and the view inherits per key — so an absent `refresh` would hand
+     the company's answer back every time somebody switched it off. */
+  if (typeof o.refresh === 'number' && Number.isFinite(o.refresh) && o.refresh >= 0) {
+    out.refresh = Math.round(Math.max(0, Math.min(120, o.refresh)))
   }
   const r = o.range
   if (r && typeof r === 'object') {
@@ -463,27 +467,44 @@ export function setLock(items: readonly LayoutItem[], id: string, on: boolean): 
 
 /* ===== show / hide ======================================================== */
 
-export function hideWidget(items: readonly LayoutItem[], hidden: readonly string[], id: string) {
+/**
+ * These two take and return the **whole** layout state, unlike every other edit
+ * in this file, and the asymmetry is deliberate.
+ *
+ * They are the only two that change `items` and `hidden` together, so they
+ * cannot be written as `(items, id) => items` and be spread into the state by
+ * the caller. Returning the two fields they know about — which is what they did
+ * until 0151 — makes the caller responsible for carrying everything else
+ * forward, and one caller that wrote `edit((s) => hideWidget(s.items, s.hidden,
+ * id))` instead of `edit((s) => ({...s, ...hideWidget(...)}))` silently dropped
+ * the whole screen's view preferences into the next save. Taking the state
+ * makes that mistake unspellable.
+ */
+export interface LayoutState {
+  items: LayoutItem[]
+  hidden: string[]
+  view?: ViewPrefs
+}
+
+export function hideWidget(state: LayoutState, id: string): LayoutState {
   /* A locked placement is the administrator's, and the two ways to remove a
      widget — the frame's ✕ and the catalogue's switch — both land here. Refusing
      in one place is what makes the lock true rather than merely un-clicked. */
-  if (items.some((i) => i.id === id && i.lock)) return { items: [...items], hidden: [...hidden] }
+  if (state.items.some((i) => i.id === id && i.lock)) return { ...state }
   return {
-    items: items.filter((i) => i.id !== id),
-    hidden: hidden.includes(id) ? [...hidden] : [...hidden, id],
+    ...state,
+    items: state.items.filter((i) => i.id !== id),
+    hidden: state.hidden.includes(id) ? [...state.hidden] : [...state.hidden, id],
   }
 }
 
-export function showWidget(
-  items: readonly LayoutItem[],
-  hidden: readonly string[],
-  meta: WidgetMeta,
-  byId: Map<string, WidgetMeta>,
-) {
-  if (items.some((i) => i.id === meta.id)) return { items: [...items], hidden: hidden.filter((h) => h !== meta.id) }
+export function showWidget(state: LayoutState, meta: WidgetMeta, byId: Map<string, WidgetMeta>): LayoutState {
+  const hidden = state.hidden.filter((h) => h !== meta.id)
+  if (state.items.some((i) => i.id === meta.id)) return { ...state, items: [...state.items], hidden }
   return {
-    items: insertByGroup([...items], [{ id: meta.id, size: meta.sizes[0] }], byId),
-    hidden: hidden.filter((h) => h !== meta.id),
+    ...state,
+    items: insertByGroup([...state.items], [{ id: meta.id, size: meta.sizes[0] }], byId),
+    hidden,
   }
 }
 

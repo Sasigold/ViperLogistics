@@ -18,7 +18,7 @@ import { fmtDate } from '../../../lib/dates'
 import { ChartTooltip } from '../parts/ChartTooltip'
 import { ChartFrame } from '../parts/ChartFrame'
 import { useDashboard, useSection } from '../dashboardContext'
-import { useDrill } from '../useDrill'
+import { useCustomerDrill, useDrill } from '../useDrill'
 import { SeriesCard } from '../parts/SeriesCard'
 import { CATEGORY_FORMS, RANK_FORMS, pickForm } from '../seriesOpts'
 import type { SeriesRow } from '../seriesOpts'
@@ -48,6 +48,17 @@ function sectionBars(cfg: {
   layout?: 'vertical' | 'horizontal'
   format?: (v: number) => string
   drill?: { probe: DrillTarget; of: (row: SeriesRow) => DrillTarget }
+  /**
+   * The row's label is a customer's name.
+   *
+   * `dashboard_sections` still groups `events.by_customer` by name — 0151 only
+   * reached `dashboard_stats` — so there is no id in the row, and `?q=` is not
+   * the answer: the events list searches the end client, the event number and
+   * the location, never the customer. The name is resolved through the
+   * customers list instead, which is one small cached query the events screen
+   * and the board already make.
+   */
+  customerDrill?: boolean
   emptyTitle?: string
   emptyDescription?: string
 }) {
@@ -55,6 +66,7 @@ function sectionBars(cfg: {
   function SectionBars({ height, opts }: WidgetProps) {
     const raw = useSection<Record<string, unknown>[]>(cfg.section)
     const go = useDrill(cfg.drill?.probe ?? { to: 'board' })
+    const toCustomer = useCustomerDrill(!!cfg.customerDrill && !!go)
     if (raw.data === null) return null
 
     const rows: SeriesRow[] | undefined = raw.data?.map((r) => ({
@@ -79,7 +91,9 @@ function sectionBars(cfg: {
         fill={cfg.fill}
         emptyTitle={cfg.emptyTitle ?? 'אין נתונים בטווח'}
         emptyDescription={cfg.emptyDescription}
-        onSelect={cfg.drill && go ? (r) => go(cfg.drill!.of(r)) : undefined}
+        onSelect={
+          toCustomer ? (r) => go?.(toCustomer(r.label)) : cfg.drill && go ? (r) => go(cfg.drill!.of(r)) : undefined
+        }
       />
     )
   }
@@ -111,7 +125,8 @@ export const EventsByCustomerWidget = sectionBars({
   title: 'כמות אירועים לפי לקוח',
   dataKey: 'cnt',
   seriesName: 'אירועים',
-  drill: { probe: { to: 'events' }, of: (r) => ({ to: 'events', q: r.label }) },
+  drill: { probe: { to: 'events' }, of: () => ({ to: 'events' }) },
+  customerDrill: true,
   emptyDescription: 'לא נקבעו אירועים בטווח שנבחר',
 })
 

@@ -109,16 +109,20 @@ function OptionRow({
   onOpt: WidgetOptionsProps['onOpt']
 }) {
   if (spec.kind === 'bool') {
-    const on = value === true
+    const fallback = spec.defaultOn ?? false
+    const on = typeof value === 'boolean' ? value : fallback
     return (
       <span className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5">
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm text-ink">{spec.label}</span>
           {spec.hint && <span className="block truncate type-caption text-ink-tertiary">{spec.hint}</span>}
         </span>
+        {/* The state that equals the default is stored as no opinion, and the
+            other one is stored as itself — which is the only way a
+            default-on switch can ever be turned off. */}
         <Switch
           checked={on}
-          onChange={(v) => onOpt(spec.key, v ? true : undefined)}
+          onChange={(v) => onOpt(spec.key, v === fallback ? undefined : v)}
           aria-label={spec.label}
         />
       </span>
@@ -150,12 +154,25 @@ function OptionRow({
     )
   }
 
+  /* Three states, not two: a number in range, and — where the spec says the
+     absence of one means something ("all rows") — the unset state itself.
+     Conflating "unset" with "the minimum" made the minimum unreachable and made
+     the menu report 3 while the card drew twelve. */
   const step = spec.step ?? 1
-  const current = typeof value === 'number' ? value : spec.min
-  const set = (n: number) => {
-    const clamped = Math.max(spec.min, Math.min(spec.max, n))
-    onOpt(spec.key, clamped === spec.min ? undefined : clamped)
+  const hasUnset = spec.unsetLabel !== undefined
+  const current = typeof value === 'number' ? value : hasUnset ? null : spec.min
+  const atFloor = current === null || current <= spec.min
+
+  const down = () => {
+    if (current === null) return
+    if (current <= spec.min) return onOpt(spec.key, hasUnset ? undefined : spec.min)
+    onOpt(spec.key, Math.max(spec.min, current - step))
   }
+  const up = () => {
+    if (current === null) return onOpt(spec.key, spec.min)
+    onOpt(spec.key, Math.min(spec.max, current + step))
+  }
+
   return (
     <span className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5">
       <span className="min-w-0 flex-1">
@@ -166,18 +183,20 @@ function OptionRow({
         <button
           type="button"
           aria-label={`${spec.label} — פחות`}
-          disabled={current <= spec.min}
-          onClick={() => set(current - step)}
+          disabled={current === null || (atFloor && !hasUnset)}
+          onClick={down}
           className="size-6 rounded-md text-ink-tertiary hover:bg-hover disabled:pointer-events-none disabled:opacity-40"
         >
           −
         </button>
-        <span className="w-7 text-center type-caption tabular font-semibold text-ink">{current}</span>
+        <span className="min-w-10 text-center type-caption tabular font-semibold text-ink">
+          {current === null ? spec.unsetLabel : current}
+        </span>
         <button
           type="button"
           aria-label={`${spec.label} — יותר`}
-          disabled={current >= spec.max}
-          onClick={() => set(current + step)}
+          disabled={current !== null && current >= spec.max}
+          onClick={up}
           className="size-6 rounded-md text-ink-tertiary hover:bg-hover disabled:pointer-events-none disabled:opacity-40"
         >
           +

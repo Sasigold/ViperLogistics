@@ -44,10 +44,8 @@ import { buildDashboardExport, writeDashboardExport } from './exportDashboard'
 import { useReportCatalog } from './builder/useReportCatalog'
 import { toUuid } from './builder/customRegistry'
 import type { BuilderTarget } from './builder/WidgetBuilderDrawer'
-import type { LayoutItem, ViewPrefs, WidgetSize } from './dashboardTypes'
-
-/** the shape every `layout.edit` / `layout.commit` transform works on */
-type LayoutState = { items: LayoutItem[]; hidden: string[]; view?: ViewPrefs }
+import type { LayoutState } from './layout'
+import type { ViewPrefs, WidgetSize } from './dashboardTypes'
 
 /* dnd-kit only exists once someone opens edit mode. The dashboard is the most
    visited screen in the product; its ordinary render should not carry a drag
@@ -140,16 +138,21 @@ export default function DashboardPage() {
      "this month" saved in March is March's answer in April — while a fixed pair
      is exactly the pair. Applied once per view, and never over a range the
      reader has since typed for themselves. */
-  const viewRange = view?.range
+  /* Keyed on the *value*, not on the object. `view` is rebuilt from jsonb on
+     every layout refetch — and every option click writes the layout — so an
+     effect that depended on the object's identity re-ran after each save and
+     threw away whatever range the reader had typed since. */
+  const rangeKey = view?.range ? JSON.stringify(view.range) : ''
   useEffect(() => {
-    if (!viewRange || !canChangeRange) return
-    if ('preset' in viewRange) {
-      const p = RANGE_PRESETS.find((x) => x.label === viewRange.preset)
+    if (!rangeKey || !canChangeRange) return
+    const r = JSON.parse(rangeKey) as NonNullable<ViewPrefs['range']>
+    if ('preset' in r) {
+      const p = RANGE_PRESETS.find((x) => x.label === r.preset)
       if (p) setRange(p.range())
     } else {
-      setRange({ from: viewRange.from, to: viewRange.to })
+      setRange({ from: r.from, to: r.to })
     }
-  }, [viewRange, canChangeRange])
+  }, [rangeKey, canChangeRange])
 
   /* Auto-refresh is off unless the view asks for it. A screen on a wall wants
      it; a screen somebody is reading does not, and a dashboard that reloads
@@ -195,7 +198,7 @@ export default function DashboardPage() {
     layout.edit((s) => ({ ...s, items: setSize(s.items, id, size) }))
   const onHeight = (id: string, h: 'auto' | 'tall') =>
     layout.edit((s) => ({ ...s, items: setHeight(s.items, id, h) }))
-  const onRemove = (id: string) => layout.edit((s) => hideWidget(s.items, s.hidden, id))
+  const onRemove = (id: string) => layout.edit((s) => hideWidget(s, id))
   /**
    * A display choice, saved where it was made.
    *
@@ -227,7 +230,7 @@ export default function DashboardPage() {
     layout.edit((s) => {
       const meta = layout.byId.get(id)
       if (!meta) return s
-      return on ? showWidget(s.items, s.hidden, meta, layout.byId) : hideWidget(s.items, s.hidden, id)
+      return on ? showWidget(s, meta, layout.byId) : hideWidget(s, id)
     })
 
   /* Exports the widgets that are on screen, in the order they were arranged —

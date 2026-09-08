@@ -61,10 +61,33 @@ export const FORM_LABELS: Record<WidgetForm, string> = {
    agree on whichever one the merge happened to write last. A control that
    quietly changes the card next to it is worse than no control.             */
 
+/**
+ * `unsetLabel` and `defaultOn` both answer the same question, and it is the
+ * question a generic settings control gets wrong by default: what does *not
+ * storing a key* mean?
+ *
+ * A stored bag should carry choices and not defaults — a widget whose natural
+ * answer moves in a later release should follow it — so "the default" is
+ * written as an absent key. That only works if the control can say which state
+ * is the default. Without `defaultOn`, a switch could only ever store `true`
+ * (off wrote "no opinion", which read back as on); without `unsetLabel`, the
+ * minimum of a number range and "no limit at all" were the same value, so the
+ * minimum was unreachable and the menu misreported the card.
+ */
 export type OptionSpec =
-  | { kind: 'number'; key: string; label: string; min: number; max: number; step?: number; hint?: string }
+  | {
+      kind: 'number'
+      key: string
+      label: string
+      min: number
+      max: number
+      step?: number
+      hint?: string
+      /** what "no value stored" means, e.g. "all rows"; stepping below `min` returns to it */
+      unsetLabel?: string
+    }
   | { kind: 'enum'; key: string; label: string; choices: { value: string; label: string }[]; hint?: string }
-  | { kind: 'bool'; key: string; label: string; hint?: string }
+  | { kind: 'bool'; key: string; label: string; hint?: string; defaultOn?: boolean }
 
 export type WidgetOpts = Record<string, string | number | boolean | undefined>
 

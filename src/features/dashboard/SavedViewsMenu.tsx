@@ -88,8 +88,13 @@ export function SavedViewsMenu({
     <>
       <Popover
         align="end"
-        trigger={(p) => (
-          <Button size="sm" variant="ghost" {...p}>
+        /* `onClick={toggle}` explicitly, and only the aria spread. `Popover`
+           hands its trigger `{toggle, ...aria}`; spreading the whole object onto
+           a button puts `toggle` on the DOM element, where React drops it — and
+           the menu never opens. Every other Popover in the product does it this
+           way. */
+        trigger={({ toggle, ...aria }) => (
+          <Button size="sm" variant="ghost" onClick={toggle} {...aria}>
             תצוגות
             <ChevronDown size={ICON.sm} strokeWidth={STROKE} aria-hidden />
           </Button>
