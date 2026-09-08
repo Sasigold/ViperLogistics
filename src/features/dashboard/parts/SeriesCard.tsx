@@ -14,6 +14,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import type { CategoricalChartFunc } from 'recharts/types/chart/types'
 import { Card, CardBody, CardHeader, EmptyState, ErrorState, ProgressBar, Skeleton, cx } from '../../../components/ui'
 import { fmtDate } from '../../../lib/dates'
 import { ChartTooltip } from './ChartTooltip'
@@ -156,14 +157,30 @@ function SeriesBody({
     name: timeAxis ? fmtDate(r.label) : r.label,
     fill: r.color ?? fill ?? PALETTE[i % PALETTE.length],
   }))
-  /* recharts hands a `Bar` cell and a `Pie` slice the datum itself, spread onto
-     the shape; an `activeDot` gets its own props with the datum under
-     `payload`. Unwrapping covers both, so a click on a line's dot carries the
-     same row a click on a bar does instead of a bag of coordinates. */
+  /* A `Bar` cell and a `Pie` slice are handed the datum itself, spread onto the
+     shape, so `pick` reads it straight off the argument.
+
+     A line and an area cannot use the same handler, and this is the part that
+     is easy to get wrong: an object-form `activeDot={{ onClick }}` goes through
+     recharts' `adaptEventHandlers`, which calls the handler with the *config
+     object* as its first argument — so it fires, receives `{onClick, cursor}`,
+     finds no row, and does nothing, while the dot still shows a pointer
+     cursor. Those two charts take the click on the chart instead, where
+     `activeTooltipIndex` names the row. */
   const pick = onSelect
     ? (d: unknown) => {
-        const row = (d as { payload?: SeriesRow })?.payload ?? (d as SeriesRow)
+        const row = d as SeriesRow | undefined
         if (row?.key) onSelect(row)
+      }
+    : undefined
+  const pickByIndex: CategoricalChartFunc | undefined = onSelect
+    ? (state) => {
+        /* `activeTooltipIndex` is `number | TooltipIndex | undefined`, and
+           TooltipIndex is a string in the polar charts. Only an integer names a
+           row here. */
+        const at = Number(state?.activeTooltipIndex)
+        const row = Number.isInteger(at) ? rows[at] : undefined
+        if (row) onSelect(row)
       }
     : undefined
   const clickable = !!onSelect
@@ -189,7 +206,7 @@ function SeriesBody({
         )
       case 'line':
         return (
-          <LineChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: -20 }}>
+          <LineChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: -20 }} onClick={pickByIndex}>
             <XAxis dataKey="name" {...AXIS} />
             <YAxis {...AXIS} />
             <RTooltip content={<ChartTooltip format={fmt} />} />
@@ -200,13 +217,13 @@ function SeriesBody({
               stroke={fill ?? BRAND}
               strokeWidth={2}
               dot={data.length <= 12}
-              activeDot={{ onClick: pick, cursor: clickable ? 'pointer' : undefined }}
+              activeDot={{ cursor: clickable ? 'pointer' : undefined }}
             />
           </LineChart>
         )
       case 'area':
         return (
-          <AreaChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: -20 }}>
+          <AreaChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: -20 }} onClick={pickByIndex}>
             <defs>
               <linearGradient id="vl-series-area" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={fill ?? BRAND} stopOpacity={0.35} />
@@ -223,7 +240,7 @@ function SeriesBody({
               stroke={fill ?? BRAND}
               strokeWidth={2}
               fill="url(#vl-series-area)"
-              activeDot={{ onClick: pick, cursor: clickable ? 'pointer' : undefined }}
+              activeDot={{ cursor: clickable ? 'pointer' : undefined }}
             />
           </AreaChart>
         )

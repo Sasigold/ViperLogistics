@@ -100,8 +100,17 @@ export function StatusBreakdownWidget({ height, opts }: WidgetProps) {
       emptyDescription="משימה שתיווצר תופיע כאן לפי הסטטוס שלה"
       /* The one drill this card has been implying since it was drawn: a slice
          is a status, and the board can open filtered to it. Before 0151 the row
-         carried only a name, so the click had nowhere exact to go. */
-      onSelect={go && ((r) => go({ to: 'board', status: isEntityId(r.key) ? r.key : undefined }))}
+         carried only a name, so the click had nowhere exact to go.
+
+         `date` travels with it. The donut counts the *dashboard's* range and
+         the board opens on a month — without it, clicking a slice while looking
+         at July landed on the current month with the filter applied and
+         usually no rows at all, which says the opposite of the number that was
+         clicked. The board is a month at a time, so this is the month the
+         range starts in and not the range itself. */
+      onSelect={
+        go && ((r) => go({ to: 'board', date: range.from, status: isEntityId(r.key) ? r.key : undefined }))
+      }
     />
   )
 }
