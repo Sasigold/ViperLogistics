@@ -127,7 +127,21 @@ function TimeClock() {
   const open = status?.open_entry ?? null
   const shift = status?.shift ?? null
   const rules = status?.rules
-  const needsLocation = !!rules?.requires_location
+  /**
+   * מה שהשרת יבקש, ולא מה שההגדרה אומרת.
+   *
+   * ‏`requires_location` הוא הכלל שנקבע לעובד; `location_required` הוא
+   * התשובה למקרה הזה — הוא כבוי כשלמשמרת אין נקודת ייחוס כלל (מיקום שהוקלד
+   * ידנית בלי קואורדינטות, 0159). לבקש GPS שם היה מעכב את ההחתמה, ולפעמים
+   * מונע אותה לגמרי — מרתף בלי קליטה, הרשאת מיקום שנחסמה פעם — בשביל ערך
+   * שהשרת ישליך ממילא.
+   *
+   * הנפילה חזרה ל-`requires_location` היא בשביל תשובה ישנה שנענתה מהמטמון
+   * של ה-service worker: מוטב לבקש מיקום שלא היה נדרש מאשר לשלוח בלעדיו
+   * ולהידחות.
+   */
+  const needsLocation = status?.location_required ?? !!rules?.requires_location
+  const locationWaived = !!rules?.requires_location && !needsLocation
   const elapsed = useElapsed(open?.clock_in_at)
   const today = status?.today ?? []
   const reports = status?.reports ?? []
@@ -378,6 +392,15 @@ function TimeClock() {
             <span>
               נדרש שיתוף מיקום להחתמה ({fmtDistance(rules?.location_radius_m)} מהאתר)
             </span>
+          </div>
+        )}
+
+        {/* אין נקודת ייחוס — ולכן ההסבר, ולא שקט. עובד שרגיל שהשעון מבקש
+            ממנו מיקום צריך לדעת למה הפעם לא, ושהשעות עדיין קובעות. */}
+        {locationWaived && (
+          <div className="flex items-center justify-center gap-1.5 text-xs text-ink-secondary bg-subtle py-2 px-3 rounded-xl border border-line-subtle text-center">
+            <MapPin size={ICON.sm} strokeWidth={STROKE} className="text-ink-tertiary shrink-0" />
+            <span>לא הוגדרו קואורדינטות לאתר — אפשר להחתים מכל מקום, לפי שעות המשמרת</span>
           </div>
         )}
 

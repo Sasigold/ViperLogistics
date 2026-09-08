@@ -75,10 +75,22 @@ export const useAuth = create<AuthState>((set, get) => ({
     set({ session: data.session })
     if (data.session) await get().refreshMe()
     set({ booted: true })
-    supabase.auth.onAuthStateChange((_evt, session) => {
+    supabase.auth.onAuthStateChange((evt, session) => {
+      const prev = get().session
       set({ session })
-      if (session) void get().refreshMe()
-      else set({ me: null, meError: null })
+      if (!session) {
+        set({ me: null, meError: null })
+        return
+      }
+      /*
+       * רענון טוקן אינו אירוע הרשאות. הוא קורה כל שעה, בכל לשונית פתוחה,
+       * ועם אותו משתמש בדיוק — וטעינה מחדש של ההרשאות בכל אחד מהם היא
+       * קריאת RPC מיותרת שכישלון רשת רגעי בה רק מדליק `meError` למי שכבר
+       * עובד. כניסה, החלפת משתמש, וניסיון חוזר אחרי שהטעינה נכשלה (`me`
+       * ריק) ממשיכים לטעון כרגיל.
+       */
+      if (evt === 'TOKEN_REFRESHED' && prev?.user.id === session.user.id && get().me) return
+      void get().refreshMe()
     })
   },
 
@@ -95,8 +107,20 @@ export const useAuth = create<AuthState>((set, get) => ({
     }
   },
 
+  /**
+   * ‏`scope: 'local'` — יציאה מהמכשיר הזה, ולא מכל המכשירים.
+   *
+   * ברירת המחדל של `signOut` היא `global`, והיא **מבטלת בשרת את כל טוקני
+   * הרענון של המשתמש**. עובד שיצא מהמערכת במחשב במשרד ניתק בכך את הטלפון
+   * שבכיסו ואת הטאבלט במחסן: הרענון הבא שלהם נדחה, הסשן נמחק, והם מצאו את
+   * עצמם במסך התחברות בלי שעשו דבר. זה בדיוק הדיווח "מי שמחובר בכמה מקומות
+   * מתנתק וצריך להתחבר מחדש כל פעם".
+   *
+   * ‏`local` מוחק את הסשן של הדפדפן הזה בלבד. יציאה מכל המכשירים היא פעולה
+   * לגיטימית — היא פשוט אינה מה שקורה כשלוחצים "התנתקות" בתפריט.
+   */
   signOut: async () => {
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: 'local' })
     set({ session: null, me: null, meError: null })
   },
 

@@ -1604,6 +1604,12 @@ export interface ClockStatus {
   open_entry: AttendanceEntry | null
   shift: PlannedShift | null
   rules: ClockConfig
+  /**
+   * האם ה**החתמה הבאה** תדרוש קריאת מיקום — נגזר בשרת מ-`requires_location`
+   * *וגם* מקיומה של נקודת ייחוס לאמת מולה (0159). אירוע שהמיקום שלו הוקלד
+   * ידנית בלי קואורדינטות אינו מספק כזו, ואז אין מה לבקש מהעובד.
+   */
+  location_required: boolean
   can_submit: boolean
   today: AttendanceEntry[]
   /** הדיווחים הידניים שלי שממתינים לאישור או שנדחו, 45 יום אחורה */
