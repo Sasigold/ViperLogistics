@@ -203,3 +203,92 @@ select t_eq('ועובד C בלי תפקידים',
     where x ->> 'worker_id' = 'cc000000-0000-0000-0000-0000003200c1'), '[]'::jsonb);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+-- ===========================================================================
+-- ‏0154: המשאית של נהג הקבלן
+--
+-- שלוש טענות: מי רשאי לקבוע אותה, שהיא של נהג בלבד, ושהיא מוגבלת לרשימת
+-- המשאיות של הלקוח כמו בכל בורר משאיות אחר במערכת (0116).
+--
+-- המשימה כאן היא זו של סעיף 0128 שלמעלה — עובד A כבר משובץ עליה כעובד רגיל,
+-- ולכן כל בדיקה מתחת היא על **עדכון** של אותה שורה, בדיוק הנתיב שבו ה-upsert
+-- כותב את מה שנשלח.
+-- ===========================================================================
+
+\echo '--- 0154: משאית לנהג של הקבלן ---'
+
+insert into trucks (id, name) values
+  ('7c000000-0000-0000-0000-0000003200f1', 'משאית 32 א'),
+  ('7c000000-0000-0000-0000-0000003200f2', 'משאית 32 ב');
+
+-- מנהל הקבלן משבץ את הסגל שלו, ואינו מחזיק את מפתח המשאיות של המשרד.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000032a4', false);
+select t_expect_fail('מנהל הקבלן אינו קובע באיזו משאית נוסעים', $$
+  select contractor_assign_worker('61000000-0000-0000-0000-000000032003',
+      'ca000000-0000-0000-0000-0000003200a1', null, true, null, 'driver',
+      '7c000000-0000-0000-0000-0000003200f1')$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- המשרד (כאן: מנהל המערכת) כן.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000032a1', false);
+select t_expect_ok('המשרד משבץ את נהג הקבלן למשאית', $$
+  select contractor_assign_worker('61000000-0000-0000-0000-000000032003',
+      'ca000000-0000-0000-0000-0000003200a1', null, true, null, 'driver',
+      '7c000000-0000-0000-0000-0000003200f1')$$);
+
+-- משאית היא של נהג. תפקיד אחר עם משאית נדחה במפורש ולא נבלע בשקט.
+select t_expect_fail('ראש צוות אינו מקבל משאית', $$
+  select contractor_assign_worker('61000000-0000-0000-0000-000000032003',
+      'cb000000-0000-0000-0000-0000003200b1', null, true, null, 'team_lead',
+      '7c000000-0000-0000-0000-0000003200f2')$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('והמשאית נרשמה על שורת השיבוץ',
+  (select truck_id from task_contractor_workers
+    where task_id = '61000000-0000-0000-0000-000000032003'
+      and contractor_worker_id = 'ca000000-0000-0000-0000-0000003200a1'),
+  '7c000000-0000-0000-0000-0000003200f1'::uuid);
+
+-- ‏0111 כבר קובעת שנקודת ההתחלה של הקבלן נזרקת; מה שנבדק כאן הוא שהמשאית
+-- **שורדת** קריאה שלו — הוא שולח את מצב השורה כולו, ואין לו מה לשנות בה.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000032a4', false);
+select t_expect_ok('והקבלן ממשיך לעדכן את השורה בלי לגעת במשאית', $$
+  select contractor_assign_worker('61000000-0000-0000-0000-000000032003',
+      'ca000000-0000-0000-0000-0000003200a1', null, true, 'warehouse', 'driver',
+      '7c000000-0000-0000-0000-0000003200f1')$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('והיא נשארה עליו',
+  (select truck_id from task_contractor_workers
+    where task_id = '61000000-0000-0000-0000-000000032003'
+      and contractor_worker_id = 'ca000000-0000-0000-0000-0000003200a1'),
+  '7c000000-0000-0000-0000-0000003200f1'::uuid);
+
+-- רשימת המשאיות של הלקוח (0116): משאית שאינה בה נדחית, וזו שבה עוברת.
+insert into customer_trucks (customer_id, truck_id) values
+  ('10000000-0000-0000-0000-00000000032a', '7c000000-0000-0000-0000-0000003200f1');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000032a1', false);
+select t_expect_fail('משאית שאינה ברשימת הלקוח נדחית', $$
+  select contractor_assign_worker('61000000-0000-0000-0000-000000032003',
+      'ca000000-0000-0000-0000-0000003200a1', null, true, null, 'driver',
+      '7c000000-0000-0000-0000-0000003200f2')$$);
+
+-- והורדת התפקיד מורידה איתה את המשאית, כי הקורא שולח את השורה כולה.
+select t_expect_ok('חזרה לעובד רגיל מסירה את המשאית', $$
+  select contractor_assign_worker('61000000-0000-0000-0000-000000032003',
+      'ca000000-0000-0000-0000-0000003200a1', null, true, null, null, null)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('ולא נשארה משאית על מי שאינו נוהג',
+  (select truck_id from task_contractor_workers
+    where task_id = '61000000-0000-0000-0000-000000032003'
+      and contractor_worker_id = 'ca000000-0000-0000-0000-0000003200a1') is null, true);

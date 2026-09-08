@@ -95,6 +95,27 @@ export function useCustomerTrucks() {
 }
 
 /**
+ * המשאיות שאפשר לבחור מהן במשימה של לקוח מסוים (0116).
+ *
+ * הכלל: רשימה ריקה אצל הלקוח = כל הקטלוג. הוא יושב כאן ולא בכל מסך בנפרד,
+ * כי ארבעה מסכים שואלים אותו — תא הלו״ז, כרטיס המשימה, פאנל השיבוץ וסגל
+ * הקבלן — וארבע העתקות של אותו תנאי הן ארבע תשובות שיסטו ביום שהוא ישתנה.
+ *
+ * סינון בלבד: הגבול האמיתי הוא `app.enforce_customer_trucks` בשרת.
+ */
+export function useTaskTrucks(customerId: string | null | undefined) {
+  const { data: trucks = [] } = useTrucks()
+  const { data: customerTrucks = [] } = useCustomerTrucks()
+  return useMemo(() => {
+    if (!customerId) return trucks
+    const ids = new Set(
+      customerTrucks.filter((r) => r.customer_id === customerId).map((r) => r.truck_id),
+    )
+    return ids.size === 0 ? trucks : trucks.filter((t) => ids.has(t.id))
+  }, [trucks, customerTrucks, customerId])
+}
+
+/**
  * צי הרכב (0089). `trucks` שמעליה היא רשימת השיגור; זו היא רשימת הנכסים.
  * הסדר לפי מספר רישוי ולא לפי שם — כך מחפשים רכב.
  */
@@ -391,6 +412,12 @@ export function useContractorWorkerAssign() {
       workSite?: 'field' | 'warehouse'
       /* null = עובד רגיל; 'team_lead'/'driver' דורש שהעובד מוגדר בתפקיד (0121). */
       role?: StaffRole | null
+      /**
+       * המשאית של הנהג (0154). כמו ב-`customer_assign_worker`, ה-upsert בשרת
+       * כותב את מה שנשלח — ולכן הקורא שולח את **מצב השורה כולו** בכל קריאה,
+       * ולא רק את מה שהוא משנה. שליחה חלקית מוחקת את השאר.
+       */
+      truckId?: string | null
     }) => {
       const { error } = await supabase.rpc('contractor_assign_worker', {
         p_task_id: v.taskId,
@@ -400,6 +427,7 @@ export function useContractorWorkerAssign() {
         /* null = ירושה מנקודת ההתחלה שהמשרד קבע לקבלן במשימה (0091). */
         p_work_site: v.workSite ?? null,
         p_role: v.role ?? null,
+        p_truck_id: v.truckId ?? null,
       })
       if (error) throw error
     },

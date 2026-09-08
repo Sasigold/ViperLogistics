@@ -305,6 +305,26 @@ export function useSetShiftBonus() {
 }
 
 /**
+ * ביטול ההשלמה לשעות על משמרת אחת. RPC משלו מאותו נימוק שהוציא את הבונוס
+ * מ-`attendance_save_entry`: מי שמתקן שעות (attendance.edit_entry) אינו מי
+ * שקובע שכר (attendance.manage_pay), וההשלמה היא החלטת שכר. false מחזיר את
+ * המשמרת להגדרה שבכרטיס העובד.
+ */
+export function useSetTopupWaiver() {
+  const invalidate = useAttendanceInvalidate()
+  return useMutation({
+    mutationFn: async (v: { id: string; waived: boolean }) => {
+      const { error } = await supabase.rpc('attendance_set_topup_waiver', {
+        p_id: v.id,
+        p_waived: v.waived,
+      })
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+}
+
+/**
  * הגדרות השכר והשעון של עובד. חוזרת null גם כשהשורה קיימת אבל ה-RLS חוסם
  * אותה — הכרטיס במסך הוא שמגודר, לא השאילתה.
  */

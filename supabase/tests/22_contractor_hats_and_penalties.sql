@@ -198,3 +198,81 @@ select t_eq('והסרת הסימון מחזירה את המחיר',
   (select price from task_contractor_terms
     where task_id = '61000000-0000-0000-0000-000000022001'
       and contractor_id = '11000000-0000-0000-0000-00000000022a'), 300::numeric);
+
+-- ===========================================================================
+-- ‏0155: מחיר לקבלן שהמשרד הקליד
+--
+-- המשימה כאן היא זו של סעיף הקנסות שלמעלה: קבלן 22 נושא `default_task_price`
+-- ו-`no_show_penalty`, ולכן המנוע פעיל עליה — וזה בדיוק המקרה שבו מספר
+-- שהוקלד ידנית נדרס בחישוב הבא.
+-- ===========================================================================
+
+\echo '--- 0155: מחיר ידני לקבלן ---'
+
+update task_contractor_terms
+   set price_is_manual = true, price = 1234
+ where task_id = '61000000-0000-0000-0000-000000022001'
+   and contractor_id = '11000000-0000-0000-0000-00000000022a';
+
+select t_eq('המחיר שהוקלד נשאר כפי שהוא',
+  (select price from task_contractor_terms
+    where task_id = '61000000-0000-0000-0000-000000022001'
+      and contractor_id = '11000000-0000-0000-0000-00000000022a'), 1234::numeric);
+
+-- הפירוט תיאר חישוב שאינו מה שמשולם, ולכן הוא יורד
+select t_eq('והפירוט יורד, כי אין ממה להרכיב אותו',
+  (select price_parts from task_contractor_terms
+    where task_id = '61000000-0000-0000-0000-000000022001'
+      and contractor_id = '11000000-0000-0000-0000-00000000022a') is null, true);
+
+-- כל מה שמפעיל חישוב מחדש — כאן: סימון אי-התייצבות — אינו נוגע בו
+update task_contractor_workers set no_show = true
+ where task_id = '61000000-0000-0000-0000-000000022001'
+   and contractor_worker_id = '12000000-0000-0000-0000-00000000022a';
+
+select t_eq('וקנס אי-התייצבות אינו דורס אותו',
+  (select price from task_contractor_terms
+    where task_id = '61000000-0000-0000-0000-000000022001'
+      and contractor_id = '11000000-0000-0000-0000-00000000022a'), 1234::numeric);
+
+update task_contractor_workers set no_show = false
+ where task_id = '61000000-0000-0000-0000-000000022001'
+   and contractor_worker_id = '12000000-0000-0000-0000-00000000022a';
+
+-- וכיבוי הדגל מחזיר את החישוב מיד, בלי להמתין לשינוי הבא
+update task_contractor_terms set price_is_manual = false
+ where task_id = '61000000-0000-0000-0000-000000022001'
+   and contractor_id = '11000000-0000-0000-0000-00000000022a';
+
+select t_eq('כיבוי הידני מחזיר את המחיר המחושב',
+  (select price from task_contractor_terms
+    where task_id = '61000000-0000-0000-0000-000000022001'
+      and contractor_id = '11000000-0000-0000-0000-00000000022a'), 300::numeric);
+
+select t_eq('ואיתו הפירוט',
+  (select price_parts ->> 'base' from task_contractor_terms
+    where task_id = '61000000-0000-0000-0000-000000022001'
+      and contractor_id = '11000000-0000-0000-0000-00000000022a'), '300.00');
+
+-- ===== מי רשאי לשחרר את המחיר מהמנוע =====
+-- מי שמסמן "שולם" עובר את פוליסת הכתיבה על השורה, ואינו קובע מחירים. הרישום
+-- ב-field_registry הוא מה שמפריד בין השניים על העמודה הזו.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000022a4', 'c22-payer@vl.test');
+insert into profiles (id, user_id, user_kind, full_name) values
+  ('20000000-0000-0000-0000-0000000022a4', '00000000-0000-0000-0000-0000000022a4',
+   'staff', 'מסמן תשלומים 22');
+insert into user_permission_grants (profile_id, permission_key, allowed) values
+  ('20000000-0000-0000-0000-0000000022a4', 'contractors.view',         true),
+  ('20000000-0000-0000-0000-0000000022a4', 'contractors.view_pricing', true),
+  ('20000000-0000-0000-0000-0000000022a4', 'contractors.mark_paid',    true),
+  ('20000000-0000-0000-0000-0000000022a4', 'contractors.edit_pricing', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000022a4', false);
+select t_expect_fail('מי שמסמן תשלומים אינו משחרר את המחיר מהמנוע', $$
+  update task_contractor_terms set price_is_manual = true
+   where task_id = '61000000-0000-0000-0000-000000022001'
+     and contractor_id = '11000000-0000-0000-0000-00000000022a'$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);

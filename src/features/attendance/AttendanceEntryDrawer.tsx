@@ -4,6 +4,7 @@ import { Check, ICON, MapPin, STROKE, Trash2, X } from '../../components/ui/icon
 import {
   Badge,
   Button,
+  Checkbox,
   Drawer,
   Field,
   Input,
@@ -14,8 +15,13 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
-import { fmtDateTime, fmtMoney } from '../../lib/dates'
-import { useAttendanceInvalidate, useReviewAttendanceEntry, useSetShiftBonus } from './attendanceQueries'
+import { fmtDate, fmtDateTime, fmtMoney } from '../../lib/dates'
+import {
+  useAttendanceInvalidate,
+  useReviewAttendanceEntry,
+  useSetShiftBonus,
+  useSetTopupWaiver,
+} from './attendanceQueries'
 import {
   STATUS_LABELS,
   STATUS_TONES,
@@ -54,9 +60,13 @@ export function AttendanceEntryDrawer({
   // מגביל לעובדי הקבלן של המאשר בלבד (0091).
   const canApprove = has(PERM.ATTENDANCE_APPROVE_ENTRY) || has(PERM.PORTAL_APPROVE_ATTENDANCE)
   const canBonus = has(PERM.ATTENDANCE_MANAGE_BONUS)
+  // ההשלמה לשעות היא הגדרת שכר, ולכן ביטולה על משמרת בודדת יושב על אותו
+  // מפתח שקובע אותה בכרטיס העובד — ולא על המפתח התפעולי של תיקון שעות.
+  const canPay = has(PERM.ATTENDANCE_MANAGE_PAY)
   const isPending = row?.status === 'pending'
   const review = useReviewAttendanceEntry()
   const setBonus = useSetShiftBonus()
+  const setTopupWaiver = useSetTopupWaiver()
 
   /**
    * `pay.bonus` מגיע מהשרת רק למי שרשאי לראות סכומים — הוא מושמט מהאובייקט
@@ -67,6 +77,7 @@ export function AttendanceEntryDrawer({
 
   const [form, setForm] = useState({
     clockIn: '', clockOut: '', note: '', bonus: '', bonusNote: '', inPlace: '', outPlace: '',
+    topupWaived: false,
   })
 
   useEffect(() => {
@@ -79,12 +90,22 @@ export function AttendanceEntryDrawer({
       bonusNote: row.bonus_note ?? '',
       inPlace: row.clock_in_place ?? '',
       outPlace: row.clock_out_place ?? '',
+      topupWaived: !!row.pay?.topup_waived,
     })
   }, [row])
 
   const bonusAmount = Number(form.bonus || 0)
   const bonusChanged =
     !!row && (bonusAmount !== (row.pay?.bonus ?? 0) || form.bonusNote !== (row.bonus_note ?? ''))
+  const topupWaivedChanged = !!row && form.topupWaived !== !!row.pay?.topup_waived
+
+  /**
+   * מה שמובטח לעובד לפי כרטיסו. הוא מגיע גם למי שאינו רואה סכומים — הוא שעות
+   * ולא כסף — ולכן הוא מה שמכריע אם יש כאן בכלל השלמה לבטל. משמרת של עובד
+   * בלי השלמה אינה מציגה את הבחירה, כי אין בה מה לבטל.
+   */
+  const topupMinHours = row?.pay?.topup_min_hours ?? null
+  const showTopupWaiver = (topupMinHours ?? 0) > 0 || !!row?.pay?.topup_waived
 
   const save = useMutation({
     mutationFn: async () => {
@@ -107,6 +128,11 @@ export function AttendanceEntryDrawer({
       if (canBonus && bonusChanged) {
         if (Number.isNaN(bonusAmount)) throw new Error('סכום הבונוס אינו מספר')
         await setBonus.mutateAsync({ id: row.id, bonus: bonusAmount, note: form.bonusNote })
+      }
+      // ואותו שיקול בדיוק לביטול ההשלמה: מפתח משלו, ולכן קריאה משלו שנשלחת
+      // רק כשההחלטה באמת השתנתה.
+      if (canPay && topupWaivedChanged) {
+        await setTopupWaiver.mutateAsync({ id: row.id, waived: form.topupWaived })
       }
     },
     onSuccess: () => {
@@ -162,11 +188,14 @@ export function AttendanceEntryDrawer({
         open={!!row}
         onClose={onClose}
         title={row?.full_name ?? ''}
-        description={row ? `${row.work_date} · משמרת ${row.seq}` : undefined}
+        /* התאריך הוא של הכניסה בפועל, כמו על הכרטיס שממנו נפתחה המגירה —
+           ‏`work_date` הוא תאריך המשמרת המתוכננת, והם נפרדים במשמרת לילה. */
+        description={row ? `${fmtDate(row.clock_in_at)} · משמרת ${row.seq}` : undefined}
         footer={
           // canBonus לבדו מספיק כדי להצדיק כפתור שמירה: חשב שכר שרשאי רק
-          // לקבוע בונוס אינו מחזיק attendance.edit_entry.
-          (canEdit || canBonus || (isPending && canApprove)) && (
+          // לקבוע בונוס אינו מחזיק attendance.edit_entry. canPay הוא אותו
+          // מקרה — ביטול ההשלמה הוא החלטה שלו ולא של מי שמתקן שעות.
+          (canEdit || canBonus || (canPay && showTopupWaiver) || (isPending && canApprove)) && (
             <>
               {canDelete && (
                 <Button
@@ -183,7 +212,7 @@ export function AttendanceEntryDrawer({
                   זמינה כדי לתקן שעה לפני האישור, אבל אינה מתחרה עליה. */}
               {isPending && canApprove ? (
                 <>
-                  {(canEdit || canBonus) && (
+                  {(canEdit || canBonus || (canPay && showTopupWaiver)) && (
                     <Button loading={save.isPending} onClick={() => save.mutate()}>
                       שמירת תיקון
                     </Button>
@@ -215,6 +244,10 @@ export function AttendanceEntryDrawer({
               <Badge tone={STATUS_TONES[row.status]}>{STATUS_LABELS[row.status]}</Badge>
               {row.source === 'manual' && <Badge tone="warning">ידני</Badge>}
               {row.work_site && <Badge tone="info">{WORK_SITE_LABELS[row.work_site]}</Badge>}
+              {/* מוצג לכל מי שפותח את הרשומה, גם למי שאינו רשאי לשנות:
+                  משמרת שאינה מושלמת ואין לזה הסבר על המסך היא באג לכל
+                  מי שקורא אותה. */}
+              {row.pay?.topup_waived && <Badge tone="neutral">ללא השלמה</Badge>}
               {visibleFlags(row.flags).map((f) => (
                 <Badge key={f} tone="warning">
                   {flagLabel(f)}
@@ -303,6 +336,24 @@ export function AttendanceEntryDrawer({
                 {row.in_distance_m != null && <span>כניסה: {fmtDistance(row.in_distance_m)} מהאתר</span>}
                 {row.out_distance_m != null && <span>יציאה: {fmtDistance(row.out_distance_m)} מהאתר</span>}
               </p>
+            )}
+
+            {/* ההשלמה לשעות היא הגדרה של העובד — "מובטחות לו שש" — וכאן היא
+                מבוטלת על המשמרת הזו בלבד, בלי לגעת בכרטיס שלו ובלי לזייף
+                אותו לשאר החודש. מוצגת רק כשיש מה לבטל, ונעולה לקריאה בלי
+                מפתח השכר: גם מי שרק מתקן שעות צריך לדעת למה לא הושלם. */}
+            {showTopupWaiver && (canPay || form.topupWaived) && (
+              <Checkbox
+                checked={form.topupWaived}
+                disabled={!canPay}
+                onChange={(v) => setForm((f) => ({ ...f, topupWaived: v }))}
+                label="בלי השלמה לשעות במשמרת הזו"
+                description={
+                  topupMinHours
+                    ? `בכרטיס העובד מובטחות ${fmtDuration(topupMinHours)} ש׳. בסימון, המשמרת משולמת לפי מה שנעשה בה בלבד.`
+                    : 'המשמרת משולמת לפי מה שנעשה בה בלבד'
+                }
+              />
             )}
 
             {/* הבונוס יושב לפני פירוט השכר, כי הוא מה שמשנה אותו. הוא מוצג

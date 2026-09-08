@@ -80,3 +80,56 @@ export function pctDelta(current: number, previous: number): number | null {
   if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) return null
   return Math.round(((current - previous) / previous) * 100)
 }
+
+/* ===== קישורים בתוך טקסט חופשי ===========================================
+   שדה מותאם של לקוח ("קישור ל-Eruit") והערה חופשית מחזיקים לא פעם כתובת
+   מלאה, והמסך הציג אותה כטקסט. הפיצול כאן הוא מה שהופך אותה לקישור, והוא
+   פונקציה טהורה כדי שהכללים שלו — מה נחשב כתובת ומה נשאר טקסט — ייבדקו
+   בלי DOM.
+
+   שתי הכרעות שהן אבטחה ולא נוחות:
+
+   * ‏`https`, `http` ו-`www.` בלבד. `javascript:` ו-`data:` אינם יכולים
+     להיווצר מכאן, כי הביטוי אינו מתאים להם מלכתחילה — ולא כי מישהו מסנן
+     אותם אחר כך. הערך מגיע ממשתמש, ולכן רשימת היתר ולא רשימת איסור.
+   * הפלט הוא מקטעים ולא HTML. שום דבר כאן אינו מוזרק כ-innerHTML, ולכן
+     תגית בתוך טקסט של משתמש נשארת טקסט. */
+
+const URL_RE = /((?:https?:\/\/|www\.)[^\s<>"'`]+)/gi
+
+/** סימני פיסוק בסוף כתובת הם כמעט תמיד של המשפט, לא של הכתובת. */
+const TRAILING_PUNCT = /[.,;:!?׳"'\]})>]+$/
+
+export interface TextPart {
+  text: string
+  /** null = טקסט רגיל. אחרת היעד המלא, כולל סכימה. */
+  href: string | null
+}
+
+/**
+ * טקסט חופשי, מפוצל למקטעים של טקסט וכתובות. מחרוזת בלי כתובות חוזרת
+ * כמקטע אחד, ולכן הקורא אינו צריך מקרה מיוחד.
+ */
+export function linkifyParts(value: string | null | undefined): TextPart[] {
+  const text = value ?? ''
+  if (!text) return []
+
+  const parts: TextPart[] = []
+  const push = (t: string, href: string | null) => {
+    if (t) parts.push({ text: t, href })
+  }
+
+  let last = 0
+  for (const m of text.matchAll(URL_RE)) {
+    const start = m.index ?? 0
+    const raw = m[0]
+    // הפיסוק שבסוף חוזר לטקסט: "ראו https://a.co/x." אינו כתובת שנגמרת בנקודה
+    const url = raw.replace(TRAILING_PUNCT, '')
+    push(text.slice(last, start), null)
+    push(url, url.toLowerCase().startsWith('www.') ? `https://${url}` : url)
+    push(raw.slice(url.length), null)
+    last = start + raw.length
+  }
+  push(text.slice(last), null)
+  return parts
+}

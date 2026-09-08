@@ -604,6 +604,11 @@ export interface TaskContractorTerms {
   paid_at: string | null
   paid_amount: number | null
   price_parts: ContractorPriceParts | null
+  /**
+   * המחיר הוקלד ידנית והמנוע אינו נוגע בו (0155). כשהוא דלוק `price_parts`
+   * ריק — מספר שהוקלד אינו מורכב מבסיס, תוספת וקנסות.
+   */
+  price_is_manual: boolean
   created_at: string
 }
 
@@ -1420,6 +1425,14 @@ export interface PayBreakdown {
   topup_target?: number | null
   /** האיחור עבר את הסף שהוגדר לעובד, ולכן אין השלמה בכלל */
   topup_forfeited?: boolean
+  /**
+   * ההשלמה בוטלה ידנית על המשמרת הזו (0152). שדה נפרד מ-`topup_forfeited`
+   * במכוון: "מישהו החליט" ו"האיחור אכל אותה" הם שתי תשובות שונות לעובד
+   * ששואל למה לא הושלם לו.
+   */
+  topup_waived?: boolean
+  /** מה שמובטח לעובד לפי כרטיסו, לפני איחור ולפני ביטול. null = אין השלמה. */
+  topup_min_hours?: number | null
   /** השדות האלה מושמטים מהאובייקט למי שאינו רשאי לראות כסף */
   hourly_rate?: number | null
   rate_hours?: number
@@ -1500,6 +1513,11 @@ export interface AttendanceReportRow {
   /** מיקום במילים, מדיווח ידני. ניתן לעריכה בידי מי שמתקן את הרשומה (0084) */
   clock_in_place: string | null
   clock_out_place: string | null
+  /**
+   * שם המחסן שממנו יצאה המשמרת, כפי שהדוח גוזר אותו מהמשימות שהרכיבו אותה
+   * (0153). null במשמרת שטח ובדיווח ידני, שאין לו משמרת משובצת לגזור ממנה.
+   */
+  work_place: string | null
   edited_at: string | null
   /** האם שעות נוספות חלות על העובד הזה — ההגדרה האפקטיבית שלו, לא כמה עשה */
   overtime_enabled: boolean

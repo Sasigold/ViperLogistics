@@ -7,6 +7,7 @@ import {
   DataTable,
   EmptyState,
   FilterBar,
+  LinkedText,
   PageHeader,
   SearchInput,
   Select,
@@ -207,7 +208,14 @@ export default function EventsPage() {
           sortValue: (e) => formatCustomValue(f, e.custom_fields?.[f.field_key]) || undefined,
           render: (e) => {
             const v = formatCustomValue(f, e.custom_fields?.[f.field_key])
-            return v ? <span className="block truncate">{v}</span> : <span className="text-ink-tertiary">—</span>
+            /* כתובת בשדה של לקוח היא קישור גם כאן ולא רק בדף האירוע — היא
+               מה שהעמודה קיימת בשבילו. הלחיצה עליה אינה מנווטת לאירוע:
+               LinkedText עוצר את האירוע לפני שהשורה שמתחתיו שומעת אותו. */
+            return v ? (
+              <LinkedText value={v} className="block truncate" />
+            ) : (
+              <span className="text-ink-tertiary">—</span>
+            )
           },
         })),
     ]
