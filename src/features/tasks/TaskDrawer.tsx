@@ -44,12 +44,17 @@ import {
   useStaff,
   useStatuses,
   useTaskTypes,
-  useCustomerTrucks,
+  useTaskTrucks,
   useTrucks,
 } from '../../lib/queries'
 import { Breakdown } from '../customers/PricingTab'
 import { PriceAddonsEditor } from '../pricing/PriceAddons'
-import { ContractorCrew, ContractorDelegationCard } from './taskPanels'
+import {
+  ContractorCrew,
+  ContractorDelegationCard,
+  LeadDrivesToggle,
+  withLeadAsDriver,
+} from './taskPanels'
 import { EventSpecsModal } from '../events/EventSpecsModal'
 import { useEventSpecs } from '../events/specQueries'
 import { TaskPnlCard } from '../reports/TaskPnlCard'
@@ -165,7 +170,6 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
   const { data: taskTypes = [] } = useTaskTypes()
   const { data: statuses = [] } = useStatuses('task')
   const { data: trucks = [] } = useTrucks()
-  const { data: customerTrucks = [] } = useCustomerTrucks()
   const { data: contractors = [] } = useContractors()
   const { data: staff = [] } = useStaff()
   const { data: warehouses = [] } = useWarehouses()
@@ -186,7 +190,9 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
         supabase.from('task_pricing').select('*').eq('task_id', taskId).maybeSingle(),
         supabase
           .from('task_contractor_workers')
-          .select('contractor_worker_id, no_show, role, contractor_workers!inner(contractor_id)')
+          .select(
+            'contractor_worker_id, no_show, role, work_site, truck_id, contractor_workers!inner(contractor_id)',
+          )
           .eq('task_id', taskId),
       ])
       if (t.error) throw t.error
@@ -194,6 +200,8 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
         contractor_worker_id: string
         no_show: boolean
         role: StaffRole | null
+        work_site: WorkSite | null
+        truck_id: string | null
         contractor_workers: { contractor_id: string } | null
       }[]
       return {
@@ -206,6 +214,8 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
           contractor_id: r.contractor_workers?.contractor_id ?? null,
           no_show: r.no_show,
           role: r.role ?? null,
+          work_site: r.work_site,
+          truck_id: r.truck_id,
         })),
       }
     },
@@ -320,15 +330,10 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
   /* אותו כלל בדיוק שהתא בלו״ז מציית לו, מאותה פונקציה (0117) */
   const statusPick = statusOptions(statuses, form.status_id ?? null, canPublish)
 
-  /* ‏0116: המשאיות של הלקוח של המשימה. רשימה ריקה = אין הגבלה, כמו בלוח.
-     סינון בלבד — הגבול הוא app.enforce_customer_trucks בשרת. */
-  const availableTrucks = useMemo(() => {
-    if (!form.customer_id) return trucks
-    const allowed = customerTrucks.filter((r) => r.customer_id === form.customer_id)
-    if (allowed.length === 0) return trucks
-    const ids = new Set(allowed.map((r) => r.truck_id))
-    return trucks.filter((t) => ids.has(t.id))
-  }, [trucks, customerTrucks, form.customer_id])
+  /* ‏0116: המשאיות של הלקוח של המשימה. הכלל — רשימה ריקה = אין הגבלה —
+     יושב ב-`useTaskTrucks`, כי ארבעה מסכים שואלים אותו. סינון בלבד; הגבול
+     הוא app.enforce_customer_trucks בשרת. */
+  const availableTrucks = useTaskTrucks(form.customer_id)
 
   /* משימות שנשמרו לפני ריבוי המשאיות מגיעות עם truck_id בלבד */
   const truckIds = useMemo(
@@ -498,11 +503,12 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
   /* staffing progress — the single number a dispatcher checks most often.
      עובדי הקבלן נספרים כאן כמאיישים: משימה שהואצלה לקבלן והוא איישָׁ אותה
      אינה "חסרה", גם אם אין לה task_assignments משלה (0091). */
+  /* אנשים ולא שורות: ראש צוות שנוהג גם הוא מחזיק שתי שורות שיבוץ,
+     והוא אדם אחד במשימה. עד כאן הספירה סכמה תפקידים, והמשימה שלו נראתה
+     מאוישת בכפול. */
   const assignedCount =
-    byRole('worker').length +
-    byRole('driver').length +
-    byRole('team_lead').length +
-    chosenContractorWorkers.length
+    new Set([...byRole('worker'), ...byRole('driver'), ...byRole('team_lead')].map((a) => a.profile_id))
+      .size + chosenContractorWorkers.length
   const needed = form.worker_count ?? 0
   const understaffed = needed > 0 && assignedCount < needed
 
@@ -805,13 +811,33 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
               </Field>
               <Field label="נהגים">
                 <MultiSelect
-                  options={staffOptions('driver')}
+                  options={withLeadAsDriver(
+                    staffOptions('driver'),
+                    byRole('team_lead')[0]?.profile_id,
+                    byRole('driver').some(
+                      (a) => a.profile_id === byRole('team_lead')[0]?.profile_id,
+                    ),
+                    nameOf,
+                  )}
                   values={byRole('driver').map((a) => a.profile_id)}
                   onToggle={(id) => canAssign.driver && toggleAssignment('driver', id)}
                   placeholder="בחירת נהגים..."
                   disabled={!canAssign.driver}
                 />
               </Field>
+
+              {/* ראש הצוות שנוהג בעצמו. שורת נהג שנייה לאותו אדם ולא דגל
+                  חדש: כך הוא מקבל את שיוך המשאית שלמטה, נכנס לתא הנהגים
+                  בלו״ז ונספר בבדיקת השיבוץ הכפול — בדיוק כמו כל נהג אחר.
+                  ‏`assignedCount` סופר אנשים, ולכן הוא נשאר אחד. */}
+              <LeadDrivesToggle
+                leadId={byRole('team_lead')[0]?.profile_id ?? null}
+                isDriver={byRole('driver').some(
+                  (a) => a.profile_id === byRole('team_lead')[0]?.profile_id,
+                )}
+                disabled={!canAssign.driver}
+                onToggle={(id: string) => toggleAssignment('driver', id)}
+              />
 
               {/*
                 שטח או מחסן, פר-משובץ. השדה קובע שני דברים במשמרת של אותו
@@ -1033,10 +1059,9 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
                       taskId={taskId}
                       term={term}
                       contractor={contractor}
-                      assignedWorkerIds={mine.map((w) => w.worker_id)}
-                      workerRoles={Object.fromEntries(mine.map((w) => [w.worker_id, w.role]))}
+                      customerId={form.customer_id}
+                      assigned={mine}
                       hasStaffLead={byRole('team_lead').length > 0}
-                      noShow={new Set(mine.filter((w) => w.no_show).map((w) => w.worker_id))}
                       canDelegate={canDelegate}
                       canEditPricing={canEditPricing}
                       canViewPricing={canViewPricing}
@@ -1106,16 +1131,11 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
                   taskId={taskId}
                   contractorId={myContractorId}
                   contractorName={contractors.find((c) => c.id === myContractorId)?.name ?? null}
-                  assignedWorkerIds={chosenContractorWorkers
-                    .filter((w) => w.contractor_id === myContractorId)
-                    .map((w) => w.worker_id)}
-                  workerRoles={Object.fromEntries(
-                    chosenContractorWorkers
-                      .filter((w) => w.contractor_id === myContractorId)
-                      .map((w) => [w.worker_id, w.role]),
+                  customerId={form.customer_id}
+                  assigned={chosenContractorWorkers.filter(
+                    (w) => w.contractor_id === myContractorId,
                   )}
                   hasStaffLead={byRole('team_lead').length > 0}
-                  noShow={new Set()}
                   canMarkNoShow={false}
                 />
               </CardBody>

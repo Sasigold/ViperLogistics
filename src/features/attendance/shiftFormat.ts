@@ -133,6 +133,16 @@ export const ATTENTION_FLAGS = new Set(['no_site_coords', 'no_shift', 'auto_clos
 export const needsAttention = (flags: string[] | null | undefined) =>
   (flags ?? []).some((f) => ATTENTION_FLAGS.has(f))
 
+/**
+ * היום שבו המשמרת נפתחה בפועל, כמפתח 'yyyy-MM-dd' בשעון המקומי.
+ *
+ * ‏`work_date` על הרשומה הוא תאריך המשמרת ה**מתוכננת** (0019): הוא נגזר
+ * מ-`shift_start` בהחתמה, ולכן משמרת שמתחילה ב-00:30 ונכנסים אליה ב-23:45
+ * נושאת את התאריך של יום המחרת. בדוח מוצג מה שקרה — ולכן הכרטיס, הסדר
+ * וספירת "משמרת 2" נגזרים כולם מרגע הכניסה, ומאותה פונקציה.
+ */
+export const clockInDayKey = (iso: string) => format(parseISO(iso), 'yyyy-MM-dd')
+
 /** '07:00'. שעה בודדת, כשהטווח כבר מוצג במקום אחר בשורה. */
 export const fmtTime = (iso: string) => format(parseISO(iso), 'HH:mm')
 

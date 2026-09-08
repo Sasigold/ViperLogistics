@@ -15,7 +15,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
-import { fmtDateTime, fmtMoney } from '../../lib/dates'
+import { fmtDate, fmtDateTime, fmtMoney } from '../../lib/dates'
 import {
   useAttendanceInvalidate,
   useReviewAttendanceEntry,
@@ -188,7 +188,9 @@ export function AttendanceEntryDrawer({
         open={!!row}
         onClose={onClose}
         title={row?.full_name ?? ''}
-        description={row ? `${row.work_date} · משמרת ${row.seq}` : undefined}
+        /* התאריך הוא של הכניסה בפועל, כמו על הכרטיס שממנו נפתחה המגירה —
+           ‏`work_date` הוא תאריך המשמרת המתוכננת, והם נפרדים במשמרת לילה. */
+        description={row ? `${fmtDate(row.clock_in_at)} · משמרת ${row.seq}` : undefined}
         footer={
           // canBonus לבדו מספיק כדי להצדיק כפתור שמירה: חשב שכר שרשאי רק
           // לקבוע בונוס אינו מחזיק attendance.edit_entry. canPay הוא אותו

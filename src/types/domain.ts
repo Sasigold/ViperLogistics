@@ -604,6 +604,11 @@ export interface TaskContractorTerms {
   paid_at: string | null
   paid_amount: number | null
   price_parts: ContractorPriceParts | null
+  /**
+   * המחיר הוקלד ידנית והמנוע אינו נוגע בו (0155). כשהוא דלוק `price_parts`
+   * ריק — מספר שהוקלד אינו מורכב מבסיס, תוספת וקנסות.
+   */
+  price_is_manual: boolean
   created_at: string
 }
 

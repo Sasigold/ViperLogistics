@@ -61,6 +61,7 @@ import {
   STATUS_LABELS,
   STATUS_TONES,
   WORK_SITE_LABELS,
+  clockInDayKey,
   flagLabel,
   fmtDuration,
   needsAttention,
@@ -197,8 +198,11 @@ interface ShiftRowView {
  * לרכיב.
  */
 function toShiftView(r: AttendanceReportRow, sameDayCount: number): ShiftRowView {
-  const day = parseISO(r.work_date)
   const clockIn = new Date(r.clock_in_at)
+  /* התאריך על הכרטיס הוא של הכניסה בפועל ולא `work_date`, שהוא תאריך
+     המשמרת המתוכננת: מי שנכנס ב-23:45 למשמרת של 00:30 עבד בערב הזה, וכרטיס
+     שאומר לו "מחר" מתאר יום אחר משהיה. */
+  const day = clockIn
   const clockOut = r.clock_out_at ? new Date(r.clock_out_at) : null
   const overtime = r.pay?.overtime_hours ?? 0
   const planned = r.planned_hours ?? 0
@@ -448,16 +452,18 @@ export function AttendanceReport({
     // הספירה היא לפי עובד ויום, ולא לפי יום בלבד: בדוח צוותי, שני עובדים
     // שעבדו באותו יום אינם "שתי משמרות" של אף אחד מהם.
     const perDay = new Map<string, number>()
-    for (const r of rows) {
-      const k = `${r.profile_id}|${r.work_date}`
-      perDay.set(k, (perDay.get(k) ?? 0) + 1)
-    }
+    /* לפי יום הכניסה בפועל, שהוא מה שהכרטיס מציג — אחרת "משמרת 2" הייתה
+       מופיעה על כרטיס בודד, ושתי משמרות של אותו ערב היו נראות כאחת. */
+    const dayOf = (r: AttendanceReportRow) => `${r.profile_id}|${clockInDayKey(r.clock_in_at)}`
+    for (const r of rows) perDay.set(dayOf(r), (perDay.get(dayOf(r)) ?? 0) + 1)
     return [...rows]
       .sort(
         (a, b) =>
-          b.work_date.localeCompare(a.work_date) || a.seq - b.seq || a.clock_in_at.localeCompare(b.clock_in_at),
+          clockInDayKey(b.clock_in_at).localeCompare(clockInDayKey(a.clock_in_at)) ||
+          a.seq - b.seq ||
+          a.clock_in_at.localeCompare(b.clock_in_at),
       )
-      .map((r) => toShiftView(r, perDay.get(`${r.profile_id}|${r.work_date}`) ?? 1))
+      .map((r) => toShiftView(r, perDay.get(dayOf(r)) ?? 1))
   }, [rows])
 
   /**

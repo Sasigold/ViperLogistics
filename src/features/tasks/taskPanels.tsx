@@ -25,6 +25,7 @@ import {
   Card,
   CardBody,
   CardHeader,
+  Checkbox,
   Drawer,
   Field,
   Input,
@@ -48,8 +49,7 @@ import {
   useCustomerAssignableWorkers,
   useCustomerWorkerAssign,
   useStaff,
-  useCustomerTrucks,
-  useTrucks,
+  useTaskTrucks,
 } from '../../lib/queries'
 import { useWarehouses } from '../attendance/attendanceQueries'
 import { fmtDate } from '../../lib/dates'
@@ -65,6 +65,22 @@ import type {
 } from '../../types/domain'
 
 /**
+ * שורת שיבוץ של עובד קבלן כפי שהמסך צריך אותה.
+ *
+ * מבנה אחד ולא ארבע רשימות מקבילות: ה-upsert בשרת כותב את מה שנשלח, ולכן
+ * כל שינוי — תפקיד, אתר, משאית — חייב לשלוח את מצב השורה כולו, ומצב שמפוזר
+ * בין `ids` ל-`roles` ל-`trucks` הוא בדיוק המקום שבו שדה נשכח ונמחק.
+ */
+export interface CrewWorker {
+  worker_id: string
+  work_site?: WorkSite | null
+  role: StaffRole | null
+  no_show: boolean
+  /** המשאית של הנהג (0154) */
+  truck_id: string | null
+}
+
+/**
  * שיבוץ הסגל של קבלן אחד למשימה, וסימון אי-התייצבות (0096).
  *
  * נכתב מיד דרך RPC ולא נשמר עם הטופס — `task_contractor_workers` אינה עמודה של
@@ -75,28 +91,51 @@ export function ContractorCrew({
   taskId,
   contractorId,
   contractorName,
-  assignedWorkerIds,
-  workerRoles,
+  customerId,
+  assigned,
   hasStaffLead,
-  noShow,
   canMarkNoShow,
 }: {
   taskId: string
   contractorId: string
   contractorName: string | null
-  assignedWorkerIds: string[]
-  /** התפקיד שכל עובד קבלן משובץ בו על המשימה (0121), לפי worker_id. */
-  workerRoles?: Record<string, StaffRole | null>
+  /** הלקוח של המשימה — קובע מאיזו רשימת משאיות בוחרים (0116) */
+  customerId?: string | null
+  /** מי משובץ, ובאיזה תפקיד/אתר/משאית. */
+  assigned: CrewWorker[]
   /** האם על המשימה כבר יושב ראש צוות פנימי (0128) — הוא חוסם ראש צוות של קבלן. */
   hasStaffLead?: boolean
-  noShow: Set<string>
   canMarkNoShow: boolean
 }) {
   const toast = useToast()
   const qc = useQueryClient()
+  const has = useAuth((s) => s.has)
   const { data: assignable = [] } = useContractorAssignableWorkers(contractorId)
   const contractorAssign = useContractorWorkerAssign()
-  const assignedSet = new Set(assignedWorkerIds)
+  const trucks = useTaskTrucks(customerId)
+  /* המשאית היא נכס של המשרד, ולכן אותו מפתח ששומר עליה ב-`task_assignments`
+     (‏0012) שומר עליה גם כאן. השרת דורש אותו על *שינוי* בלבד, כדי שמנהל
+     קבלן שמזיז אתר עבודה לא ייחסם על משאית שהוא רק מחזיר כפי שהיא. */
+  const canTruck = has(PERM.TASKS_ASSIGN_TRUCK)
+  const byId = new Map(assigned.map((w) => [w.worker_id, w]))
+  const fail = (e: unknown) => toast.error(errorMessage(e))
+  /* כל כתיבה נושאת את מצב השורה כולו: ה-upsert בשרת אינו יודע מה "לא נשלח",
+     והוא כותב null על כל מה שחסר. */
+  const write = (w: CrewWorker, patch: Partial<CrewWorker>) => {
+    const next = { ...w, ...patch }
+    contractorAssign.mutate(
+      {
+        taskId,
+        workerId: next.worker_id,
+        on: true,
+        workSite: next.work_site ?? undefined,
+        role: next.role,
+        /* משאית שייכת לנהג בלבד — השרת דוחה כל צירוף אחר במפורש. */
+        truckId: next.role === 'driver' ? next.truck_id : null,
+      },
+      { onError: fail },
+    )
+  }
   const noShowMut = useMutation({
     mutationFn: async ({ workerId, on }: { workerId: string; on: boolean }) => {
       const { error } = await supabase.rpc('contractor_mark_no_show', {
@@ -123,7 +162,7 @@ export function ContractorCrew({
           label: contractorName ? `${w.full_name} · ${contractorName}` : w.full_name,
         }))}
         values={assignable
-          .filter((w) => w.worker_id && assignedSet.has(w.worker_id))
+          .filter((w) => w.worker_id && byId.has(w.worker_id))
           .map((w) => `w:${w.worker_id}`)}
         onToggle={(id) => {
           const isProfile = id.startsWith('p:')
@@ -133,9 +172,9 @@ export function ContractorCrew({
               taskId,
               workerId: isProfile ? null : key,
               profileId: isProfile ? key : null,
-              on: !(!isProfile && assignedSet.has(key)),
+              on: !(!isProfile && byId.has(key)),
             },
-            { onError: (e) => toast.error(errorMessage(e)) },
+            { onError: fail },
           )
         }}
         placeholder="בחירת עובדים מהקבלן..."
@@ -150,37 +189,31 @@ export function ContractorCrew({
         const eligible = assignable.filter(
           (w) =>
             w.worker_id &&
-            assignedSet.has(w.worker_id) &&
+            byId.has(w.worker_id) &&
             (w.roles.includes('team_lead') || w.roles.includes('driver')),
         )
         if (eligible.length === 0) return null
         /* ‏0128: ראש צוות אחד למשימה — פנימי או של קבלן. השרת דוחה בהודעה
            מפורשת, והמסך פשוט אינו מציע את מה שיידחה. */
-        const crewLead = Object.entries(workerRoles ?? {}).find(([, r]) => r === 'team_lead')?.[0]
+        const crewLead = assigned.find((w) => w.role === 'team_lead')?.worker_id
         const leadTaken = hasStaffLead || !!crewLead
         return (
           <div className="mt-3 space-y-1.5 border-t border-line-subtle pt-3">
             <div className="type-overline">תפקידי הצוות</div>
             {eligible.map((w) => {
+              const row = byId.get(w.worker_id!)!
               const iAmLead = crewLead === w.worker_id
               return (
-                <label key={w.worker_id} className="flex items-center justify-between gap-2 type-caption">
-                  <span className="truncate">{w.full_name}</span>
+                <div
+                  key={w.worker_id}
+                  className="flex flex-wrap items-center justify-between gap-2 type-caption"
+                >
+                  <span className="min-w-24 flex-1 truncate">{w.full_name}</span>
                   <Select
                     selectSize="sm"
                     className="w-32"
-                    value={workerRoles?.[w.worker_id!] ?? ''}
-                    onChange={(e) =>
-                      contractorAssign.mutate(
-                        {
-                          taskId,
-                          workerId: w.worker_id,
-                          on: true,
-                          role: (e.target.value || null) as StaffRole | null,
-                        },
-                        { onError: (err) => toast.error(errorMessage(err)) },
-                      )
-                    }
+                    value={row.role ?? ''}
+                    onChange={(e) => write(row, { role: (e.target.value || null) as StaffRole | null })}
                   >
                     <option value="">עובד</option>
                     {w.roles.includes('team_lead') && (!leadTaken || iAmLead) && (
@@ -188,7 +221,28 @@ export function ContractorCrew({
                     )}
                     {w.roles.includes('driver') && <option value="driver">נהג</option>}
                   </Select>
-                </label>
+                  {/* ‏0154: באיזו משאית הוא נוסע. אותה רשימה ואותו כלל של
+                      נהג הצוות ושל סגל הלקוח — הנהג הוא נהג, מאיזה מאגר
+                      שלא יגיע. */}
+                  {row.role === 'driver' && (
+                    <Select
+                      selectSize="sm"
+                      className="w-32"
+                      value={row.truck_id ?? ''}
+                      disabled={!canTruck}
+                      onChange={(e) => write(row, { truck_id: e.target.value || null })}
+                    >
+                      <option value="">בלי משאית</option>
+                      {trucks
+                        .filter((t) => t.is_active || t.id === row.truck_id)
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                    </Select>
+                  )}
+                </div>
               )
             })}
             {hasStaffLead && (
@@ -199,18 +253,18 @@ export function ContractorCrew({
       })()}
 
       {/* סימון אי-התייצבות למנהל/משרד (0093). מפעיל את קנס אי-ההתייצבות. */}
-      {canMarkNoShow && assignedWorkerIds.length > 0 && (
+      {canMarkNoShow && assigned.length > 0 && (
         <div className="mt-3 space-y-1.5 border-t border-line-subtle pt-3">
           <div className="type-overline">נוכחות עובדי הקבלן</div>
           {assignable
-            .filter((w) => w.worker_id && assignedSet.has(w.worker_id))
+            .filter((w) => w.worker_id && byId.has(w.worker_id))
             .map((w) => (
               <label key={w.worker_id} className="flex items-center justify-between gap-2 type-caption">
                 <span className="truncate">{w.full_name}</span>
                 <span className="inline-flex items-center gap-1.5 text-ink-secondary">
                   לא התייצב
                   <Switch
-                    checked={noShow.has(w.worker_id!)}
+                    checked={!!byId.get(w.worker_id!)?.no_show}
                     onChange={(on) => noShowMut.mutate({ workerId: w.worker_id!, on })}
                   />
                 </span>
@@ -373,10 +427,9 @@ export function ContractorDelegationCard({
   taskId,
   term,
   contractor,
-  assignedWorkerIds,
-  workerRoles,
+  customerId,
+  assigned,
   hasStaffLead,
-  noShow,
   canDelegate,
   canEditPricing,
   canViewPricing,
@@ -388,11 +441,12 @@ export function ContractorDelegationCard({
   taskId: string
   term: TaskContractorTerms
   contractor: Contractor | undefined
-  assignedWorkerIds: string[]
-  workerRoles?: Record<string, StaffRole | null>
+  /** הלקוח של המשימה — רשימת המשאיות שהנהג נבחר מתוכה (0116/0154) */
+  customerId?: string | null
+  /** עובדי הקבלן הזה על המשימה, עם התפקיד, האתר והמשאית של כל אחד. */
+  assigned: CrewWorker[]
   /** ראש צוות פנימי כבר על המשימה (0128) — נמסר הלאה ל-`ContractorCrew`. */
   hasStaffLead?: boolean
-  noShow: Set<string>
   canDelegate: boolean
   canEditPricing: boolean
   canViewPricing: boolean
@@ -420,6 +474,10 @@ export function ContractorDelegationCard({
     setPricePerWorker(term.price_per_worker != null ? String(term.price_per_worker) : '')
     setPrice(term.price != null ? String(term.price) : '')
   }, [term.work_site, term.contractor_worker_count, term.price_per_worker, term.price])
+
+  /* ‏0155: מחיר ידני. הדגל מגיע מהשורה ולא מ-state מקומי — הוא מה שהשרת
+     מכבד, והמסך אינו מקום שאפשר לו להיפרד ממנו. */
+  const manual = !!term.price_is_manual
 
   const patchTerms = useMutation({
     mutationFn: async (patch: Record<string, unknown>) => {
@@ -543,22 +601,43 @@ export function ContractorDelegationCard({
           <Field
             label="מחיר לקבלן (₪)"
             hint={
-              perWorkerPricing
-                ? `מחושב: ${assignedWorkerIds.length} עובדים × ${fmtMoney(effectiveRate ?? 0)}`
-                : undefined
+              manual
+                ? 'הוקלד ידנית — המנוע אינו נוגע בו'
+                : perWorkerPricing
+                  ? `מחושב: ${assigned.length} עובדים × ${fmtMoney(effectiveRate ?? 0)}`
+                  : undefined
+            }
+            action={
+              /* ‏0155: הדרך לומר "לא במשימה הזו". בלי זה קבלן שמוגדר לו
+                 תעריף לעובד נעל את השדה, וכל מספר שהוקלד בו נדרס בחישוב
+                 הבא — והדרך היחידה הייתה לשנות את התעריף של הקבלן כולו. */
+              canEditPricing && !paid ? (
+                <Switch
+                  checked={manual}
+                  aria-label="מחיר ידני"
+                  label={<span className="type-caption">ידני</span>}
+                  onChange={(on) =>
+                    patchTerms.mutate(
+                      on
+                        ? { price_is_manual: true, price: price === '' ? 0 : Number(price) }
+                        : { price_is_manual: false },
+                    )
+                  }
+                />
+              ) : undefined
             }
           >
             <Input
               type="number"
               min="0"
-              value={perWorkerPricing ? String(term.price ?? 0) : price}
+              value={perWorkerPricing && !manual ? String(term.price ?? 0) : price}
               onChange={(e) => setPrice(e.target.value)}
               onBlur={() => {
-                if (!canEditPricing || paid || perWorkerPricing) return
+                if (!canEditPricing || paid || (perWorkerPricing && !manual)) return
                 const next = price === '' ? null : Number(price)
                 if (next !== (term.price ?? null)) patchTerms.mutate({ price: next })
               }}
-              disabled={!canEditPricing || paid || perWorkerPricing}
+              disabled={!canEditPricing || paid || (perWorkerPricing && !manual)}
             />
           </Field>
         </div>
@@ -612,10 +691,9 @@ export function ContractorDelegationCard({
             taskId={taskId}
             contractorId={term.contractor_id}
             contractorName={contractor?.name ?? null}
-            assignedWorkerIds={assignedWorkerIds}
-            workerRoles={workerRoles}
+            customerId={customerId}
+            assigned={assigned}
             hasStaffLead={hasStaffLead}
-            noShow={noShow}
             canMarkNoShow={canMarkNoShow}
           />
         </div>
@@ -624,6 +702,57 @@ export function ContractorDelegationCard({
   )
 }
 /* ===== מה שהפאנלים משותפים בו ============================================ */
+
+/**
+ * "ראש הצוות הוא גם הנהג" — ההחלטה הזו נקבעת על המשימה.
+ *
+ * מימוש: שורת שיבוץ שנייה לאותו אדם בתפקיד `driver`, ולא דגל חדש. זה מה
+ * שנותן לו בחינם את כל מה שנהג מקבל — שיוך משאית, תא הנהגים בלו״ז, בדיקת
+ * השיבוץ הכפול והמשמרת — במקום לגדל מסלול שני שכל אחד מהם יצטרך ללמוד.
+ * ‏`task_assignments` מפתחה על (משימה, אדם, תפקיד), ולכן אותו אדם בשני
+ * תפקידים הוא שתי שורות חוקיות מאז 0003.
+ *
+ * מי שסופר משובצים סופר **אנשים** ולא שורות, ולכן ראש צוות שנוהג נשאר אחד.
+ */
+export function LeadDrivesToggle({
+  leadId,
+  isDriver,
+  disabled,
+  onToggle,
+}: {
+  /** ראש הצוות המשובץ, או null כשאין כזה — ואז אין מה לשאול. */
+  leadId: string | null
+  isDriver: boolean
+  disabled?: boolean
+  onToggle: (leadId: string) => void
+}) {
+  if (!leadId) return null
+  return (
+    <Checkbox
+      checked={isDriver}
+      disabled={disabled}
+      onChange={() => onToggle(leadId)}
+      label="ראש הצוות הוא גם הנהג"
+      description="נוסף לו שיבוץ נהג במשימה הזו, ואיתו שיוך המשאית. הוא נספר כאדם אחד."
+    />
+  )
+}
+
+/**
+ * אפשרויות בורר הנהגים, ובהן ראש הצוות שסומן "גם נהג" גם כשאינו מוגדר נהג
+ * בכרטיס שלו — ההחלטה היא של המשימה, לא של כרטיס העובד. בלי התוספת הזו הוא
+ * היה מופיע בבורר כתג "—": ‏`MultiSelect` שולף את התווית מהאפשרויות, ומי
+ * שאינו שם אין לו שם.
+ */
+export function withLeadAsDriver(
+  options: { id: string; label: string }[],
+  leadId: string | null | undefined,
+  leadDrives: boolean,
+  label: (id: string) => string,
+) {
+  if (!leadId || !leadDrives || options.some((o) => o.id === leadId)) return options
+  return [...options, { id: leadId, label: label(leadId) }]
+}
 
 /** הכותרת של פאנל: איזו משימה זו, בלי לפתוח את הכרטיס כדי לדעת. */
 function PanelSubject({ task }: { task: TaskPanelTask | null }) {
@@ -674,6 +803,8 @@ interface PanelContractorWorker {
   work_site: WorkSite
   no_show: boolean
   role: StaffRole | null
+  /** המשאית של נהג הקבלן (0154). null לכל תפקיד אחר. */
+  truck_id: string | null
 }
 
 /** עובד מסגל הלקוח שמבצע בעצמו, כפי שהוא משובץ למשימה (0133). */
@@ -712,7 +843,7 @@ function useTaskPanelData(taskId: string | null, enabled: boolean) {
         supabase
           .from('task_contractor_workers')
           .select(
-            'contractor_worker_id, work_site, no_show, role, contractor_workers!inner(contractor_id, full_name)',
+            'contractor_worker_id, work_site, no_show, role, truck_id, contractor_workers!inner(contractor_id, full_name)',
           )
           .eq('task_id', taskId),
         /* סגל הלקוח שמבצע בעצמו (0133). ריק לכל משימה שאינה כזו. */
@@ -730,6 +861,7 @@ function useTaskPanelData(taskId: string | null, enabled: boolean) {
         work_site: WorkSite | null
         no_show: boolean
         role: StaffRole | null
+        truck_id: string | null
         contractor_workers: { contractor_id: string; full_name: string } | null
       }[]
       return {
@@ -749,6 +881,7 @@ function useTaskPanelData(taskId: string | null, enabled: boolean) {
           work_site: r.work_site ?? 'field',
           no_show: r.no_show,
           role: r.role ?? null,
+          truck_id: r.truck_id,
         })) as PanelContractorWorker[],
         customerWorkers: ((ow.data ?? []) as unknown as {
           customer_worker_id: string
@@ -780,7 +913,14 @@ function useStaffingWrites(taskId: string | null) {
   const fail = (e: unknown) => toast.error(errorMessage(e))
 
   const toggle = useMutation({
-    mutationFn: async (v: { role: StaffRole; profileId: string; on: boolean }) => {
+    mutationFn: async (v: {
+      role: StaffRole
+      profileId: string
+      on: boolean
+      /** ברירת המחדל היא 'field'. ראש צוות שנוסף כנהג יורש את נקודת ההתחלה
+          של שורת הראשות שלו, אחרת אותו אדם היה מתחיל בשני מקומות. */
+      workSite?: WorkSite
+    }) => {
       if (!taskId) return
       if (!v.on) {
         const { error } = await supabase
@@ -803,7 +943,12 @@ function useStaffingWrites(taskId: string | null) {
       }
       const { error } = await supabase
         .from('task_assignments')
-        .insert({ task_id: taskId, profile_id: v.profileId, role: v.role, work_site: 'field' })
+        .insert({
+          task_id: taskId,
+          profile_id: v.profileId,
+          role: v.role,
+          work_site: v.workSite ?? 'field',
+        })
       if (error) throw error
     },
     onSettled: done,
@@ -860,8 +1005,6 @@ export function StaffingPanel({
   const has = useAuth((s) => s.has)
   const { data, isLoading } = useTaskPanelData(taskId, open)
   const { data: staff = [] } = useStaff()
-  const { data: trucks = [] } = useTrucks()
-  const { data: customerTrucks = [] } = useCustomerTrucks()
   const { data: warehouses = [] } = useWarehouses()
   /* רק לשמות. מנהל קבלן אינו מחזיק `contractors.view`, ולכן היא חוזרת ריקה
      אצלו — והשם נלקח אז מהשיקוף שעל המשימה. */
@@ -919,25 +1062,22 @@ export function StaffingPanel({
 
   const needed = data?.task.worker_count ?? 0
 
-  /* ‏0116: המשאיות של הלקוח של המשימה. אותו כלל של הלוח והכרטיס —
-     רשימה ריקה = אין הגבלה — כדי שלא יהיו שלושה מסכים עם שלוש תשובות. */
-  const availableTrucks = useMemo(() => {
-    const customerId = data?.task.customer_id
-    if (!customerId) return trucks
-    const ids = new Set(
-      customerTrucks.filter((r) => r.customer_id === customerId).map((r) => r.truck_id),
-    )
-    return ids.size === 0 ? trucks : trucks.filter((t) => ids.has(t.id))
-  }, [trucks, customerTrucks, data?.task.customer_id])
-  /* ראש צוות הוא ראש ועובד בעת ובעונה אחת, והמכסה בשרת סופרת שורות ולא
-     תפקידים — ולכן הוא נספר. עד 0128 המונה כאן השמיט אותו ואילו זה שבכרטיס
-     המשימה כלל אותו, ושני מסכים הראו שני מספרים לאותה משימה. */
+  /* ‏0116: המשאיות של הלקוח של המשימה. הכלל עצמו יושב ב-`useTaskTrucks`,
+     כי ארבעה מסכים שואלים אותו ואסור שיהיו להם ארבע תשובות. */
+  const availableTrucks = useTaskTrucks(data?.task.customer_id)
+  /* ראש צוות הוא ראש ועובד בעת ובעונה אחת, ולכן הוא נספר — עד 0128 המונה
+     כאן השמיט אותו ואילו זה שבכרטיס המשימה כלל אותו, ושני מסכים הראו שני
+     מספרים לאותה משימה. הספירה היא על **אנשים**: ראש צוות שגם נוהג מחזיק
+     שתי שורות שיבוץ והוא אדם אחד במשימה. */
   const assignedCount =
-    byRole('worker').length +
-    byRole('driver').length +
-    byRole('team_lead').length +
+    new Set(assignments.map((a) => a.profile_id)).size +
     contractorWorkers.length +
     customerWorkers.length
+
+  /* ראש הצוות המשובץ, והאם הוא גם נהג. שניהם נגזרים מהשיבוץ עצמו ולא
+     מדגל, ולכן הם נכונים גם כשמישהו שיבץ אותו כנהג מהבורר. */
+  const leadId = byRole('team_lead')[0]?.profile_id ?? null
+  const leadDrives = !!leadId && byRole('driver').some((a) => a.profile_id === leadId)
 
   /* איזה קבלנים יש למשימה, משלושה מקורות שאף אחד מהם אינו זמין תמיד:
      שורות ה-terms (חסומות בלי מפתח מחירים), הקבלן המשוקף על המשימה, והקבלנים
@@ -1033,7 +1173,7 @@ export function StaffingPanel({
               </Field>
               <Field label="נהגים">
                 <MultiSelect
-                  options={options.driver}
+                  options={withLeadAsDriver(options.driver, leadId, leadDrives, nameOf)}
                   values={byRole('driver').map((a) => a.profile_id)}
                   onToggle={(id) =>
                     toggle.mutate({
@@ -1046,6 +1186,23 @@ export function StaffingPanel({
                   disabled={!canAssign.driver}
                 />
               </Field>
+
+              {/* ראש הצוות שנוהג בעצמו. שורת נהג שנייה לאותו אדם, ולכן
+                  המשאית שלו נבחרת למטה כמו של כל נהג — והיא יורשת את
+                  נקודת ההתחלה של שורת הראשות ולא נופלת ל"שטח" בעיוורון. */}
+              <LeadDrivesToggle
+                leadId={leadId}
+                isDriver={leadDrives}
+                disabled={!canAssign.driver}
+                onToggle={(id) =>
+                  toggle.mutate({
+                    role: 'driver',
+                    profileId: id,
+                    on: !leadDrives,
+                    workSite: byRole('team_lead')[0]?.work_site,
+                  })
+                }
+              />
             </CardBody>
           </Card>
           )}
@@ -1077,7 +1234,13 @@ export function StaffingPanel({
 
                 {assignments.map((a) => (
                   <div key={a.id} className="flex flex-wrap items-center gap-2">
-                    <span className="min-w-28 flex-1 truncate type-body">{nameOf(a.profile_id)}</span>
+                    {/* התפקיד נאמר לצד השם: ראש צוות שגם נוהג מופיע כאן
+                        בשתי שורות, ובלי התווית הן נראות כשכפול. */}
+                    <span className="min-w-28 flex-1 truncate type-body">
+                      {nameOf(a.profile_id)}
+                      {a.role === 'team_lead' && <Badge tone="info">ראש צוות</Badge>}
+                      {a.role === 'driver' && <Badge tone="info">נהג</Badge>}
+                    </span>
                     {a.role === 'driver' && (
                       <Select
                         value={a.truck_id ?? ''}
@@ -1121,11 +1284,21 @@ export function StaffingPanel({
                       {w.role === 'driver' && <Badge tone="info">נהג</Badge>}
                       {w.no_show && <Badge tone="error">לא התייצב</Badge>}
                     </span>
+                    {/* מצב השורה כולו בכל כתיבה: ה-upsert בשרת כותב את מה
+                        שנשלח, ולכן שליחה של אתר העבודה בלבד הייתה מוחקת את
+                        התפקיד ואת המשאית שלו. */}
                     {site(
                       w.work_site,
                       (workSite) =>
                         contractorAssign.mutate(
-                          { taskId: taskId!, workerId: w.worker_id, on: true, workSite },
+                          {
+                            taskId: taskId!,
+                            workerId: w.worker_id,
+                            on: true,
+                            workSite,
+                            role: w.role,
+                            truckId: w.role === 'driver' ? w.truck_id : null,
+                          },
                           { onError: fail },
                         ),
                       !canAssignContractor,
@@ -1176,14 +1349,9 @@ export function StaffingPanel({
                     taskId={taskId!}
                     contractorId={cid}
                     contractorName={contractorNameOf(cid)}
-                    assignedWorkerIds={contractorWorkers
-                      .filter((w) => w.contractor_id === cid)
-                      .map((w) => w.worker_id)}
-                    workerRoles={Object.fromEntries(
-                      contractorWorkers.filter((w) => w.contractor_id === cid).map((w) => [w.worker_id, w.role]),
-                    )}
+                    customerId={data.task.customer_id}
+                    assigned={contractorWorkers.filter((w) => w.contractor_id === cid)}
                     hasStaffLead={byRole('team_lead').length > 0}
-                    noShow={new Set()}
                     canMarkNoShow={false}
                   />
                 </CardBody>
@@ -1263,10 +1431,9 @@ export function ContractorPanel({
                 taskId={taskId}
                 term={term}
                 contractor={contractors.find((c) => c.id === term.contractor_id)}
-                assignedWorkerIds={mine.map((w) => w.worker_id)}
-                workerRoles={Object.fromEntries(mine.map((w) => [w.worker_id, w.role]))}
+                customerId={data.task.customer_id}
+                assigned={mine}
                 hasStaffLead={(data.assignments ?? []).some((a) => a.role === 'team_lead')}
-                noShow={new Set(mine.filter((w) => w.no_show).map((w) => w.worker_id))}
                 canDelegate={canDelegate}
                 canEditPricing={canEditPricing}
                 canViewPricing={canViewPricing}
