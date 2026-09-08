@@ -7,8 +7,9 @@
  * קבצי SQL אידמפוטנטיים (`on conflict do update` על מפתח שנגזר מנתיב המסמך).
  * ההפרדה הזאת מכוונת: אפשר לקרוא את מה שעומד להיכתב לפני שכותבים אותו.
  */
-import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { fields, docPath, ilDate, ilTime, uuid5, q, num, bool, json, uuidLit, uuidArr, txt } from './lib.mjs'
 
 const [, , DUMP = 'dump', CATALOG = 'catalog.json', OUT = 'out'] = process.argv
@@ -16,6 +17,8 @@ const [, , DUMP = 'dump', CATALOG = 'catalog.json', OUT = 'out'] = process.argv
    שעוברת בדיוק באותו קוד כמו הטעינה המלאה. */
 const LIMIT = Number(process.env.LIMIT ?? 0) || 0
 const cat = JSON.parse(readFileSync(CATALOG, 'utf8'))
+const SIGS = join(DUMP, 'signatures.json')
+const signatures = existsSync(SIGS) ? JSON.parse(readFileSync(SIGS, 'utf8')) : {}
 const load = (f) => JSON.parse(readFileSync(join(DUMP, f), 'utf8'))
 mkdirSync(OUT, { recursive: true })
 
@@ -99,6 +102,15 @@ for (const src of SOURCES) {
   const docs = load(src.events)
   for (const doc of (LIMIT ? docs.slice(0, LIMIT) : docs)) {
     const path = docPath(doc), id = uuid5(path), f = fields(doc)
+    /* ‏11 מסמכים ב-achaotMechir מחזיקים שדה אחד בלבד — `name` ובו "בדיקה",
+       ‏"בדיקה300", "סיילספלואו". אין להם תאריך, ו-events.event_date הוא
+       not null. אלה שאריות בדיקה ולא אירועים; הם נשמרים בארכיון ואינם
+       נטענים כאירוע. */
+    if (!f.date && !f.dateStart && !f.dateEnd) {
+      note('מסמך בלי תאריך כלל — לא נטען כאירוע')
+      legacy.push({ path, coll: src.coll, docId: path.split('/').pop(), eventId: null, taskId: null, data: f })
+      continue
+    }
     const e = { id, path, coll: src.coll, customer: src.customer, f }
     events.push(e); eventByPath.set(path, e)
     legacy.push({ path, coll: src.coll, docId: path.split('/').pop(), eventId: id, taskId: null, data: f })
@@ -141,6 +153,15 @@ for (const doc of load('mesimot.json')) {
 const rowsEvent = [], rowsContact = [], rowsTask = [], rowsPricing = [],
       rowsTerms = [], rowsActivity = [], rowsSpec = [], rowsSign = []
 
+/*
+ * שורות אימות. אותם ערכים בדיוק שנכתבים ל-SQL, בצורה קנונית אחת, כדי
+ * שאפשר יהיה להשוות md5 מול המסד אחרי הטעינה במקום לדגום שורות. הן
+ * נבנות כאן ולא מפירסור ה-SQL: פירסור היה בודק את הפרסר, לא את הנתונים.
+ */
+const verifyEvent = [], verifyTask = []
+const cnum = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? '' : String(Number(v)))
+const cstr = (v) => (v == null ? '' : String(v))
+
 /** custom_fields לפי הלקוח. number נשמר כמספר, השאר כמחרוזת — כמו app.event_custom_patch. */
 function customFields(customer, f) {
   const out = {}
@@ -172,6 +193,45 @@ function customFields(customer, f) {
   return out
 }
 
+/*
+ * מספרי אירוע כפולים.
+ *
+ * ‏`events_customer_number_uq` הוא unique על (customer_id, event_number),
+ * ובמקור יש 38 מק״טים שחוזרים על עצמם אצל אותו לקוח — 79 אירועים. אלה
+ * אינם שכפולים טכניים: ברובם זו הזמנה שבוטלה לצד זו שהתקיימה, או אותו
+ * לקוח סופי בשני תאריכים. מחיקת אחד מהם הייתה איבוד נתון אמיתי.
+ *
+ * לכן המק״ט נשמר על אחד מהם ומקבל סיומת אצל השאר: 25000593, 25000593/2.
+ * הבחירה במי מחזיק את המספר הנקי אינה שרירותית — האירוע החי (לא מבוטל)
+ * קודם למבוטל, ובין שווים המאוחר שבהם. כך המספר שהמשרד מחפש מוביל
+ * לאירוע שבאמת התקיים, והשאר נשארים נגישים וקריאים.
+ */
+const eventNumber = new Map()
+{
+  const groups = new Map()
+  for (const e of events) {
+    const n = txt(e.f.makat)
+    if (!n) continue
+    const key = `${e.customer}|${n}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(e)
+  }
+  for (const [, group] of groups) {
+    if (group.length === 1) { eventNumber.set(group[0].id, txt(group[0].f.makat)); continue }
+    const cancelled = (e) => e.f.mevutal === true || txt(e.f.statos) === 'לא מתקיים'
+    const stamp = (e) => (e.f.maseggges ?? []).map((m) => m?.timeCreate).filter(Boolean).sort().at(-1) ?? e.f.date ?? ''
+    const ordered = [...group].sort((a, b) =>
+      (cancelled(a) ? 1 : 0) - (cancelled(b) ? 1 : 0) ||
+      String(stamp(b)).localeCompare(String(stamp(a))) ||
+      a.path.localeCompare(b.path))
+    ordered.forEach((e, i) => {
+      const n = txt(e.f.makat)
+      eventNumber.set(e.id, i === 0 ? n : `${n}/${i + 1}`)
+      if (i > 0) note('מק״ט כפול קיבל סיומת')
+    })
+  }
+}
+
 for (const e of events) {
   const f = e.f
   const msgs = (f.maseggges ?? []).map((m) => m?.timeCreate).filter(Boolean).sort()
@@ -180,7 +240,7 @@ for (const e of events) {
 
   rowsEvent.push([
     `'${e.id}'`, `'${cat.customers[e.customer]}'`,
-    q(txt(f.name)), q(txt(f.makat)), q(ilDate(f.date)),
+    q(txt(f.name)), q(eventNumber.get(e.id)), q(ilDate(f.date ?? f.dateStart ?? f.dateEnd)),
     q(txt(f.mikom)), q(txt(f.earotLmikom)),
     num(f.nefach), num(f.masaiot), q(txt(f.earot)),
     uuidLit(statusEvent(f.statos, f.mevutal === true)),
@@ -191,14 +251,30 @@ for (const e of events) {
     createdAt ? q(createdAt) : 'now()', updatedAt ? q(updatedAt) : 'now()',
   ].join(','))
 
+  verifyEvent.push([e.id, cstr(eventNumber.get(e.id)), ilDate(f.date ?? f.dateStart ?? f.dateEnd),
+    cstr(txt(f.mikom)), cnum(f.nefach), cnum(f.masaiot), statusEvent(f.statos, f.mevutal === true),
+    String(f.chania === false), String(f.sabalot === true), String(f.aisufMesapak === true)].join('|'))
+
   const cname = txt(f.nameAishKesher), cphone = txt(f.aishKesher)
   if (cname || cphone) rowsContact.push([`'${e.id}'`, q(cname), q(cphone)].join(','))
 
+  /*
+   * יומן ההודעות של המערכת הישנה מתחלק לשניים: "הודעה" שאדם כתב, ו"מערכת"
+   * שנרשמה על שינוי. ל-event_activity יש אילוץ צורה — 'note' דורש טקסט,
+   * ו-'changed' דורש field_key ו-field_label — ולכן ההודעה האנושית נכנסת
+   * כ-note, וההודעה המערכתית כ-changed עם שדה מדומה שהטקסט יושב בערכו
+   * החדש. כך המסך מבדיל ביניהן, ו"הערות בלבד" ממשיך להראות רק מה שאדם
+   * כתב. ההודעה הראשונה של אירוע היא לידתו, ולכן 'created'.
+   */
   ;(f.maseggges ?? []).forEach((m, i) => {
     const body = txt(String(m?.massege ?? '').replace(/<br\s*\/?>/gi, '\n'))
     if (!body) return
-    const kind = i === 0 && m?.type === 'מערכת' ? 'created' : m?.type === 'הודעה' ? 'note' : 'changed'
-    rowsActivity.push([`'${e.id}'`, `'${kind}'`, q(txt(m?.name)), q(body), q(m?.timeCreate ?? createdAt)].join(','))
+    const human = m?.type === 'הודעה'
+    const kind = i === 0 && !human ? 'created' : human ? 'note' : 'changed'
+    const at = q(m?.timeCreate ?? createdAt)
+    rowsActivity.push(kind === 'changed'
+      ? [`'${e.id}'`, `'changed'`, q(txt(m?.name)), 'null', at, `'legacy_message'`, `'מהמערכת הישנה'`, q(body)].join(',')
+      : [`'${e.id}'`, `'${kind}'`, q(txt(m?.name)), q(body), at, 'null', 'null', 'null'].join(','))
   })
 
   /* מפרטים: `mifrat` (מערך עם time+url), `informationImage` (מערך URL-ים)
@@ -215,9 +291,15 @@ for (const e of events) {
       `'link'`, q(s.url), q(s.title), q(s.at ?? createdAt)].join(','))
   }
 
-  if (f.sign?.sign && /^https?:\/\//.test(String(f.sign.sign))) {
+  /* ‏`event_signatures.signature_data` חייבת להיות data:image;base64 — כך
+     החתימה נשמרת במסד ולא כמצביע ל-Firebase Storage שייסגר. התמונות
+     הורדו מראש בידי fetch-signatures.mjs; בלי הקובץ הזה החתימות מדולגות. */
+  const sig = signatures[e.path]
+  if (sig) {
     rowsSign.push([`'${uuid5(`${e.path}#sign`)}'`, `'${e.id}'`,
-      q(txt(f.sign.name) ?? 'לא נרשם שם'), q(f.sign.sign), q(txt(f.sign.name)), q(updatedAt ?? createdAt)].join(','))
+      q(txt(f.sign?.name) ?? 'לא נרשם שם'), q(sig), q(txt(f.sign?.name)), q(updatedAt ?? createdAt)].join(','))
+  } else if (f.sign?.sign) {
+    note('חתימה בלי תמונה שהורדה — דולגה')
   }
 }
 
@@ -265,6 +347,9 @@ function pushTask(t) {
     q(notes), `'${STATUS_TASK}'`, uuidLit(cab),
     q(txt(f.mikom) ?? txt(ev.mikom)), `'${performedBy}'`,
   ].join(','))
+
+  verifyTask.push([id, cstr(eventId), ilDate(f.date ?? f.dateStart), cstr(ilTime(f.start ?? f.dateStart)),
+    cnum(hours), String(Number(workers ?? 0) || 0), cstr(execMethod(ofen)), performedBy].join('|'))
 
   /* מחיר ללקוח: על משימת הקמה/פירוק הוא יושב על האירוע (mechirAkama /
      mechirPirok); `mecir` של המשימה הוא הגיבוי, ועל משימה עצמאית — היחיד. */
@@ -375,7 +460,7 @@ emit('event_signatures', 'id,event_id,signer_name,signature_data,signed_by_name,
 /* ליומן אין מפתח טבעי. המחיקה מכוונת לאירועים שהקובץ הזה עומד לכתוב, ולא
    לכל היומן — כדי שהרצה חוזרת לא תכפיל שורות ולא תמחק יומן של אירוע שנוצר
    באפליקציה. */
-emit('event_activity', 'event_id,kind,actor_name,note,created_at', rowsActivity, '',
+emit('event_activity', 'event_id,kind,actor_name,note,created_at,field_key,field_label,new_value', rowsActivity, '',
   `delete from event_activity where event_id in (${events.map((e) => `'${e.id}'`).join(',')});`)
 
 const legacyRows = legacy.map((l) => [q(l.path), q(l.coll), q(l.docId), uuidLit(l.eventId), uuidLit(l.taskId), json(l.data)].join(','))
@@ -393,4 +478,8 @@ console.log(JSON.stringify(stats, null, 2))
 if (warn.size) console.log('\nהערות:\n' + [...warn].sort((a, b) => b[1] - a[1]).map(([k, n]) => `  ${String(n).padStart(5)}  ${k}`).join('\n'))
 writeFileSync(join(OUT, '_stats.json'), JSON.stringify({ stats, warnings: Object.fromEntries(warn) }, null, 2))
 writeFileSync(join(OUT, 'chunks', '_manifest.json'), JSON.stringify(chunkFiles, null, 1))
+const md5 = (lines) => createHash('md5').update([...lines].sort().join('\n')).digest('hex')
+const checks = { events: { n: verifyEvent.length, md5: md5(verifyEvent) }, tasks: { n: verifyTask.length, md5: md5(verifyTask) } }
+writeFileSync(join(OUT, '_verify.json'), JSON.stringify(checks, null, 1))
+console.log('\nאימות:', JSON.stringify(checks))
 console.log(`\nchunks: ${chunkFiles.length}, largest ${Math.max(...chunkFiles.map((c) => c.bytes))} bytes`)
