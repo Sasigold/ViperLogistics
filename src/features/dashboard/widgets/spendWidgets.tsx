@@ -47,7 +47,7 @@ export const CustomerSpendWidget = sectionKpi<Spend>({
 
 /** על מה הלך הכסף. לרוב הלקוחות זו השאלה האמיתית, לא הסכום. */
 export function SpendByEventWidget({ height, opts }: WidgetProps) {
-  const { data, isLoading } = useSection<Spend>('spend.summary')
+  const { data, isLoading, error } = useSection<Spend>('spend.summary')
   const go = useDrill({ to: 'event', id: '' })
   if (data === null) return null
 
@@ -65,6 +65,7 @@ export function SpendByEventWidget({ height, opts }: WidgetProps) {
       subtitle={data ? fmtMoney(Number(data.total)) : undefined}
       rows={rows}
       loading={isLoading && !data}
+      error={error}
       form={pickForm(SPEND_EVENT_FORMS, opts)}
       height={height}
       opts={opts}
@@ -81,7 +82,7 @@ export function SpendByEventWidget({ height, opts }: WidgetProps) {
 }
 
 export function SpendTrendWidget({ height, opts }: WidgetProps) {
-  const { data, isLoading } = useSection<Spend>('spend.summary')
+  const { data, isLoading, error } = useSection<Spend>('spend.summary')
   /* The row key of a trend *is* a date, and the board opens on one. That makes
      every bucket on every trend card a link to the days behind it, for free. */
   const go = useDrill({ to: 'board' })
@@ -99,6 +100,7 @@ export function SpendTrendWidget({ height, opts }: WidgetProps) {
       subtitle={data ? fmtMoney(Number(data.total)) : undefined}
       rows={rows}
       loading={isLoading && !data}
+      error={error}
       form={pickForm(TREND_FORMS, opts)}
       height={height}
       opts={opts}

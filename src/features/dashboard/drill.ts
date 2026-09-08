@@ -25,7 +25,7 @@ export type DrillTarget =
   | { to: 'customer'; id: string }
   | { to: 'event'; id: string }
   | { to: 'events'; customer?: string; q?: string }
-  | { to: 'board'; date?: string }
+  | { to: 'board'; date?: string; status?: string }
   | { to: 'calendar' }
   | { to: 'contractor'; id: string }
   | { to: 'contractors' }
@@ -76,10 +76,10 @@ export function drillHref(target: DrillTarget): string {
     case 'events':
       return `/events${query({ customer: target.customer, q: target.q })}`
     case 'board':
-      /* `?date=` only. The board reads it (WorkBoardPage: `params.get('date')`)
-         and reads nothing else — a `?status=` would look like a filter and be
-         silently dropped, which is worse than not offering it. */
-      return `/board${query({ date: target.date })}`
+      /* Both are read at the board's initialisation, alongside `?task=`. A
+         parameter the destination ignores would look like a filter and be
+         silently dropped, which is worse than not offering it at all. */
+      return `/board${query({ date: target.date, status: target.status })}`
     case 'contractor':
       return `/contractors/${target.id}`
     case 'vehicle':
@@ -101,4 +101,17 @@ export function drillHref(target: DrillTarget): string {
     case 'users':
       return '/users'
   }
+}
+
+/**
+ * Is this aggregate row carrying an entity id, or only a name?
+ *
+ * Before 0151 every aggregate in `dashboard_stats` grouped by name, so a row's
+ * key was a display string. A client on this release talking to a server that
+ * has not had the migration yet still gets those — and `?customer=<a name>`
+ * filters a list to nothing, which reads as a broken screen rather than as a
+ * missing migration. So a drill that needs an id asks first.
+ */
+export function isEntityId(key: string | undefined): key is string {
+  return !!key && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)
 }

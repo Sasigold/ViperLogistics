@@ -26,6 +26,7 @@ import { DayTimeline } from '../parts/DayTimeline'
 import { TaskListCard } from '../parts/TaskListCard'
 import { useDashboard } from '../dashboardContext'
 import { useDrill } from '../useDrill'
+import { isEntityId } from '../drill'
 import { SeriesCard } from '../parts/SeriesCard'
 import { pickForm } from '../seriesOpts'
 import type { SeriesRow } from '../seriesOpts'
@@ -70,13 +71,13 @@ export const STATUS_FORMS = ['donut', 'list', 'bar', 'row', 'table'] as const
 
 export function StatusBreakdownWidget({ height, opts }: WidgetProps) {
   const { range } = useDashboard()
-  const { data, isLoading } = useDashboardStats(range.from, range.to)
+  const { data, isLoading, error, refetch } = useDashboardStats(range.from, range.to)
   const raw = data?.by_status
   const go = useDrill({ to: 'board' })
   const total = (raw ?? []).reduce((s, x) => s + Number(x.cnt), 0)
 
   const rows: SeriesRow[] | undefined = raw?.map((r) => ({
-    key: r.name,
+    key: r.id ?? r.name,
     label: r.name,
     value: Number(r.cnt),
     color: r.color,
@@ -89,13 +90,18 @@ export function StatusBreakdownWidget({ height, opts }: WidgetProps) {
       subtitle={`${total} משימות בטווח`}
       rows={rows}
       loading={isLoading && !data}
+      error={error}
+      onRetry={() => void refetch()}
       form={pickForm(STATUS_FORMS, opts)}
       height={height}
       opts={opts}
       seriesName="משימות"
       emptyTitle="אין משימות בטווח"
       emptyDescription="משימה שתיווצר תופיע כאן לפי הסטטוס שלה"
-      onSelect={go && (() => go({ to: 'board' }))}
+      /* The one drill this card has been implying since it was drawn: a slice
+         is a status, and the board can open filtered to it. Before 0151 the row
+         carried only a name, so the click had nowhere exact to go. */
+      onSelect={go && ((r) => go({ to: 'board', status: isEntityId(r.key) ? r.key : undefined }))}
     />
   )
 }

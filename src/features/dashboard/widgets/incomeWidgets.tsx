@@ -271,6 +271,11 @@ export function ProfitSummaryWidget(_props: WidgetProps) {
         {before !== null && (
           <p className="mt-1 type-caption text-ink-tertiary">מול {fmtMoney(before)} בתקופה הקודמת</p>
         )}
+        {/* אותו נימוק כמו ב-`GrossMarginWidget`: אפס מתוך כלום ואפס מתוך עבודה
+            שלא תומחרה הם שני מצבים שונים, ורק אחד מהם דורש פעולה. */}
+        {Number(data.revenue) === 0 && (
+          <p className="mt-1 type-caption text-ink-tertiary">אין משימות או הכנסות מתומחרות בטווח שנבחר</p>
+        )}
 
         <ul className="mt-4 space-y-1.5">
           {lines.map((l) => (

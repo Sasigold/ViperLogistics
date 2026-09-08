@@ -378,6 +378,15 @@ OUT="$OUT
 $OUT36"
 
 echo
+echo "== dashboard aggregates suite =="
+# 37 מקימה שני לקוחות בעלי אותו שם ב-current_date+540, מעבר לכל טווח אחר,
+# ובודקת ש-`dashboard_stats` מפריד ביניהם ונושא id לכל שורה (0151).
+OUT37=$($PSQL -d vl -f "$HERE/37_dashboard_stats_identify_their_rows.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT37"
+OUT="$OUT
+$OUT37"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

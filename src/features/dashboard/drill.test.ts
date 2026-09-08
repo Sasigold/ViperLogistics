@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PERM } from '../../lib/permissionKeys'
-import { DRILL_PERMS, canDrill, drillHref } from './drill'
+import { DRILL_PERMS, canDrill, drillHref, isEntityId } from './drill'
 import type { DrillTarget } from './drill'
 
 const PERM_KEYS = new Set<string>(Object.values(PERM))
@@ -52,6 +52,7 @@ describe('drill targets', () => {
     expect(drillHref({ to: 'events', customer: 'c1' })).toBe('/events?customer=c1')
     expect(drillHref({ to: 'events', q: 'דני' })).toBe(`/events?q=${encodeURIComponent('דני')}`)
     expect(drillHref({ to: 'board', date: '2026-03-01' })).toBe('/board?date=2026-03-01')
+    expect(drillHref({ to: 'board', status: 'abc' })).toBe('/board?status=abc')
   })
 
   /* An empty string is what an unresolved lookup produces, and `?customer=`
@@ -75,5 +76,24 @@ describe('canDrill', () => {
     expect(canDrill({ to: 'shifts' }, holds(PERM.PORTAL_ATTENDANCE))).toBe(true)
     expect(canDrill({ to: 'shifts' }, holds(PERM.ATTENDANCE_VIEW_ALL))).toBe(true)
     expect(canDrill({ to: 'shifts' }, holds(PERM.BOARD_VIEW))).toBe(false)
+  })
+})
+
+describe('isEntityId', () => {
+  /* The whole point: a row from a server without 0151 carries a display name
+     where a newer one carries a uuid, and `?customer=<a name>` filters a list
+     to nothing — which reads as a broken screen, not a missing migration. */
+  it('tells a uuid from a name', () => {
+    expect(isEntityId('10000000-0000-0000-0000-000000000371')).toBe(true)
+    expect(isEntityId('10000000-0000-0000-0000-000000000371'.toUpperCase())).toBe(true)
+    expect(isEntityId('לקוח 37')).toBe(false)
+    expect(isEntityId('')).toBe(false)
+    expect(isEntityId(undefined)).toBe(false)
+  })
+
+  it('is not fooled by something merely uuid-shaped', () => {
+    expect(isEntityId('10000000-0000-0000-0000-00000000037')).toBe(false)
+    expect(isEntityId('10000000000000000000000000000371')).toBe(false)
+    expect(isEntityId('zzzzzzzz-0000-0000-0000-000000000371')).toBe(false)
   })
 })

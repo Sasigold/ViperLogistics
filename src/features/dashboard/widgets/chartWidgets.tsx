@@ -11,6 +11,7 @@ import type { SeriesRow } from '../seriesOpts'
 import { useDashboard } from '../dashboardContext'
 import { useDashboardStats } from '../dashboardQueries'
 import { useCustomerDrill, useDrill } from '../useDrill'
+import { isEntityId } from '../drill'
 import type { DrillTarget } from '../drill'
 import type { WidgetProps } from '../dashboardTypes'
 import type { DashboardStats, WorkBoardRow } from '../../../types/domain'
@@ -27,7 +28,9 @@ import type { DashboardStats, WorkBoardRow } from '../../../types/domain'
 function categoryBars(cfg: {
   title: string
   subtitle?: string
-  select: (s: DashboardStats) => { name: string; cnt: number | string; color?: string }[] | null | undefined
+  select: (
+    s: DashboardStats,
+  ) => { id?: string; name: string; cnt: number | string; color?: string }[] | null | undefined
   fill?: string
   seriesName: string
   forms?: readonly ('bar' | 'row' | 'donut' | 'table' | 'list')[]
@@ -42,7 +45,7 @@ function categoryBars(cfg: {
   const forms = cfg.forms ?? CATEGORY_FORMS
   function CategoryBarsWidget({ height, opts }: WidgetProps) {
     const { range, openNewEvent } = useDashboard()
-    const { data, isLoading } = useDashboardStats(range.from, range.to)
+    const { data, isLoading, error, refetch } = useDashboardStats(range.from, range.to)
     const raw = data ? cfg.select(data) : undefined
     const go = useDrill(cfg.drill?.probe ?? { to: 'events' })
     const toCustomer = useCustomerDrill(!!cfg.customerDrill && !!go)
@@ -52,8 +55,11 @@ function categoryBars(cfg: {
     // in range", which is a different and wrong statement
     if (!isLoading && data && (raw === null || raw === undefined)) return null
 
+    /* `key` is the entity id from 0151 and falls back to the name against an
+       older server — which is exactly what `isEntityId` asks about before a
+       drill uses it as one. */
     const rows: SeriesRow[] | undefined = raw?.map((r) => ({
-      key: r.name,
+      key: r.id ?? r.name,
       label: r.name,
       value: Number(r.cnt),
       color: r.color,
@@ -65,6 +71,8 @@ function categoryBars(cfg: {
         subtitle={cfg.subtitle}
         rows={rows}
         loading={isLoading}
+        error={error}
+        onRetry={() => void refetch()}
         form={pickForm(forms, opts)}
         height={height}
         opts={opts}
@@ -81,11 +89,12 @@ function categoryBars(cfg: {
           ) : undefined
         }
         onSelect={
-          toCustomer
-            ? (r) => go?.(toCustomer(r.label))
-            : cfg.drill && go
-              ? (r) => go(cfg.drill!.of(r))
-              : undefined
+          go && cfg.drill
+            ? (r) =>
+                go(
+                  isEntityId(r.key) || !toCustomer ? cfg.drill!.of(r) : toCustomer(r.label),
+                )
+            : undefined
         }
       />
     )
@@ -98,6 +107,14 @@ export const TasksByCustomerWidget = categoryBars({
   title: 'משימות לפי לקוח',
   select: (s) => s.by_customer,
   seriesName: 'משימות',
+  /* Since 0151 the row carries the customer's id, so the click filters the
+     events list to that customer exactly. `useCustomerDrill` is the fallback
+     for a server that has not had the migration: it resolves the name through
+     the customers list rather than guessing. */
+  drill: {
+    probe: { to: 'events' },
+    of: (r) => (isEntityId(r.key) ? { to: 'events', customer: r.key } : { to: 'events' }),
+  },
   customerDrill: true,
   emptyDescription: 'אין משימות משויכות ללקוח בטווח שנבחר',
   emptyAction: 'newEvent',
@@ -108,7 +125,11 @@ export const ContractorSplitWidget = categoryBars({
   select: (s) => s.by_contractor,
   seriesName: 'משימות',
   fill: '#f59e0b',
-  drill: { probe: { to: 'contractors' }, of: () => ({ to: 'contractors' }) },
+  /* 0151 again: the row is a contractor, and a contractor has a card. */
+  drill: {
+    probe: { to: 'contractors' },
+    of: (r) => (isEntityId(r.key) ? { to: 'contractor', id: r.key } : { to: 'contractors' }),
+  },
   emptyDescription: 'לא הואצלו משימות לקבלנים בטווח',
 })
 
@@ -194,7 +215,7 @@ export const MIX_FORMS = ['list', 'donut', 'row', 'bar', 'table'] as const
 
 export function CustomerMixWidget({ height, opts }: WidgetProps) {
   const { range } = useDashboard()
-  const { data: stats, isLoading } = useDashboardStats(range.from, range.to)
+  const { data: stats, isLoading, error, refetch } = useDashboardStats(range.from, range.to)
   const raw = stats?.revenue?.by_customer
   const go = useDrill({ to: 'events' })
   const toCustomer = useCustomerDrill(!!go)
@@ -205,7 +226,7 @@ export function CustomerMixWidget({ height, opts }: WidgetProps) {
   const share = total > 0 && top ? Math.round((Number(top.total) / total) * 100) : 0
 
   const rows: SeriesRow[] | undefined = raw?.map((r) => ({
-    key: r.name,
+    key: r.id ?? r.name,
     label: r.name,
     value: Number(r.total),
     color: r.color,
@@ -218,6 +239,8 @@ export function CustomerMixWidget({ height, opts }: WidgetProps) {
       subtitle={top ? `${top.name} — ${share}% מההכנסות` : undefined}
       rows={rows}
       loading={isLoading}
+      error={error}
+      onRetry={() => void refetch()}
       form={pickForm(MIX_FORMS, opts)}
       height={height}
       /* six was the hard-coded slice before it was a setting; keeping it as the
@@ -227,7 +250,13 @@ export function CustomerMixWidget({ height, opts }: WidgetProps) {
       format={fmtMoney}
       emptyTitle="אין הכנסות בטווח"
       emptyDescription="אין משימות מתומחרות בטווח שנבחר"
-      onSelect={go && toCustomer && ((r) => go(toCustomer(r.label)))}
+      onSelect={
+        go &&
+        ((r) =>
+          isEntityId(r.key)
+            ? go({ to: 'events', customer: r.key })
+            : toCustomer && go(toCustomer(r.label)))
+      }
     />
   )
 }

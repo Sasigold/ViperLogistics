@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { Card, CardBody, CardHeader, EmptyState, ProgressBar, Skeleton, cx } from '../../../components/ui'
+import { Card, CardBody, CardHeader, EmptyState, ErrorState, ProgressBar, Skeleton, cx } from '../../../components/ui'
 import { fmtDate } from '../../../lib/dates'
 import { ChartTooltip } from './ChartTooltip'
 import { applySeriesOpts, plotHeight } from '../seriesOpts'
@@ -71,10 +71,20 @@ export interface SeriesCardProps {
   timeAxis?: boolean
   /** the fallback colour when a row has none */
   fill?: string
+  /**
+   * What the request failed with, when it did.
+   *
+   * `useSection` has always returned an `error` and not one widget read it, so
+   * a card whose request failed said "אין נתונים בטווח" — a different and wrong
+   * statement, and the one most likely to be believed.
+   */
+  error?: unknown
   emptyTitle?: string
   emptyDescription?: ReactNode
   /** a way out of an empty card — "add an event", "widen the range" */
   emptyAction?: ReactNode
+  /** offered beside the error; absent means the card cannot retry itself */
+  onRetry?: () => void
   /** makes every bar, slice and row a link to wherever this number came from */
   onSelect?: (row: SeriesRow) => void
 }
@@ -90,9 +100,11 @@ export function SeriesCard(props: SeriesCardProps) {
     form,
     height,
     opts,
+    error,
     emptyTitle = 'אין נתונים בטווח',
     emptyDescription,
     emptyAction,
+    onRetry,
   } = props
 
   const shown = rows ? applySeriesOpts(rows, opts, props.timeAxis) : undefined
@@ -102,7 +114,9 @@ export function SeriesCard(props: SeriesCardProps) {
     <Card>
       <CardHeader title={title} subtitle={subtitle} icon={icon} actions={actions} />
       <CardBody padded={form === 'list' || form === 'table' ? false : undefined}>
-        {busy ? (
+        {error != null && !shown?.length ? (
+          <ErrorState error={error} onRetry={onRetry} />
+        ) : busy ? (
           <Skeleton className="m-4 w-[calc(100%-2rem)]" style={{ height: Math.max(120, height) }} />
         ) : !shown?.length ? (
           /* An empty card is where a dashboard usually gives up. It is also the

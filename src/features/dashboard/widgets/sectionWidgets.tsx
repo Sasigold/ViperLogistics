@@ -70,6 +70,7 @@ function sectionBars(cfg: {
         subtitle={cfg.subtitle}
         rows={rows}
         loading={raw.isLoading && !raw.data}
+        error={raw.error}
         form={pickForm(forms, opts)}
         height={height}
         opts={opts}
