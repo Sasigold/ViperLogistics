@@ -6,7 +6,7 @@
  * "שעות חסרות", כך שסטייה ביניהן היא דוח שסותר את עצמו.
  */
 import { describe, expect, it } from 'vitest'
-import { SHORTFALL_TOLERANCE_H, shiftLocation, shiftShortfall, shiftTone } from './shiftFormat'
+import { SHORTFALL_TOLERANCE_H, fmtWorkEnd, shiftLocation, shiftShortfall, shiftTone } from './shiftFormat'
 import type { AttendanceReportRow } from '../../types/domain'
 
 type ToneInput = Parameters<typeof shiftTone>[0]
@@ -109,5 +109,34 @@ describe('shiftLocation', () => {
   it('כשאין מה לומר לא נאמר דבר', () => {
     expect(shiftLocation(at())).toBeNull()
     expect(shiftLocation(at({ clock_in_place: '   ' }))).toBeNull()
+  })
+})
+
+/**
+ * ‏`shift_end` נושא בתוכו את הנסיעה חזרה למחסן (0079 §4), ולכן זו הפונקציה
+ * היחידה שמפרידה בין "סיימנו לעבוד" ל"הגענו". מ-0159 היא גם מה שכתוב לעובד
+ * במגירת המשמרת במקום משך הנסיעה, ולכן הטעות בה היא שעה שגויה על המסך ולא
+ * מספר עזר.
+ *
+ * הזמנים כאן נכתבים בלי אזור זמן במכוון: `parseISO` קורא אותם כשעון מקומי,
+ * וכך הבדיקה אומרת את אותו דבר בכל מכונה שהיא רצה בה.
+ */
+describe('fmtWorkEnd', () => {
+  it('מחסירה את הנסיעה משעת הסיום', () => {
+    expect(fmtWorkEnd('2024-05-23T17:00:00', 1)).toBe('16:00')
+  })
+
+  it('גם כשהיא חצי שעה', () => {
+    expect(fmtWorkEnd('2024-05-23T17:00:00', 0.5)).toBe('16:30')
+  })
+
+  it('חציית חצות מחזירה את השעה של היום שלפני', () => {
+    expect(fmtWorkEnd('2024-05-24T00:30:00', 1)).toBe('23:30')
+  })
+
+  it('בלי נסיעה אין שתי שעות, ולכן אין מה להציג', () => {
+    expect(fmtWorkEnd('2024-05-23T17:00:00', 0)).toBe('')
+    expect(fmtWorkEnd('2024-05-23T17:00:00', null)).toBe('')
+    expect(fmtWorkEnd('2024-05-23T17:00:00', undefined)).toBe('')
   })
 })

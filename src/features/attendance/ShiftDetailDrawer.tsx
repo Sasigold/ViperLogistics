@@ -1,10 +1,17 @@
 /**
  * ממה מורכבת המשמרת.
  *
- * המסך היחיד שמתרגם את task_ids לרצף שאפשר לקרוא: מה קודם, מה אחר כך, כמה
- * זמן ממתינים בין לבין, ומתי נוסעים חזרה. הוא משרת גם את לוח המנהל וגם את
- * הלוח האישי בלי הסתעפות — ההרשאה מוכרעת ב-RPC, וענף ה"עצמי" שלו דורש בדיוק
- * את המפתח שהמסך האישי כבר מגודר עליו.
+ * המסך היחיד שמתרגם את task_ids לרצף שאפשר לקרוא: מה קודם, מה אחר כך, ומתי
+ * כל דבר קורה. הוא משרת גם את לוח המנהל וגם את הלוח האישי בלי הסתעפות —
+ * ההרשאה מוכרעת ב-RPC, וענף ה"עצמי" שלו דורש בדיוק את המפתח שהמסך האישי
+ * כבר מגודר עליו.
+ *
+ * **לעובד נכתבות שעות; משכים הם של מי שמתכנן.** ‏"המתנה 1:30" ו"נסיעה חזרה
+ * 0:45" הם מספרים שמנהל משבץ לפיהם, ולעובד שקורא את היום שלו הם ענו על שאלה
+ * שלא שאל — ובעיקר נקראו כמו הבטחה על שכר. בלוח האישי אותם שני מקומות אומרים
+ * עכשיו **מתי**: הגעה למחסן, תחילת העבודה בשטח, סיום העבודה והיציאה חזרה,
+ * וסיום המשמרת. הנתונים לא השתנו — שעת הסיום כללה מאז ומתמיד את הנסיעה
+ * (0079), והמסך רק מפריד אותה לשתי שעות במקום לשעה ולמשך.
  */
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
@@ -33,6 +40,7 @@ import {
   fmtDayLabel,
   fmtDuration,
   fmtShiftRange,
+  fmtWorkEnd,
 } from './shiftFormat'
 import type { ShiftGroupMember } from './shiftBoard'
 import type { PlannedShift, ShiftTaskRow, StaffRole } from '../../types/domain'
@@ -93,11 +101,19 @@ export function ShiftDetailDrawer({
   const warehouseName = data?.shift.warehouse_name ?? shift.warehouse_name
   const travel = totals?.travel_hours ?? shift.travel_hours ?? 0
   const selected = tasks.find((t) => t.task_id === openTaskId) ?? null
+  /**
+   * מי קורא. הלוח האישי פותח את המגירה בלי שם — "המשמרת שלי" מדויק יותר —
+   * ולוח המשמרות תמיד עם שם. זו ההבחנה שקובעת אם מוצגים משכים או שעות.
+   */
+  const managerView = employeeName != null
   /* ‏0094: בלו״ז האישי, עובד שמגיע לשטח אינו רואה את זמן ההגעה למחסן — אלא אם
      הוא ראש צוות. למנהל שצופה בעובד (employeeName קיים) מוצג הכול. */
   const iAmTeamLead = tasks.some((t) => (t.my_role ?? []).includes('team_lead'))
   const showWarehouseArrival =
-    startsAtWarehouse && (employeeName != null || iAmTeamLead || tasks[0]?.work_site === 'warehouse')
+    startsAtWarehouse && (managerView || iAmTeamLead || tasks[0]?.work_site === 'warehouse')
+  /* השעה שבה מפסיקים לעבוד, כשסוף המשמרת כולל את הנסיעה חזרה. ריק בלי
+     נסיעה — אז שתי השעות הן אותה שעה, ואין מה להפריד. */
+  const workEnd = fmtWorkEnd(data?.shift.end ?? shift.shift_end, travel)
 
   return (
     <Drawer
@@ -116,7 +132,7 @@ export function ShiftDetailDrawer({
       }
     >
       {selected ? (
-        <TaskDetails task={selected} onBack={() => setOpenTaskId(null)} />
+        <TaskDetails task={selected} showGap={managerView} onBack={() => setOpenTaskId(null)} />
       ) : (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -188,10 +204,26 @@ export function ShiftDetailDrawer({
                 />
               )}
 
+              {/* השעה שהיוצא מהמחסן באמת מחפש: מתי הוא באתר. היא קיימת בנתונים
+                  מאז 0083 (`start_at` הוא המשימה עצמה), ועד כאן היחיד שאמר
+                  אותה היה כרטיס המשימה — ליד שעת הסיום, בשורה אחת. */}
+              {!managerView &&
+                showWarehouseArrival &&
+                tasks[0]?.warehouse_start_at != null &&
+                tasks[0].warehouse_start_at !== tasks[0].start_at && (
+                  <RailNode
+                    icon={<Clock size={ICON.xs} strokeWidth={STROKE} />}
+                    time={hhmm(tasks[0].start_at)}
+                    text="תחילת העבודה בשטח"
+                  />
+                )}
+
               {tasks.map((t) => (
                 <li key={t.task_id}>
-                  {t.gap_minutes != null && t.gap_minutes > 0 && (
-                    /* ההמתנה היא חלק מהמשמרת — רווח ריק היה מסתיר אותה */
+                  {managerView && t.gap_minutes != null && t.gap_minutes > 0 && (
+                    /* ההמתנה היא חלק מהמשמרת — רווח ריק היה מסתיר אותה.
+                       בלוח האישי היא אינה נכתבת כלל: השעות של המשימה הבאה
+                       אומרות את אותו דבר בלי למנות לעובד את זמן ההמתנה. */
                     <div className="relative py-1 ps-6">
                       <span
                         aria-hidden
@@ -214,12 +246,21 @@ export function ShiftDetailDrawer({
                 </li>
               ))}
 
-              {travel > 0 && (
-                <RailNode
-                  icon={<Truck size={ICON.xs} strokeWidth={STROKE} />}
-                  text={`נסיעה חזרה ${fmtDuration(travel)}`}
-                />
-              )}
+              {travel > 0 &&
+                (managerView ? (
+                  <RailNode
+                    icon={<Truck size={ICON.xs} strokeWidth={STROKE} />}
+                    text={`נסיעה חזרה ${fmtDuration(travel)}`}
+                  />
+                ) : (
+                  /* אותה נסיעה, כשעה ולא כמשך: זו הנקודה שבה יורדים מהעבודה,
+                     ושעת הסיום שמתחתיה כוללת אותה מאז ומתמיד. */
+                  <RailNode
+                    icon={<Truck size={ICON.xs} strokeWidth={STROKE} />}
+                    time={workEnd}
+                    text={warehouseName ? `סיום העבודה, יציאה ל${warehouseName}` : 'סיום העבודה, יציאה חזרה למחסן'}
+                  />
+                ))}
               <RailNode
                 terminal
                 icon={<Clock size={ICON.xs} strokeWidth={STROKE} />}
@@ -229,16 +270,25 @@ export function ShiftDetailDrawer({
             </ol>
           )}
 
-          {totals && (
-            /* ארבעה מספרים ולא שלושה: העובד צריך לדעת כמה מהיום הוא עבודה,
-               כמה דרך וכמה המתנה — ולצידם כמה המשמרת נמשכת מקצה לקצה. */
-            <div className="surface grid grid-cols-2 gap-2 p-3 text-center sm:grid-cols-4">
-              <Total label="עבודה" value={`${fmtDuration(totals.work_hours)} ש׳`} />
-              <Total label="נסיעה" value={`${fmtDuration(totals.travel_hours)} ש׳`} />
-              <Total label="המתנה" value={`${fmtDuration(totals.idle_minutes / 60)} ש׳`} />
-              <Total label="סך המשמרת" value={`${fmtDuration(shift.planned_hours)} ש׳`} />
-            </div>
-          )}
+          {totals &&
+            (managerView ? (
+              /* ארבעה מספרים ולא שלושה: מי שמשבץ צריך לדעת כמה מהיום הוא
+                 עבודה, כמה דרך וכמה המתנה — ולצידם כמה המשמרת נמשכת מקצה
+                 לקצה. */
+              <div className="surface grid grid-cols-2 gap-2 p-3 text-center sm:grid-cols-4">
+                <Total label="עבודה" value={`${fmtDuration(totals.work_hours)} ש׳`} />
+                <Total label="נסיעה" value={`${fmtDuration(totals.travel_hours)} ש׳`} />
+                <Total label="המתנה" value={`${fmtDuration(totals.idle_minutes / 60)} ש׳`} />
+                <Total label="סך המשמרת" value={`${fmtDuration(shift.planned_hours)} ש׳`} />
+              </div>
+            ) : (
+              /* לעובד שני מספרים: כמה עבודה יש ביום, וכמה הוא נמשך מקצה
+                 לקצה. פירוק הפער בין השניים לדרך ולהמתנה הוא של המשבץ. */
+              <div className="surface grid grid-cols-2 gap-2 p-3 text-center">
+                <Total label="עבודה" value={`${fmtDuration(totals.work_hours)} ש׳`} />
+                <Total label="סך המשמרת" value={`${fmtDuration(shift.planned_hours)} ש׳`} />
+              </div>
+            ))}
         </div>
       )}
     </Drawer>
@@ -367,7 +417,16 @@ function TaskCard({ task: t, onOpen }: { task: ShiftTaskRow; onOpen: () => void 
  * כל מה שמוצג כאן כבר הגיע ב-`shift_task_breakdown` יחד עם הרצף, ולכן אין
  * כאן שאילתה נוספת ואין מצב טעינה — הפאנל נפתח מיד.
  */
-function TaskDetails({ task: t, onBack }: { task: ShiftTaskRow; onBack: () => void }) {
+function TaskDetails({
+  task: t,
+  showGap,
+  onBack,
+}: {
+  task: ShiftTaskRow
+  /** ההמתנה שלפני המשימה — נכתבת למי שמשבץ, לא לעובד שקורא את יומו */
+  showGap: boolean
+  onBack: () => void
+}) {
   const navigate = useNavigate()
   const has = useAuth((s) => s.has)
   const canOpenEvent = !!t.event_id && has(PERM.EVENTS_VIEW)
@@ -423,7 +482,7 @@ function TaskDetails({ task: t, onBack }: { task: ShiftTaskRow; onBack: () => vo
             {t.warehouse_name ? `הגעה ל${t.warehouse_name}` : 'הגעה למחסן'}
           </Badge>
         )}
-        {t.gap_minutes != null && t.gap_minutes > 0 && (
+        {showGap && t.gap_minutes != null && t.gap_minutes > 0 && (
           <Badge tone="neutral">
             <Timer size={ICON.sm} strokeWidth={STROKE} />
             המתנה {fmtDuration(t.gap_minutes / 60)}

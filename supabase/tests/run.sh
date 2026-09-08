@@ -397,6 +397,16 @@ OUT="$OUT
 $OUT38"
 
 echo
+echo "== clock without a pin suite =="
+# 39 מקימה לקוח בלי מחסן, אירוע בלי קואורדינטות, משימה ועובד משלה, ומעגנת את
+# המשימה סביב now() — כל בדיקה בה היא החתמת שעון אמיתית. היא רצה אחרונה כי
+# היא משאירה אחריה משימה ושיבוץ שאינם מנוקים, והאירוע שלה ב-current_date+560.
+OUT39=$($PSQL -d vl -f "$HERE/39_clock_without_a_pin.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT39"
+OUT="$OUT
+$OUT39"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
