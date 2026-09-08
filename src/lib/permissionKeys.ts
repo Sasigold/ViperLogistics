@@ -98,7 +98,8 @@ export const PERM = {
   EVENTS_DELETE: 'events.delete',
   EVENTS_RESTORE: 'events.restore',
   EVENTS_VIEW_DELETED: 'events.view_deleted',
-  EVENTS_DUPLICATE: 'events.duplicate',
+  /* ‏`events.duplicate` (0011) ירד מהמרשם הפעיל ב-0157 יחד עם `duplicate_event`
+     עצמה: שכפול אירוע אינו קיים עוד, ואין מי שישאל את המפתח. */
   EVENTS_IMPORT: 'events.import',
   EVENTS_EXPORT: 'events.export',
   EVENTS_CHANGE_CUSTOMER: 'events.change_customer',

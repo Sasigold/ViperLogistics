@@ -387,6 +387,16 @@ OUT="$OUT
 $OUT37"
 
 echo
+echo "== location travels / no duplicate suite =="
+# 38 מקימה לקוח, אירוע ושלוש משימות משלה ב-current_date + 550, מעבר לכל טווח
+# אחר. היא רצה אחרונה כי היא משאירה אחריה משימות ומיקומים שאינם מנוקים,
+# ובודקת שהמיקום של האירוע נוסע למשימות (0158) ושהשכפול ירד (0157).
+OUT38=$($PSQL -d vl -f "$HERE/38_the_location_travels_and_no_duplicate.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT38"
+OUT="$OUT
+$OUT38"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
