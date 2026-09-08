@@ -1,6 +1,16 @@
-import { Suspense, useMemo, useState } from 'react'
-import { Button, ErrorState, Input, PageHeader, Skeleton, StickySaveBar, useConfirm, useToast } from '../../components/ui'
-import { Download, ICON, LayoutGrid, STROKE, SlidersHorizontal } from '../../components/ui/icons'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Button,
+  ErrorState,
+  IconButton,
+  Input,
+  PageHeader,
+  Skeleton,
+  StickySaveBar,
+  useConfirm,
+  useToast,
+} from '../../components/ui'
+import { Download, ICON, LayoutGrid, RefreshCw, STROKE, SlidersHorizontal } from '../../components/ui/icons'
 import { fmtDate, toISODate } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 import { PERM } from '../../lib/permissions'
@@ -15,14 +25,27 @@ import type { DateRange } from './dashboardRange'
 import { DashboardGrid } from './DashboardGrid'
 import { CustomizeDrawer } from './CustomizeDrawer'
 import { SavedViewsMenu } from './SavedViewsMenu'
+import { ViewSettingsMenu } from './ViewSettingsMenu'
 import { useDashboardLayout } from './useDashboardLayout'
 import { useDashboardSections } from './useDashboardData'
-import { hideWidget, moveByIds, moveByOffset, setHeight, setSize, showWidget } from './layout'
+import {
+  hideWidget,
+  mergeView,
+  moveByIds,
+  moveByOffset,
+  packingOf,
+  setHeight,
+  setLock,
+  setOpt,
+  setSize,
+  showWidget,
+} from './layout'
 import { buildDashboardExport, writeDashboardExport } from './exportDashboard'
 import { useReportCatalog } from './builder/useReportCatalog'
 import { toUuid } from './builder/customRegistry'
 import type { BuilderTarget } from './builder/WidgetBuilderDrawer'
-import type { WidgetSize } from './dashboardTypes'
+import type { LayoutState } from './layout'
+import type { ViewPrefs, WidgetSize } from './dashboardTypes'
 
 /* dnd-kit only exists once someone opens edit mode. The dashboard is the most
    visited screen in the product; its ordinary render should not carry a drag
@@ -100,7 +123,53 @@ export default function DashboardPage() {
   /* The union of the visible widgets' sections has to be known before the
      first widget renders — the server is told what to compute — so the request
      is issued here and handed down rather than fetched per widget. */
-  const sections = useDashboardSections(layout.visible, layout.byId, range, prev)
+  const view = layout.view
+  const packing = packingOf(view)
+  /* Only what the server reads. Everything else a placement can choose is
+     redrawn from rows already in hand, and putting it in this bag would put it
+     in the query key — so changing a chart to a table would refetch the page. */
+  const serverOpts = useMemo(
+    () => ({ ...(view?.bucket ? { bucket: view.bucket } : {}), ...(view?.limit ? { limit: view.limit } : {}) }),
+    [view?.bucket, view?.limit],
+  )
+  const sections = useDashboardSections(layout.visible, layout.byId, range, prev, serverOpts)
+
+  /* A saved view opens on the range it was saved with. A preset re-evaluates —
+     "this month" saved in March is March's answer in April — while a fixed pair
+     is exactly the pair. Applied once per view, and never over a range the
+     reader has since typed for themselves. */
+  /* Keyed on the *value*, not on the object. `view` is rebuilt from jsonb on
+     every layout refetch — and every option click writes the layout — so an
+     effect that depended on the object's identity re-ran after each save and
+     threw away whatever range the reader had typed since. */
+  const rangeKey = view?.range ? JSON.stringify(view.range) : ''
+  useEffect(() => {
+    if (!rangeKey || !canChangeRange) return
+    const r = JSON.parse(rangeKey) as NonNullable<ViewPrefs['range']>
+    if ('preset' in r) {
+      const p = RANGE_PRESETS.find((x) => x.label === r.preset)
+      if (p) setRange(p.range())
+    } else {
+      setRange({ from: r.from, to: r.to })
+    }
+  }, [rangeKey, canChangeRange])
+
+  /* Auto-refresh is off unless the view asks for it. A screen on a wall wants
+     it; a screen somebody is reading does not, and a dashboard that reloads
+     under a cursor is a dashboard that loses your place. */
+  const refreshEvery = view?.refresh ?? 0
+  /* Through a ref, not as a dependency. `sections` is rebuilt whenever its data
+     changes and `refetch` is a fresh closure each time, so depending on it
+     would clear and restart the interval on every landing — and a five-minute
+     timer that restarts every time anything on the page updates is a timer that
+     can be starved indefinitely. */
+  const refetchRef = useRef(sections.refetch)
+  refetchRef.current = sections.refetch
+  useEffect(() => {
+    if (refreshEvery <= 0) return
+    const t = setInterval(() => refetchRef.current(), refreshEvery * 60_000)
+    return () => clearInterval(t)
+  }, [refreshEvery])
 
   const ctx = useMemo(
     () => ({
@@ -129,17 +198,46 @@ export default function DashboardPage() {
     layout.edit((s) => ({ ...s, items: setSize(s.items, id, size) }))
   const onHeight = (id: string, h: 'auto' | 'tall') =>
     layout.edit((s) => ({ ...s, items: setHeight(s.items, id, h) }))
-  const onRemove = (id: string) => layout.edit((s) => hideWidget(s.items, s.hidden, id))
+  const onRemove = (id: string) => layout.edit((s) => hideWidget(s, id))
+  /**
+   * A display choice, saved where it was made.
+   *
+   * Outside edit mode there is no save bar to press, and a chart that goes back
+   * to being a chart on the next load is a control nobody would use twice — so
+   * the write follows the click. Inside edit mode it joins the draft like every
+   * other edit and waits for the bar, because that is the contract that screen
+   * already has.
+   */
+  const onOpt = canCustomize
+    ? (id: string, key: string, value: string | number | boolean | undefined) => {
+        const apply = (s: LayoutState) => ({ ...s, items: setOpt(s.items, id, key, value) })
+        if (editing) layout.edit(apply)
+        else void guard(() => layout.commit(apply))
+      }
+    : undefined
+  /* Only offered to whoever may publish a default — locking a widget on your
+     own layout would be locking yourself out of your own screen. */
+  const onLock = has(PERM.DASHBOARD_MANAGE_DEFAULT)
+    ? (id: string, on: boolean) => layout.edit((s) => ({ ...s, items: setLock(s.items, id, on) }))
+    : undefined
+  const onView = (patch: Partial<ViewPrefs>) => {
+    if (!canCustomize) return
+    const apply = (s: LayoutState) => ({ ...s, view: mergeView(s.view, patch) })
+    if (editing) layout.edit(apply)
+    else void guard(() => layout.commit(apply))
+  }
   const onToggle = (id: string, on: boolean) =>
     layout.edit((s) => {
       const meta = layout.byId.get(id)
       if (!meta) return s
-      return on ? showWidget(s.items, s.hidden, meta, layout.byId) : hideWidget(s.items, s.hidden, id)
+      return on ? showWidget(s, meta, layout.byId) : hideWidget(s, id)
     })
 
-  /* Exports exactly what is on screen, in the order it was arranged — the
-     file is the view, not "all the data". Every number comes from the section
-     as the server returned it; nothing is recomputed on the way out. */
+  /* Exports the widgets that are on screen, in the order they were arranged —
+     the file is the view, not "all the data". Every number comes from the
+     section as the server returned it; nothing is recomputed on the way out,
+     and a card's own top-N is deliberately not applied. `exportDashboard.ts`
+     carries that argument. */
   const exportXlsx = async () => {
     const plan = buildDashboardExport(
       layout.visible,
@@ -211,6 +309,22 @@ export default function DashboardPage() {
                 </>
               )}
               <div className="flex items-center gap-1.5">
+                {/* The refresh is not behind `dashboard.customize`: asking for
+                    today's numbers again is not arranging anything. */}
+                <IconButton
+                  size="sm"
+                  variant="ghost"
+                  label="רענון"
+                  onClick={() => sections.refetch()}
+                  disabled={sections.isFetching}
+                >
+                  <RefreshCw
+                    size={ICON.md}
+                    strokeWidth={STROKE}
+                    className={sections.isFetching ? 'animate-spin' : undefined}
+                    aria-hidden
+                  />
+                </IconButton>
                 {has(PERM.DASHBOARD_EXPORT) && (
                   <Button size="sm" variant="ghost" onClick={() => void guard(exportXlsx)}>
                     <Download size={ICON.sm} strokeWidth={STROKE} />
@@ -219,14 +333,28 @@ export default function DashboardPage() {
                 )}
                 {canCustomize && (
                   <>
+                    <ViewSettingsMenu
+                      view={view}
+                      onChange={onView}
+                      onRefresh={() => sections.refetch()}
+                      refreshing={sections.isFetching}
+                      updatedAt={sections.updatedAt}
+                    />
                     <SavedViewsMenu
                       views={layout.namedViews}
                       hasOwnLayout={layout.hasOwnLayout}
-                      onApply={layout.applyView}
+                      orgDefaults={layout.orgDefaults}
+                      currentRange={range}
+                      onApply={(row) => void guard(async () => layout.applyView(row, !editing))}
                       onSaveAs={(name) => guard(() => layout.save(name))}
+                      onOverwrite={(id) => guard(() => layout.updateView(id))}
+                      onRename={(id, name) => guard(() => layout.renameView(id, name))}
                       onDelete={(id) => guard(() => layout.deleteView(id))}
                       onReset={() => guard(layout.reset)}
                       onPublishDefault={(k) => guard(() => layout.saveOrgDefault(k))}
+                      onRemoveDefault={(k) => guard(() => layout.deleteOrgDefault(k))}
+                      onPinRange={(r) => onView({ range: r })}
+                      pinnedRange={view?.range}
                     />
                     <Button size="sm" variant={editing ? 'primary' : 'ghost'} onClick={() => setEditing((v) => !v)}>
                       <LayoutGrid size={ICON.sm} strokeWidth={STROKE} />
@@ -259,15 +387,18 @@ export default function DashboardPage() {
               <DashboardEditGrid
                 items={layout.visible}
                 byId={layout.byId}
+                packing={packing}
                 onMove={onMove}
                 onReorder={onReorder}
                 onSize={onSize}
                 onHeight={onHeight}
                 onRemove={onRemove}
+                onOpt={onOpt}
+                onLock={onLock}
               />
             </Suspense>
           ) : (
-            <DashboardGrid items={layout.visible} byId={layout.byId} />
+            <DashboardGrid items={layout.visible} byId={layout.byId} packing={packing} onOpt={onOpt} />
           )}
         </DashboardProvider>
 

@@ -24,6 +24,10 @@ import {
 import { fmtMoney } from '../../components/ui'
 import { PERM } from '../../lib/permissions'
 import type { DashboardLayout, WidgetDef } from './dashboardTypes'
+import { CATEGORY_FORMS, RANK_FORMS, SERIES_OPTIONS, TREND_FORMS, TREND_OPTIONS } from './seriesOpts'
+import { MIX_FORMS } from './widgets/chartWidgets'
+import { STATUS_FORMS } from './widgets/opsWidgets'
+import { SPEND_EVENT_FORMS } from './widgets/spendWidgets'
 import { statKpi } from './widgets/kpi'
 import {
   DayTimelineWidget,
@@ -306,6 +310,8 @@ export const WIDGETS: WidgetDef[] = [
     defaultOn: true,
     usesRange: true,
     sections: ['spend.summary'],
+    forms: SPEND_EVENT_FORMS,
+    options: SERIES_OPTIONS,
     Component: SpendByEventWidget,
   },
   {
@@ -319,6 +325,8 @@ export const WIDGETS: WidgetDef[] = [
     defaultOn: true,
     usesRange: true,
     sections: ['spend.summary'],
+    forms: TREND_FORMS,
+    options: TREND_OPTIONS,
     Component: SpendTrendWidget,
   },
 
@@ -457,6 +465,8 @@ export const WIDGETS: WidgetDef[] = [
     sizes: ['md', 'lg'],
     defaultOn: true,
     usesRange: true,
+    forms: STATUS_FORMS,
+    options: SERIES_OPTIONS,
     Component: StatusBreakdownWidget,
   },
   {
@@ -502,6 +512,8 @@ export const WIDGETS: WidgetDef[] = [
     sizes: ['md', 'lg'],
     defaultOn: true,
     usesRange: true,
+    forms: CATEGORY_FORMS,
+    options: SERIES_OPTIONS,
     Component: TasksByCustomerWidget,
   },
 
@@ -563,6 +575,8 @@ export const WIDGETS: WidgetDef[] = [
     sizes: ['md', 'lg'],
     defaultOn: true,
     usesRange: true,
+    forms: RANK_FORMS,
+    options: SERIES_OPTIONS,
     Component: WorkerLoadWidget,
   },
   {
@@ -575,6 +589,8 @@ export const WIDGETS: WidgetDef[] = [
     sizes: ['md', 'lg'],
     defaultOn: true,
     usesRange: true,
+    forms: CATEGORY_FORMS,
+    options: SERIES_OPTIONS,
     Component: ContractorSplitWidget,
   },
 
@@ -781,6 +797,8 @@ export const WIDGETS: WidgetDef[] = [
     sizes: ['md', 'lg'],
     usesRange: true,
     sections: ['tasks.by_type'],
+    forms: CATEGORY_FORMS,
+    options: SERIES_OPTIONS,
     Component: TasksByTypeWidget,
   },
   {
@@ -792,6 +810,8 @@ export const WIDGETS: WidgetDef[] = [
     sizes: ['md', 'lg'],
     usesRange: true,
     sections: ['tasks.by_method'],
+    forms: CATEGORY_FORMS,
+    options: SERIES_OPTIONS,
     Component: TasksByMethodWidget,
   },
   {
@@ -861,6 +881,8 @@ export const WIDGETS: WidgetDef[] = [
     sizes: ['md', 'lg'],
     usesRange: true,
     sections: ['fleet.utilization'],
+    forms: RANK_FORMS,
+    options: SERIES_OPTIONS,
     Component: FleetUtilizationWidget,
   },
 
@@ -875,6 +897,8 @@ export const WIDGETS: WidgetDef[] = [
     sizes: ['md', 'lg'],
     usesRange: true,
     sections: ['events.by_customer'],
+    forms: CATEGORY_FORMS,
+    options: SERIES_OPTIONS,
     Component: EventsByCustomerWidget,
   },
   {
@@ -886,6 +910,8 @@ export const WIDGETS: WidgetDef[] = [
     sizes: ['md', 'lg'],
     usesRange: true,
     sections: ['events.funnel'],
+    forms: CATEGORY_FORMS,
+    options: SERIES_OPTIONS,
     Component: EventsFunnelWidget,
   },
   {
@@ -937,6 +963,8 @@ export const WIDGETS: WidgetDef[] = [
     sizes: ['md', 'lg'],
     usesRange: true,
     sections: ['attendance.hours_by_worker'],
+    forms: RANK_FORMS,
+    options: SERIES_OPTIONS,
     Component: HoursByWorkerWidget,
   },
   {
@@ -960,6 +988,8 @@ export const WIDGETS: WidgetDef[] = [
     sizes: ['md', 'lg'],
     usesRange: true,
     sections: ['attendance.flags'],
+    forms: CATEGORY_FORMS,
+    options: SERIES_OPTIONS,
     Component: AttendanceFlagsWidget,
   },
 
@@ -1194,6 +1224,8 @@ export const WIDGETS: WidgetDef[] = [
     perms: [PERM.CUSTOMERS_VIEW, PERM.PRICING_REVENUE],
     sizes: ['md', 'lg'],
     usesRange: true,
+    forms: MIX_FORMS,
+    options: SERIES_OPTIONS,
     Component: CustomerMixWidget,
   },
   {

@@ -38,8 +38,13 @@ async function fetchList<T>(table: string, order = 'name'): Promise<T[]> {
   return data as T[]
 }
 
-export function useCustomers() {
-  return useQuery({ queryKey: ['customers', 'list'], queryFn: () => fetchList<Customer>('customers') })
+/** `enabled` הוא בשביל מסך שהרשימה בו נדרשת רק אם משהו נלחץ — כמו ב-`useContractors`. */
+export function useCustomers(enabled = true) {
+  return useQuery({
+    queryKey: ['customers', 'list'],
+    enabled,
+    queryFn: () => fetchList<Customer>('customers'),
+  })
 }
 
 /** `enabled` הוא בשביל מסך שהרשימה בו היא מסנן אופציונלי ולא כל התוכן. */

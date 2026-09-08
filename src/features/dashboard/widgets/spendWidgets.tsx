@@ -1,10 +1,11 @@
-import { Bar, BarChart, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
-import { Card, CardBody, CardHeader, EmptyState, ProgressBar, Skeleton, fmtMoney } from '../../../components/ui'
+import { fmtMoney } from '../../../components/ui'
 import { HandCoins } from '../../../components/ui/icons'
 import { fmtDate } from '../../../lib/dates'
-import { ChartTooltip } from '../parts/ChartTooltip'
-import { ChartFrame } from '../parts/ChartFrame'
+import { SeriesCard } from '../parts/SeriesCard'
+import { TREND_FORMS, pickForm } from '../seriesOpts'
+import type { SeriesRow } from '../seriesOpts'
 import { useSection } from '../dashboardContext'
+import { useDrill } from '../useDrill'
 import type { WidgetProps } from '../dashboardTypes'
 import { sectionKpi } from './financeWidgets'
 
@@ -21,7 +22,8 @@ import { sectionKpi } from './financeWidgets'
  * שאינו לקוח.
  */
 
-const AXIS = { tick: { fontSize: 11, fill: 'var(--vl-text-tertiary)' }, axisLine: false, tickLine: false } as const
+/** the progress-bar list is what this card always was, so it stays first */
+export const SPEND_EVENT_FORMS = ['list', 'row', 'bar', 'donut', 'table'] as const
 
 interface Spend {
   total: number
@@ -44,53 +46,71 @@ export const CustomerSpendWidget = sectionKpi<Spend>({
 })
 
 /** על מה הלך הכסף. לרוב הלקוחות זו השאלה האמיתית, לא הסכום. */
-export function SpendByEventWidget({ height }: WidgetProps) {
-  const { data, isLoading } = useSection<Spend>('spend.summary')
+export function SpendByEventWidget({ height, opts }: WidgetProps) {
+  const { data, isLoading, error } = useSection<Spend>('spend.summary')
+  const go = useDrill({ to: 'event', id: '' })
   if (data === null) return null
 
-  const rows = data?.by_event ?? []
-  const max = rows.reduce((m, r) => Math.max(m, Number(r.total)), 0)
+  const rows: SeriesRow[] | undefined = data?.by_event.map((r) => ({
+    key: r.id,
+    label: r.label,
+    value: Number(r.total),
+    color: '#f59e0b',
+    hint: `${fmtDate(r.event_date)} · ${fmtMoney(Number(r.total))}`,
+  }))
 
   return (
-    <Card>
-      <CardHeader title="הוצאה לפי אירוע" subtitle={data ? fmtMoney(Number(data.total)) : undefined} />
-      <CardBody>
-        {isLoading && !data ? (
-          <Skeleton className="w-full" style={{ height }} />
-        ) : rows.length === 0 ? (
-          <EmptyState compact art="table" title="אין הוצאות בטווח" />
-        ) : (
-          <div className="space-y-2.5">
-            {rows.map((r) => (
-              <ProgressBar
-                key={r.id}
-                value={Number(r.total)}
-                max={max}
-                color="#f59e0b"
-                label={r.label}
-                hint={`${fmtDate(r.event_date)} · ${fmtMoney(Number(r.total))}`}
-              />
-            ))}
-          </div>
-        )}
-      </CardBody>
-    </Card>
+    <SeriesCard
+      title="הוצאה לפי אירוע"
+      subtitle={data ? fmtMoney(Number(data.total)) : undefined}
+      rows={rows}
+      loading={isLoading && !data}
+      error={error}
+      form={pickForm(SPEND_EVENT_FORMS, opts)}
+      height={height}
+      opts={opts}
+      seriesName="הוצאה"
+      format={fmtMoney}
+      fill="#f59e0b"
+      emptyTitle="אין הוצאות בטווח"
+      emptyDescription="אף משימה באירועים שלך לא תומחרה בטווח שנבחר"
+      /* the row is an event and the event has a page — this is the click the
+         card has been implying since it was written */
+      onSelect={go && ((r) => go({ to: 'event', id: r.key }))}
+    />
   )
 }
 
-export function SpendTrendWidget({ height }: WidgetProps) {
-  const { data, isLoading } = useSection<Spend>('spend.summary')
+export function SpendTrendWidget({ height, opts }: WidgetProps) {
+  const { data, isLoading, error } = useSection<Spend>('spend.summary')
+  /* The row key of a trend *is* a date, and the board opens on one. That makes
+     every bucket on every trend card a link to the days behind it, for free. */
+  const go = useDrill({ to: 'board' })
   if (data === null) return null
 
-  const rows = data?.by_bucket ?? []
+  const rows: SeriesRow[] | undefined = data?.by_bucket.map((r) => ({
+    key: r.bucket,
+    label: r.bucket,
+    value: Number(r.total),
+  }))
+
   return (
-    <ChartFrame title="מגמת הוצאה" loading={isLoading && !data} empty={!rows.length} height={height}>
-      <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 4, left: -12 }}>
-        <XAxis dataKey="bucket" {...AXIS} tickFormatter={(v: string) => fmtDate(v)} />
-        <YAxis {...AXIS} width={64} tickFormatter={(v: number) => String(Math.round(v / 1000)) + 'k'} />
-        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
-        <Bar dataKey="total" name="הוצאה" fill="#f59e0b" radius={[6, 6, 0, 0]} maxBarSize={40} />
-      </BarChart>
-    </ChartFrame>
+    <SeriesCard
+      title="מגמת הוצאה"
+      subtitle={data ? fmtMoney(Number(data.total)) : undefined}
+      rows={rows}
+      loading={isLoading && !data}
+      error={error}
+      form={pickForm(TREND_FORMS, opts)}
+      height={height}
+      opts={opts}
+      seriesName="הוצאה"
+      format={fmtMoney}
+      fill="#f59e0b"
+      timeAxis
+      emptyTitle="אין הוצאות בטווח"
+      emptyDescription="גרף מגמה נבנה מכמה תקופות — נסו טווח רחב יותר"
+      onSelect={go && ((r) => go({ to: 'board', date: r.key }))}
+    />
   )
 }

@@ -1096,20 +1096,25 @@ export interface DashboardStats {
   tasks_overdue: number
   /** null ללא dashboard.all_workers */
   available_workers: number | null
+  /**
+   * ‏`id` נוסף ב-0151, ולכן הוא אופציונלי: הוא מגיע רק משרת שכבר קיבל את
+   * המיגרציה, והלקוח חייב להמשיך לעבוד גם בלעדיו — הירידה לפרטים היא
+   * "אם יש id" ולא הנחה. עד אז הקיבוץ היה לפי שם, ושם אינו כתובת.
+   */
   /** null ללא customers.view — ללקוח יש לקוח אחד והגרף חסר משמעות */
-  by_customer: { name: string; color: string; cnt: number }[] | null
+  by_customer: { id?: string; name: string; color: string; cnt: number }[] | null
   /** null ללא dashboard.contractors */
-  by_contractor: { name: string; cnt: number }[] | null
+  by_contractor: { id?: string; name: string; cnt: number }[] | null
   /** null ללא dashboard.all_workers */
-  by_worker: { name: string; cnt: number }[] | null
-  by_status: { name: string; color: string; cnt: number }[]
+  by_worker: { id?: string; name: string; cnt: number }[] | null
+  by_status: { id?: string; name: string; color: string; cnt: number }[]
   /** null ללא dashboard.financial */
   financial: { expected: number; paid: number } | null
   /** null ללא pricing.revenue */
   revenue: {
     total: number
     priced_tasks: number
-    by_customer: { name: string; color: string; total: number }[] | null
+    by_customer: { id?: string; name: string; color: string; total: number }[] | null
   } | null
   next_events: {
     id: string

@@ -35,18 +35,33 @@ async function fetchSections(keys: string[], range: DateRange, opts: WidgetOpts)
  *   static — sections that ignore it (pending approvals, the forecast)
  *   prev   — the same span before, for the widgets that show a delta
  */
+/**
+ * @param serverOpts the view's `p_opts` — the bucket every trend is drawn in
+ *   and how many rows a top-N section returns.
+ *
+ *   These used to be merged out of every placement's own options, and that was
+ *   a quiet bug: `dashboard_sections` takes **one** options bag for the whole
+ *   fan-out, so two trend cards asking for two different buckets both got
+ *   whichever one the merge happened to write last — and the card that lost
+ *   changed under its owner without saying so. They belong to the screen, so
+ *   since 0151 they sit on the view and are set once, in the header. Everything
+ *   a placement can still choose for itself (its form, its top-N, its sort) is
+ *   drawn from rows already in hand and never reaches the server at all.
+ */
 export function useDashboardSections(
   items: LayoutItem[],
   byId: Map<string, WidgetDef>,
   range: DateRange,
   prev: DateRange,
+  serverOpts?: WidgetOpts,
 ) {
+  const optsKey = JSON.stringify(serverOpts ?? {})
   const { rangeKeys, staticKeys, prevKeys, opts, customIds } = useMemo(() => {
     const inRange = new Set<string>()
     const inStatic = new Set<string>()
     const inPrev = new Set<string>()
     const custom: string[] = []
-    const merged: WidgetOpts = {}
+    const merged: WidgetOpts = JSON.parse(optsKey) as WidgetOpts
 
     for (const item of items) {
       // a user-built widget is answered by dashboard_widgets_run, not by a
@@ -62,9 +77,6 @@ export function useDashboardSections(
         ;(def.usesRange ? inRange : inStatic).add(s)
         if (def.usesRange && def.wantsDelta) inPrev.add(s)
       }
-      // per-placement options are merged into one bag: `bucket` and `limit`
-      // are read by the server for whichever section asks for them
-      if (item.opts) Object.assign(merged, item.opts)
     }
     // sorted so the query key is stable no matter how the grid is arranged
     const sorted = (s: Set<string>) => [...s].sort()
@@ -75,7 +87,7 @@ export function useDashboardSections(
       opts: merged,
       customIds: custom.sort(),
     }
-  }, [items, byId])
+  }, [items, byId, optsKey])
 
   const rangeQ = useQuery({
     queryKey: ['dashboard', 'sections', 'range', range.from, range.to, rangeKeys.join(','), opts],
@@ -129,10 +141,22 @@ export function useDashboardSections(
   const prevData = prevQ.data
   const customData = customQ.data
   const isLoading = (rangeQ.isLoading && rangeKeys.length > 0) || (staticQ.isLoading && staticKeys.length > 0)
+  /* Distinct from `isLoading`, and both are needed: `isLoading` is "there is
+     nothing to draw" and collapses the grid into skeletons, while this is "the
+     numbers are being fetched again" and only spins the refresh button. A
+     refresh that blanked the screen would be a worse answer than a stale one. */
+  const isFetching = rangeQ.isFetching || staticQ.isFetching || customQ.isFetching
+  /* When the numbers on screen were last true. A dashboard that cannot say is a
+     dashboard you check against something else before you trust it. */
+  const fetchedAt = Math.max(rangeQ.dataUpdatedAt, staticQ.dataUpdatedAt, customQ.dataUpdatedAt)
   const error = rangeQ.error ?? staticQ.error
   const refetchRange = rangeQ.refetch
   const refetchStatic = staticQ.refetch
   const refetchCustom = customQ.refetch
+  /* The previous period too. It was left out, and the visible effect was that
+     "retry" on a failed dashboard brought back every number except the deltas —
+     which then read as "no change" rather than "not loaded". */
+  const refetchPrev = prevQ.refetch
 
   return useMemo(() => {
     const merged: SectionMap = { ...(staticData ?? {}), ...(rangeData ?? {}) }
@@ -145,14 +169,32 @@ export function useDashboardSections(
       customResult: (uuid: string) => customData?.[uuid],
       /** true only while there is nothing at all to draw */
       isLoading,
+      /** true whenever a request is in flight, including a refresh over stale data */
+      isFetching,
+      /** hh:mm of the last landing, or undefined before the first one */
+      updatedAt: fetchedAt > 0 ? new Date(fetchedAt).toLocaleTimeString('he-IL', { timeStyle: 'short' }) : undefined,
       error,
       refetch: () => {
         void refetchRange()
         void refetchStatic()
+        void refetchPrev()
         void refetchCustom()
       },
     }
-  }, [rangeData, staticData, prevData, customData, isLoading, error, refetchRange, refetchStatic, refetchCustom])
+  }, [
+    rangeData,
+    staticData,
+    prevData,
+    customData,
+    isLoading,
+    isFetching,
+    fetchedAt,
+    error,
+    refetchRange,
+    refetchStatic,
+    refetchPrev,
+    refetchCustom,
+  ])
 }
 
 export type DashboardSections = ReturnType<typeof useDashboardSections>

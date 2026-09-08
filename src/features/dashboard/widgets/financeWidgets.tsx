@@ -7,6 +7,7 @@ import {
   DataTable,
   EmptyState,
   ProgressBar,
+  Skeleton,
   SkeletonCard,
   StatCard,
   Tooltip,
@@ -211,7 +212,9 @@ export function ContractorAgingWidget({ height }: WidgetProps) {
       <CardHeader title="יתרה לקבלנים לפי התיישנות" subtitle={total ? fmtMoney(total) : undefined} />
       <CardBody>
         {isLoading && !data ? (
-          <div style={{ height }} />
+          /* was a bare `<div>` of the right height — a literally empty box that
+             reads as a card that failed rather than one that is loading */
+          <Skeleton className="w-full" style={{ height }} />
         ) : total === 0 ? (
           <EmptyState compact art="check" title="אין יתרה פתוחה" />
         ) : (
@@ -281,6 +284,11 @@ export function GrossMarginWidget(_props: WidgetProps) {
           <p className="mt-1 type-caption text-ink-tertiary">
             מול {fmtMoney(before)} בתקופה הקודמת
           </p>
+        )}
+        {/* ‏₪0 מתוך כלום ו-₪0 מתוך עבודה שלא תומחרה נראים אותו דבר, והשני הוא
+            הודעה על משהו שצריך לטפל בו. הכרטיס אומר את ההבדל. */}
+        {Number(data.revenue) === 0 && (
+          <p className="mt-1 type-caption text-ink-tertiary">אין משימות מתומחרות בטווח שנבחר</p>
         )}
 
         <ul className="mt-4 space-y-1.5">

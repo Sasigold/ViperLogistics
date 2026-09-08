@@ -71,7 +71,11 @@ export function CardHeader({
         <h2 className="truncate type-title">{title}</h2>
         {subtitle && <p className="mt-0.5 truncate type-caption text-ink-tertiary">{subtitle}</p>}
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-1.5">{actions}</div>}
+      {/* `data-card-actions` for the same reason `data-card-body` exists: a
+          container outside the card — the dashboard's widget frame, which puts
+          its own control in that corner — has to be able to reserve room here
+          without the card knowing who is asking. */}
+      {actions && <div data-card-actions className="flex shrink-0 flex-wrap items-center gap-1.5">{actions}</div>}
     </div>
   )
 }

@@ -540,11 +540,26 @@
     max-height: var(--panel-max, none);
   }
 
-  /* the widget's own root — a Card for almost every one of them */
-  &>* {
+  /* The widget's own root — a Card for almost every one of them, and the
+     qualifier matters. Turning the root into a flex column is what lets the
+     card push the row's height down into its body; applied to a root that is
+     *not* a card it silently rewrites that widget's own layout instead. That
+     is not hypothetical: "פעולות מהירות" was a `flex flex-wrap` row of four
+     buttons, and this rule turned it into a column — the buttons stacked and
+     centred in a full-width band, which is exactly the empty strip that got
+     reported. A note widget and the builder's number and gauge renderers are
+     in the same position.
+
+     So only a root that actually contains a card body is made into one; every
+     other root is merely allowed to fill the row it was given. */
+  &>*:has(>[data-card-body]) {
     height: 100%;
     display: flex;
     flex-direction: column;
+  }
+
+  &>*:not(:has(>[data-card-body])) {
+    min-height: 100%;
   }
 
   /* CardBody marks itself, so this does not depend on child order: a card with
@@ -559,6 +574,57 @@
      slack rather than sitting at the top of a card kept tall by its neighbour */
   &>*>[data-card-body]>[data-empty-state]:only-child {
     height: 100%;
+  }
+}
+
+/* The same panel in `compact` packing.
+   No `height: 100%`: the card stands at whatever its content asks for, which is
+   the whole point — a spend list with one row is one row tall instead of being
+   stretched to the height of the chart beside it and padded with white. The
+   ceiling stays, and so does the body being the part that scrolls, because a
+   list of forty is still not allowed to set the height of the page.
+
+   Not standing the card up is only half of it: `align-self` belongs to the grid
+   *item*, so the frame sets `self-start` on the slot in this mode. Here we only
+   stop the card from claiming a height it was not given. */
+@utility widget-cap {
+  /* The ceiling goes on the **card**, in absolute units, and not as
+     `max-height: 100%` on it — a percentage max-height resolves against the
+     parent's *height*, and this wrapper deliberately has none (that is what
+     makes the card stand at its content's height). Against `height: auto` the
+     percentage computes to `none`, so the cap silently did nothing and a long
+     list ran past the bottom of its slot.
+
+     Same qualifier as `widget-fill`: a root that is not a card keeps its own
+     layout and is only stopped from overflowing. */
+  @media (width >=64rem) {
+    max-height: var(--panel-max, none);
+
+    &>* {
+      max-height: var(--panel-max, none);
+    }
+  }
+
+  &>*:has(>[data-card-body]) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  &>*>[data-card-body] {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
+/* A dashboard slot whose frame draws its own control in the card's end corner.
+   The card's header puts its `actions` in exactly that corner, so without this
+   the frame's settings button would sit on top of them — and on a user-built
+   widget those actions are the disclosure that says the number is an estimate.
+   Reserved permanently rather than on hover: room that appears under the
+   pointer moves the thing you were about to click. */
+@utility widget-corner {
+  & [data-card-actions] {
+    padding-inline-end: 1.75rem;
   }
 }
 

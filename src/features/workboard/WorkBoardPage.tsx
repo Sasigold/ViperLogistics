@@ -371,7 +371,17 @@ export default function WorkBoardPage() {
   })
   const from = toISODate(month)
   const to = toISODate(endOfMonth(month))
-  const [filters, setFilters] = useState({ customer: '', status: '', type: '', contractor: '', worker: '', q: '' })
+  /* ‏`?status=` נקרא פעם אחת, באתחול, בדיוק כמו `?date=` ו-`?task=` שמעליו:
+     הוא קיים כדי שקישור מבחוץ ינחת על מה שהוא התכוון אליו — לחיצה על פלח
+     בטבעת הסטטוסים בדשבורד — ולא כדי לשמור את הסינון בכתובת. */
+  const [filters, setFilters] = useState({
+    customer: '',
+    status: params.get('status') ?? '',
+    type: '',
+    contractor: '',
+    worker: '',
+    q: '',
+  })
   const [drawer, setDrawer] = useState<{ open: boolean; taskId: string | null }>({
     open: !!params.get('task'),
     taskId: params.get('task'),

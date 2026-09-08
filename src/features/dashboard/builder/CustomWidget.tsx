@@ -2,8 +2,8 @@ import { Card, CardBody, CardHeader, EmptyState, SkeletonCard } from '../../../c
 import { AlertTriangle, ICON, STROKE } from '../../../components/ui/icons'
 import { useCustomResult } from '../dashboardContext'
 import { VIZ_RENDERERS, formatValue } from './viz/vizRenderers'
-import { disclosureRule, effectiveViz, isNote } from './widgetSpec'
-import type { RunMeta, RunResult, WidgetSpec } from './widgetSpec'
+import { alternativeVizzes, disclosureRule, effectiveViz, isNote, isQuery } from './widgetSpec'
+import type { RunMeta, RunResult, VizKind, WidgetSpec } from './widgetSpec'
 import type { WidgetProps } from '../dashboardTypes'
 
 /**
@@ -23,7 +23,7 @@ import type { WidgetProps } from '../dashboardTypes'
  */
 
 export function makeCustomComponent(row: { id: string; title: string; subtitle: string | null; spec: WidgetSpec }) {
-  function CustomWidget({ height }: WidgetProps) {
+  function CustomWidget({ height, opts }: WidgetProps) {
     const result = useCustomResult(row.id)
 
     if (isNote(row.spec)) return <NoteBody title={row.title} spec={row.spec} />
@@ -39,7 +39,16 @@ export function makeCustomComponent(row: { id: string; title: string; subtitle: 
       return <RetiredCard title={row.title} missing={meta?.unsupported} />
     }
 
-    const viz = effectiveViz(row.spec)
+    /* The placement's own choice wins over the spec's, and only over a form
+       `alternativeVizzes` actually offered — a saved form from a client that
+       offered more, or a spec whose dimension has since changed, falls back to
+       what the author built rather than to nothing. */
+    const wanted = opts.form
+    const allowed = isQuery(row.spec) ? alternativeVizzes(row.spec) : []
+    const viz =
+      typeof wanted === 'string' && (allowed as string[]).includes(wanted)
+        ? (wanted as VizKind)
+        : effectiveViz(row.spec)
     const Renderer = viz === 'note' ? VIZ_RENDERERS.table : VIZ_RENDERERS[viz]
     return (
       <Renderer
