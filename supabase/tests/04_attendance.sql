@@ -1514,3 +1514,162 @@ select t_eq('בלי board.view_staffing שמות המשובצים אינם נמ�
      array['60000000-0000-0000-0000-00000000b101']::uuid[]) -> 'tasks' -> 0 ->> 'team'), null::text);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+-- ================= 8. ביטול ההשלמה על משמרת אחת (0152) =================
+-- ההשלמה היא הגדרה של עובד, והדגל הזה אומר "לא במשמרת הזו". שלושה דברים
+-- נבדקים כאן: שהמנוע מבטל ולא מקצר, שהמפתח הוא של מי שקובע שכר ולא של מי
+-- שמתקן שעות, ושהעובד עצמו אינו יכול לכתוב את הדגל על השורה שלו.
+--
+-- המקטע רץ אחרון ומחזיר אחריו את מה שהזיז: `min_hours_per_shift` של עובד
+-- השעון חוזר ל-null, והמשמרת הייעודית נותרת דחויה ולכן אינה נספרת בשום סיכום.
+
+\echo '--- ביטול השלמה למשמרת (0152) ---'
+
+select t_eq('משמרת שההשלמה בה בוטלה משולמת כשעות שנעשו בה',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":5,"min_hours":6,"hourly_rate":50,"dow":1,"topup_waived":true}'::jsonb)
+    ->> 'paid_hours')::numeric, 5::numeric);
+
+select t_eq('ואין בה שורת השלמה',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":5,"min_hours":6,"hourly_rate":50,"dow":1,"topup_waived":true}'::jsonb)
+    ->> 'topup_hours')::numeric, 0::numeric);
+
+-- ‏"בוטלה" אינה "נשמטה באיחור": מסך שמסביר לעובד למה לא קיבל השלמה חייב
+-- להבחין ביניהן, ולכן הן שני שדות ולא אחד.
+select t_eq('הביטול מדווח כהחלטה ולא כאיחור',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":5,"min_hours":6,"hourly_rate":50,"dow":1,"topup_waived":true}'::jsonb)
+    ->> 'topup_forfeited')::boolean, false);
+
+select t_eq('והדגל עצמו חוזר בפלט',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":5,"min_hours":6,"hourly_rate":50,"dow":1,"topup_waived":true}'::jsonb)
+    ->> 'topup_waived')::boolean, true);
+
+-- בלי זה המסך יודע שאין השלמה ולא כמה בוטל, ואי אפשר לכתוב "בלי השלמה ל-6"
+select t_eq('ומה שהיה מובטח לולא ההחלטה נשאר קריא',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":5,"min_hours":6,"hourly_rate":50,"dow":1,"topup_waived":true}'::jsonb)
+    ->> 'topup_min_hours')::numeric, 6::numeric);
+
+-- ביטול גובר על האיחור ואינו מתחשב בו: אין טעם לקצר תקרה שכבר הוסרה
+select t_eq('ביטול קודם לאיחור שמקצר את ההשלמה',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":5,"min_hours":6,"hourly_rate":50,"dow":1,"topup_waived":true,
+      "late_minutes":31,"late_forfeit_minutes":30}'::jsonb) ->> 'topup_hours')::numeric,
+  0::numeric);
+
+select t_eq('ומשמרת בלי דגל ממשיכה לקבל את ההשלמה כמו קודם',
+  (app.attendance_calc(app.attendance_config('attendance.overtime'),
+    '{"hours":5,"min_hours":6,"hourly_rate":50,"dow":1,"topup_waived":false}'::jsonb)
+    ->> 'topup_hours')::numeric, 1::numeric);
+
+-- ===== מהמנוע אל הדוח =====
+-- משמרת ייעודית בת חמש שעות, ועובד שמובטחות לו שש. היום נבחר רחוק מהשבת
+-- כדי שלא יידרש כאן דבר על תעריפים — כל הבדיקות שמתחת הן על שעות.
+update worker_pay_settings set min_hours_per_shift = 6
+ where profile_id = '20000000-0000-0000-0000-0000000000f3';
+
+insert into attendance_entries (id, profile_id, work_date, seq, clock_in_at, clock_out_at, source)
+values ('70000000-0000-0000-0000-0000000000e2', '20000000-0000-0000-0000-0000000000f3',
+        current_date - 4, 9,
+        now() - interval '4 days' - interval '5 hours', now() - interval '4 days', 'manual');
+
+-- הדוח נקרא תמיד מתוך זהות: בלי JWT הוא מחזיר רשימה ריקה, ולכן כל בדיקה
+-- שלו כאן יושבת בתוך session של מי שרשאי לראות.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000fb', false);
+select t_eq('לפני הביטול הדוח משלים את המשמרת לשש',
+  (select (r #>> '{pay,paid_hours}')::numeric from jsonb_array_elements(
+     attendance_report(current_date - 7, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e2'), 6::numeric);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- ===== ההרשאה =====
+-- מנהל הנוכחות מתקן שעות (attendance.edit_entry) ובמפורש אינו רואה שכר,
+-- ולכן שרשרת ההיסק אינה מגיעה אצלו ל-manage_pay. זה בדיוק המקרה שבגללו
+-- הדגל אינו פרמטר על attendance_save_entry.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f4', false);
+select t_expect_fail('מי שמתקן שעות אינו מבטל השלמה', $$
+  select attendance_set_topup_waiver('70000000-0000-0000-0000-0000000000e2', true)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- חשב השכר — אותו אחד מסעיף הבונוס — מחזיק view_pay ולכן גם manage_pay,
+-- ובמפורש אינו מחזיק edit_entry.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000fb', false);
+select t_expect_ok('חשב שכר בלי edit_entry כן מבטל', $$
+  select attendance_set_topup_waiver('70000000-0000-0000-0000-0000000000e2', true)$$);
+select t_expect_fail('ורשומה שאינה קיימת נדחית', $$
+  select attendance_set_topup_waiver('70000000-0000-0000-0000-0000000000eee', true)$$);
+
+select t_eq('ואחרי הביטול הדוח משלם את החמש שנעשו',
+  (select (r #>> '{pay,paid_hours}')::numeric from jsonb_array_elements(
+     attendance_report(current_date - 7, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e2'), 5::numeric);
+
+select t_eq('והדגל מגיע איתו למסך',
+  (select (r #>> '{pay,topup_waived}')::boolean from jsonb_array_elements(
+     attendance_report(current_date - 7, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e2'), true);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('הביטול נרשם על המשמרת עצמה',
+  (select topup_waived from attendance_entries
+    where id = '70000000-0000-0000-0000-0000000000e2'), true);
+
+-- הדגל אינו סכום, ולכן הוא אינו מוסתר ממי שרואה שעות בלבד — אחרת רכז
+-- המשמרות היה רואה משמרת שאינה מושלמת בלי לדעת שכך הוחלט.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f4', false);
+select t_eq('גם מי שאינו רואה כסף רואה שההשלמה בוטלה',
+  (select (r #>> '{pay,topup_waived}')::boolean from jsonb_array_elements(
+     attendance_report(current_date - 7, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e2'), true);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- ===== הנתיב הישיר =====
+-- ‏`ae_update` מתירה לרכז המשמרות לעדכן כל שורת נוכחות, ושומר הבעלים של 0027
+-- מעביר אותו כי יש לו `attendance.edit_entry`. הרישום ב-`field_registry` הוא
+-- הדבר היחיד שעומד בינו לבין ביטול השלמה בעמודה, בלי המפתח שקובע שכר.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f4', false);
+select t_expect_fail('רכז המשמרות אינו כותב את הדגל ישירות', $$
+  update attendance_entries set topup_waived = false
+   where id = '70000000-0000-0000-0000-0000000000e2'$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- והעובד, שאין לו אף מפתח תיקון, נעצר כבר בשומר של 0027
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f3', false);
+select t_expect_fail('והעובד אינו מחזיר לעצמו את ההשלמה על השורה שלו', $$
+  update attendance_entries set topup_waived = false
+   where id = '70000000-0000-0000-0000-0000000000e2'$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- ===== והחזרה =====
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000fb', false);
+select t_expect_ok('ביטול הביטול מחזיר את ההשלמה', $$
+  select attendance_set_topup_waiver('70000000-0000-0000-0000-0000000000e2', false)$$);
+
+select t_eq('והמשמרת מושלמת שוב לשש',
+  (select (r #>> '{pay,paid_hours}')::numeric from jsonb_array_elements(
+     attendance_report(current_date - 7, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e2'), 6::numeric);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- ניקוי: ההגדרה חוזרת למה שהייתה, והמשמרת נשארת דחויה ולכן אינה נספרת
+update worker_pay_settings set min_hours_per_shift = null
+ where profile_id = '20000000-0000-0000-0000-0000000000f3';
+update attendance_entries set status = 'rejected'
+ where id = '70000000-0000-0000-0000-0000000000e2';
