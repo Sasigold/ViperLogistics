@@ -235,3 +235,45 @@ export function shortAddress(text: string | null | undefined, keep = 1): string 
   const head = kept.slice(0, -1).slice(0, keep)
   return [...new Set([...head, city])].join(', ')
 }
+
+/* ===== מיקום ידני ======================================================== */
+
+/**
+ * קואורדינטות שהודבקו, לזוג מספרים.
+ *
+ * מיקום שהחיפוש אינו מוצא נשמר כטקסט חופשי, ואז אין לו קואורדינטות — ובלעדיהן
+ * מנוע התמחור אינו יודע לאיזה אזור גיאופנס האירוע נופל (‏`app.zone_for_point`,
+ * ‏0017) והשעון אינו יודע מול מה למדוד. הדרך המעשית לסגור את הפער היא להדביק
+ * את מה שגוגל מפות נותן בלחיצה ימנית — `32.0853, 34.7818` — ולכן זו הצורה
+ * שנקראת כאן, לצד רווח במקום פסיק ותחילית `@` שנגררת מכתובת של מפה. סימן
+ * מעלה וסימני כיווניות שנדבקים בהעתקה נושרים לפני הפענוח.
+ *
+ * הפונקציה טהורה ומחזירה `null` על כל מה שאינו זוג תקין: השדה הוא אופציונלי,
+ * וטקסט שאינו קואורדינטות אינו אמור להישמר כאילו כן.
+ */
+export function parseCoords(raw: string | null | undefined): { lat: number; lng: number } | null {
+  const text = (raw ?? '')
+    .replace(/^@/, '')
+    .replace(/[°‎‏]/g, '')
+    .trim()
+  if (!text) return null
+
+  // פסיק *או* רווח, ולא שניהם כדרישה: "32.08 34.78" נפוץ בדיוק כמו הפסיק
+  const m = /^(-?\d+(?:\.\d+)?)\s*(?:,|\s)\s*(-?\d+(?:\.\d+)?)$/.exec(text)
+  if (!m) return null
+
+  const lat = Number(m[1])
+  const lng = Number(m[2])
+  // ‏lat לפני lng — הסדר של Leaflet ושל events.location_lat. זוג הפוך מבחינת
+  // הטווחים (למשל 34.78, 32.08) הוא עדיין זוג חוקי, ואין דרך לדעת שהתכוונו
+  // אחרת; מה שנפסל הוא רק מה שאינו יכול להיות נקודה על כדור הארץ.
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null
+  return { lat, lng }
+}
+
+/** הצורה שבה זוג קואורדינטות חוזר לשדה — אותה צורה שהפונקציה למעלה קוראת. */
+export function formatCoords(lat: number | null | undefined, lng: number | null | undefined): string {
+  if (lat == null || lng == null) return ''
+  return `${lat}, ${lng}`
+}

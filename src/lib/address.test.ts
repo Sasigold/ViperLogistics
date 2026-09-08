@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeQuery, orderSuggestions, rankSuggestions, scoreSuggestion, shortAddress } from './address'
+import {
+  formatCoords,
+  normalizeQuery,
+  orderSuggestions,
+  parseCoords,
+  rankSuggestions,
+  scoreSuggestion,
+  shortAddress,
+} from './address'
 import type { AddressSuggestion } from '../types/domain'
 
 /**
@@ -193,5 +201,52 @@ describe('orderSuggestions', () => {
 
   it('returns nothing for nothing', () => {
     expect(orderSuggestions('אולם', [])).toEqual([])
+  })
+})
+
+/**
+ * מיקום שהחיפוש אינו מוצא נשמר כטקסט חופשי, ואז הקואורדינטות הן הדבר היחיד
+ * שאובד — ובלעדיהן `app.zone_for_point` (0017) אינו יודע לאיזה אזור האירוע
+ * נופל. השדה מקבל את מה שמדביקים מגוגל מפות, ולכן מה שנבדק כאן הוא בדיוק
+ * הצורות שמגיעות משם — ומה שאסור לו להישמר כאילו הוא נקודה.
+ */
+describe('parseCoords', () => {
+  it('reads the pair Google Maps puts on the clipboard', () => {
+    expect(parseCoords('32.0853, 34.7818')).toEqual({ lat: 32.0853, lng: 34.7818 })
+  })
+
+  it('takes a space instead of a comma', () => {
+    expect(parseCoords('32.0853 34.7818')).toEqual({ lat: 32.0853, lng: 34.7818 })
+  })
+
+  it('reads negatives, and a whole number is a number', () => {
+    expect(parseCoords('-33.9, 18')).toEqual({ lat: -33.9, lng: 18 })
+  })
+
+  it('drops the @ a map URL drags in front of the pair', () => {
+    expect(parseCoords('@31.7683,35.2137')).toEqual({ lat: 31.7683, lng: 35.2137 })
+  })
+
+  it('is null for a half-typed pair, so a keystroke never erases the saved point', () => {
+    expect(parseCoords('32.0')).toBeNull()
+    expect(parseCoords('32.0853,')).toBeNull()
+  })
+
+  it('is null for free text — an address is not a point', () => {
+    expect(parseCoords('הרצל 5, תל אביב')).toBeNull()
+    expect(parseCoords('')).toBeNull()
+    expect(parseCoords(null)).toBeNull()
+  })
+
+  it('rejects a pair that cannot be a place on earth', () => {
+    // 91 מעלות רוחב אינו קיים; זו הקלדה שגויה ולא נקודה
+    expect(parseCoords('91, 34.78')).toBeNull()
+    expect(parseCoords('32.08, 181')).toBeNull()
+  })
+
+  it('round-trips through the formatter that seeds the field', () => {
+    expect(parseCoords(formatCoords(32.0853, 34.7818))).toEqual({ lat: 32.0853, lng: 34.7818 })
+    expect(formatCoords(null, 34.7818)).toBe('')
+    expect(formatCoords(32.0853, null)).toBe('')
   })
 })

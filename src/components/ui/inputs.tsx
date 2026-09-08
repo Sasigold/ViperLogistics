@@ -7,7 +7,7 @@ import type {
   TextareaHTMLAttributes,
   KeyboardEvent as ReactKeyboardEvent,
 } from 'react'
-import { Check, ChevronDown, Search, X, Loader2 } from 'lucide-react'
+import { Check, ChevronDown, PencilLine, Search, X, Loader2 } from 'lucide-react'
 import { cx } from './primitives'
 
 /* ===== shared control surface ============================================= */
@@ -783,6 +783,8 @@ export function Autocomplete<T>({
   debounce = 350,
   leading,
   emptyText = 'אין תוצאות',
+  onManual,
+  manualLabel = (text) => `שימוש במה שהוקלד: "${text}"`,
 }: {
   value: string
   onChange: (text: string) => void
@@ -796,6 +798,13 @@ export function Autocomplete<T>({
   debounce?: number
   leading?: ReactNode
   emptyText?: string
+  /**
+   * מוצא מהחיפוש. כשהוא ניתן, שורה אחרונה ברשימה מציעה לקחת את מה שהוקלד
+   * כפי שהוא — הרגע שבו היא נחוצה הוא בדיוק הרגע שבו החיפוש לא מצא, ולכן
+   * היא נמצאת שם ולא במקום אחר במסך.
+   */
+  onManual?: (text: string) => void
+  manualLabel?: (text: string) => ReactNode
 }) {
   const [items, setItems] = useState<T[]>([])
   const [open, setOpen] = useState(false)
@@ -842,6 +851,15 @@ export function Autocomplete<T>({
     setOpen(false)
   }
 
+  /* השורה הידנית היא איבר נוסף באותה רשימה ולא כפתור שמרחף לידה: `active`
+     מונה עליה כמו על כל הצעה, ולכן חץ־מטה ואנטר מגיעים אליה באותה תנועה. */
+  const manual = !!onManual && value.trim().length > 0
+  const rows = items.length + (manual ? 1 : 0)
+  const takeManual = () => {
+    onManual?.(value.trim())
+    setOpen(false)
+  }
+
   return (
     <div ref={ref} className="relative">
       <Input
@@ -858,13 +876,14 @@ export function Autocomplete<T>({
           if (!open) return
           if (e.key === 'ArrowDown') {
             e.preventDefault()
-            setActive((i) => Math.min(i + 1, items.length - 1))
+            setActive((i) => Math.min(i + 1, rows - 1))
           } else if (e.key === 'ArrowUp') {
             e.preventDefault()
             setActive((i) => Math.max(i - 1, 0))
-          } else if (e.key === 'Enter' && items[active]) {
+          } else if (e.key === 'Enter' && active < rows) {
             e.preventDefault()
-            pick(items[active])
+            if (items[active]) pick(items[active])
+            else if (manual) takeManual()
           }
         }}
         leading={leading}
@@ -888,6 +907,22 @@ export function Autocomplete<T>({
               </button>
             </li>
           ))}
+          {manual && (
+            <li role="option" aria-selected={active === items.length} className="border-t border-line-subtle">
+              <button
+                type="button"
+                onMouseEnter={() => setActive(items.length)}
+                onClick={takeManual}
+                className={cx(
+                  'flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-start text-sm font-medium text-primary-text transition-colors',
+                  active === items.length && 'bg-hover',
+                )}
+              >
+                <PencilLine size={14} className="mt-0.5 shrink-0" aria-hidden />
+                <span className="line-clamp-2">{manualLabel(value.trim())}</span>
+              </button>
+            </li>
+          )}
         </ul>
       )}
     </div>

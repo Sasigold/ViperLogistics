@@ -34,6 +34,7 @@ import {
   useSuppliers,
   useTaskTypes,
 } from '../../lib/queries'
+import { formatCoords, parseCoords } from '../../lib/address'
 import { AddressAutocomplete } from './AddressAutocomplete'
 import { CustomFieldInput, isBlank, toPayloadValue } from './CustomFieldInput'
 import {
@@ -73,6 +74,21 @@ const SECTION_LABELS = [
 
 /** The contact pair is one permission, not two — see the event_contacts policy. */
 const CONTACT_KEYS = ['contact_name', 'contact_phone']
+
+/**
+ * מה שמפסיק לתאר את המיקום ברגע שהטקסט נערך ביד.
+ *
+ * כתובת שנבחרה מהרשימה נושאת ספק, מזהה מקום ושתי קואורדינטות. עד כאן נוקו
+ * בהקלדה רק שני הראשונים, ולכן אירוע שהוקלד מחדש מעל בחירה קודמת נשמר עם
+ * ה**נקודה של הכתובת הישנה** — ו-`app.zone_for_point` (0017) המשיך למדוד
+ * ממנה את אזור התמחור.
+ */
+const CLEARED_PIN = {
+  location_provider: '',
+  location_place_id: '',
+  location_lat: null,
+  location_lng: null,
+} as const
 
 /**
  * A form field can sit on several columns, and the two registries name them
@@ -141,6 +157,23 @@ export function EventFormModal({
    * חיה כל עוד המודאל פתוח, וזה בדיוק אורך החיים של הקובץ עצמו.
    */
   const [spec, setSpec] = useState<SpecDraft>(emptySpecDraft)
+  /**
+   * מיקום שהחיפוש אינו מוצא.
+   *
+   * שדה המיקום הוא טקסט חופשי מאז ומתמיד, ומה שהוקלד בו נשמר גם בלי לבחור
+   * מהרשימה — אבל שדה שנראה כמו חיפוש נקרא כמו חיפוש, ומי שלא קיבל תוצאה
+   * הניח שאין לו מה לשמור. מתחם בשדה, אולם חדש, כניסה צדדית שאין לה כתובת:
+   * אלה בדיוק המקרים שבהם הספק שותק והאירוע קיים בכל זאת.
+   *
+   * המצב הידני הוא אותו שדה בלי הרשימה, ולצדו הקואורדינטות — שהן החלק
+   * ה*יחיד* שאובד בהקלדה חופשית, ובלעדיו מנוע התמחור אינו יודע לאיזה אזור
+   * גיאופנס האירוע נופל. הן אינן חובה, וכשהן חסרות הכול מתנהג כמו קודם.
+   *
+   * ‏`coordsText` הוא מה שהוקלד ולא מה שנשמר: זוג חלקי בדרך להקלדה ("32.0")
+   * אינו נקודה, ואסור לו למחוק את מה שכבר יש בטופס בכל תו.
+   */
+  const [manualLocation, setManualLocation] = useState(false)
+  const [coordsText, setCoordsText] = useState('')
 
   const { data: customers = [] } = useCustomers()
   const { data: statuses = [] } = useStatuses('event')
@@ -250,9 +283,15 @@ export function EventFormModal({
     setTouched(false)
     setSpec(emptySpecDraft)
     const { event: ev, contact: c, supplierIds: ids } = sourcesRef.current
-    setForm(
-      ev ? eventFormValues(ev, c, ids) : draftFormValues(localStorage.getItem(draftKey(me?.profile.id))),
-    )
+    const next = ev
+      ? eventFormValues(ev, c, ids)
+      : draftFormValues(localStorage.getItem(draftKey(me?.profile.id)))
+    setForm(next)
+    /* המיקום נפתח תמיד במצב חיפוש — גם לאירוע שהוקלד ידנית, שהרי עריכה היא
+       בדיוק ההזדמנות לנסות שוב. הקואורדינטות נזרעות ממה שנטען, כדי שמעבר
+       להזנה ידנית יראה את מה שיש ולא שדה ריק. */
+    setManualLocation(false)
+    setCoordsText(formatCoords(next.location_lat, next.location_lng))
   }, [openKey, me?.profile.id])
 
   /** Edit mode: the amounts live in event_income, hydrated once they arrive. */
@@ -550,6 +589,23 @@ export function EventFormModal({
   const current = steps[step]
   const err = (key: string, value: string) => (touched && req(key) && !value.trim() ? 'שדה חובה' : undefined)
 
+  const goManual = (text?: string) => {
+    if (text !== undefined) set({ location_text: text })
+    setCoordsText(formatCoords(form.location_lat, form.location_lng))
+    setManualLocation(true)
+  }
+
+  const setCoords = (raw: string) => {
+    setCoordsText(raw)
+    const point = parseCoords(raw)
+    // זוג תקין נשמר; שדה שרוקן מוחק את הנקודה; וכל השאר הוא הקלדה באמצע
+    if (point) set({ location_lat: point.lat, location_lng: point.lng })
+    else if (!raw.trim()) set({ location_lat: null, location_lng: null })
+  }
+
+  const coordsError =
+    coordsText.trim() && !parseCoords(coordsText) ? 'צמד קואורדינטות לא תקין' : undefined
+
   return (
     <Modal
       open={open}
@@ -713,21 +769,72 @@ export function EventFormModal({
       {current?.key === 'location' && (
         <div className="animate-fade-in space-y-4">
           {show('location') && (
-            <Field label="מיקום" required={req('location')} error={err('location', form.location_text)} hint="בחירה מהרשימה שומרת גם קואורדינטות">
-              <AddressAutocomplete
-                value={form.location_text}
-                onChange={(text) => set({ location_text: text, location_place_id: '', location_provider: '' })}
-                onPick={(s) =>
-                  set({
-                    location_text: s.label,
-                    location_place_id: s.place_id,
-                    location_provider: s.provider,
-                    location_lat: s.lat,
-                    location_lng: s.lng,
-                  })
+            <>
+              <Field
+                label="מיקום"
+                required={req('location')}
+                error={err('location', form.location_text)}
+                hint={
+                  manualLocation
+                    ? 'מה שנכתב כאן נשמר כמו שהוא'
+                    : 'בחירה מהרשימה שומרת גם קואורדינטות'
                 }
-              />
-            </Field>
+              >
+                {manualLocation ? (
+                  <Input
+                    leading={<MapPin size={ICON.sm} strokeWidth={STROKE} />}
+                    value={form.location_text}
+                    onChange={(e) => set({ location_text: e.target.value })}
+                    disabled={ro('location')}
+                    placeholder="למשל: מתחם האירועים בכניסה לקיבוץ, ליד השער הצפוני"
+                  />
+                ) : (
+                  <AddressAutocomplete
+                    value={form.location_text}
+                    onChange={(text) => set({ location_text: text, ...CLEARED_PIN })}
+                    onPick={(s) =>
+                      set({
+                        location_text: s.label,
+                        location_place_id: s.place_id,
+                        location_provider: s.provider,
+                        location_lat: s.lat,
+                        location_lng: s.lng,
+                      })
+                    }
+                    onManual={(text) => goManual(text)}
+                    disabled={ro('location')}
+                  />
+                )}
+              </Field>
+
+              {/* המעבר בין השניים גלוי גם בלי לחפש: מי שכבר יודע שהמקום אינו
+                  ברשימה אינו צריך להקליד שלוש אותיות כדי לגלות זאת שוב. */}
+              {!ro('location') && (
+                <button
+                  type="button"
+                  onClick={() => (manualLocation ? setManualLocation(false) : goManual())}
+                  className="-mt-2 block rounded-md px-1 py-0.5 type-caption text-primary-text transition-colors hover:bg-hover"
+                >
+                  {manualLocation ? 'חזרה לחיפוש כתובת' : 'לא מוצאים את המקום? הזנה ידנית'}
+                </button>
+              )}
+
+              {manualLocation && (
+                <Field
+                  label="קואורדינטות"
+                  error={coordsError}
+                  hint="לא חובה. אפשר להעתיק מגוגל מפות (לחיצה ימנית על הנקודה); בלעדיהן אזור התמחור והשעון נופלים לברירת המחדל"
+                >
+                  <Input
+                    dir="ltr"
+                    value={coordsText}
+                    onChange={(e) => setCoords(e.target.value)}
+                    disabled={ro('location')}
+                    placeholder="32.0853, 34.7818"
+                  />
+                </Field>
+              )}
+            </>
           )}
           {show('location_notes') && (
             <Field label="הערות למיקום" required={req('location_notes')} error={err('location_notes', form.location_notes)}>

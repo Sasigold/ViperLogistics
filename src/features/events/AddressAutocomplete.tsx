@@ -13,11 +13,14 @@ export function AddressAutocomplete({
   value,
   onChange,
   onPick,
+  onManual,
   disabled,
 }: {
   value: string
   onChange: (text: string) => void
   onPick: (s: AddressSuggestion) => void
+  /** מוצא מהחיפוש: מה שהוקלד נלקח כפי שהוא, והשדה עובר להזנה ידנית. */
+  onManual?: (text: string) => void
   disabled?: boolean
 }) {
   return (
@@ -25,6 +28,8 @@ export function AddressAutocomplete({
       value={value}
       onChange={onChange}
       onPick={onPick}
+      onManual={onManual}
+      manualLabel={(text) => `הזנה ידנית: "${text}"`}
       disabled={disabled}
       placeholder="חיפוש כתובת או שם מקום..."
       minChars={MIN_QUERY_CHARS}
@@ -32,8 +37,9 @@ export function AddressAutocomplete({
       leading={<MapPin size={ICON.sm} strokeWidth={STROKE} />}
       fetcher={(q) => addressProvider.search(q)}
       getKey={(s) => s.place_id}
-      // מיקום הוא שדה טקסט חופשי; מה שהוקלד נשמר גם בלי לבחור מהרשימה
-      emptyText="לא נמצאה כתובת — אפשר להשאיר את מה שהוקלד"
+      /* חיפוש שלא מצא אינו סוף הדרך: כשיש `onManual` הרשימה מציעה מתחת
+         להודעה הזאת לקחת את מה שהוקלד כמות שהוא. */
+      emptyText="לא נמצאה כתובת"
       renderOption={(s) => (
         <>
           <MapPin size={ICON.sm} className="mt-0.5 shrink-0 text-ink-tertiary" strokeWidth={STROKE} aria-hidden />

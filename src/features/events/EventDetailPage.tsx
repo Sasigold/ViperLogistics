@@ -8,7 +8,6 @@ import {
   Check,
   ChevronDown,
   Clock,
-  Copy,
   HardHat,
   ICON,
   LayoutGrid,
@@ -496,14 +495,6 @@ export default function EventDetailPage() {
     navigate('/events')
   }
 
-  const duplicate = async () => {
-    const { data: newId, error } = await supabase.rpc('duplicate_event', { p_event_id: event.id })
-    if (error) return toast.error(errorMessage(error))
-    toast.success('האירוע שוכפל')
-    void qc.invalidateQueries({ queryKey: ['events'] })
-    navigate(`/events/${newId}`)
-  }
-
   const sectionLine = (t: WorkBoardRow) =>
     [
       fmtDate(t.task_date),
@@ -674,12 +665,6 @@ export default function EventDetailPage() {
               >
                 <Check size={ICON.sm} strokeWidth={STROKE} />
                 {event.approved_at ? 'ביטול אישור לביצוע' : 'אישור לביצוע'}
-              </Button>
-            )}
-            {has(PERM.EVENTS_DUPLICATE) && (
-              <Button size="sm" onClick={() => void duplicate()}>
-                <Copy size={ICON.sm} strokeWidth={STROKE} />
-                שכפול
               </Button>
             )}
             {has(PERM.EVENTS_EDIT) && (
