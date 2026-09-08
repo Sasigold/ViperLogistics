@@ -10,6 +10,7 @@ import {
   dimensionsFor,
   disclosureRule,
   effectiveViz,
+  alternativeVizzes,
   isNote,
   isQuery,
   normalizeSpec,
@@ -421,5 +422,53 @@ describe('disclosureRule', () => {
   it('warns rather than dividing by zero', () => {
     expect(disclosureRule({ estimated: true, allocated: 0, unallocated: 0 })).toBe('warn')
     expect(disclosureRule({ estimated: true })).toBe('warn')
+  })
+})
+
+/* ===== 0151: the alternative forms a built widget can wear ================= */
+
+describe('alternativeVizzes', () => {
+  const CAT_DIM = { type: 'cat', field: 'tasks.customer' } as const
+  const TIME_DIM = { type: 'time', field: 'tasks.date', bucket: 'week' } as const
+  const q = (viz: QuerySpec['viz'], dim: QuerySpec['dimension']): QuerySpec =>
+    baseSpec({ viz, dimension: dim })
+
+  /* A single number is not a chart in disguise, and a gauge needs a target the
+     author set. Neither is a display choice a reader gets to make. */
+  it('offers nothing to a spec with no dimension', () => {
+    expect(alternativeVizzes(q('number', null))).toEqual([])
+    expect(alternativeVizzes(q('gauge', null))).toEqual([])
+  })
+
+  it('puts the author’s own choice first', () => {
+    const out = alternativeVizzes(q('table', CAT_DIM))
+    expect(out[0]).toBe('table')
+  })
+
+  /* Exactly the picker's own rule, and no stricter. A line between two
+     categories asserts an order they do not have, so `vizAllows` refuses it and
+     so does this. A donut over weeks it *does* allow — the reader gets the same
+     menu the author had, and a reader's menu that is narrower than the author's
+     would be a widget you cannot put back the way you found it.
+
+     This is deliberately not the same list the hand-written widgets use
+     (`TREND_FORMS` in `seriesOpts.ts` drops the donut): those are 14 curated
+     vocabularies written next to the data they draw, and a built widget's data
+     is whatever its author pointed it at. */
+  it('never offers a line for a category, and defers to the fit table on the rest', () => {
+    expect(alternativeVizzes(q('bar', CAT_DIM))).not.toContain('line')
+    expect(alternativeVizzes(q('bar', CAT_DIM))).not.toContain('area')
+    expect(alternativeVizzes(q('line', TIME_DIM))).toContain('bar')
+  })
+
+  it('offers only forms the fit table allows', () => {
+    for (const v of alternativeVizzes(q('bar', CAT_DIM))) {
+      expect(vizAllows(v, CAT_DIM)).toBe(true)
+    }
+  })
+
+  it('never offers the three that are different questions', () => {
+    const out = alternativeVizzes(q('bar', CAT_DIM))
+    for (const v of ['number', 'gauge', 'note']) expect(out).not.toContain(v)
   })
 })

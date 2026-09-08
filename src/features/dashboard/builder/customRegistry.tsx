@@ -1,7 +1,8 @@
 import { makeCustomComponent } from './CustomWidget'
-import { VIZ_SIZES, isNote, isQuery } from './widgetSpec'
+import { VIZ_SIZES, alternativeVizzes, isNote, isQuery } from './widgetSpec'
+import { FORMS } from '../dashboardTypes'
 import type { CustomWidgetRow } from './useCustomWidgets'
-import type { WidgetDef } from '../dashboardTypes'
+import type { WidgetDef, WidgetForm } from '../dashboardTypes'
 
 /**
  * Stored rows → the same `WidgetDef` shape the 65 hand-written widgets use.
@@ -59,6 +60,11 @@ export function customWidgetDefs(rows: readonly CustomWidgetRow[]): WidgetDef[] 
       wantsDelta: false,
       // custom widgets go through dashboard_widgets_run, not dashboard_sections
       sections: undefined,
+      /* And the same display-form menu the hand-written widgets got in 0151.
+         A widget somebody built and shared is still somebody else's object —
+         the form is a *placement* option, so choosing one changes your copy of
+         it and never the spec, exactly like resizing it does. */
+      forms: isQuery(row.spec) ? asForms(alternativeVizzes(row.spec)) : undefined,
       Component: makeCustomComponent(row),
     } satisfies WidgetDef
   })
@@ -69,4 +75,15 @@ function describe(row: CustomWidgetRow): string {
   if (!row.known) return 'מבקש נתון שאינו קיים עוד'
   const who = row.is_mine ? 'נבנה על ידך' : 'שותף על ידי עמית'
   return row.shared ? `${who} · משותף לארגון` : who
+}
+
+/**
+ * The two vocabularies overlap but are not the same list: `VizKind` also has
+ * `number`, `gauge` and `note`, which are different questions rather than
+ * different pictures. Anything outside the overlap is dropped, and a menu of
+ * one is no menu — `hasWidgetOptions` wants more than one to draw anything.
+ */
+function asForms(vizzes: readonly string[]): readonly WidgetForm[] | undefined {
+  const forms = vizzes.filter((v): v is WidgetForm => (FORMS as readonly string[]).includes(v))
+  return forms.length > 1 ? forms : undefined
 }

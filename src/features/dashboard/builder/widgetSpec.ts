@@ -611,6 +611,29 @@ export function blankNoteSpec(): NoteSpec {
 }
 
 /** the sizes a viz can wear; the first is what a fresh widget gets */
+/**
+ * The other vizzes this spec could honestly wear, effective one first.
+ *
+ * The same `vizAllows` table the picker and the validator share decides it, so
+ * a built widget is offered exactly the alternatives its own dimension permits
+ * — a time series is never offered a donut, and a spec with no dimension is
+ * offered nothing at all, because a single number is not a chart in disguise.
+ *
+ * `number`, `gauge` and `note` are excluded on purpose. They are not other ways
+ * to draw the same rows: a gauge needs a target the author set, a number needs
+ * exactly one row, and a note has no rows. Everything left over is a display
+ * choice the reader can make for themselves, which is what makes it a
+ * *placement* option rather than an edit to somebody's shared widget.
+ */
+export function alternativeVizzes(spec: QuerySpec): VizKind[] {
+  const current = effectiveViz(spec)
+  const others = VIZ_KINDS.filter(
+    (v) => v !== current && v !== 'note' && v !== 'number' && v !== 'gauge' && vizAllows(v, spec.dimension ?? null),
+  )
+  if (current === 'note' || current === 'number' || current === 'gauge') return []
+  return [current, ...others]
+}
+
 export const VIZ_SIZES: Record<VizKind, readonly WidgetSize[]> = {
   number: ['sm', 'md'],
   gauge: ['sm', 'md'],

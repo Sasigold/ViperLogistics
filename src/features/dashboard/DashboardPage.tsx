@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
   ErrorState,
@@ -155,12 +155,18 @@ export default function DashboardPage() {
      it; a screen somebody is reading does not, and a dashboard that reloads
      under a cursor is a dashboard that loses your place. */
   const refreshEvery = view?.refresh ?? 0
-  const refetch = sections.refetch
+  /* Through a ref, not as a dependency. `sections` is rebuilt whenever its data
+     changes and `refetch` is a fresh closure each time, so depending on it
+     would clear and restart the interval on every landing — and a five-minute
+     timer that restarts every time anything on the page updates is a timer that
+     can be starved indefinitely. */
+  const refetchRef = useRef(sections.refetch)
+  refetchRef.current = sections.refetch
   useEffect(() => {
     if (refreshEvery <= 0) return
-    const t = setInterval(refetch, refreshEvery * 60_000)
+    const t = setInterval(() => refetchRef.current(), refreshEvery * 60_000)
     return () => clearInterval(t)
-  }, [refreshEvery, refetch])
+  }, [refreshEvery])
 
   const ctx = useMemo(
     () => ({
@@ -224,9 +230,11 @@ export default function DashboardPage() {
       return on ? showWidget(s.items, s.hidden, meta, layout.byId) : hideWidget(s.items, s.hidden, id)
     })
 
-  /* Exports exactly what is on screen, in the order it was arranged — the
-     file is the view, not "all the data". Every number comes from the section
-     as the server returned it; nothing is recomputed on the way out. */
+  /* Exports the widgets that are on screen, in the order they were arranged —
+     the file is the view, not "all the data". Every number comes from the
+     section as the server returned it; nothing is recomputed on the way out,
+     and a card's own top-N is deliberately not applied. `exportDashboard.ts`
+     carries that argument. */
   const exportXlsx = async () => {
     const plan = buildDashboardExport(
       layout.visible,

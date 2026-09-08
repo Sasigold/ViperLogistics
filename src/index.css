@@ -540,11 +540,26 @@
     max-height: var(--panel-max, none);
   }
 
-  /* the widget's own root — a Card for almost every one of them */
-  &>* {
+  /* The widget's own root — a Card for almost every one of them, and the
+     qualifier matters. Turning the root into a flex column is what lets the
+     card push the row's height down into its body; applied to a root that is
+     *not* a card it silently rewrites that widget's own layout instead. That
+     is not hypothetical: "פעולות מהירות" was a `flex flex-wrap` row of four
+     buttons, and this rule turned it into a column — the buttons stacked and
+     centred in a full-width band, which is exactly the empty strip that got
+     reported. A note widget and the builder's number and gauge renderers are
+     in the same position.
+
+     So only a root that actually contains a card body is made into one; every
+     other root is merely allowed to fill the row it was given. */
+  &>*:has(>[data-card-body]) {
     height: 100%;
     display: flex;
     flex-direction: column;
+  }
+
+  &>*:not(:has(>[data-card-body])) {
+    min-height: 100%;
   }
 
   /* CardBody marks itself, so this does not depend on child order: a card with
@@ -577,7 +592,9 @@
     max-height: var(--panel-max, none);
   }
 
-  &>* {
+  /* Same qualifier as `widget-fill`, for the same reason: a root that is not a
+     card keeps its own layout and is only stopped from overflowing. */
+  &>*:has(>[data-card-body]) {
     max-height: 100%;
     display: flex;
     flex-direction: column;
