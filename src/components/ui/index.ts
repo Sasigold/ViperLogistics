@@ -12,6 +12,7 @@ export {
   IconButton,
   Tooltip,
   LocationText,
+  LinkedText,
   Badge,
   StatusPill,
   Avatar,
@@ -76,4 +77,6 @@ export {
   pctDelta,
   fmtMoney,
   fmtHoursShort,
+  linkifyParts,
 } from './format'
+export type { TextPart } from './format'

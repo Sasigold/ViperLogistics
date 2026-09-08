@@ -7,7 +7,8 @@
  * events table and the Excel export agree on what a value looks like instead
  * of each inventing its own rendering of the same jsonb.
  */
-import { Checkbox, Field, Input, Select, Textarea } from '../../components/ui'
+import { Checkbox, Field, Input, Select, Textarea, linkifyParts } from '../../components/ui'
+import { ExternalLink, ICON, STROKE } from '../../components/ui/icons'
 import type { CustomFieldValue, FormField } from '../../types/domain'
 
 /** The form keeps every value as a string, except a checkbox which is a bool. */
@@ -81,6 +82,17 @@ export function CustomFieldInput({
 
   const text = typeof value === 'boolean' ? '' : (value ?? '')
 
+  /**
+   * שדה טקסט שכל ערכו כתובת — "קישור ל-Eruit" הוא בדיוק זה — מקבל דלת
+   * לצידו. בתוך `<input>` אי אפשר ללחוץ על קישור, ומי שפתח את הטופס כדי
+   * לעבוד על האירוע לא אמור לסמן, להעתיק ולהדביק כדי להגיע ליעד.
+   *
+   * רק ערך שכולו כתובת אחת: מלל שיש בתוכו כתובת אינו "קישור", והכפתור
+   * שלידו היה מבטיח יעד שאינו בהכרח מה שהמשתמש מתכוון אליו.
+   */
+  const parts = linkifyParts(text)
+  const linkHref = parts.length === 1 && parts[0].href ? parts[0].href : null
+
   return (
     <Field label={field.label_he} required={required} error={error}>
       {field.field_type === 'textarea' ? (
@@ -108,6 +120,17 @@ export function CustomFieldInput({
           readOnly={readOnly}
           onChange={(e) => onChange(e.target.value)}
         />
+      )}
+      {linkHref && (
+        <a
+          href={linkHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 type-caption text-primary-text hover:underline"
+        >
+          <ExternalLink size={ICON.xs} strokeWidth={STROKE} />
+          פתיחת הקישור
+        </a>
       )}
     </Field>
   )

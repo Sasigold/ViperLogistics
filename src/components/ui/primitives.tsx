@@ -3,6 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2 } from 'lucide-react'
 import { shortAddress } from '../../lib/address'
+import { linkifyParts } from './format'
 
 export function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(' ')
@@ -304,6 +305,54 @@ export function LocationText({
     <Tooltip content={full} openOnClick>
       {text}
     </Tooltip>
+  )
+}
+
+/* ===== LinkedText =========================================================
+   טקסט שמשתמש הקליד — ערך של שדה מותאם, הערה — שיש בתוכו כתובת. הלקוח
+   שמחזיק "קישור ל-Eruit" בשדה מותאם רואה אותו כאן כקישור ולא כמחרוזת
+   שצריך לסמן ולהעתיק.
+
+   שלוש הכרעות:
+
+   * הפיצול הוא `linkifyParts`, ולכן כללי מה-נחשב-כתובת נבדקים בלי DOM,
+     ורק http/https/www נעשים קישור. אין כאן innerHTML, ולכן תגית שנכתבה
+     בתוך הערך נשארת טקסט.
+   * `dir="ltr"` על הקישור עצמו: כתובת בתוך משפט עברי נשברת בלעדיו לחתיכות
+     שמסודרות מימין לשמאל, וסימני ה-/ וה-? קופצים לצד הלא נכון.
+   * ‏`stopPropagation`: הקישור יושב גם בתוך שורת טבלה שלחיצה עליה מנווטת
+     לאירוע. בלי זה לחיצה על הקישור הייתה עושה את שניהם.                   */
+
+export function LinkedText({
+  value,
+  className,
+}: {
+  value: string | null | undefined
+  className?: string
+}) {
+  const parts = linkifyParts(value)
+  if (!parts.length) return null
+
+  return (
+    <span className={className}>
+      {parts.map((p, i) =>
+        p.href ? (
+          <a
+            key={i}
+            href={p.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            dir="ltr"
+            className="break-all text-primary-text underline-offset-2 hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {p.text}
+          </a>
+        ) : (
+          <span key={i}>{p.text}</span>
+        ),
+      )}
+    </span>
   )
 }
 

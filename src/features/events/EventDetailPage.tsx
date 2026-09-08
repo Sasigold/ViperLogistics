@@ -29,6 +29,7 @@ import {
   CardHeader,
   DataTable,
   EmptyState,
+  LinkedText,
   LocationText,
   MenuItem,
   MenuLabel,
@@ -712,7 +713,13 @@ export default function EventDetailPage() {
                     .map(([k, v]) => (
                       <div key={k} className="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0">
                         <dt className="shrink-0 type-caption text-ink-tertiary">{k}</dt>
-                        <dd className="min-w-0 text-end type-body font-medium">{v}</dd>
+                        {/* ערך שהוא מלל — שדה מותאם של הלקוח, הערה — עובר
+                            דרך LinkedText: כתובת שנכתבה בתוכו היא קישור
+                            שאפשר ללחוץ עליו, ולא מחרוזת להעתיק. שורה שהיא
+                            כבר אלמנט (מיקום, טלפון) נשארת כפי שנבנתה. */}
+                        <dd className="min-w-0 text-end type-body font-medium">
+                          {typeof v === 'string' ? <LinkedText value={v} /> : v}
+                        </dd>
                       </div>
                     ))}
                   {addons.length > 0 && (
