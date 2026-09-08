@@ -1508,6 +1508,11 @@ export interface AttendanceReportRow {
   /** מיקום במילים, מדיווח ידני. ניתן לעריכה בידי מי שמתקן את הרשומה (0084) */
   clock_in_place: string | null
   clock_out_place: string | null
+  /**
+   * שם המחסן שממנו יצאה המשמרת, כפי שהדוח גוזר אותו מהמשימות שהרכיבו אותה
+   * (0153). null במשמרת שטח ובדיווח ידני, שאין לו משמרת משובצת לגזור ממנה.
+   */
+  work_place: string | null
   edited_at: string | null
   /** האם שעות נוספות חלות על העובד הזה — ההגדרה האפקטיבית שלו, לא כמה עשה */
   overtime_enabled: boolean

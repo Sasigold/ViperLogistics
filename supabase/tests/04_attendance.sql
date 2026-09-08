@@ -1673,3 +1673,79 @@ update worker_pay_settings set min_hours_per_shift = null
  where profile_id = '20000000-0000-0000-0000-0000000000f3';
 update attendance_entries set status = 'rejected'
  where id = '70000000-0000-0000-0000-0000000000e2';
+
+-- ================= 9. איפה המשמרת הייתה (0153) =================
+-- שורת המיקום בדוח הציגה קבוע שנכתב במסך, ולכן כל דיווח ידני — שאין לו
+-- work_site לגזור ממנו — הוצג כאילו היה במחסן שאיש לא נקב בו. הדוח מחזיר
+-- עכשיו את מה שידוע: המחסן שממנו יצאה המשמרת, והמלל שנכתב בדיווח הידני.
+--
+-- שלוש המשמרות כאן נדחות בסוף המקטע ולכן אינן נספרות בשום סיכום.
+
+\echo '--- מיקום המשמרת בדוח (0153) ---'
+
+insert into warehouses (id, name, lat, lng) values
+  ('80000000-0000-0000-0000-0000000000a1'::uuid, 'מרכז לוגיסטי ראשון', 31.9730, 34.7925);
+
+-- המחסן נגזר מהמשימה, ומעליה מהלקוח (0023). כאן הדריסה פר-משימה.
+update tasks set warehouse_id = '80000000-0000-0000-0000-0000000000a1'
+ where id = '60000000-0000-0000-0000-00000000a001';
+
+insert into attendance_entries
+  (id, profile_id, work_date, seq, work_site, task_ids, clock_in_at, clock_out_at, source)
+values
+  ('70000000-0000-0000-0000-0000000000e3', '20000000-0000-0000-0000-0000000000f3',
+   current_date - 5, 9, 'warehouse', array['60000000-0000-0000-0000-00000000a001']::uuid[],
+   now() - interval '5 days' - interval '6 hours', now() - interval '5 days', 'clock'),
+  ('70000000-0000-0000-0000-0000000000e4', '20000000-0000-0000-0000-0000000000f3',
+   current_date - 6, 9, 'field', array['60000000-0000-0000-0000-00000000a002']::uuid[],
+   now() - interval '6 days' - interval '6 hours', now() - interval '6 days', 'clock'),
+  ('70000000-0000-0000-0000-0000000000e5', '20000000-0000-0000-0000-0000000000f3',
+   current_date - 7, 9, null, '{}'::uuid[],
+   now() - interval '7 days' - interval '6 hours', now() - interval '7 days', 'manual');
+
+update attendance_entries set clock_in_place = 'אולמי הגן, ראשון לציון'
+ where id = '70000000-0000-0000-0000-0000000000e5';
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000f4', false);
+
+select t_eq('משמרת שיצאה ממחסן נושאת את שמו',
+  (select r ->> 'work_place' from jsonb_array_elements(
+     attendance_report(current_date - 8, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e3'), 'מרכז לוגיסטי ראשון');
+
+-- שטח אינו מחסן, ואין לו שם לשלוף: המסך נופל לסוג האתר ולא ממציא מקום
+select t_eq('משמרת שטח אינה נושאת שם מחסן',
+  (select r ->> 'work_place' from jsonb_array_elements(
+     attendance_report(current_date - 8, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e4') is null, true);
+
+-- וזו הבקשה עצמה: הדיווח הידני, שאין לו משמרת משובצת, נושא את מה שנכתב בו
+select t_eq('דיווח ידני נושא את המיקום שנכתב בו',
+  (select r ->> 'clock_in_place' from jsonb_array_elements(
+     attendance_report(current_date - 8, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e5'), 'אולמי הגן, ראשון לציון');
+
+select t_eq('ואין לו מחסן להתחזות לו',
+  (select r ->> 'work_place' from jsonb_array_elements(
+     attendance_report(current_date - 8, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e5') is null, true);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+-- המיקום אינו כסף, ולכן גם מי שרואה שעות בלבד מקבל אותו — הוא כבר קיבל את
+-- clock_in_place מאז 0084, ושם המחסן הוא מאותו סוג.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000fb', false);
+select t_eq('וגם חשב השכר רואה את אותו מיקום',
+  (select r ->> 'work_place' from jsonb_array_elements(
+     attendance_report(current_date - 8, current_date + 1) -> 'rows') r
+   where r ->> 'id' = '70000000-0000-0000-0000-0000000000e3'), 'מרכז לוגיסטי ראשון');
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+update attendance_entries set status = 'rejected'
+ where id in ('70000000-0000-0000-0000-0000000000e3',
+              '70000000-0000-0000-0000-0000000000e4',
+              '70000000-0000-0000-0000-0000000000e5');

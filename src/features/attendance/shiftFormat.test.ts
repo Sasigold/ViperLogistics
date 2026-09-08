@@ -6,7 +6,7 @@
  * "שעות חסרות", כך שסטייה ביניהן היא דוח שסותר את עצמו.
  */
 import { describe, expect, it } from 'vitest'
-import { SHORTFALL_TOLERANCE_H, shiftShortfall, shiftTone } from './shiftFormat'
+import { SHORTFALL_TOLERANCE_H, shiftLocation, shiftShortfall, shiftTone } from './shiftFormat'
 import type { AttendanceReportRow } from '../../types/domain'
 
 type ToneInput = Parameters<typeof shiftTone>[0]
@@ -75,5 +75,39 @@ describe('shiftTone', () => {
 
   it('משמרת בלי שיבוץ נחשבת נוכחות מלאה', () => {
     expect(shiftTone(shift({ planned_hours: null, actual_hours: 3 }))).toBe('present')
+  })
+})
+
+describe('shiftLocation', () => {
+  const at = (over: Partial<Parameters<typeof shiftLocation>[0]> = {}) => ({
+    clock_in_place: null,
+    work_place: null,
+    work_site: null,
+    ...over,
+  })
+
+  it('דיווח ידני מציג את המיקום שנכתב בו', () => {
+    expect(shiftLocation(at({ clock_in_place: 'המחסן בראשון' }))).toBe('המחסן בראשון')
+  })
+
+  it('המלל שנכתב על הרשומה גובר על המחסן הגזור', () => {
+    expect(
+      shiftLocation(at({ clock_in_place: 'אולמי הגן', work_place: 'מרכז לוגיסטי', work_site: 'warehouse' })),
+    ).toBe('אולמי הגן')
+  })
+
+  it('משמרת שיצאה ממחסן מציגה את שמו ולא את המילה "מחסן"', () => {
+    expect(shiftLocation(at({ work_place: 'מרכז לוגיסטי', work_site: 'warehouse' }))).toBe('מרכז לוגיסטי')
+  })
+
+  it('בלי שם מחסן נשאר סוג האתר', () => {
+    expect(shiftLocation(at({ work_site: 'warehouse' }))).toBe('מחסן')
+    expect(shiftLocation(at({ work_site: 'field' }))).toBe('שטח')
+  })
+
+  // מיקום שהומצא הוא מה שהיה כאן קודם: כל דיווח ידני הוצג כאילו היה במחסן
+  it('כשאין מה לומר לא נאמר דבר', () => {
+    expect(shiftLocation(at())).toBeNull()
+    expect(shiftLocation(at({ clock_in_place: '   ' }))).toBeNull()
   })
 })

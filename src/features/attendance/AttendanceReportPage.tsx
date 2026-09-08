@@ -64,6 +64,7 @@ import {
   flagLabel,
   fmtDuration,
   needsAttention,
+  shiftLocation,
   shiftShortfall,
   shiftTone,
   visibleFlags,
@@ -215,11 +216,10 @@ function toShiftView(r: AttendanceReportRow, sameDayCount: number): ShiftRowView
     clockIn: fmtTime(clockIn.toTimeString()),
     clockOut: clockOut ? fmtTime(clockOut.toTimeString()) : null,
     locationVerified: !needsAttention(r.flags),
-    location: r.work_site
-      ? WORK_SITE_LABELS[r.work_site]
-      : r.contractor_id
-      ? 'מחסן ראשי'
-      : 'מרכז לוגיסטי',
+    // מה שידוע על המשמרת הזו, ולא קבוע שנכתב במסך: המיקום שנרשם בדיווח
+    // הידני, שם המחסן שממנו יצאה, או סוג האתר. סדר ההכרעה יושב ב-shiftFormat
+    // ונבדק שם — הוא מה שהעובד רואה על המשמרת שלו.
+    location: shiftLocation(r),
     hoursText: fmtDurationHHMM(actual),
     // בלי המילה "נוספות": הסמל שבקצה השורה כבר אומר אותה, וברוחב של טלפון
     // עמודת השעות מחזיקה מספר אחד ולא משפט.
@@ -1134,7 +1134,11 @@ function ShiftCard({
                נחתך בלעדיו, והמילה עצמה ברורה גם בלי הסמל שלידה. */
             <p className="flex items-center justify-center gap-1 type-caption text-ink-tertiary">
               <MapPin size={ICON.xs} strokeWidth={STROKE} className="hidden shrink-0 sm:block" />
-              <span className="truncate">{d.location}</span>
+              {/* מיקום שנכתב בדיווח ידני הוא מלל חופשי ולא תווית קצרה, ולכן
+                  הוא נחתך כאן — והשם המלא נשאר זמין בלי לפתוח את הרשומה. */}
+              <span className="truncate" title={d.location}>
+                {d.location}
+              </span>
             </p>
           )}
         </ShiftCell>

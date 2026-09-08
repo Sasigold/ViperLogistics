@@ -103,6 +103,30 @@ export function shiftTone(
   return shiftShortfall(r.planned_hours, r.actual_hours) > 0 ? 'short' : 'present'
 }
 
+/**
+ * איפה המשמרת הייתה, כמשפט אחד לשורה בדוח.
+ *
+ * שלוש תשובות בסדר יורד של ודאות, ולא קבוע שמוצג כשאין מה לומר:
+ *
+ * 1. **מה שנכתב על הרשומה.** בדיווח ידני `clock_in_place` הוא שדה חובה —
+ *    השעון לא עבד, אין GPS לאמת מולו, והמלל הוא מה שהמנהל מאשר לפיו (0084).
+ *    הוא גובר גם על המחסן: מנהל שתיקן אותו אמר משהו שהגזירה אינה יודעת.
+ * 2. **שם המחסן** שממנו יצאה המשמרת, כפי שהדוח גוזר אותו מהמשימות (0153).
+ * 3. **סוג האתר** — "שטח" או "מחסן" — כשזה כל מה שידוע.
+ *
+ * ריק כשאין אף אחד מהם. משמרת בלי מיקום ידוע מציגה שורה פחות, ולא מיקום
+ * שהומצא בשבילה.
+ */
+export function shiftLocation(
+  r: Pick<AttendanceReportRow, 'clock_in_place' | 'work_place' | 'work_site'>,
+): string | null {
+  return (
+    r.clock_in_place?.trim() ||
+    r.work_place?.trim() ||
+    (r.work_site ? WORK_SITE_LABELS[r.work_site] : null)
+  )
+}
+
 /** דגלים שמצדיקים תשומת לב של מנהל, להבדיל מאלה שהם רק מידע. */
 export const ATTENTION_FLAGS = new Set(['no_site_coords', 'no_shift', 'auto_closed', 'low_accuracy'])
 
