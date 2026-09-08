@@ -1,5 +1,14 @@
-import { GROUPS, SIZES } from './dashboardTypes'
-import type { DashboardLayout, LayoutItem, WidgetMeta, WidgetSize } from './dashboardTypes'
+import { BUCKETS, GROUPS, PACKINGS, SIZES } from './dashboardTypes'
+import type {
+  Bucket,
+  DashboardLayout,
+  LayoutItem,
+  Packing,
+  ViewPrefs,
+  WidgetMeta,
+  WidgetOpts,
+  WidgetSize,
+} from './dashboardTypes'
 import type { UserKind } from '../../types/domain'
 
 /* ===== the grid ===========================================================
@@ -13,8 +22,16 @@ import type { UserKind } from '../../types/domain'
    library that measures in physical pixels would need its indices inverted.  */
 
 export const SPAN: Record<WidgetSize, string> = {
-  /** KPI tile — the `grid-cols-2 md:grid-cols-3 xl:grid-cols-6` row, per tile */
-  sm: 'col-span-6 md:col-span-4 xl:col-span-2',
+  /**
+   * KPI tile — two to a row on a phone, three on a tablet, four from `lg` and
+   * six on a wide screen.
+   *
+   * The `lg` step is not cosmetic. Without it a tile spanned four columns from
+   * 768px all the way to 1280px, which is exactly what a `md` chart spans — so
+   * on a 1024–1279px screen a two-line number stood as wide as a chart, and the
+   * KPI row read as a row of half-empty panels.
+   */
+  sm: 'col-span-6 md:col-span-4 lg:col-span-3 xl:col-span-2',
   /** a third — what a chart or a task list asks for */
   md: 'col-span-12 lg:col-span-4',
   /** two thirds — the day timeline */
@@ -33,6 +50,38 @@ export const SIZE_LABELS: Record<WidgetSize, string> = {
   md: 'שליש',
   lg: 'שני שליש',
   xl: 'רוחב מלא',
+}
+
+/* ===== packing ============================================================
+   Two answers to the same question — what happens to the space a short card
+   leaves under itself — and the reason both exist rather than one.
+
+   `aligned` is what the grid has always done: every panel fills its row, so
+   the borders line up and the difference between a chart and a two-line list
+   becomes card interior instead of page gap. It is the right answer when the
+   cards in a row have comparable amounts to say.
+
+   `compact` is the answer when they do not. A month with one event draws a
+   trend with one bar, a spend list with one row and six KPI tiles — and
+   `aligned` turns each of those into a tall card that is mostly white. Here
+   every card stands at its own height and `grid-auto-flow: dense` pulls the
+   next card that fits into what is left over.
+
+   Dense packing does move a card forward of its stored position, which is why
+   this is a choice and not a fix: `aligned` is order-exact, `compact` is
+   hole-free, and which of those matters more is the reader's to say. It sits
+   on the view rather than in a preference, so a saved screen keeps it.        */
+
+export const DEFAULT_PACKING: Packing = 'compact'
+
+/** written literally — Tailwind v4 scans source text and would not see a template */
+export const PACK_CLASS: Record<Packing, string> = {
+  aligned: '',
+  compact: '[grid-auto-flow:row_dense]',
+}
+
+export function packingOf(view: ViewPrefs | undefined): Packing {
+  return view?.packing ?? DEFAULT_PACKING
 }
 
 /** plotting height per size; 0 means the body sizes to its content */
@@ -93,6 +142,68 @@ export function clampSize(meta: WidgetMeta, size: WidgetSize | undefined): Widge
 /* ===== reading a stored layout ============================================ */
 
 const isSize = (v: unknown): v is WidgetSize => SIZES.includes(v as WidgetSize)
+const isPacking = (v: unknown): v is Packing => PACKINGS.includes(v as Packing)
+const isBucket = (v: unknown): v is Bucket => BUCKETS.includes(v as Bucket)
+
+/** how many rows a top-N section may be asked for; the server clamps the same way */
+export const LIMIT_MIN = 3
+export const LIMIT_MAX = 50
+
+/**
+ * The whole-screen preferences, from whatever was stored.
+ *
+ * Every field is optional and every unreadable one is dropped rather than
+ * defaulted, so `view` round-trips as "what was actually chosen": an absent
+ * `packing` is a layout that never expressed an opinion, which is not the same
+ * as one that chose `aligned` and would keep it if the default ever moved.
+ */
+export function normalizeView(raw: unknown): ViewPrefs | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const o = raw as Record<string, unknown>
+  const out: ViewPrefs = {}
+  if (isPacking(o.packing)) out.packing = o.packing
+  if (isBucket(o.bucket)) out.bucket = o.bucket
+  if (typeof o.limit === 'number' && Number.isFinite(o.limit)) {
+    out.limit = Math.round(Math.max(LIMIT_MIN, Math.min(LIMIT_MAX, o.limit)))
+  }
+  if (typeof o.refresh === 'number' && Number.isFinite(o.refresh) && o.refresh > 0) {
+    out.refresh = Math.round(Math.min(120, o.refresh))
+  }
+  const r = o.range
+  if (r && typeof r === 'object') {
+    const rr = r as Record<string, unknown>
+    if (typeof rr.preset === 'string') out.range = { preset: rr.preset }
+    else if (typeof rr.from === 'string' && typeof rr.to === 'string') out.range = { from: rr.from, to: rr.to }
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/**
+ * A view with one or more preferences changed.
+ *
+ * A key set back to `undefined` is deleted rather than stored as itself, and an
+ * empty result is `undefined` rather than `{}` — the stored layout should carry
+ * "what was actually chosen", so that a default which moves later moves for
+ * everyone who never expressed an opinion about it.
+ */
+export function mergeView(view: ViewPrefs | undefined, patch: Partial<ViewPrefs>): ViewPrefs | undefined {
+  const next: ViewPrefs = { ...(view ?? {}) }
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) delete next[k as keyof ViewPrefs]
+    else Object.assign(next, { [k]: v })
+  }
+  return Object.keys(next).length > 0 ? next : undefined
+}
+
+/** a stored options bag, with anything that is not a scalar dropped */
+function normalizeOpts(raw: unknown): WidgetOpts | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const out: WidgetOpts = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') out[k] = v
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
 
 /**
  * Anything at all → a layout, or null when there is nothing usable in it.
@@ -109,18 +220,21 @@ export function normalizeLayout(raw: unknown): DashboardLayout | null {
   const taken = new Set<string>()
   for (const it of o.items) {
     if (!it || typeof it !== 'object') continue
-    const { id, size, h, opts } = it as LayoutItem
+    const { id, size, h, opts, lock } = it as LayoutItem
     if (typeof id !== 'string' || taken.has(id)) continue
     taken.add(id)
+    const cleanOpts = normalizeOpts(opts)
     items.push({
       id,
       size: isSize(size) ? size : 'md',
       ...(h === 'tall' ? { h } : {}),
-      ...(opts && typeof opts === 'object' ? { opts } : {}),
+      ...(cleanOpts ? { opts: cleanOpts } : {}),
+      ...(lock === true ? { lock: true as const } : {}),
     })
   }
   const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
-  return { v: 1, items, hidden: strings(o.hidden), seen: strings(o.seen) }
+  const view = normalizeView(o.view)
+  return { v: 1, items, hidden: strings(o.hidden), seen: strings(o.seen), ...(view ? { view } : {}) }
 }
 
 export const EMPTY_LAYOUT: DashboardLayout = { v: 1, items: [], hidden: [], seen: [] }
@@ -161,7 +275,56 @@ export function resolveLayout(
     .filter((m) => m.defaultOn && !seen.has(m.id) && !hidden.has(m.id) && !kept.some((k) => k.id === m.id))
     .map((m) => ({ id: m.id, size: m.sizes[0] }))
 
-  return insertByGroup(kept, fresh, byId)
+  return applyLocks(insertByGroup(kept, fresh, byId), fallback.items, byId)
+}
+
+/* ===== locks ==============================================================
+   An administrator publishing a default can mark a placement `lock`. That is
+   the one thing on this screen a user does not get the last word on, so it is
+   worth being precise about what it does and does not do:
+
+   * It is about **presence**, not shape. The widget is put back on every load
+     and its remove button is gone; size, height and options stay the user's.
+     "Everyone must see the overdue tasks" is a reasonable instruction, "and
+     you must see them as a donut" is not.
+   * It cannot show anybody anything they could not already see. Locked or not,
+     `visibleItems` still filters by the reader's keys — a lock is a layout
+     decision and never a permission one.
+   * Only the *fallback* can carry one. A user's own saved layout stores the
+     flag as it resolved, and `resolveLayout` re-derives it from the default on
+     every load, so un-locking a widget in the published default releases it
+     everywhere without anybody having to re-save.                            */
+
+/** ids the published default insists on, in the order it lists them */
+export function lockedIds(layout: DashboardLayout | null | undefined): string[] {
+  return (layout?.items ?? []).filter((i) => i.lock).map((i) => i.id)
+}
+
+/**
+ * Put every locked placement back, and take the flag off everything else.
+ *
+ * The stripping half is what makes the lock releasable: a user who saved while
+ * a widget was locked stored `lock: true` in their own row, and without this
+ * that copy would outlive the administrator's decision.
+ */
+export function applyLocks(
+  items: readonly LayoutItem[],
+  fallbackItems: readonly LayoutItem[],
+  byId: Map<string, WidgetMeta>,
+): LayoutItem[] {
+  const locked = new Set(fallbackItems.filter((i) => i.lock).map((i) => i.id))
+  const cleaned = items.map((i) => (locked.has(i.id) ? { ...i, lock: true as const } : stripLock(i)))
+  const present = new Set(cleaned.map((i) => i.id))
+  const missing = fallbackItems
+    .filter((i) => i.lock && !present.has(i.id) && byId.has(i.id))
+    .map((i) => ({ ...i, lock: true as const }))
+  return missing.length > 0 ? insertByGroup(cleaned, missing, byId) : cleaned
+}
+
+function stripLock(i: LayoutItem): LayoutItem {
+  if (!i.lock) return i
+  const { lock: _drop, ...rest } = i
+  return rest
 }
 
 /** a widget that arrives late lands at the tail of its own group, not the page */
@@ -258,13 +421,53 @@ function omitHeight(i: LayoutItem): LayoutItem {
   return rest
 }
 
+/**
+ * Write one placement's options.
+ *
+ * A key set back to its default is dropped rather than stored as itself: the
+ * bag is what a *stored layout* carries, and a layout that remembers
+ * `form: 'bar'` on a widget whose natural form is bar would keep drawing bars
+ * after the widget's own answer moved on.
+ */
 export function setOpts(items: readonly LayoutItem[], id: string, opts: LayoutItem['opts']): LayoutItem[] {
-  return items.map((i) => (i.id === id ? { ...i, opts } : i))
+  const clean = opts && Object.keys(opts).length > 0 ? opts : undefined
+  return items.map((i) => {
+    if (i.id !== id) return i
+    if (!clean) {
+      const { opts: _drop, ...rest } = i
+      return rest
+    }
+    return { ...i, opts: clean }
+  })
+}
+
+/** one key at a time — what the options popover writes on every interaction */
+export function setOpt(
+  items: readonly LayoutItem[],
+  id: string,
+  key: string,
+  value: string | number | boolean | undefined,
+): LayoutItem[] {
+  const item = items.find((i) => i.id === id)
+  if (!item) return [...items]
+  const next = { ...(item.opts ?? {}) }
+  if (value === undefined) delete next[key]
+  else next[key] = value
+  return setOpts(items, id, next)
+}
+
+/** an administrator's flag, written only onto a layout about to be published */
+export function setLock(items: readonly LayoutItem[], id: string, on: boolean): LayoutItem[] {
+  return items.map((i) => (i.id === id ? (on ? { ...i, lock: true as const } : stripLock(i)) : i))
 }
 
 /* ===== show / hide ======================================================== */
 
 export function hideWidget(items: readonly LayoutItem[], hidden: readonly string[], id: string) {
+  /* A locked placement is the administrator's, and the two ways to remove a
+     widget — the frame's ✕ and the catalogue's switch — both land here. Refusing
+     in one place is what makes the lock true rather than merely un-clicked. */
+  if (items.some((i) => i.id === id && i.lock)) return { items: [...items], hidden: [...hidden] }
   return {
     items: items.filter((i) => i.id !== id),
     hidden: hidden.includes(id) ? [...hidden] : [...hidden, id],
@@ -294,12 +497,15 @@ export function toStoredLayout(
   items: readonly LayoutItem[],
   hidden: readonly string[],
   known: ReadonlySet<string>,
+  view?: ViewPrefs,
 ): DashboardLayout {
   const ids = new Set<string>([...items.map((i) => i.id), ...hidden])
+  const cleanView = normalizeView(view)
   return {
     v: 1,
     items: items.map((i) => ({ ...i })),
     hidden: hidden.filter((h) => known.has(h)),
     seen: [...ids].filter((id) => known.has(id)).sort(),
+    ...(cleanView ? { view: cleanView } : {}),
   }
 }

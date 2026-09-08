@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { Bar, BarChart, Cell, Legend, Line, LineChart, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
+import { Legend, Line, LineChart, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import {
   Card,
   CardBody,
@@ -18,12 +18,26 @@ import { fmtDate } from '../../../lib/dates'
 import { ChartTooltip } from '../parts/ChartTooltip'
 import { ChartFrame } from '../parts/ChartFrame'
 import { useDashboard, useSection } from '../dashboardContext'
+import { useDrill } from '../useDrill'
+import { SeriesCard } from '../parts/SeriesCard'
+import { CATEGORY_FORMS, RANK_FORMS, pickForm } from '../seriesOpts'
+import type { SeriesRow } from '../seriesOpts'
+import type { DrillTarget } from '../drill'
 import type { WidgetProps } from '../dashboardTypes'
 
 const AXIS = { tick: { fontSize: 11, fill: 'var(--vl-text-tertiary)' }, axisLine: false, tickLine: false } as const
 
 /* ===== simple category charts ============================================= */
 
+/**
+ * A counted category out of one server section.
+ *
+ * `layout` used to be the whole of the display decision and it was made once,
+ * here, forever: vertical for names, horizontal for everything else. It is now
+ * only the *first* answer — the same reasoning that made it right by default
+ * ("a name tilted 25° is a name you read sideways") is not a reason to refuse
+ * a reader who wants the same numbers as a table.
+ */
 function sectionBars(cfg: {
   section: string
   title: string
@@ -32,50 +46,40 @@ function sectionBars(cfg: {
   seriesName: string
   fill?: string
   layout?: 'vertical' | 'horizontal'
+  format?: (v: number) => string
+  drill?: { probe: DrillTarget; of: (row: SeriesRow) => DrillTarget }
+  emptyTitle?: string
+  emptyDescription?: string
 }) {
-  function SectionBars({ height }: WidgetProps) {
-    const { data, isLoading } = useSection<{ name: string; color?: string }[]>(cfg.section)
-    if (data === null) return null
-    const vertical = cfg.layout === 'vertical'
+  const forms = cfg.layout === 'vertical' ? RANK_FORMS : CATEGORY_FORMS
+  function SectionBars({ height, opts }: WidgetProps) {
+    const raw = useSection<Record<string, unknown>[]>(cfg.section)
+    const go = useDrill(cfg.drill?.probe ?? { to: 'board' })
+    if (raw.data === null) return null
+
+    const rows: SeriesRow[] | undefined = raw.data?.map((r) => ({
+      key: String(r.id ?? r.name),
+      label: String(r.name ?? ''),
+      value: Number(r[cfg.dataKey] ?? 0),
+      color: typeof r.color === 'string' ? r.color : undefined,
+    }))
 
     return (
-      <ChartFrame
+      <SeriesCard
         title={cfg.title}
         subtitle={cfg.subtitle}
-        loading={isLoading && !data}
-        empty={!data?.length}
+        rows={rows}
+        loading={raw.isLoading && !raw.data}
+        form={pickForm(forms, opts)}
         height={height}
-      >
-        <BarChart
-          data={data ?? []}
-          layout={vertical ? 'vertical' : undefined}
-          margin={vertical ? { top: 4, right: 12, bottom: 4, left: 4 } : { top: 4, right: 4, bottom: 4, left: -20 }}
-        >
-          {vertical ? (
-            <>
-              <XAxis type="number" {...AXIS} allowDecimals={false} />
-              <YAxis type="category" dataKey="name" width={86} {...AXIS} />
-            </>
-          ) : (
-            <>
-              <XAxis dataKey="name" {...AXIS} interval={0} angle={-25} textAnchor="end" height={54} />
-              <YAxis {...AXIS} allowDecimals={false} />
-            </>
-          )}
-          <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
-          <Bar
-            dataKey={cfg.dataKey}
-            name={cfg.seriesName}
-            fill={cfg.fill ?? 'var(--vl-primary)'}
-            radius={vertical ? [0, 6, 6, 0] : [6, 6, 0, 0]}
-            maxBarSize={vertical ? 18 : 44}
-          >
-            {(data ?? []).map((r, i) => (
-              <Cell key={i} fill={r.color ?? cfg.fill ?? 'var(--vl-primary)'} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ChartFrame>
+        opts={opts}
+        seriesName={cfg.seriesName}
+        format={cfg.format}
+        fill={cfg.fill}
+        emptyTitle={cfg.emptyTitle ?? 'אין נתונים בטווח'}
+        emptyDescription={cfg.emptyDescription}
+        onSelect={cfg.drill && go ? (r) => go(cfg.drill!.of(r)) : undefined}
+      />
     )
   }
   SectionBars.displayName = `SectionBars(${cfg.section})`
@@ -87,6 +91,8 @@ export const TasksByTypeWidget = sectionBars({
   title: 'משימות לפי סוג',
   dataKey: 'cnt',
   seriesName: 'משימות',
+  drill: { probe: { to: 'board' }, of: () => ({ to: 'board' }) },
+  emptyDescription: 'לא נוצרו משימות בטווח שנבחר',
 })
 
 export const TasksByMethodWidget = sectionBars({
@@ -95,6 +101,8 @@ export const TasksByMethodWidget = sectionBars({
   dataKey: 'cnt',
   seriesName: 'משימות',
   fill: '#0ea5e9',
+  drill: { probe: { to: 'board' }, of: () => ({ to: 'board' }) },
+  emptyDescription: 'לא נוצרו משימות בטווח שנבחר',
 })
 
 export const EventsByCustomerWidget = sectionBars({
@@ -102,6 +110,8 @@ export const EventsByCustomerWidget = sectionBars({
   title: 'כמות אירועים לפי לקוח',
   dataKey: 'cnt',
   seriesName: 'אירועים',
+  drill: { probe: { to: 'events' }, of: (r) => ({ to: 'events', q: r.label }) },
+  emptyDescription: 'לא נקבעו אירועים בטווח שנבחר',
 })
 
 export const EventsFunnelWidget = sectionBars({
@@ -109,6 +119,8 @@ export const EventsFunnelWidget = sectionBars({
   title: 'אירועים לפי סטטוס',
   dataKey: 'cnt',
   seriesName: 'אירועים',
+  drill: { probe: { to: 'events' }, of: () => ({ to: 'events' }) },
+  emptyDescription: 'לא נקבעו אירועים בטווח שנבחר',
 })
 
 export const HoursByWorkerWidget = sectionBars({
@@ -118,6 +130,9 @@ export const HoursByWorkerWidget = sectionBars({
   seriesName: 'שעות',
   layout: 'vertical',
   fill: '#0ea5e9',
+  format: fmtHoursShort,
+  drill: { probe: { to: 'attendance' }, of: () => ({ to: 'attendance' }) },
+  emptyDescription: 'לא דווחו שעות בטווח שנבחר',
 })
 
 export const FleetUtilizationWidget = sectionBars({
@@ -128,6 +143,8 @@ export const FleetUtilizationWidget = sectionBars({
   seriesName: 'ימים',
   layout: 'vertical',
   fill: '#64748b',
+  drill: { probe: { to: 'vehicles' }, of: () => ({ to: 'vehicles' }) },
+  emptyDescription: 'אף רכב לא שובץ בטווח שנבחר',
 })
 
 export const AttendanceFlagsWidget = sectionBars({
@@ -136,6 +153,9 @@ export const AttendanceFlagsWidget = sectionBars({
   dataKey: 'cnt',
   seriesName: 'רשומות',
   fill: '#f59e0b',
+  drill: { probe: { to: 'attendance' }, of: () => ({ to: 'attendance' }) },
+  emptyTitle: 'אין חריגות בטווח',
+  emptyDescription: 'כל הדיווחים בטווח תקינים',
 })
 
 /* ===== trend ============================================================== */

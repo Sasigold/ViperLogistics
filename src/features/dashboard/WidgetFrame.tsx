@@ -10,12 +10,25 @@ import {
   MenuSeparator,
   Popover,
   SegmentedControl,
+  Tooltip,
   cx,
 } from '../../components/ui'
-import { ChevronLeft, ChevronRight, GripVertical, ICON, MoreVertical, STROKE, X } from '../../components/ui/icons'
+import {
+  ChevronLeft,
+  ChevronRight,
+  GripVertical,
+  ICON,
+  Lock,
+  LockOpen,
+  MoreVertical,
+  STROKE,
+  SlidersHorizontal,
+  X,
+} from '../../components/ui/icons'
 import { reportError } from '../../lib/reportError'
 import { SIZE_LABELS, SPAN, bodyHeight, panelMaxHeight } from './layout'
-import type { LayoutItem, WidgetDef, WidgetSize } from './dashboardTypes'
+import { WidgetOptions, hasWidgetOptions } from './WidgetOptions'
+import type { LayoutItem, Packing, WidgetDef, WidgetSize } from './dashboardTypes'
 
 /**
  * One widget's slot on the grid.
@@ -66,12 +79,18 @@ export interface WidgetFrameProps {
   item: LayoutItem
   def: WidgetDef
   editing?: boolean
+  /** how the grid closes the space a short card leaves under itself */
+  packing?: Packing
   /** where this widget sits among the ones on screen, for the announcement */
   position?: { index: number; total: number }
   onMove?: (id: string, offset: number) => void
   onSize?: (id: string, size: WidgetSize) => void
   onHeight?: (id: string, h: 'auto' | 'tall') => void
   onRemove?: (id: string) => void
+  /** writes one key of this placement's options; absent means the reader may not */
+  onOpt?: (id: string, key: string, value: string | number | boolean | undefined) => void
+  /** administrator's flag: the ✕ is gone and the catalogue's switch is stuck on */
+  onLock?: (id: string, on: boolean) => void
   /** props the drag sensor needs on the handle; absent means no dragging */
   dragHandleProps?: Record<string, unknown>
   dragging?: boolean
@@ -83,11 +102,14 @@ export function WidgetFrame({
   item,
   def,
   editing,
+  packing = 'aligned',
   position,
   onMove,
   onSize,
   onHeight,
   onRemove,
+  onOpt,
+  onLock,
   dragHandleProps,
   dragging,
   style,
@@ -98,6 +120,11 @@ export function WidgetFrame({
      both the ceiling and the reason the row can be filled: a panel that cannot
      run away is a panel its neighbours can safely match. */
   const maxHeight = panelMaxHeight(item.size, item.h)
+  const compact = packing === 'compact'
+  /* Offered outside edit mode too, and that is the point of it: changing a
+     chart to a table is a question about *this* reading of the data, not an
+     act of rearranging the page. Edit mode is for moving furniture. */
+  const settings = onOpt && hasWidgetOptions(def)
 
   return (
     <div
@@ -107,11 +134,13 @@ export function WidgetFrame({
       aria-label={def.title}
       className={cx(
         SPAN[item.size],
-        'relative min-w-0',
+        'group/widget relative min-w-0',
         /* A KPI tile keeps its natural height — stretching a two-line number to
            a chart's height is not tidiness, it is a tall empty tile. Panels take
-           the row's full height so their borders line up with each other. */
-        maxHeight === 0 && 'self-start',
+           the row's full height so their borders line up with each other —
+           unless the whole view asked for `compact`, where nothing is stretched
+           and the holes that leaves are packed by the grid instead. */
+        (maxHeight === 0 || compact) && 'self-start',
         /* A widget may legitimately draw nothing: an unpermitted section, a
            custom widget whose spec the catalogue no longer serves, "no events
            booked". The slot itself is still a grid item, so it keeps its columns
@@ -133,12 +162,45 @@ export function WidgetFrame({
            applies it from the `lg` breakpoint up, and an inline declaration
            would win over every media query in the stylesheet */
         style={maxHeight ? ({ '--panel-max': `${maxHeight}px` } as CSSProperties) : undefined}
-        className={cx(maxHeight > 0 && 'widget-fill', editing && 'pointer-events-none select-none')}
+        className={cx(
+          maxHeight > 0 && (compact ? 'widget-cap' : 'widget-fill'),
+          editing && 'pointer-events-none select-none',
+        )}
       >
         <WidgetBoundary id={def.id} title={def.title}>
           <def.Component size={item.size} height={height} opts={item.opts ?? {}} />
         </WidgetBoundary>
       </div>
+
+      {/* Reading mode: one affordance, and it stays out of the way until the
+          pointer is on the card. On touch there is no hover to wait for, so it
+          is simply always faintly there. */}
+      {!editing && settings && (
+        <span
+          className={cx(
+            'absolute top-1.5 end-1.5 z-10 transition-opacity duration-150',
+            'opacity-0 group-hover/widget:opacity-100 group-focus-within/widget:opacity-100',
+            '[@media(pointer:coarse)]:opacity-60',
+          )}
+        >
+          <Popover
+            align="end"
+            trigger={(p) => (
+              <IconButton size="sm" variant="ghost" label={`תצוגת ${def.title}`} {...p}>
+                <SlidersHorizontal size={ICON.md} strokeWidth={STROKE} aria-hidden />
+              </IconButton>
+            )}
+          >
+            {() => (
+              <WidgetOptions
+                def={def}
+                opts={item.opts ?? {}}
+                onOpt={(key, value) => onOpt?.(item.id, key, value)}
+              />
+            )}
+          </Popover>
+        </span>
+      )}
 
       {editing && (
         <EditBar
@@ -149,6 +211,8 @@ export function WidgetFrame({
           onSize={onSize}
           onHeight={onHeight}
           onRemove={onRemove}
+          onOpt={onOpt}
+          onLock={onLock}
           dragHandleProps={dragHandleProps}
         />
       )}
@@ -170,13 +234,25 @@ function EditBar({
   onSize,
   onHeight,
   onRemove,
+  onOpt,
+  onLock,
   dragHandleProps,
 }: Pick<
   WidgetFrameProps,
-  'item' | 'def' | 'position' | 'onMove' | 'onSize' | 'onHeight' | 'onRemove' | 'dragHandleProps'
+  | 'item'
+  | 'def'
+  | 'position'
+  | 'onMove'
+  | 'onSize'
+  | 'onHeight'
+  | 'onRemove'
+  | 'onOpt'
+  | 'onLock'
+  | 'dragHandleProps'
 >) {
   const first = position ? position.index === 0 : false
   const last = position ? position.index === position.total - 1 : false
+  const settings = onOpt && hasWidgetOptions(def)
   /* Every panel is offered the taller body, not only the ones that declared
      `resizableHeight`: the frame now holds a panel to its size's height, so
      "make it taller" is the answer for a list of eight whose last three sit
@@ -197,7 +273,14 @@ function EditBar({
 
       {/* the bar sits over the widget's own header, so it has to say which
           widget is being moved — otherwise you are arranging blank rectangles */}
-      <span className="min-w-0 flex-1 truncate type-caption font-semibold">{def.title}</span>
+      <span className="flex min-w-0 flex-1 items-center gap-1 truncate type-caption font-semibold">
+        {def.title}
+        {item.lock && (
+          <Tooltip content="נקבע על ידי מנהל המערכת">
+            <Lock size={ICON.sm} strokeWidth={STROKE} className="shrink-0 text-ink-tertiary" aria-hidden />
+          </Tooltip>
+        )}
+      </span>
 
       {/* "אחורה" and "קדימה" describe intent; the glyph flips with the
           direction so the arrow always points where the widget will go */}
@@ -234,6 +317,16 @@ function EditBar({
         >
           {(close) => (
             <>
+              {settings && (
+                <>
+                  <WidgetOptions
+                    def={def}
+                    opts={item.opts ?? {}}
+                    onOpt={(key, value) => onOpt?.(item.id, key, value)}
+                  />
+                  <MenuSeparator />
+                </>
+              )}
               <MenuItem
                 disabled={first}
                 onClick={() => {
@@ -300,10 +393,41 @@ function EditBar({
                   </MenuItem>
                 </>
               )}
+              {/* Only where somebody may publish a default. Locking a widget on
+                  your own layout would mean locking yourself out of your own
+                  screen, so the caller passes `onLock` and nobody else sees it. */}
+              {onLock && (
+                <>
+                  <MenuSeparator />
+                  <MenuItem
+                    icon={
+                      item.lock ? (
+                        <LockOpen size={ICON.md} strokeWidth={STROKE} aria-hidden />
+                      ) : (
+                        <Lock size={ICON.md} strokeWidth={STROKE} aria-hidden />
+                      )
+                    }
+                    onClick={() => {
+                      onLock(item.id, !item.lock)
+                      close()
+                    }}
+                  >
+                    {item.lock ? 'שחרור הנעילה' : 'נעילה למשתמשים'}
+                  </MenuItem>
+                </>
+              )}
             </>
           )}
         </Popover>
-        <IconButton size="sm" variant="ghost" label={`הסרת ${def.title}`} onClick={() => onRemove?.(item.id)}>
+        {/* A locked placement keeps every other affordance — it can be moved,
+            resized and re-drawn. What it cannot be is gone. */}
+        <IconButton
+          size="sm"
+          variant="ghost"
+          label={item.lock ? `${def.title} נעול ואי אפשר להסירו` : `הסרת ${def.title}`}
+          disabled={!!item.lock}
+          onClick={() => onRemove?.(item.id)}
+        >
           <X size={ICON.md} strokeWidth={STROKE} aria-hidden />
         </IconButton>
       </span>

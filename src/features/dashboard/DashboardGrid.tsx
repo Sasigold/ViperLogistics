@@ -1,40 +1,42 @@
 import { WidgetFrame } from './WidgetFrame'
-import type { LayoutItem, WidgetDef, WidgetSize } from './dashboardTypes'
+import { PACK_CLASS } from './layout'
+import { cx } from '../../components/ui'
+import type { LayoutItem, Packing, WidgetDef } from './dashboardTypes'
 
 /**
  * The twelve-column grid, read-only.
  *
- * `grid-auto-flow` stays normal rather than `dense`. Dense packing would fill
- * gaps by pulling later widgets forward, which moves them away from the order
- * the layout stores — "I put it third and it drew fifth". The order is the
- * user's, so the gaps are closed the other way round: every panel is held to its
- * size's height and fills the row it lands in, which leaves nothing ragged to
- * pack around. `WidgetFrame` owns both halves of that.
+ * The order the layout stores is the order the grid draws — with one opt-in
+ * exception the reader controls. In `aligned` packing every panel is held to
+ * its size's height and fills the row it lands in, which leaves nothing ragged
+ * to pack around; `WidgetFrame` owns both halves of that. In `compact` packing
+ * each card stands at its own height and `grid-auto-flow: dense` fills the
+ * holes that leaves by pulling a later card that fits into one.
+ *
+ * Dense packing is not the default and never happens behind the reader's back:
+ * it moves a card forward of where they put it, which is a real cost and only
+ * worth paying on a screen whose cards have little to say. `layout.ts` carries
+ * the whole argument.
  */
 export function DashboardGrid({
   items,
   byId,
-  editing,
-  onMove,
-  onSize,
-  onHeight,
-  onRemove,
+  packing = 'aligned',
+  onOpt,
 }: {
   items: LayoutItem[]
   byId: Map<string, WidgetDef>
-  editing?: boolean
-  onMove?: (id: string, offset: number) => void
-  onSize?: (id: string, size: WidgetSize) => void
-  onHeight?: (id: string, h: 'auto' | 'tall') => void
-  onRemove?: (id: string) => void
+  packing?: Packing
+  onOpt?: (id: string, key: string, value: string | number | boolean | undefined) => void
 }) {
   return (
     /* Stretch, not `items-start`: a row is as tall as its tallest card, and
        leaving the shorter ones at their natural height left that difference as
-       page gap underneath them. Panels take the whole row; the one shape that
-       must not be stretched — the KPI tile — opts out per item with `self-start`
-       rather than the whole grid opting out on its behalf. */
-    <div role="list" className="grid grid-cols-12 gap-4">
+       page gap underneath them. Panels take the whole row; the two shapes that
+       must not be stretched — the KPI tile, and every card in `compact` —
+       opt out per item with `self-start` rather than the whole grid opting out
+       on their behalf. */
+    <div role="list" className={cx('grid grid-cols-12 gap-4', PACK_CLASS[packing])}>
       {items.map((item, i) => {
         const def = byId.get(item.id)
         if (!def) return null
@@ -43,12 +45,9 @@ export function DashboardGrid({
             key={item.id}
             item={item}
             def={def}
-            editing={editing}
+            packing={packing}
             position={{ index: i, total: items.length }}
-            onMove={onMove}
-            onSize={onSize}
-            onHeight={onHeight}
-            onRemove={onRemove}
+            onOpt={onOpt}
           />
         )
       })}

@@ -3,15 +3,23 @@ import { SIZES } from './dashboardTypes'
 import type { DashboardLayout, LayoutItem, WidgetMeta } from './dashboardTypes'
 import {
   BODY_H,
+  DEFAULT_PACKING,
+  PACK_CLASS,
   SPAN,
   bodyHeight,
   clampSize,
   hideWidget,
+  lockedIds,
+  mergeView,
   moveByIds,
   moveByOffset,
   normalizeLayout,
+  normalizeView,
+  packingOf,
   panelMaxHeight,
   resolveLayout,
+  setLock,
+  setOpt,
   setSize,
   showWidget,
   toStoredLayout,
@@ -415,5 +423,179 @@ describe('a custom widget through the layout maths', () => {
     ]
     const out = showWidget(start, ['custom.deadbeef'], CUSTOM, mergedById)
     expect(out.items.map((i) => i.id).at(-1)).toBe('custom.deadbeef')
+  })
+})
+
+/* ===== 0151: the view, the lock and the per-placement options ============== */
+
+describe('normalizeView', () => {
+  it('reads nothing out of nothing', () => {
+    expect(normalizeView(undefined)).toBeUndefined()
+    expect(normalizeView({})).toBeUndefined()
+    expect(normalizeView('aligned')).toBeUndefined()
+  })
+
+  it('keeps only the values the vocabulary knows', () => {
+    expect(normalizeView({ packing: 'compact', bucket: 'month' })).toEqual({ packing: 'compact', bucket: 'month' })
+    expect(normalizeView({ packing: 'masonry', bucket: 'fortnight' })).toBeUndefined()
+  })
+
+  /* The server clamps the same way. Two clamps rather than one because the
+     stored layout is also read by the client, which slices with it. */
+  it('clamps the row limit into the range the server accepts', () => {
+    expect(normalizeView({ limit: 999 })?.limit).toBe(50)
+    expect(normalizeView({ limit: 0 })?.limit).toBe(3)
+    expect(normalizeView({ limit: 20.4 })?.limit).toBe(20)
+  })
+
+  it('takes a range as a preset or as a fixed pair, and nothing else', () => {
+    expect(normalizeView({ range: { preset: 'החודש' } })?.range).toEqual({ preset: 'החודש' })
+    expect(normalizeView({ range: { from: '2026-01-01', to: '2026-01-31' } })?.range).toEqual({
+      from: '2026-01-01',
+      to: '2026-01-31',
+    })
+    expect(normalizeView({ range: { from: '2026-01-01' } })?.range).toBeUndefined()
+  })
+
+  it('drops an auto-refresh of zero rather than storing "off" as a number', () => {
+    expect(normalizeView({ refresh: 0 })).toBeUndefined()
+    expect(normalizeView({ refresh: 5 })?.refresh).toBe(5)
+  })
+})
+
+describe('mergeView', () => {
+  it('adds to what is there', () => {
+    expect(mergeView({ packing: 'compact' }, { bucket: 'day' })).toEqual({ packing: 'compact', bucket: 'day' })
+  })
+
+  /* "Back to the default" has to erase the key, not store `undefined`: a stored
+     opinion outlives a default that moves later, and the whole point of the
+     absent key is that it does not. */
+  it('deletes a key set back to no opinion, and collapses an empty view', () => {
+    expect(mergeView({ packing: 'aligned', bucket: 'day' }, { packing: undefined })).toEqual({ bucket: 'day' })
+    expect(mergeView({ packing: 'aligned' }, { packing: undefined })).toBeUndefined()
+  })
+})
+
+describe('a stored layout carries the view', () => {
+  it('round-trips it through normalize and store', () => {
+    const stored = toStoredLayout([{ id: 'ops.a', size: 'sm' }], [], known, { packing: 'compact', bucket: 'month' })
+    expect(stored.view).toEqual({ packing: 'compact', bucket: 'month' })
+    expect(normalizeLayout(JSON.parse(JSON.stringify(stored)))?.view).toEqual({ packing: 'compact', bucket: 'month' })
+  })
+
+  it('omits it entirely when nobody expressed an opinion', () => {
+    expect(toStoredLayout([{ id: 'ops.a', size: 'sm' }], [], known).view).toBeUndefined()
+  })
+})
+
+describe('per-placement options', () => {
+  const items: LayoutItem[] = [
+    { id: 'ops.a', size: 'sm' },
+    { id: 'ops.b', size: 'md', opts: { form: 'table', top: 5 } },
+  ]
+
+  it('writes one key without disturbing the others', () => {
+    expect(setOpt(items, 'ops.b', 'sort', 'desc')[1].opts).toEqual({ form: 'table', top: 5, sort: 'desc' })
+  })
+
+  it('deletes a key set back to undefined', () => {
+    expect(setOpt(items, 'ops.b', 'top', undefined)[1].opts).toEqual({ form: 'table' })
+  })
+
+  /* An empty bag is dropped rather than stored as `{}`, so a widget whose
+     natural form changes in a later release follows it. */
+  it('drops the bag once the last key is gone', () => {
+    let out = setOpt(items, 'ops.b', 'top', undefined)
+    out = setOpt(out, 'ops.b', 'form', undefined)
+    expect(out[1].opts).toBeUndefined()
+  })
+
+  it('ignores an id that is not on the page', () => {
+    expect(setOpt(items, 'ops.nope', 'form', 'bar')).toEqual(items)
+  })
+
+  it('keeps only scalars when read back from storage', () => {
+    const parsed = normalizeLayout({
+      items: [{ id: 'ops.b', size: 'md', opts: { form: 'table', junk: { deep: 1 }, n: 3, on: true } }],
+    })
+    expect(parsed?.items[0].opts).toEqual({ form: 'table', n: 3, on: true })
+  })
+})
+
+describe("the administrator's lock", () => {
+  const locked = layout([{ id: 'ops.b', size: 'md', lock: true }], [], ['ops.a', 'ops.b'])
+
+  it('is put back on a layout that removed it', () => {
+    const mine = layout([{ id: 'ops.a', size: 'sm' }], ['ops.b'], ['ops.a', 'ops.b'])
+    const out = resolveLayout(META, mine, locked)
+    expect(out.map((i) => i.id)).toContain('ops.b')
+    expect(out.find((i) => i.id === 'ops.b')?.lock).toBe(true)
+  })
+
+  /* The half that makes a lock releasable: a user who saved while it was locked
+     stored the flag in their own row, and without stripping it that copy would
+     outlive the administrator's decision. */
+  it('is stripped again once the published default releases it', () => {
+    const mine = layout([{ id: 'ops.b', size: 'md', lock: true }], [], ['ops.a', 'ops.b'])
+    const out = resolveLayout(META, mine, layout([{ id: 'ops.b', size: 'md' }]))
+    expect(out.find((i) => i.id === 'ops.b')?.lock).toBeUndefined()
+  })
+
+  it('leaves size and options to the user — presence is all it decides', () => {
+    const mine = layout([{ id: 'ops.b', size: 'lg', opts: { form: 'table' } }], [], ['ops.a', 'ops.b'])
+    const out = resolveLayout(META, mine, locked)
+    const row = out.find((i) => i.id === 'ops.b')
+    expect(row?.size).toBe('lg')
+    expect(row?.opts).toEqual({ form: 'table' })
+  })
+
+  it('refuses both routes out of the page', () => {
+    const items: LayoutItem[] = [{ id: 'ops.b', size: 'md', lock: true }]
+    const out = hideWidget(items, [], 'ops.b')
+    expect(out.items).toHaveLength(1)
+    expect(out.hidden).toEqual([])
+  })
+
+  /* A lock is a layout decision and never a permission one — `visibleItems`
+     still has the last word, so a locked widget cannot show anybody anything. */
+  it('cannot get past the permission filter', () => {
+    const items: LayoutItem[] = [{ id: 'finance.money', size: 'sm', lock: true }]
+    expect(visibleItems(items, byId, () => false, 'staff')).toEqual([])
+  })
+
+  it('never re-adds a widget the registry no longer has', () => {
+    const out = resolveLayout(
+      META,
+      caughtUp([{ id: 'ops.a', size: 'sm' }]),
+      layout([{ id: 'ops.gone', size: 'md', lock: true }]),
+    )
+    expect(out.map((i) => i.id)).toEqual(['ops.a'])
+  })
+
+  it('names what the default insists on', () => {
+    expect(lockedIds(locked)).toEqual(['ops.b'])
+    expect(lockedIds(null)).toEqual([])
+  })
+
+  it('is written and cleared one placement at a time', () => {
+    const items: LayoutItem[] = [{ id: 'ops.a', size: 'sm' }]
+    expect(setLock(items, 'ops.a', true)[0].lock).toBe(true)
+    expect(setLock(setLock(items, 'ops.a', true), 'ops.a', false)[0].lock).toBeUndefined()
+  })
+})
+
+describe('packing', () => {
+  /* Tailwind v4 scans source text, so this has to be a literal — and the
+     default is `compact` because the complaint that produced `aligned` (a row
+     of cards with little to say) is the one `aligned` cannot answer. */
+  it('is a literal class the scanner can see', () => {
+    expect(PACK_CLASS.compact).toContain('grid-auto-flow')
+    expect(PACK_CLASS.aligned).toBe('')
+  })
+
+  it('falls back to the default when the view says nothing', () => {
+    expect(packingOf(undefined)).toBe(DEFAULT_PACKING)
+    expect(packingOf({ packing: 'aligned' })).toBe('aligned')
   })
 })

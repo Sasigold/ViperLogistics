@@ -56,6 +56,8 @@ function useCustomerMonthly(range: DateRange, prev: DateRange): DashboardSection
   const rangeData = rangeQ.data
   const prevData = prevQ.data
   const isLoading = rangeQ.isLoading
+  const isFetching = rangeQ.isFetching || prevQ.isFetching
+  const fetchedAt = rangeQ.dataUpdatedAt
   const error = rangeQ.error
   const refetchRange = rangeQ.refetch
   const refetchPrev = prevQ.refetch
@@ -66,13 +68,15 @@ function useCustomerMonthly(range: DateRange, prev: DateRange): DashboardSection
       prevSection: (key: string) => prevData?.[key],
       customResult: () => undefined,
       isLoading,
+      isFetching,
+      updatedAt: fetchedAt > 0 ? new Date(fetchedAt).toLocaleTimeString('he-IL', { timeStyle: 'short' }) : undefined,
       error,
       refetch: () => {
         void refetchRange()
         void refetchPrev()
       },
     }),
-    [rangeData, prevData, isLoading, error, refetchRange, refetchPrev],
+    [rangeData, prevData, isLoading, isFetching, fetchedAt, error, refetchRange, refetchPrev],
   )
 }
 

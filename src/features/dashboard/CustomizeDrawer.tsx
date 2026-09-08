@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Button, Drawer, EmptyState, IconButton, SearchInput, Switch, cx } from '../../components/ui'
-import { ChevronDown, ChevronUp, ICON, Pencil, PencilLine, Plus, STROKE, Trash2 } from '../../components/ui/icons'
+import { ChevronDown, ChevronUp, ICON, Lock, Pencil, PencilLine, Plus, STROKE, Trash2 } from '../../components/ui/icons'
 import { useAuth } from '../../state/auth'
 import { GROUPS, GROUP_LABELS } from './dashboardTypes'
 import type { LayoutItem, WidgetDef, WidgetGroup } from './dashboardTypes'
@@ -64,6 +64,11 @@ export function CustomizeDrawer({
 
   const onPage = new Set(items.map((i) => i.id))
   const orderOf = new Map(items.map((i, idx) => [i.id, idx]))
+  /* A widget an administrator pinned to the published default. The switch is
+     the other way out of the page — the frame's ✕ is the first — so refusing
+     here too is what keeps the lock from being a matter of which button you
+     happened to reach for. */
+  const locked = new Set(items.filter((i) => i.lock).map((i) => i.id))
 
   const byGroup = GROUPS.map((g) => ({
     group: g as WidgetGroup,
@@ -109,8 +114,15 @@ export function CustomizeDrawer({
                     )}
                   >
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate type-body font-medium">{w.title}</span>
-                      <span className="block truncate type-caption text-ink-tertiary">{w.description}</span>
+                      <span className="flex items-center gap-1.5 truncate type-body font-medium">
+                        {w.title}
+                        {locked.has(w.id) && (
+                          <Lock size={ICON.xs} strokeWidth={STROKE} className="shrink-0 text-ink-tertiary" aria-hidden />
+                        )}
+                      </span>
+                      <span className="block truncate type-caption text-ink-tertiary">
+                        {locked.has(w.id) ? 'נקבע על ידי מנהל המערכת' : w.description}
+                      </span>
                     </span>
 
                     {/* Editing and deleting are the owner's, not the reader's:
@@ -154,7 +166,12 @@ export function CustomizeDrawer({
                       </span>
                     )}
 
-                    <Switch checked={on} onChange={(v) => onToggle(w.id, v)} aria-label={`הצגת ${w.title}`} />
+                    <Switch
+                      checked={on}
+                      disabled={locked.has(w.id)}
+                      onChange={(v) => onToggle(w.id, v)}
+                      aria-label={`הצגת ${w.title}`}
+                    />
                   </li>
                 )
               })}

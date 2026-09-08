@@ -1,5 +1,5 @@
 import { Suspense, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { FileSpreadsheet, ICON, Plus, STROKE } from '../../components/ui/icons'
 import {
@@ -45,8 +45,12 @@ const ExcelDialog = lazyPage(() => import('../importExport/ExcelDialog').then((m
 export default function EventsPage() {
   const { me, has, canCreateEvent, showsEventField } = useAuth()
   const navigate = useNavigate()
-  const [q, setQ] = useState('')
-  const [customer, setCustomer] = useState('')
+  /* ‏`?q=` ו-`?customer=` נקראים פעם אחת, באתחול, בדיוק כמו `?date=` בלוח
+     העבודה: הם קיימים כדי שקישור מבחוץ ינחת על הרשימה שהוא התכוון אליה —
+     לחיצה על לקוח בדשבורד, קישור מהתראה — ולא כדי לשמור את הסינון בכתובת. */
+  const [params] = useSearchParams()
+  const [q, setQ] = useState(() => params.get('q') ?? '')
+  const [customer, setCustomer] = useState(() => params.get('customer') ?? '')
   const [createOpen, setCreateOpen] = useState(false)
   const [excelOpen, setExcelOpen] = useState(false)
   /* אירוע שבוטל אינו עבודה שתקרה, והרשימה היא רשימת עבודה — הוא נשאר במקומו

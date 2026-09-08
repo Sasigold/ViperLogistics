@@ -9,10 +9,17 @@ export function ChartTooltip({
   active,
   payload,
   label,
+  format,
 }: {
   active?: boolean
   payload?: { name?: string; value?: number | string; payload?: { name?: string } }[]
   label?: string
+  /**
+   * How the value reads. Without it a money chart hovers as `12450` — the same
+   * number the axis and the card header both render as ₪12,450 — and the reader
+   * is left to work out whether the tooltip is a different measure.
+   */
+  format?: (v: number) => string
 }) {
   if (!active || !payload?.length) return null
   return (
@@ -20,7 +27,10 @@ export function ChartTooltip({
       <p className="type-caption font-semibold text-ink">{label ?? payload[0]?.payload?.name}</p>
       {payload.map((p, i) => (
         <p key={i} className="type-caption tabular text-ink-secondary">
-          {p.name}: <span className="font-bold text-ink">{p.value}</span>
+          {p.name}:{' '}
+          <span className="font-bold text-ink">
+            {format && typeof p.value === 'number' ? format(p.value) : p.value}
+          </span>
         </p>
       ))}
     </div>

@@ -5,9 +5,16 @@ import { useAuth } from '../../state/auth'
 import { BUILT_IN_DEFAULT, WIDGETS } from './registry'
 import { customWidgetDefs } from './builder/customRegistry'
 import { useCustomWidgets } from './builder/useCustomWidgets'
-import { normalizeLayout, resolveLayout, toStoredLayout, visibleItems } from './layout'
-import type { DashboardLayout, LayoutItem, WidgetDef } from './dashboardTypes'
+import { lockedIds, mergeView, normalizeLayout, resolveLayout, toStoredLayout, visibleItems } from './layout'
+import type { DashboardLayout, LayoutItem, ViewPrefs, WidgetDef } from './dashboardTypes'
 import type { UserKind } from '../../types/domain'
+
+/** the three things an edit can touch, held together so one `setDraft` moves all of them */
+interface DraftState {
+  items: LayoutItem[]
+  hidden: string[]
+  view?: ViewPrefs
+}
 
 export interface DashboardLayoutRow {
   id: string
@@ -108,15 +115,21 @@ export function useDashboardLayout() {
     return layoutsLoading ? readCache(profileId) : null
   }, [mine, layoutsLoading, profileId])
 
-  const [draft, setDraft] = useState<{ items: LayoutItem[]; hidden: string[] } | null>(null)
+  const [draft, setDraft] = useState<DraftState | null>(null)
 
-  const resolved = useMemo(
-    () => ({
-      items: resolveLayout(widgets, saved, fallback),
-      hidden: saved?.hidden ?? fallback.hidden,
-    }),
-    [widgets, saved, fallback],
-  )
+  const resolved = useMemo(() => {
+    const items = resolveLayout(widgets, saved, fallback)
+    /* A widget the administrator locked is back on the page whatever the user
+       once said about it, so leaving its id in `hidden` would only make the
+       catalogue draw a switch that does nothing when it is turned off. */
+    const locked = new Set(lockedIds(fallback))
+    const hidden = (saved?.hidden ?? fallback.hidden).filter((h) => !locked.has(h))
+    /* The view is the user's when they have one and the published default's
+       otherwise — the same ladder the items climb, for the same reason: an
+       administrator who publishes a packing has published it to everyone who
+       never expressed an opinion, and to nobody who did. */
+    return { items, hidden, view: saved?.view ?? fallback.view }
+  }, [widgets, saved, fallback])
 
   const current = draft ?? resolved
   const visible = useMemo(
@@ -133,12 +146,12 @@ export function useDashboardLayout() {
   const invalidate = () => void qc.invalidateQueries({ queryKey: ['dashboard_layouts'] })
 
   const save = useMutation({
-    mutationFn: async (next: { items: LayoutItem[]; hidden: string[]; name?: string | null }) => {
+    mutationFn: async (next: DraftState & { name?: string | null }) => {
       if (!profileId) throw new Error('אין פרופיל פעיל')
       // `known` is what prunes `seen`; saving before the custom widgets have
       // landed would prune every one of them out of it
       if (custom.isLoading) throw new Error('הווידג׳טים עדיין נטענים')
-      const layout = toStoredLayout(next.items, next.hidden, known)
+      const layout = toStoredLayout(next.items, next.hidden, known, next.view)
       const { error } = await supabase.from('dashboard_layouts').upsert(
         {
           profile_id: profileId,
@@ -175,11 +188,50 @@ export function useDashboardLayout() {
     onSuccess: invalidate,
   })
 
+  /* Renaming and overwriting go by row id rather than through the upsert's
+     conflict target: `(profile_id, user_kind, name)` means a rename is a *new*
+     key, so an upsert would leave the old row behind under the old name. */
+  const renameView = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const { error } = await supabase
+        .from('dashboard_layouts')
+        .update({ name, updated_by: profileId })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+
+  /** overwrite a saved view with what is on screen — the half "save as" never had */
+  const updateView = useMutation({
+    mutationFn: async (id: string) => {
+      if (custom.isLoading) throw new Error('הווידג׳טים עדיין נטענים')
+      const layout = toStoredLayout(current.items, current.hidden, known, current.view)
+      const { error } = await supabase
+        .from('dashboard_layouts')
+        .update({ layout, updated_by: profileId })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+
+  /** an administrator taking a published default back down */
+  const deleteOrgDefault = useMutation({
+    mutationFn: async (forKind: UserKind | null) => {
+      const row = rows.find((r) => r.profile_id === null && r.user_kind === forKind && r.name === null)
+      if (!row) return
+      const { error } = await supabase.from('dashboard_layouts').delete().eq('id', row.id)
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+
   /** publish the current arrangement as what everyone (or one kind) starts with */
   const saveOrgDefault = useMutation({
     mutationFn: async (forKind: UserKind | null) => {
       if (custom.isLoading) throw new Error('הווידג׳טים עדיין נטענים')
-      const layout = toStoredLayout(current.items, current.hidden, known)
+      const layout = toStoredLayout(current.items, current.hidden, known, current.view)
       const { error } = await supabase.from('dashboard_layouts').upsert(
         { profile_id: null, user_kind: forKind, name: null, layout, updated_by: profileId },
         { onConflict: 'profile_id,user_kind,name' },
@@ -190,10 +242,30 @@ export function useDashboardLayout() {
   })
 
   const edit = useCallback(
-    (fn: (state: { items: LayoutItem[]; hidden: string[] }) => { items: LayoutItem[]; hidden: string[] }) => {
+    (fn: (state: DraftState) => DraftState) => {
       setDraft((d) => fn(d ?? resolved))
     },
     [resolved],
+  )
+
+  /**
+   * Apply an edit and write it in the same breath.
+   *
+   * Edit mode has a save bar and a draft that waits for it; the controls that
+   * live *outside* edit mode — a card's display form, the view menu — have
+   * neither, and a setting that forgets itself on reload is a setting nobody
+   * uses twice. The transform runs against the current state here rather than
+   * through `setDraft`, because the value to persist has to be in hand before
+   * the mutation is called and a state updater has not run yet.
+   */
+  const commit = useCallback(
+    async (fn: (state: DraftState) => DraftState) => {
+      const next = fn(draft ?? resolved)
+      setDraft(next)
+      await save.mutateAsync({ ...next, name: null })
+      setDraft(null)
+    },
+    [draft, resolved, save],
   )
 
   return {
@@ -209,11 +281,29 @@ export function useDashboardLayout() {
     dirty: draft !== null,
     hasOwnLayout: !!mine,
     namedViews,
+    /** the published defaults, so an administrator can see what exists and undo it */
+    orgDefaults: useMemo(() => rows.filter((r) => r.profile_id === null && r.name === null), [rows]),
+    /** whole-screen preferences: packing, bucket, top-N, opening range */
+    view: current.view,
+    setView: (patch: Partial<ViewPrefs>) => edit((st) => ({ ...st, view: mergeView(st.view, patch) })),
     edit,
+    commit,
     discard: () => setDraft(null),
-    applyView: (row: DashboardLayoutRow) => {
+    /**
+     * Switch to a saved view.
+     *
+     * `persist` is the difference between the two places this is called from,
+     * and it matters: inside edit mode a view is a starting point that the save
+     * bar will confirm, but outside it there *is* no save bar — so applying a
+     * view left a dirty draft the reader had no way to keep, and the whole
+     * thing evaporated on the next load.
+     */
+    applyView: (row: DashboardLayoutRow, persist?: boolean) => {
       const l = normalizeLayout(row.layout)
-      if (l) setDraft({ items: resolveLayout(widgets, l, fallback), hidden: l.hidden })
+      if (!l) return
+      const next = { items: resolveLayout(widgets, l, fallback), hidden: l.hidden, view: l.view }
+      if (persist) return commit(() => next)
+      setDraft(next)
     },
     save: async (name?: string | null) => {
       await save.mutateAsync({ ...current, name })
@@ -224,7 +314,16 @@ export function useDashboardLayout() {
       await reset.mutateAsync()
     },
     deleteView: deleteView.mutateAsync,
+    renameView: (id: string, name: string) => renameView.mutateAsync({ id, name }),
+    updateView: updateView.mutateAsync,
     saveOrgDefault: saveOrgDefault.mutateAsync,
-    saving: save.isPending || reset.isPending || saveOrgDefault.isPending,
+    deleteOrgDefault: deleteOrgDefault.mutateAsync,
+    saving:
+      save.isPending ||
+      reset.isPending ||
+      saveOrgDefault.isPending ||
+      updateView.isPending ||
+      renameView.isPending ||
+      deleteOrgDefault.isPending,
   }
 }

@@ -11,7 +11,9 @@ import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { WidgetFrame } from './WidgetFrame'
-import type { LayoutItem, WidgetDef, WidgetSize } from './dashboardTypes'
+import { PACK_CLASS } from './layout'
+import { cx } from '../../components/ui'
+import type { LayoutItem, Packing, WidgetDef, WidgetSize } from './dashboardTypes'
 
 /**
  * The grid while it is being rearranged.
@@ -36,19 +38,25 @@ import type { LayoutItem, WidgetDef, WidgetSize } from './dashboardTypes'
 export default function DashboardEditGrid({
   items,
   byId,
+  packing = 'aligned',
   onMove,
   onReorder,
   onSize,
   onHeight,
   onRemove,
+  onOpt,
+  onLock,
 }: {
   items: LayoutItem[]
   byId: Map<string, WidgetDef>
+  packing?: Packing
   onMove: (id: string, offset: number) => void
   onReorder: (activeId: string, overId: string) => void
   onSize: (id: string, size: WidgetSize) => void
   onHeight: (id: string, h: 'auto' | 'tall') => void
   onRemove: (id: string) => void
+  onOpt?: (id: string, key: string, value: string | number | boolean | undefined) => void
+  onLock?: (id: string, on: boolean) => void
 }) {
   const [dragging, setDragging] = useState<string | null>(null)
   const [announcement, setAnnouncement] = useState('')
@@ -81,7 +89,7 @@ export default function DashboardEditGrid({
       <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
         {/* the same stretch-and-cap rhythm as the read-only grid, so nothing
             moves when edit mode opens — see DashboardGrid */}
-        <div role="list" className="grid grid-cols-12 gap-4">
+        <div role="list" className={cx('grid grid-cols-12 gap-4', PACK_CLASS[packing])}>
           {items.map((item, i) => {
             const def = byId.get(item.id)
             if (!def) return null
@@ -90,6 +98,7 @@ export default function DashboardEditGrid({
                 key={item.id}
                 item={item}
                 def={def}
+                packing={packing}
                 position={{ index: i, total: items.length }}
                 dragging={dragging === item.id}
                 onMove={(id, offset) => {
@@ -99,6 +108,8 @@ export default function DashboardEditGrid({
                 onSize={onSize}
                 onHeight={onHeight}
                 onRemove={onRemove}
+                onOpt={onOpt}
+                onLock={onLock}
               />
             )
           })}
@@ -117,21 +128,27 @@ export default function DashboardEditGrid({
 function SortableWidget({
   item,
   def,
+  packing,
   position,
   dragging,
   onMove,
   onSize,
   onHeight,
   onRemove,
+  onOpt,
+  onLock,
 }: {
   item: LayoutItem
   def: WidgetDef
+  packing: Packing
   position: { index: number; total: number }
   dragging: boolean
   onMove: (id: string, offset: number) => void
   onSize: (id: string, size: WidgetSize) => void
   onHeight: (id: string, h: 'auto' | 'tall') => void
   onRemove: (id: string) => void
+  onOpt?: (id: string, key: string, value: string | number | boolean | undefined) => void
+  onLock?: (id: string, on: boolean) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: item.id })
 
@@ -140,6 +157,7 @@ function SortableWidget({
       item={item}
       def={def}
       editing
+      packing={packing}
       position={position}
       dragging={dragging}
       innerRef={setNodeRef}
@@ -149,6 +167,8 @@ function SortableWidget({
       onSize={onSize}
       onHeight={onHeight}
       onRemove={onRemove}
+      onOpt={onOpt}
+      onLock={onLock}
     />
   )
 }

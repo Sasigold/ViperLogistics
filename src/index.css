@@ -562,6 +562,33 @@
   }
 }
 
+/* The same panel in `compact` packing.
+   No `height: 100%`: the card stands at whatever its content asks for, which is
+   the whole point — a spend list with one row is one row tall instead of being
+   stretched to the height of the chart beside it and padded with white. The
+   ceiling stays, and so does the body being the part that scrolls, because a
+   list of forty is still not allowed to set the height of the page.
+
+   Not standing the card up is only half of it: `align-self` belongs to the grid
+   *item*, so the frame sets `self-start` on the slot in this mode. Here we only
+   stop the card from claiming a height it was not given. */
+@utility widget-cap {
+  @media (width >=64rem) {
+    max-height: var(--panel-max, none);
+  }
+
+  &>* {
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &>*>[data-card-body] {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
 /* Skeleton shimmer */
 @utility skeleton {
   position: relative;
