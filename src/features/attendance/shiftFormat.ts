@@ -62,36 +62,45 @@ export const STATUS_TONES: Record<AttendanceStatus, 'warning' | 'success' | 'err
   rejected: 'error',
 }
 
-/** פער של פחות מדקה בין המתוכנן לבפועל הוא עיגול, לא חוסר. */
-export const SHORTFALL_TOLERANCE_H = 1 / 60
+/** פער של פחות מדקה בין המתוכנן לבפועל הוא עיגול, לא חריגה. */
+export const OVERAGE_TOLERANCE_H = 1 / 60
 
 /**
- * כמה שעות חסרות במשמרת מול השיבוץ שלה.
+ * בכמה שעות המשמרת חרגה מהשיבוץ שלה.
  *
- * משמרת בלי שיבוץ — החתמה ספונטנית — אינה "חסרה": אין מולה מה להשוות, וכל
+ * הכיוון הוא בפועל פחות מתוכנן, ולא להפך: מה שהמנהל מחפש בדוח הוא מי עבד
+ * **יותר** ממה שתוכנן לו — זו השעה שמישהו צריך לאשר ולשלם — ולא מי סיים
+ * מוקדם. משמרת שנפלה מהתכנון מחזירה 0 ומוצגת כנוכחות רגילה.
+ *
+ * משמרת בלי שיבוץ — החתמה ספונטנית — אינה "חורגת": אין מולה מה להשוות, וכל
  * מספר שהיה מוחזר כאן היה המצאה. אותה הכרעה משמשת גם את שורת המשמרת וגם את
- * אריח "שעות חסרות", כדי שהאריח יהיה בדיוק סכום השורות שמתחתיו.
+ * אריח "שעות חריגה", כדי שהאריח יהיה בדיוק סכום השורות שמתחתיו.
  */
-export function shiftShortfall(
+export function shiftOverage(
   plannedHours: number | null | undefined,
   actualHours: number | null | undefined,
 ): number {
   const planned = plannedHours ?? 0
   if (planned <= 0) return 0
-  const gap = planned - (actualHours ?? 0)
-  return gap >= SHORTFALL_TOLERANCE_H ? gap : 0
+  const gap = (actualHours ?? 0) - planned
+  return gap >= OVERAGE_TOLERANCE_H ? gap : 0
 }
 
 /**
  * מה המשמרת אומרת במבט אחד — לא מצב האישור בלבד. משמרת מאושרת יכולה עדיין
- * להיות "שעות נוספות" או "חסר", וזה מה שמי שקורא את הדוח מחפש בה.
+ * להיות "שעות נוספות" או "חריגה", וזה מה שמי שקורא את הדוח מחפש בה.
  */
-export type ShiftTone = 'present' | 'overtime' | 'short' | 'pending' | 'rejected' | 'open'
+export type ShiftTone = 'present' | 'overtime' | 'over' | 'pending' | 'rejected' | 'open'
 
 /**
  * הטון של משמרת אחת. סדר ההכרעה הוא מה שמעכב תשלום לפני מה שרק מתאר את
  * המשמרת: רשומה שממתינה לאישור אינה "נוכח" גם אם השעות בה מושלמות, ומשמרת
- * שעדיין פתוחה אינה "חסר" רק משום שהעובד לא סיים אותה עדיין.
+ * שעדיין פתוחה אינה "חריגה" כל עוד לא הוחתמה יציאה — `actual_hours` נכתב
+ * ביציאה, ועד אז אין מול מה להשוות.
+ *
+ * "שעות נוספות" גובר על "חריגה" כשהשניים חלים יחד: הן נמדדות מול שני דברים
+ * שונים — הנוספות מול מדרגת היום, החריגה מול השיבוץ — ומה שכבר סווג לתשלום
+ * הוא התשובה המדויקת יותר על אותן שעות.
  */
 export function shiftTone(
   r: Pick<AttendanceReportRow, 'status' | 'clock_out_at' | 'planned_hours' | 'actual_hours' | 'pay'>,
@@ -100,7 +109,7 @@ export function shiftTone(
   if (r.status === 'rejected') return 'rejected'
   if (!r.clock_out_at) return 'open'
   if ((r.pay?.overtime_hours ?? 0) > 0) return 'overtime'
-  return shiftShortfall(r.planned_hours, r.actual_hours) > 0 ? 'short' : 'present'
+  return shiftOverage(r.planned_hours, r.actual_hours) > 0 ? 'over' : 'present'
 }
 
 /**
