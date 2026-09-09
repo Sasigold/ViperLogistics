@@ -191,7 +191,7 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
         supabase
           .from('task_contractor_workers')
           .select(
-            'contractor_worker_id, no_show, role, work_site, truck_id, contractor_workers!inner(contractor_id)',
+            'contractor_worker_id, no_show, role, work_site, truck_id, drives, contractor_workers!inner(contractor_id)',
           )
           .eq('task_id', taskId),
       ])
@@ -202,6 +202,7 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
         role: StaffRole | null
         work_site: WorkSite | null
         truck_id: string | null
+        drives: boolean | null
         contractor_workers: { contractor_id: string } | null
       }[]
       return {
@@ -216,6 +217,8 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
           role: r.role ?? null,
           work_site: r.work_site,
           truck_id: r.truck_id,
+          /* ‏0162: ראש צוות של קבלן שגם נוהג. */
+          drives: r.drives ?? false,
         })),
       }
     },
@@ -511,6 +514,15 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
       .size + chosenContractorWorkers.length
   const needed = form.worker_count ?? 0
   const understaffed = needed > 0 && assignedCount < needed
+
+  /* ‏0162: נקודת ההתחלה נשאלת פעם אחת לכל אדם. ראש צוות שנוהג מחזיק שתי
+     שורות שיבוץ (0155) — הן הופיעו כאן פעמיים באותו שם, ויכלו לשאת שתי
+     תשובות שונות לשאלה מאיפה הוא מתחיל את היום. */
+  const startPoints = [...new Set(assignments.map((a) => a.profile_id))].map((profileId) => {
+    const rows = assignments.filter((a) => a.profile_id === profileId)
+    /* שורת הראשות היא זו שנכתבה ראשונה, ושורת הנהיגה יורשת ממנה. */
+    return { profileId, rows, work_site: (rows.find((r) => r.role === 'team_lead') ?? rows[0]).work_site }
+  })
 
   /* הקבלנים שכבר הואצלו, והרשימה שנותרה לבחירה בבורר ההוספה. */
   const delegatedIds = new Set(terms.map((t) => t.contractor_id))
@@ -874,18 +886,21 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
 
                   <div className="space-y-2 rounded-lg border border-line-subtle bg-subtle/50 p-3">
                     <p className="type-overline">נקודת התחלה</p>
-                    {assignments.map((a) => (
-                      <div key={`${a.profile_id}:${a.role}`} className="flex items-center gap-2">
-                        <span className="w-32 shrink-0 truncate type-body">{nameOf(a.profile_id)}</span>
+                    {startPoints.map((p) => (
+                      <div key={p.profileId} className="flex items-center gap-2">
+                        <span className="w-32 shrink-0 truncate type-body">{nameOf(p.profileId)}</span>
                         <SegmentedControl
                           items={[
                             { key: 'field' as WorkSite, label: 'שטח' },
                             { key: 'warehouse' as WorkSite, label: 'מחסן' },
                           ]}
-                          value={a.work_site}
+                          value={p.work_site}
                           onChange={(work_site) =>
-                            canAssign[a.role] &&
-                            setAssignments((prev) => prev.map((x) => (x === a ? { ...x, work_site } : x)))
+                            /* כל שורותיו יחד — אדם מתחיל את היום במקום אחד */
+                            p.rows.every((r) => canAssign[r.role]) &&
+                            setAssignments((prev) =>
+                              prev.map((x) => (x.profile_id === p.profileId ? { ...x, work_site } : x)),
+                            )
                           }
                         />
                       </div>

@@ -164,6 +164,20 @@ export interface CustomerWorker {
   deleted_at: string | null
 }
 
+/**
+ * עובד קבלן כפי שהוא משובץ למשימה — התפקיד שהקבלן נתן לו (0121), מאיפה הוא
+ * מתחיל, והאם הוא ראש הצוות שגם נוהג (0162).
+ */
+export interface ContractorWorkerOnTask {
+  id: string
+  name: string
+  contractor_id: string
+  work_site?: 'field' | 'warehouse'
+  role?: StaffRole | null
+  /** ראש צוות של קבלן שהוא גם הנהג (0162). שמור לתפקיד `team_lead`. */
+  drives?: boolean
+}
+
 /** אותו עובד כפי שהוא משובץ למשימה (0133) — כולל התפקיד והמשאית שלו. */
 export interface CustomerWorkerOnTask {
   id: string
@@ -676,11 +690,18 @@ export interface WorkBoardRow {
    * המנייה — שיבוץ פנימי גובר.
    */
   team_lead_kind: 'staff' | 'contractor' | 'customer' | null
+  /**
+   * ראש הצוות, כמו כל משובץ אחר (0162): מאיפה הוא מתחיל, אם הוא גם נוהג,
+   * ובאיזו משאית. עד 0162 השורה החזירה ממנו שם ומזהה בלבד, ולכן תא ראש
+   * הצוות היה התא היחיד בלו״ז שלא ידע לומר את מה שהוא אומר על כל השאר.
+   * ‏null כשאין ראש צוות.
+   */
+  team_lead_work_site: WorkSite | null
+  team_lead_drives: boolean | null
+  team_lead_truck_name: string | null
   workers: AssignmentPerson[] | null
   drivers: AssignmentPerson[] | null
-  contractor_worker_list:
-    | { id: string; name: string; contractor_id: string; work_site?: 'field' | 'warehouse'; role?: StaffRole | null }[]
-    | null
+  contractor_worker_list: ContractorWorkerOnTask[] | null
   /** סגל הלקוח שמבצע בעצמו, על המשימה (0134). */
   customer_worker_list: CustomerWorkerOnTask[] | null
   /**

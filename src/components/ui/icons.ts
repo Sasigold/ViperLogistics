@@ -105,6 +105,9 @@ export {
   Armchair,
   Receipt,
   HandCoins,
+  // crew marks (0162) — who is on the task, and where he starts from
+  Crown,
+  Warehouse,
   // fleet (0089)
   Fuel,
   Gauge,
