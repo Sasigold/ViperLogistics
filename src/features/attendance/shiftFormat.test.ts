@@ -1,19 +1,19 @@
 /**
  * ההכרעות של שורת המשמרת בדוח הנוכחות.
  *
- * הן נבדקות כאן ולא דרך המסך משתי סיבות: הן מכריעות מה העובד רואה על השעות
- * שלו — "חסר" מול "נוכח" — ואותה פונקציה מזינה גם את השורה וגם את אריח
- * "שעות חסרות", כך שסטייה ביניהן היא דוח שסותר את עצמו.
+ * הן נבדקות כאן ולא דרך המסך משתי סיבות: הן מכריעות מה המנהל רואה על השעות
+ * — "חריגה" מול "נוכח" — ואותה פונקציה מזינה גם את השורה וגם את אריח
+ * "שעות חריגה", כך שסטייה ביניהן היא דוח שסותר את עצמו.
  */
 import { describe, expect, it } from 'vitest'
 import {
-  SHORTFALL_TOLERANCE_H,
+  OVERAGE_TOLERANCE_H,
   clockPointUrl,
   fmtCoords,
   fmtWorkEnd,
   shiftEndLocation,
   shiftLocation,
-  shiftShortfall,
+  shiftOverage,
   shiftTone,
 } from './shiftFormat'
 import type { AttendanceReportRow } from '../../types/domain'
@@ -29,31 +29,28 @@ const shift = (over: Partial<ToneInput> = {}): ToneInput => ({
   ...over,
 }) as AttendanceReportRow
 
-describe('shiftShortfall', () => {
-  it('מודד את הפער בין המתוכנן לבפועל', () => {
-    expect(shiftShortfall(9, 7)).toBe(2)
+describe('shiftOverage', () => {
+  it('מודד כמה נעבד מעבר למתוכנן', () => {
+    expect(shiftOverage(9, 11)).toBe(2)
   })
 
-  it('משמרת מלאה אינה חסרה', () => {
-    expect(shiftShortfall(9, 9)).toBe(0)
+  it('משמרת מלאה אינה חורגת', () => {
+    expect(shiftOverage(9, 9)).toBe(0)
   })
 
-  it('שעות מעבר למתוכנן אינן חוסר שלילי', () => {
-    expect(shiftShortfall(9, 10.5)).toBe(0)
+  it('שעות שנפלו מהמתוכנן אינן חריגה שלילית — הכיוון הזה אינו מוצג עוד', () => {
+    expect(shiftOverage(9, 7)).toBe(0)
+    expect(shiftOverage(9, null)).toBe(0)
   })
 
-  it('משמרת בלי שיבוץ אינה חסרה — אין מולה מה להשוות', () => {
-    expect(shiftShortfall(null, 4)).toBe(0)
-    expect(shiftShortfall(0, 4)).toBe(0)
+  it('משמרת בלי שיבוץ אינה חורגת — אין מולה מה להשוות', () => {
+    expect(shiftOverage(null, 4)).toBe(0)
+    expect(shiftOverage(0, 4)).toBe(0)
   })
 
-  it('פער של פחות מדקה הוא עיגול ולא חוסר', () => {
-    expect(shiftShortfall(9, 9 - SHORTFALL_TOLERANCE_H / 2)).toBe(0)
-    expect(shiftShortfall(9, 9 - SHORTFALL_TOLERANCE_H)).toBeCloseTo(SHORTFALL_TOLERANCE_H, 10)
-  })
-
-  it('החתמה בלי שעות בפועל חסרה את כל המשמרת', () => {
-    expect(shiftShortfall(9, null)).toBe(9)
+  it('פער של פחות מדקה הוא עיגול ולא חריגה', () => {
+    expect(shiftOverage(9, 9 + OVERAGE_TOLERANCE_H / 2)).toBe(0)
+    expect(shiftOverage(9, 9 + OVERAGE_TOLERANCE_H)).toBeCloseTo(OVERAGE_TOLERANCE_H, 10)
   })
 })
 
@@ -66,19 +63,23 @@ describe('shiftTone', () => {
     expect(shiftTone(shift({ actual_hours: 10.5, pay: { ...shift().pay, overtime_hours: 1.5 } }))).toBe('overtime')
   })
 
-  it('שעות שנפלו מהמתוכנן מסומנות כחוסר', () => {
-    expect(shiftTone(shift({ actual_hours: 7 }))).toBe('short')
+  it('שעות מעבר למתוכנן מסומנות כחריגה', () => {
+    expect(shiftTone(shift({ actual_hours: 11 }))).toBe('over')
+  })
+
+  it('שעות שנפלו מהמתוכנן הן נוכחות רגילה, לא חריגה', () => {
+    expect(shiftTone(shift({ actual_hours: 7 }))).toBe('present')
   })
 
   it('ממתין לאישור גובר גם על משמרת שהשעות בה מושלמות', () => {
     expect(shiftTone(shift({ status: 'pending' }))).toBe('pending')
   })
 
-  it('נדחה גובר על החוסר שבתוכו', () => {
-    expect(shiftTone(shift({ status: 'rejected', actual_hours: 7 }))).toBe('rejected')
+  it('נדחה גובר על החריגה שבתוכו', () => {
+    expect(shiftTone(shift({ status: 'rejected', actual_hours: 11 }))).toBe('rejected')
   })
 
-  it('משמרת פתוחה אינה חסרה — היא פשוט לא הסתיימה', () => {
+  it('משמרת פתוחה אינה חורגת — היא פשוט לא הסתיימה', () => {
     expect(shiftTone(shift({ clock_out_at: null, actual_hours: null }))).toBe('open')
   })
 

@@ -67,7 +67,7 @@ import {
   needsAttention,
   shiftEndLocation,
   shiftLocation,
-  shiftShortfall,
+  shiftOverage,
   shiftTone,
   visibleFlags,
 } from './shiftFormat'
@@ -133,11 +133,11 @@ const SHIFT_TONE: Record<ShiftTone, ToneStyle> = {
     box: 'border-violet-200 bg-violet-50 text-violet-600 dark:border-violet-900 dark:bg-violet-950/60 dark:text-violet-300',
     text: 'text-violet-700 dark:text-violet-300',
   },
-  short: {
-    label: 'חסר',
+  over: {
+    label: 'חריגה',
     Icon: AlertCircle,
-    box: 'border-error-border bg-error-subtle text-error',
-    text: 'text-error-text',
+    box: 'border-warning-border bg-warning-subtle text-warning',
+    text: 'text-warning-text',
   },
   pending: {
     label: 'ממתין',
@@ -162,11 +162,11 @@ const SHIFT_TONE: Record<ShiftTone, ToneStyle> = {
 /**
  * הטונים שהם חוות דעת על המשמרת, להבדיל ממצב הרשומה במערכת.
  *
- * ‏"נוכח", "שעות נוספות" ו"חסר" הם מה שהמנהל מסיק מהשעות; "ממתין", "נדחה"
+ * ‏"נוכח", "שעות נוספות" ו"חריגה" הם מה שהמנהל מסיק מהשעות; "ממתין", "נדחה"
  * ו"במשמרת" הם עובדות על הרשומה עצמה שהעובד חייב לדעת — בלעדיהן הוא לא
  * יודע שהדיווח שלו טרם אושר. לכן רק הראשונים נחסכים מהעובד.
  */
-const OUTCOME_TONES = new Set<ShiftTone>(['present', 'overtime', 'short'])
+const OUTCOME_TONES = new Set<ShiftTone>(['present', 'overtime', 'over'])
 
 /** שורה ברשימת הכרטיסים. תמיד משמרת שהייתה — אין שורות ליום ריק. */
 interface ShiftRowView {
@@ -189,9 +189,11 @@ interface ShiftRowView {
    */
   endLocation: string | null
   hoursText: string
-  /** השורה שמתחת לסה"כ: הנוספות, החוסר, או מול מה נמדדה המשמרת */
+  /** השורה שמתחת לסה"כ: הנוספות, החריגה, או מול מה נמדדה המשמרת */
   deltaText: string | null
-  deltaTone: 'overtime' | 'short' | 'muted'
+  deltaTone: 'overtime' | 'over' | 'muted'
+  /** בקשת תיקון שעות שממתינה להכרעה (0165) */
+  hasCorrection: boolean
   /** הבונוס על המשמרת, או null כשאין או כשאין הרשאה לראות סכומים */
   bonus: number | null
   tone: ShiftTone
@@ -213,9 +215,9 @@ function toShiftView(r: AttendanceReportRow, sameDayCount: number): ShiftRowView
   const overtime = r.pay?.overtime_hours ?? 0
   const planned = r.planned_hours ?? 0
   const actual = r.actual_hours ?? 0
-  // משמרת פתוחה לא "חסרה" — היא פשוט עוד לא נגמרה, והשעות שחסרות בה ימלאו
-  // את עצמן כשהעובד יחתים יציאה. מולה מוצג המתוכנן בלבד.
-  const shortfall = clockOut ? shiftShortfall(planned, actual) : 0
+  // משמרת פתוחה עוד לא "חרגה" — `actual_hours` נכתב ביציאה, ועד אז אין מול
+  // מה להשוות. מולה מוצג המתוכנן בלבד.
+  const overage = clockOut ? shiftOverage(planned, actual) : 0
   /* שני קצוות ולא אחד: מי שיצא מהמחסן יכול לסיים בשטח, ולהפך (0166) */
   const location = shiftLocation(r)
   const endLocation = shiftEndLocation(r)
@@ -240,12 +242,13 @@ function toShiftView(r: AttendanceReportRow, sameDayCount: number): ShiftRowView
     deltaText:
       overtime > 0
         ? `+${fmtDurationHHMM(overtime)}`
-        : shortfall > 0
-        ? `חסר ${fmtDurationHHMM(shortfall)}`
+        : overage > 0
+        ? `חריגה ${fmtDurationHHMM(overage)}`
         : planned > 0
         ? `מתוך ${fmtDurationHHMM(planned)}`
         : null,
-    deltaTone: overtime > 0 ? 'overtime' : shortfall > 0 ? 'short' : 'muted',
+    deltaTone: overtime > 0 ? 'overtime' : overage > 0 ? 'over' : 'muted',
+    hasCorrection: !!r.correction,
     bonus: r.pay?.bonus ? r.pay.bonus : null,
     tone: shiftTone(r),
     row: r,
@@ -291,7 +294,7 @@ export function AttendanceReport({
   /**
    * מי רואה את המדידה מול המתוכנן — הנהלה בלבד.
    *
-   * העובד מקבל את מה שקרה: נכנס, יצא, כך וכך שעות. "מתוך", "חסר" ו"נוספות"
+   * העובד מקבל את מה שקרה: נכנס, יצא, כך וכך שעות. "מתוך", "חריגה" ו"נוספות"
    * אינם נתון אלא הערכה, והמקום שלה הוא אצל מי שמאשר את המשמרת ולא בכרטיס
    * שמחכה לעובד בטלפון.
    *
@@ -452,8 +455,8 @@ export function AttendanceReport({
    *
    * ימים בלי החתמה אינם מקבלים שורה. הדוח הוא רשימת המשמרות ולא לוח שנה:
    * חודש שבו רוב השורות ריקות קובר בתוכו את מה שבאמת קרה, וממילא שורה כזו
-   * לא ידעה להבחין בין חופשה, מחלה ויום שלא שובץ בו דבר. החוסר עצמו לא
-   * נעלם — הוא נמדד מול המתוכנן, בשורת המשמרת ובאריח "שעות חסרות".
+   * לא ידעה להבחין בין חופשה, מחלה ויום שלא שובץ בו דבר. החריגה מהתכנון לא
+   * נעלמת — היא נמדדת מול המתוכנן, בשורת המשמרת ובאריח "שעות חריגה".
    *
    * הסדר מהחדש לישן: את החודש קוראים מהמשמרת האחרונה אחורה. בתוך יום אחד
    * הסדר נשאר כרונולוגי, כי שתי משמרות של אותו יום נקראות ברצף.
@@ -515,26 +518,26 @@ export function AttendanceReport({
   }, [totals, rows])
 
   /**
-   * המתוכנן והחוסר מולו.
+   * המתוכנן והחריגה ממנו.
    *
    * מאושרות בלבד, בדיוק כמו ה-totals שהשרת מחזיר: אחרת "96:30 מתוך 104:00"
    * היה משווה שעות מאושרות לתכנון שכולל גם משמרות שטרם הוכרעו, ושני הצדדים
    * של אותו משפט היו נספרים לפי שני כללים.
    *
    * משמרת בלי planned_hours אינה נכנסת לאף אחד משני הסכומים — לא לתכנון ולא
-   * לחוסר. לכן ייתכן שהעבודה בפועל תעלה על המתוכנן, וזה נכון: מי שהחתים בלי
-   * שיבוץ עבד שעות שאיש לא תכנן.
+   * לחריגה. מי שהחתים בלי שיבוץ עבד שעות שאיש לא תכנן, ולכן אין מולן תכנון
+   * לחרוג ממנו.
    */
-  const { plannedHours, missingHours } = useMemo(() => {
+  const { plannedHours, overageHours } = useMemo(() => {
     let planned = 0
-    let missing = 0
+    let over = 0
     for (const r of rows) {
       if (r.status !== 'approved') continue
       planned += r.planned_hours ?? 0
-      // משמרת שעדיין פתוחה אינה נספרת כחוסר, בדיוק כמו בשורה שלה
-      if (r.clock_out_at) missing += shiftShortfall(r.planned_hours, r.actual_hours)
+      // משמרת שעדיין פתוחה אינה נספרת כחריגה, בדיוק כמו בשורה שלה
+      if (r.clock_out_at) over += shiftOverage(r.planned_hours, r.actual_hours)
     }
-    return { plannedHours: planned, missingHours: missing }
+    return { plannedHours: planned, overageHours: over }
   }, [rows])
 
   /** ימים, לא משמרות: יום עם שתי משמרות הוא עדיין יום עבודה אחד. */
@@ -642,6 +645,10 @@ export function AttendanceReport({
           // ההערות לא הייתה אמורה לקבוע את גובה כל השורה בטבלה.
           <div className="flex flex-nowrap items-center gap-1">
             <Badge tone={STATUS_TONES[r.status]}>{STATUS_LABELS[r.status]}</Badge>
+            {/* ‏0165: בקשת תיקון אינה סטטוס ואינה דגל, ולכן היא לא הופיעה
+                באף אחת מהעמודות — והמנהל היה צריך לפתוח שורה כדי לגלות
+                שמישהו מחכה לו בה. */}
+            {r.correction && <Badge tone="warning">בקשת תיקון</Badge>}
             {r.source === 'manual' && <Badge tone="warning">ידני</Badge>}
             {visibleFlags(r.flags).map((f) => (
               <Badge key={f} tone={needsAttention([f]) ? 'error' : 'neutral'}>
@@ -817,14 +824,14 @@ export function AttendanceReport({
             tone="#7c3aed"
           />
         )}
-        {/* אותה הכרעה של `showOutcome`: "חסר" הוא מדידה מול המתוכנן, ולכן
-            הוא של מי שמאשר את המשמרת — לא של מי שעבד אותה. הוא נשמט כאן
+        {/* אותה הכרעה של `showOutcome`: "חריגה" היא מדידה מול המתוכנן, ולכן
+            היא של מי שמאשר את המשמרת — לא של מי שעבד אותה. היא נשמטת כאן
             מאותה סיבה ש"מתוך" נשמט מהאריח שמעליו. */}
         {showOutcome && (
           <SummaryTile
             icon={<PieChart size={ICON.xl} strokeWidth={STROKE} />}
-            label="שעות חסרות"
-            value={fmtDurationHHMM(missingHours)}
+            label="שעות חריגה"
+            value={fmtDurationHHMM(overageHours)}
             tone="#f59e0b"
           />
         )}
@@ -882,7 +889,10 @@ export function AttendanceReport({
               <option value="rejected">נדחה</option>
             </Select>
           </Field>
-          <Checkbox checked={onlyFlagged} onChange={setOnlyFlagged} label="רק רשומות עם חריגה" />
+          {/* "מסומנות" ולא "עם חריגה": מ-0164 "חריגה" היא שעות מעבר למתוכנן,
+              והמסנן הזה הוא על דגלי השעון — מיקום שלא אומת, סגירה אוטומטית,
+              החתמה בלי משמרת משובצת. שתי משמעויות לאותה מילה במסך אחד. */}
+          <Checkbox checked={onlyFlagged} onChange={setOnlyFlagged} label="רק רשומות מסומנות" />
         </Card>
       )}
 
@@ -984,10 +994,10 @@ export function AttendanceReport({
                   </span>
                 </>
               )}
-              {showOutcome && missingHours > 0 && (
+              {showOutcome && overageHours > 0 && (
                 <>
                   <span className="text-ink-tertiary" aria-hidden>|</span>
-                  <span className="tabular text-error-text">{fmtDurationHHMM(missingHours)} שעות חסרות</span>
+                  <span className="tabular text-warning-text">{fmtDurationHHMM(overageHours)} שעות חריגה</span>
                 </>
               )}
             </p>
@@ -1068,7 +1078,7 @@ function ShiftCell({
 
 const DELTA_CLASS: Record<ShiftRowView['deltaTone'], string> = {
   overtime: 'text-violet-700 dark:text-violet-300',
-  short: 'text-error-text',
+  over: 'text-warning-text',
   muted: 'text-ink-tertiary',
 }
 
@@ -1111,6 +1121,18 @@ function ShiftCard({
     >
       {showName && d.employeeName && (
         <p className="w-full truncate type-caption font-semibold text-ink-tertiary">{d.employeeName}</p>
+      )}
+
+      {/* ‏0165: השורה אומרת שמישהו ביקש לתקן אותה, בלי לומר מה — הפירוט
+          יושב במגירה שנפתחת בלחיצה עליה. בלי זה בקשה הייתה יכולה להמתין
+          שבוע בלי שאיש שיודע לאשר אותה יראה שהיא שם. */}
+      {d.hasCorrection && (
+        <p className="w-full">
+          <span className="inline-flex items-center gap-1 rounded-lg border border-warning-border bg-warning-subtle px-2 py-0.5 type-caption font-bold text-warning-text">
+            <AlertCircle size={ICON.xs} strokeWidth={STROKE} />
+            בקשת תיקון שעות
+          </span>
+        </p>
       )}
 
       {/* פתיחת המשמרת */}
@@ -1179,7 +1201,7 @@ function ShiftCard({
           <p className="type-title tabular" dir="ltr">
             {d.hoursText}
           </p>
-          {/* גם השורה הזו היא השוואה ולא נתון: "מתוך 9:00", "חסר 2:00",
+          {/* גם השורה הזו היא השוואה ולא נתון: "מתוך 9:00", "חריגה 2:00",
               "1:13+". בדוח של העובד נשאר המספר עצמו בלבד. */}
           {showOutcome && d.deltaText && (
             <p className={cx('truncate type-caption tabular', DELTA_CLASS[d.deltaTone])}>{d.deltaText}</p>

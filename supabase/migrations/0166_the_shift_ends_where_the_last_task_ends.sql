@@ -506,8 +506,9 @@ end $$;
 
 -- ===== 6. הדוח: איפה נכנסו, איפה יצאו, ואיפה בדיוק =========================
 --
--- ההגדרה זהה ל-0153 פרט לשלוש קבוצות מפתחות: מקום הסיום, הקואורדינטות
--- שנדגמו, והצירוף `end_work_site` שהמסך נופל אליו כשאין שם מחסן.
+-- ההגדרה זהה ל-0165 — כולל בקשת התיקון והמונה שלה — פרט לשלוש קבוצות
+-- מפתחות שנוספו: מקום הסיום, הקואורדינטות שנדגמו, והצירוף `end_work_site`
+-- שהמסך נופל אליו כשאין שם מחסן.
 
 create or replace function attendance_report(
   p_from date default null,
@@ -594,6 +595,15 @@ begin
     'clock_out_place', c.clock_out_place,
     'edited_at',      c.edited_at,
     'overtime_enabled', c.overtime_enabled,
+    -- ‏0165: בקשת תיקון פתוחה, למי שרואה את השורה. היא אינה כסף ואינה סוד —
+    -- היא הסיבה שהשעות שעל המסך אולי אינן השעות הנכונות, ומי שקורא את
+    -- השורה צריך לדעת אותה לפני שהוא מסתמך עליה.
+    'correction', (select case when e.req_at is not null then jsonb_build_object(
+                      'clock_in_at',  e.req_clock_in_at,
+                      'clock_out_at', e.req_clock_out_at,
+                      'note',         e.req_note,
+                      'at',           e.req_at) end
+                     from attendance_entries e where e.id = c.id),
     'bonus_note',     case when v_money_all or (c.is_mine and v_money_own)
                            then c.bonus_note end,
     'pay', case when v_money_all or (c.is_mine and v_money_own)
@@ -625,6 +635,12 @@ begin
       'overtime_hours', (select round(coalesce(sum((r #>> '{pay,overtime_hours}')::numeric), 0), 2)
                           from jsonb_array_elements(v_rows) r
                          where r ->> 'status' = 'approved'),
+      -- ‏0165: כמה שורות ממתינות לתיקון. האריח שסופר "ממתין לאישור" סופר
+      -- סטטוס, והבקשה אינה סטטוס — בלי המונה הזה היא הייתה מחכה בלי שאיש
+      -- ידע שהיא שם.
+      'corrections',    (select count(*) from jsonb_array_elements(v_rows) r
+                          where r -> 'correction' <> 'null'::jsonb
+                            and r -> 'correction' is not null),
       'bonus',          case when v_money_all or v_money_own then
                         (select round(coalesce(sum((r #>> '{pay,bonus}')::numeric), 0), 2)
                           from jsonb_array_elements(v_rows) r
