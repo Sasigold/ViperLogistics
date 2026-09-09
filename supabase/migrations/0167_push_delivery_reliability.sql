@@ -24,12 +24,14 @@ update public.notification_types
  where default_mode_push is distinct from 'forced';
 
 update public.notification_policies
-   set delivery_mode_push = 'opt_out'
- where delivery_mode_push is distinct from 'forced';
+   set mode = 'opt_out'
+ where channel = 'push'
+   and mode is distinct from 'forced';
 
 update public.notification_policy_overrides
-   set delivery_mode_push = 'opt_out'
- where delivery_mode_push is distinct from 'forced';
+   set mode = 'opt_out'
+ where channel = 'push'
+   and mode is distinct from 'forced';
 
 update public.app_settings
    set value = jsonb_set(
