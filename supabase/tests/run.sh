@@ -417,6 +417,16 @@ OUT="$OUT
 $OUT40"
 
 echo
+echo "== the warehouse hour goes back suite =="
+# 41 מקימה מחסן, לקוח, אירוע, עובד ושתי משימות משלה ב-current_date + 580, מעבר
+# לכל טווח אחר. היא רצה אחרונה כי היא משאירה אחריה משימות ושיבוצים שאינם
+# מנוקים, ואינה נשענת על אף חבילה קודמת.
+OUT41=$($PSQL -d vl -f "$HERE/41_the_warehouse_hour_goes_back.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT41"
+OUT="$OUT
+$OUT41"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

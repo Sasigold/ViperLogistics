@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { fmtDate, fmtHours, fmtMoney, fmtTime, fmtWeekday, fmtWeekdayShort, toISODate } from './dates'
+import {
+  fmtDate,
+  fmtHours,
+  fmtMoney,
+  fmtTime,
+  fmtWeekday,
+  fmtWeekdayShort,
+  toISODate,
+  warehouseStartDate,
+  warehouseStartsPreviousDay,
+} from './dates'
 
 /**
  * העיצוב כאן הוא המקום היחיד שממיר שעות עשרוניות למה שאדם קורא, והוא מזין
@@ -102,5 +112,43 @@ describe('fmtWeekday', () => {
     expect(fmtWeekday(null)).toBe('')
     expect(fmtWeekday(undefined)).toBe('')
     expect(fmtWeekdayShort('')).toBe('')
+  })
+})
+
+/**
+ * הכלל שהדיווח מהשטח ביקש: מהמחסן יוצאים לפני שמגיעים לשטח, ולכן שעת מחסן
+ * שגדולה משעת השטח היא של הערב שלפני. אותו כלל בדיוק יושב בשרת
+ * (`app.warehouse_start_at`, 0163), ושני הצדדים חייבים לומר אותו דבר.
+ */
+describe('שעת ההגעה למחסן', () => {
+  it('שעה שגדולה משעת השטח היא של היום שלפני', () => {
+    expect(warehouseStartsPreviousDay('23:00', '01:00')).toBe(true)
+    expect(warehouseStartDate('2026-09-11', '23:00', '01:00')).toBe('2026-09-10')
+  })
+
+  it('ומשמרת יום אינה זזה', () => {
+    expect(warehouseStartsPreviousDay('07:00', '08:00')).toBe(false)
+    expect(warehouseStartDate('2026-09-11', '07:00', '08:00')).toBe('2026-09-11')
+  })
+
+  it('שעה זהה אינה נסיגה', () => {
+    expect(warehouseStartsPreviousDay('08:00', '08:00')).toBe(false)
+    expect(warehouseStartDate('2026-09-11', '08:00', '08:00')).toBe('2026-09-11')
+  })
+
+  it('בלי אחת מהשתיים אין מול מה לסגת', () => {
+    expect(warehouseStartsPreviousDay('23:00', null)).toBe(false)
+    expect(warehouseStartsPreviousDay(null, '01:00')).toBe(false)
+    expect(warehouseStartDate('2026-09-11', '23:00', null)).toBe('2026-09-11')
+    expect(warehouseStartDate('2026-09-11', null, '01:00')).toBe('2026-09-11')
+  })
+
+  it('הצורה עם השניות נקראת כמו הצורה בלעדיהן', () => {
+    expect(warehouseStartsPreviousDay('23:00:00', '01:00:00')).toBe(true)
+    expect(warehouseStartsPreviousDay('07:00:00', '08:00:00')).toBe(false)
+  })
+
+  it('והנסיגה חוצה גם את תחילת החודש', () => {
+    expect(warehouseStartDate('2026-09-01', '22:30', '02:00')).toBe('2026-08-31')
   })
 })

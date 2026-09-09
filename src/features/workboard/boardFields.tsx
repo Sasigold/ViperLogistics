@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Checkbox, Popover, StatusPill, Tooltip, cx } from '../../components/ui'
-import { fmtHours, fmtTime } from '../../lib/dates'
+import { fmtDate, fmtHours, fmtTime, warehouseStartDate, warehouseStartsPreviousDay } from '../../lib/dates'
 import { shortAddress } from '../../lib/address'
 import type { ExecutionMethod, Status, Truck, WorkBoardRow } from '../../types/domain'
 import { PERM } from '../../lib/permissions'
@@ -320,10 +320,32 @@ function TimeCell({
   label,
 }: CellContext & { field: 'warehouse_start_time' | 'onsite_start_time'; label: string }) {
   const value = fmtTime(row[field])
+  /* יציאה מהמחסן שגדולה משעת השטח היא של הערב שלפני (0163). התא צר מכדי
+     לומר זאת במילים, ולכן "1-" נושא את ההסבר ב-title שלו — כמו שעון שמסמן
+     יום ולא כמו קיצור שצריך ללמוד. */
+  const prevDay =
+    field === 'warehouse_start_time' &&
+    warehouseStartsPreviousDay(row.warehouse_start_time, row.onsite_start_time)
   return (
     <Editable
       canEdit={canEdit}
-      view={value ? <Clip className="tabular" dir="ltr">{value}</Clip> : <Muted />}
+      view={
+        value ? (
+          <Clip className="tabular" dir="ltr">
+            {value}
+            {prevDay && (
+              <sup
+                className="ms-0.5 text-warning-text"
+                title={`יום קודם — ${fmtDate(warehouseStartDate(row.task_date, row.warehouse_start_time, row.onsite_start_time))}`}
+              >
+                -1
+              </sup>
+            )}
+          </Clip>
+        ) : (
+          <Muted />
+        )
+      }
       edit={(close) => (
         <input
           type="time"

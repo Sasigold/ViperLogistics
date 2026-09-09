@@ -68,7 +68,7 @@ import type {
   TaskRow,
   WorkSite,
 } from '../../types/domain'
-import { fmtDate } from '../../lib/dates'
+import { fmtDate, warehouseStartDate, warehouseStartsPreviousDay } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 
 interface Assignment {
@@ -677,7 +677,19 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
                 <Field label="תאריך" required error={dateError}>
                   <Input type="date" value={form.task_date ?? ''} onChange={(e) => set({ task_date: e.target.value })} disabled={!canReschedule} />
                 </Field>
-                <Field label="תחילה במחסן">
+                {/* מהמחסן יוצאים לפני שמגיעים לשטח, ולכן שעה שגדולה משעת
+                    השטח היא של הערב שלפני (0163). התאריך נאמר כאן ולא נותר
+                    להסקה: מי שרושם 23:00 למשימה של 01:00 צריך לראות שהמערכת
+                    הבינה "אתמול" ולא "מחר". */}
+                <Field
+                  label="תחילה במחסן"
+                  hint={
+                    form.task_date &&
+                    warehouseStartsPreviousDay(form.warehouse_start_time, form.onsite_start_time)
+                      ? `יום קודם — ${fmtDate(warehouseStartDate(form.task_date, form.warehouse_start_time, form.onsite_start_time))}`
+                      : undefined
+                  }
+                >
                   <Input
                     type="time"
                     value={form.warehouse_start_time?.slice(0, 5) ?? ''}
