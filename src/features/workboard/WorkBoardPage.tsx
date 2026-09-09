@@ -59,6 +59,8 @@ import { KIND_LABEL, holidaysInRange, isDayOff } from '../../lib/hebrewHolidays'
 import type { Holiday } from '../../lib/hebrewHolidays'
 import { TaskDrawer, useCanOpenTaskCard } from '../tasks/TaskDrawer'
 import { ContractorPanel, StaffingPanel } from '../tasks/taskPanels'
+import { crewLead, crewPeople } from '../tasks/crew'
+import { CrewMarks } from '../tasks/crewMarks'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { BOARD_FIELDS, SupplierPickupChip } from './boardFields'
@@ -539,14 +541,10 @@ export default function WorkBoardPage() {
    * the screen (that crew scrolls inside its own cell).
    */
   const teamRowHeight = useMemo(() => {
-    const most = rows.reduce(
-      (m, r) =>
-        Math.max(
-          m,
-          (r.workers?.length ?? 0) + (r.drivers?.length ?? 0) + (r.contractor_worker_list?.length ?? 0),
-        ),
-      0,
-    )
+    /* ‏0162: אותה ספירה שהתא מצייר — אנשים, בלי ראש הצוות שיושב בתא שלו
+       ובלי שורה שנייה לאותו אדם. לפני כן הגובה נגזר משורות השיבוץ, והשורה
+       נפתחה רחבה יותר ממה שיש בה. */
+    const most = rows.reduce((m, r) => Math.max(m, crewPeople(r).length), 0)
     return Math.max(metrics.tall, most * metrics.line + TEAM_ROW_PAD)
   }, [rows, metrics])
 
@@ -1778,11 +1776,9 @@ const MobileTaskCard = memo(function MobileTaskCard({
 }) {
   const label = row.end_client_name || row.title || row.customer_name || row.task_type_name
   const time = fmtTime(row.onsite_start_time) || fmtTime(row.warehouse_start_time)
-  const team = [
-    ...(row.workers ?? []).map((w) => w.name),
-    ...(row.drivers ?? []).map((d) => d.name),
-    ...(row.contractor_worker_list ?? []).map((w) => w.name),
-  ]
+  /* אדם אחד, צ׳יפ אחד — ראש הצוות בראש הרשימה, כמו בלו״ז (0162). */
+  const lead = crewLead(row)
+  const team = [...(lead ? [lead] : []), ...crewPeople(row)]
 
   return (
     <div
@@ -1835,9 +1831,13 @@ const MobileTaskCard = memo(function MobileTaskCard({
             the question this line exists to answer */}
         <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
           {team.length > 0 ? (
-            team.map((name) => (
-              <span key={name} className="rounded bg-subtle px-1 type-caption text-ink-secondary">
-                {name}
+            team.map((p) => (
+              <span
+                key={p.key}
+                className="inline-flex items-center gap-0.5 rounded bg-subtle px-1 type-caption text-ink-secondary"
+              >
+                <CrewMarks person={p} lead={p === lead} />
+                {p.name}
               </span>
             ))
           ) : (

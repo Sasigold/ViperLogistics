@@ -6,6 +6,8 @@ import { shortAddress } from '../../lib/address'
 import type { ExecutionMethod, Status, Truck, WorkBoardRow } from '../../types/domain'
 import { PERM } from '../../lib/permissions'
 import { statusOptions } from './statusOptions'
+import { crewLead, crewPeople } from '../tasks/crew'
+import { CrewMarks } from '../tasks/crewMarks'
 
 export interface BoardLookups {
   statuses: Status[]
@@ -626,20 +628,25 @@ function ContractorCell({ row, canEdit, lookups }: CellContext) {
 }
 
 /**
- * ראש הצוות — פנימי או של קבלן (0128). עד אז התא קרא רק שיבוץ פנימי, וראש
- * הצוות שהקבלן מינה נבלע ברשימת "צוות" עם כל השאר.
+ * ראש הצוות — פנימי, של קבלן (0128) או של הלקוח (0134).
+ *
+ * ‏0162: התא אומר עליו את מה שתא "צוות" אומר על כל שאר המשובצים — אם הוא גם
+ * נוהג (ובאיזו משאית), ואם הוא יוצא מהמחסן. זה מה שמאפשר לו להיות בתא אחד:
+ * עד כה ראש צוות שנוהג הופיע גם כאן וגם שם, פעם בתור הראש ופעם בתור הנהג,
+ * ובשתי השורות היה כתוב אותו שם.
  */
 function TeamLeadCell({ row, canEdit, lookups }: CellContext) {
   const canOwnStaff = lookups.canAssignOwnStaff && row.customer_self_performing
+  const lead = crewLead(row)
   return (
     <PanelCell
       canEdit={canEdit || canOwnStaff}
       view={
-        row.team_lead_name ? (
+        lead ? (
           <span className="flex items-center justify-center gap-0.5 overflow-hidden">
-            {row.team_lead_kind === 'contractor' && <span className="shrink-0 text-[9px]">👷</span>}
-            {row.team_lead_kind === 'customer' && <span className="shrink-0 text-[9px]">🏢</span>}
-            <Clip>{row.team_lead_name}</Clip>
+            <CrewMarks person={lead} />
+            {/* המשאית שלו נאמרת כמו של כל נהג אחר — בשם, אחרי נקודה */}
+            <Clip>{lead.truck ? `${lead.name} · ${lead.truck}` : lead.name}</Clip>
           </span>
         ) : (
           <Muted />
@@ -652,8 +659,8 @@ function TeamLeadCell({ row, canEdit, lookups }: CellContext) {
 
 /**
  * Everyone assigned, by name, one per line — and the place they are assigned
- * from. Staff, drivers and a delegated contractor's crew read as one list,
- * because in the field they are one crew.
+ * from. Staff, drivers, a delegated contractor's crew and the customer's own
+ * (0134) read as one list, because in the field they are one crew.
  *
  * העריכה נפתחת בפאנל (0108) ולא בבורר שהיה כאן: הבורר ידע לענות רק על "מי",
  * ומחצית מהשאלה של התא הזה היא "מאיפה" — מי יוצא מהמחסן ומי מגיע לשטח, ומי
@@ -662,9 +669,6 @@ function TeamLeadCell({ row, canEdit, lookups }: CellContext) {
  */
 function TeamCell({ row, canEdit, can, lookups }: CellContext) {
   const canDriver = can(PERM.TASKS_ASSIGN_DRIVER)
-  const contractorWorkers = row.contractor_worker_list ?? []
-  /* סגל של לקוח שמבצע בעצמו (0134). אותו תא בדיוק — בשטח הם צוות אחד. */
-  const customerWorkers = row.customer_worker_list ?? []
   /* שיבוץ עובדי קבלן אינו עובר ב-`canEdit`: היא מכפילה ב-`board.inline_edit`,
      שאין למנהל קבלן — והתא הזה הוא הדבר האחד שהוא כן עורך. */
   const canContractor = lookups.canAssignContractor && !!row.contractor_id
@@ -672,55 +676,10 @@ function TeamCell({ row, canEdit, can, lookups }: CellContext) {
      של הלקוח ולא `performed_by` של השורה. */
   const canOwnStaff = lookups.canAssignOwnStaff && row.customer_self_performing
 
-  /* אותו אדם ששובץ גם כעובד וגם כנהג מופיע פעם אחת, עם שני האייקונים (0094).
-     איחוד לפי profile_id; עובד קבלן נשאר נפרד (מרחב זהות אחר). */
-  const staffMap = new Map<
-    string,
-    { name: string; roles: Set<'worker' | 'driver'>; site?: 'field' | 'warehouse'; truck?: string | null }
-  >()
-  for (const w of row.workers ?? []) {
-    const e = staffMap.get(w.profile_id) ?? { name: w.name, roles: new Set(), site: w.work_site }
-    e.roles.add('worker')
-    staffMap.set(w.profile_id, e)
-  }
-  for (const d of row.drivers ?? []) {
-    const e = staffMap.get(d.profile_id) ?? { name: d.name, roles: new Set(), site: d.work_site }
-    e.roles.add('driver')
-    if (d.truck_name) e.truck = d.truck_name
-    staffMap.set(d.profile_id, e)
-  }
-  const people = [
-    ...[...staffMap.entries()].map(([id, e]) => ({
-      key: `s:${id}`,
-      name: e.truck ? `${e.name} · ${e.truck}` : e.name,
-      /* עובד רגיל נשאר בלי אייקון; ריבוי תפקידים מציג נהג+עובד. */
-      mark:
-        e.roles.size > 1
-          ? ['driver', 'worker'].filter((r) => e.roles.has(r as 'worker' | 'driver')).map((r) => (r === 'driver' ? '🚚' : '🦺')).join('')
-          : e.roles.has('driver')
-            ? '🚚'
-            : '',
-      site: e.site,
-    })),
-    /* ראש צוות של קבלן יושב מ-0128 בשורה של ראש הצוות, ולכן אינו חוזר כאן:
-       אדם אחד, מקום אחד. שאר הסגל — נהג הקבלן ועובדיו — נשאר. */
-    ...contractorWorkers
-      .filter((w) => w.role !== 'team_lead')
-      .map((w) => ({
-        key: `c:${w.id}`,
-        name: w.name,
-        mark: w.role === 'driver' ? '👷🚚' : '👷',
-        site: w.work_site,
-      })),
-    ...customerWorkers
-      .filter((w) => w.role !== 'team_lead')
-      .map((w) => ({
-        key: `o:${w.id}`,
-        name: w.truck_name ? `${w.name} · ${w.truck_name}` : w.name,
-        mark: w.role === 'driver' ? '🏢🚚' : '🏢',
-        site: w.work_site,
-      })),
-  ]
+  /* אדם אחד, שורה אחת — והוא נספר, מסומן ומוצג פעם אחת (0094/0162). מי
+     שיושב בתא "ראש צוות" אינו חוזר כאן: זה מה שהוציא מכאן את ראש הצוות
+     שנוהג, שהופיע בשתי השורות באותו שם. הכללים עצמם ב-`crew.ts`. */
+  const people = crewPeople(row)
 
   const view =
     people.length === 0 ? (
@@ -736,10 +695,8 @@ function TeamCell({ row, canEdit, can, lookups }: CellContext) {
             className={cx('flex items-center justify-center gap-0.5 overflow-hidden leading-none', FS)}
             style={{ height: 'var(--vl-board-line, 1rem)' }}
           >
-            {p.mark && <span className="shrink-0 text-[9px]">{p.mark}</span>}
-            {/* מי שיוצא מהמחסן מתחיל בשעה אחרת מכולם, ולכן הסימון נשאר לצד השם */}
-            {p.site === 'warehouse' && <span className="shrink-0 text-[9px]">🏭</span>}
-            <Clip tight>{p.name}</Clip>
+            <CrewMarks person={p} />
+            <Clip tight>{p.truck ? `${p.name} · ${p.truck}` : p.name}</Clip>
           </span>
         ))}
       </span>

@@ -418,6 +418,12 @@ export function useContractorWorkerAssign() {
        * ולא רק את מה שהוא משנה. שליחה חלקית מוחקת את השאר.
        */
       truckId?: string | null
+      /**
+       * ראש הצוות של הקבלן הוא גם הנהג (0162). לעובד הקבלן אין שורת שיבוץ
+       * שנייה כמו לצוות הפנימי — המפתח הוא (משימה, עובד) — ולכן זה סימון על
+       * השורה, והשרת דוחה אותו על כל תפקיד שאינו ראש צוות.
+       */
+      drives?: boolean
     }) => {
       const { error } = await supabase.rpc('contractor_assign_worker', {
         p_task_id: v.taskId,
@@ -428,6 +434,7 @@ export function useContractorWorkerAssign() {
         p_work_site: v.workSite ?? null,
         p_role: v.role ?? null,
         p_truck_id: v.truckId ?? null,
+        p_drives: v.drives ?? false,
       })
       if (error) throw error
     },

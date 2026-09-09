@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import listPlugin from '@fullcalendar/list'
@@ -130,6 +130,42 @@ const VIEWS: { key: ViewKey; label: string; icon: typeof CalendarDays }[] = [
   { key: 'listMonth', label: 'סדר יום', icon: List },
 ]
 
+/* ── לאן הלוח חוזר ───────────────────────────────────────────────────────
+   פתיחת אירוע היא ניווט למסך אחר, והמסך הזה יורד מהעץ איתה — עם החודש
+   שעמדו עליו ועם הסינון שהגיעו אליו. החזרה נחתה תמיד על החודש הנוכחי ובלי
+   סינון, ומי שעבר על מרץ אירוע-אירוע התחיל את מרץ מחדש בכל פעם.
+
+   ‏`sessionStorage` ולא `localStorage`: זו **המשכיות של ישיבה**, לא העדפה.
+   מחר בבוקר הלוח נפתח על היום, וכך גם בלשונית חדשה — הזיכרון חי כל עוד
+   הלשונית חיה. הכתיבה נכשלת בשקט: מיקום שלא נשמר אינו סיבה לשבור מסך.   */
+
+const STATE_KEY = 'vl-calendar-state'
+
+interface CalendarState {
+  view: ViewKey
+  /** תחילת התקופה שהתצוגה עמדה עליה — החודש עצמו, לא היום שנראה בפינה. */
+  date: string
+  filters: Filters
+}
+
+function loadCalendarState(): CalendarState | null {
+  try {
+    const raw = sessionStorage.getItem(STATE_KEY)
+    if (!raw) return null
+    const saved = JSON.parse(raw) as Partial<CalendarState>
+    /* תצוגה שאינה קיימת עוד, או תאריך שאינו תאריך, אינם שגיאה — הם פשוט
+       אינם משחזרים דבר. */
+    if (typeof saved.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(saved.date)) return null
+    return {
+      view: VIEWS.some((v) => v.key === saved.view) ? (saved.view as ViewKey) : 'dayGridMonth',
+      date: saved.date,
+      filters: readSavedFilters((saved.filters ?? {}) as Record<string, unknown>),
+    }
+  } catch {
+    return null
+  }
+}
+
 export default function CalendarPage() {
   const qc = useQueryClient()
   const toast = useToast()
@@ -146,10 +182,20 @@ export default function CalendarPage() {
    * שנמצא עליהם — אירועים וחגים כאחד — שייך לחודש אחר ואינו מוצג כאן.
    */
   const [period, setPeriod] = useState<{ from: string; to: string } | null>(null)
-  const [filters, setFilters] = useState<Filters>(emptyFilters)
+  /**
+   * החודש והסינון שהמסך ירד מהעץ איתם — ‏`initialDate` ו-`initialView` של
+   * ‏FullCalendar נקראים ברינדור הראשון בלבד, ולכן זו קריאה אחת ב-ref.
+   *
+   * הסינון משוחזר רק למי שיש לו את המפתח: בלי סרגל הסינון אין דרך לצאת
+   * ממנו, ולוח שמסתיר מחצית מהאירועים בלי לומר למה הוא לוח שבור.
+   */
+  const restored = useRef(loadCalendarState()).current
+  const [filters, setFilters] = useState<Filters>(
+    restored && has(PERM.CALENDAR_FILTER) ? restored.filters : emptyFilters,
+  )
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [eventModal, setEventModal] = useState(false)
-  const [view, setView] = useState<ViewKey>('dayGridMonth')
+  const [view, setView] = useState<ViewKey>(restored?.view ?? 'dayGridMonth')
   /** What the toolbar would have said — the phone draws it itself now. */
   const [nav, setNav] = useState<{ title: string; showsToday: boolean }>({ title: '', showsToday: true })
   const calRef = useRef<FullCalendar>(null)
@@ -158,6 +204,17 @@ export default function CalendarPage() {
     calRef.current?.getApi().changeView(next)
     setView(next)
   }, [])
+
+  /* מה שיוחזר בכניסה הבאה. נכתב מהתקופה שהתצוגה דיווחה עליה ולא ממה שנלחץ,
+     ולכן גם החלקה, "היום" ומעבר תצוגה נשמרים. */
+  useEffect(() => {
+    if (!period) return
+    try {
+      sessionStorage.setItem(STATE_KEY, JSON.stringify({ view, date: period.from, filters }))
+    } catch {
+      /* מיקום שלא נשמר אינו סיבה לשבור מסך */
+    }
+  }, [view, period, filters])
 
   /* ── swiping the grid ───────────────────────────────────────────────────
      A phone has no room for a row of navigation buttons over a month that is
@@ -908,7 +965,9 @@ export default function CalendarPage() {
             <FullCalendar
               ref={calRef}
               plugins={[dayGridPlugin, listPlugin, interactionPlugin]}
-              initialView="dayGridMonth"
+              initialView={restored?.view ?? 'dayGridMonth'}
+              /* ‏0162: החזרה מאירוע נוחתת על החודש שיצאו ממנו */
+              initialDate={restored?.date}
               // on a phone the grid carries its own title above, and the swipe
               // replaces prev/next — the toolbar is a row the month can have back
               headerToolbar={

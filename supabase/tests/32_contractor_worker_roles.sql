@@ -292,3 +292,123 @@ select t_eq('ולא נשארה משאית על מי שאינו נוהג',
   (select truck_id from task_contractor_workers
     where task_id = '61000000-0000-0000-0000-000000032003'
       and contractor_worker_id = 'ca000000-0000-0000-0000-0000003200a1') is null, true);
+
+-- ===========================================================================
+-- ‏0162: ראש הצוות של הקבלן יכול להיות גם הנהג
+--
+-- ארבע טענות: הסימון שמור לראש צוות, הוא דורש שהעובד מוגדר נהג, הוא פותח
+-- לראש הצוות את המשאית — והלו״ז מדווח עליו בשורת ראש הצוות.
+--
+-- משימת הפירוק היא הזירה: עובד A (ראש צוות + נהג) כבר משובץ עליה כראש צוות
+-- מסעיף 0127 שלמעלה, ואין עליה ראש צוות פנימי.
+-- ===========================================================================
+
+\echo '--- 0162: ראש צוות של קבלן שגם נוהג ---'
+
+-- משימה רביעית, מואצלת לאותו קבלן ובלי ראש צוות פנימי — כאן נבדק עובד B,
+-- שמוגדר ראש צוות אך אינו מוגדר נהג.
+insert into tasks (id, event_id, customer_id, task_type_id, task_date, worker_count, status_id)
+select '61000000-0000-0000-0000-000000032004', '30000000-0000-0000-0000-00000000032a',
+       '10000000-0000-0000-0000-00000000032a', tt.id, current_date + 480, 4,
+       (select id from statuses where entity = 'task' and code = 'draft' and deleted_at is null)
+  from task_types tt where tt.name = 'סידור' limit 1;
+insert into task_contractor_terms (task_id, contractor_id, price, work_site)
+values ('61000000-0000-0000-0000-000000032004', 'c0000000-0000-0000-0000-00000000032a', 0, 'field');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000032a4', false);
+
+-- הסימון הוא של ראש הצוות. מי שמשובץ נהג כבר נוהג, ועובד רגיל אינו נוהג.
+select t_expect_fail('"גם נהג" על עובד רגיל נדחה', $$
+  select contractor_assign_worker(
+      (select t.id from tasks t where t.event_id = '30000000-0000-0000-0000-00000000032a'
+         and t.task_type_id = (select id from task_types where code='teardown' limit 1)
+         and t.deleted_at is null limit 1),
+      'ca000000-0000-0000-0000-0000003200a1', null, true, null, null, null, true)$$);
+
+-- עובד B מוגדר ראש צוות בלבד — הסימון נדחה, והשיבוץ בלעדיו עובר.
+select t_expect_fail('ראש צוות שאינו מוגדר נהג אינו מסומן נוהג', $$
+  select contractor_assign_worker('61000000-0000-0000-0000-000000032004',
+      'cb000000-0000-0000-0000-0000003200b1', null, true, null, 'team_lead', null, true)$$);
+select t_expect_ok('והוא משובץ ראש צוות בלי הסימון', $$
+  select contractor_assign_worker('61000000-0000-0000-0000-000000032004',
+      'cb000000-0000-0000-0000-0000003200b1', null, true, null, 'team_lead', null, false)$$);
+
+-- עובד A מוגדר ראש צוות **וגם** נהג — הסימון מתקבל.
+select t_expect_ok('ראש צוות שמוגדר נהג מסומן "גם נהג"', $$
+  select contractor_assign_worker(
+      (select t.id from tasks t where t.event_id = '30000000-0000-0000-0000-00000000032a'
+         and t.task_type_id = (select id from task_types where code='teardown' limit 1)
+         and t.deleted_at is null limit 1),
+      'ca000000-0000-0000-0000-0000003200a1', null, true, null, 'team_lead', null, true)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('והסימון נרשם על שורת השיבוץ',
+  (select tcw.drives from task_contractor_workers tcw
+     join tasks t on t.id = tcw.task_id
+    where t.event_id = '30000000-0000-0000-0000-00000000032a'
+      and t.task_type_id = (select id from task_types where code='teardown' limit 1)
+      and tcw.contractor_worker_id = 'ca000000-0000-0000-0000-0000003200a1'), true);
+
+-- והמשאית נפתחת לו, בדיוק כמו לנהג. המשרד קובע אותה (0154), והרשימה של
+-- הלקוח כבר מוגבלת למשאית א׳ מהסעיף שמעל.
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000032a1', false);
+select t_expect_ok('ראש הצוות שנוהג מקבל משאית', $$
+  select contractor_assign_worker(
+      (select t.id from tasks t where t.event_id = '30000000-0000-0000-0000-00000000032a'
+         and t.task_type_id = (select id from task_types where code='teardown' limit 1)
+         and t.deleted_at is null limit 1),
+      'ca000000-0000-0000-0000-0000003200a1', null, true, null, 'team_lead',
+      '7c000000-0000-0000-0000-0000003200f1', true)$$);
+-- וכשהסימון יורד, יורדת איתו המשאית — הקורא שולח את השורה כולה.
+select t_expect_fail('וראש צוות שאינו מסומן נוהג אינו מקבל משאית', $$
+  select contractor_assign_worker(
+      (select t.id from tasks t where t.event_id = '30000000-0000-0000-0000-00000000032a'
+         and t.task_type_id = (select id from task_types where code='teardown' limit 1)
+         and t.deleted_at is null limit 1),
+      'ca000000-0000-0000-0000-0000003200a1', null, true, null, 'team_lead',
+      '7c000000-0000-0000-0000-0000003200f1', false)$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+\echo '--- 0162: השורה בלו״ז אומרת מה ראש הצוות הוא ---'
+select t_eq('הלו״ז מדווח שראש הצוות של הקבלן נוהג',
+  (select w.team_lead_drives from work_board_view w
+     join tasks t on t.id = w.id
+    where t.event_id = '30000000-0000-0000-0000-00000000032a'
+      and t.task_type_id = (select id from task_types where code='teardown' limit 1)), true);
+select t_eq('ובאיזו משאית',
+  (select w.team_lead_truck_name from work_board_view w
+     join tasks t on t.id = w.id
+    where t.event_id = '30000000-0000-0000-0000-00000000032a'
+      and t.task_type_id = (select id from task_types where code='teardown' limit 1)), 'משאית 32 א');
+select t_eq('ומאיפה הוא מתחיל',
+  (select w.team_lead_work_site from work_board_view w
+     join tasks t on t.id = w.id
+    where t.event_id = '30000000-0000-0000-0000-00000000032a'
+      and t.task_type_id = (select id from task_types where code='teardown' limit 1)), 'field');
+select t_eq('וראש צוות שאינו נוהג מדווח ככזה',
+  (select team_lead_drives from work_board_view
+    where id = '61000000-0000-0000-0000-000000032004'), false);
+
+-- ראש צוות פנימי שנוהג: שורת שיבוץ שנייה בתפקיד driver (0155), ומשם הלו״ז
+-- גוזר את אותן שלוש התשובות. המשימה היא זו של סעיף 0128, שעליה כבר יושב
+-- ראש צוות פנימי.
+insert into task_assignments (task_id, profile_id, role, work_site, truck_id) values
+  ('61000000-0000-0000-0000-000000032003', '20000000-0000-0000-0000-0000000032a5', 'driver',
+   'warehouse', '7c000000-0000-0000-0000-0000003200f2');
+update task_assignments set work_site = 'warehouse'
+ where task_id = '61000000-0000-0000-0000-000000032003'
+   and profile_id = '20000000-0000-0000-0000-0000000032a5' and role = 'team_lead';
+
+select t_eq('וגם ראש הצוות הפנימי שנוהג מדווח ככזה',
+  (select team_lead_drives from work_board_view
+    where id = '61000000-0000-0000-0000-000000032003'), true);
+select t_eq('עם המשאית שלו',
+  (select team_lead_truck_name from work_board_view
+    where id = '61000000-0000-0000-0000-000000032003'), 'משאית 32 ב');
+select t_eq('ונקודת ההתחלה שלו היא של שורת הראשות',
+  (select team_lead_work_site from work_board_view
+    where id = '61000000-0000-0000-0000-000000032003'), 'warehouse');

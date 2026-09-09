@@ -60,6 +60,7 @@ import { EventActivityLog } from './EventActivityLog'
 import { EventSpecsModal } from './EventSpecsModal'
 import { CustomerSignatureModal } from './CustomerSignatureModal'
 import { useEventSpecs } from './specQueries'
+import { crewPeople, crewSize } from '../tasks/crew'
 import { sumAddons, useEventPriceAddons } from '../pricing/addonQueries'
 import { useEventSignatures } from './signatureQueries'
 import type { EventPriceAddon, EventRow, PerformedBy, WorkBoardRow } from '../../types/domain'
@@ -215,13 +216,9 @@ export default function EventDetailPage() {
     const setupCount = tasks.filter((t) => t.task_type_code === 'setup').length
     const teardownCount = tasks.filter((t) => t.task_type_code === 'teardown').length
     const otherCount = tasks.length - setupCount - teardownCount
-    const totalWorkers = tasks.reduce((sum, t) => {
-      const count =
-        (t.workers?.length || 0) +
-        (t.drivers?.length || 0) +
-        (t.contractor_worker_list?.length || 0)
-      return sum + count
-    }, 0)
+    /* אנשים ולא שורות שיבוץ (0162): ראש צוות שגם נוהג הוא אדם אחד, וכך גם
+       עובד ששובץ גם כנהג. */
+    const totalWorkers = tasks.reduce((sum, t) => sum + crewSize(t), 0)
     return { setupCount, teardownCount, otherCount, totalWorkers }
   }, [tasks])
 
@@ -324,14 +321,13 @@ export default function EventDetailPage() {
         header: 'צוות',
         width: 150,
         render: (t) => {
-          const names = [
-            ...(t.workers ?? []).map((w) => w.name),
-            ...(t.drivers ?? []).map((d) => d.name),
-            ...(t.contractor_worker_list ?? []).map((w) => w.name),
-          ]
+          /* בלי ראש הצוות: יש לו עמודה משלו, ואדם אחד יושב במקום אחד (0162).
+             המונה שלצדם סופר את כולם, ראש הצוות בכללם — זו כמות העובדים. */
+          const names = crewPeople(t).map((p) => p.name)
+          const count = crewSize(t)
           /* שמות מלאים ולא ראשי תיבות: מי שקורא את המסך הזה בשטח צריך לדעת
              את מי הוא פוגש, ו-"א.כ." אינו עונה על זה. */
-          return names.length ? (
+          return count > 0 ? (
             <span className="flex flex-wrap items-center gap-1">
               {names.map((n) => (
                 <span key={n} className="rounded bg-subtle px-1.5 py-px type-caption text-ink-secondary">
@@ -339,7 +335,7 @@ export default function EventDetailPage() {
                 </span>
               ))}
               <span className="type-caption tabular text-ink-tertiary">
-                {names.length}/{t.worker_count || '—'}
+                {count}/{t.worker_count || '—'}
               </span>
             </span>
           ) : (
@@ -998,11 +994,10 @@ export default function EventDetailPage() {
                   /* Cards / Visual Grid View */
                   <div className="grid gap-3 sm:grid-cols-2">
                     {filteredTasks.map((t) => {
-                      const names = [
-                        ...(t.workers ?? []).map((w) => w.name),
-                        ...(t.drivers ?? []).map((d) => d.name),
-                        ...(t.contractor_worker_list ?? []).map((w) => w.name),
-                      ]
+                      /* ראש הצוות נאמר בכרטיס בשורה משלו, ולכן אינו חוזר כאן;
+                         המונה סופר אנשים, והוא בכללם (0162). */
+                      const names = crewPeople(t).map((p) => p.name)
+                      const count = crewSize(t)
                       return (
                         <div
                           key={t.id}
@@ -1103,7 +1098,7 @@ export default function EventDetailPage() {
 
                           {/* Card Footer: Team Assigned Avatars */}
                           <div className="mt-4 pt-2.5 border-t border-line-subtle flex items-center justify-between">
-                            {names.length > 0 ? (
+                            {count > 0 ? (
                               <div className="flex flex-wrap items-center gap-1">
                                 {names.map((n) => (
                                   <span
@@ -1114,7 +1109,7 @@ export default function EventDetailPage() {
                                   </span>
                                 ))}
                                 <span className="type-caption tabular text-ink-tertiary">
-                                  {names.length}/{t.worker_count || '—'} עובדים
+                                  {count}/{t.worker_count || '—'} עובדים
                                 </span>
                               </div>
                             ) : showStaffing ? (
