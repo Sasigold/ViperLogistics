@@ -137,6 +137,51 @@ export async function currentSubscription(): Promise<PushSubscription | null> {
   return reg.pushManager.getSubscription()
 }
 
+function sameApplicationServerKey(sub: PushSubscription, expected: Uint8Array<ArrayBuffer>): boolean {
+  const raw = sub.options.applicationServerKey
+  // דפדפנים ישנים לא חושפים את המפתח בחזרה. במקרה כזה לא מוחקים מנוי עובד
+  // רק מפני שאי אפשר להשוות אותו — כשל אמיתי יטופל על ידי השרת ו-410.
+  if (!raw) return true
+  const actual = new Uint8Array(raw)
+  if (actual.length !== expected.length) return false
+  for (let i = 0; i < actual.length; i++) {
+    if (actual[i] !== expected[i]) return false
+  }
+  return true
+}
+
+/**
+ * מתקן מנוי חסר כשההרשאה כבר ניתנה בעבר.
+ *
+ * זה שונה מ-subscribeToPush: אין כאן requestPermission ולכן מותר להריץ את
+ * הפונקציה בעליית האפליקציה בלי לחיצת משתמש. היא מתקנת גם מצב שבו שורת השרת
+ * או המנוי המקומי נעלמו בעקבות ניקוי/מיגרציה, ומעבירה מחדש את ה-endpoint
+ * ל-upsert בצד React.
+ */
+export async function ensurePushSubscription(vapidPublicKey: string): Promise<PushKeys | null> {
+  if (!pushSupported() || Notification.permission !== 'granted') return null
+  if (isIos() && !isStandalone()) return null
+  if (!vapidPublicKey) return null
+
+  const reg = await navigator.serviceWorker.ready
+  const expected = urlBase64ToUint8Array(vapidPublicKey)
+  let sub = await reg.pushManager.getSubscription()
+
+  if (sub && !sameApplicationServerKey(sub, expected)) {
+    await sub.unsubscribe()
+    sub = null
+  }
+
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: expected,
+    })
+  }
+
+  return serializeSubscription(sub)
+}
+
 /**
  * מבקש רשות ונרשם.
  *
@@ -157,7 +202,8 @@ export async function subscribeToPush(vapidPublicKey: string): Promise<PushKeys>
 
   const reg = await navigator.serviceWorker.ready
   const existing = await reg.pushManager.getSubscription()
-  // מנוי קיים שנוצר עם מפתח אחר אינו שמיש: שרת האפליקציה לא יוכל לחתום לו.
+  // הפעלה ידנית היא reset מכוון של המכשיר הזה. כך גם מנוי שנוצר עם מפתח
+  // VAPID ישן מוחלף מיד ולא נשאר תלוי עד לכשל הראשון מהשרת.
   if (existing) await existing.unsubscribe()
 
   const sub = await reg.pushManager.subscribe({

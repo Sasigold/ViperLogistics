@@ -6,9 +6,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import {
-  currentSubscription,
+  ensurePushSubscription,
   pushSupported,
-  serializeSubscription,
   subscribeToPush,
   unsubscribeFromPush,
 } from '../../lib/push'
@@ -100,29 +99,31 @@ export function usePushNavigation(navigate: (url: string) => void) {
 /**
  * מיישר את מה שהדפדפן חושב מול מה שהמסד יודע, בכל עליית אפליקציה.
  *
- * זו הסיבה שאין ב-sw.ts מטפל ל-pushsubscriptionchange: ל-Service Worker אין
- * session של Supabase והוא אינו יכול לכתוב את ה-endpoint החדש. ההשוואה כאן
- * מכסה את אותם מקרים בדיוק — החלפת מפתחות ביוזמת הדפדפן, מנוי שנמחק בשרת
- * אחרי 410, וחשבון אחר שהתחבר על אותו מכשיר.
+ * אם ההרשאה כבר granted אבל המנוי המקומי או שורת השרת נעלמו, אנחנו לא
+ * מחכים שהמשתמש יכבה וידליק ידנית: ensurePushSubscription מחזיר מנוי קיים
+ * או יוצר חדש בלי requestPermission, ואז ה-upsert מחזיר אותו לבעלות המשתמש.
  */
 export function usePushSync() {
   const profileId = useAuth((s) => s.me?.profile.id)
+  const { data: cfg } = usePushConfig()
+  const vapidPublicKey = cfg?.vapid_public_key ?? ''
+
   useEffect(() => {
-    if (!profileId || !pushSupported()) return
+    if (!profileId || !pushSupported() || !vapidPublicKey) return
     if (Notification.permission !== 'granted') return
     let cancelled = false
     void (async () => {
       try {
-        const sub = await currentSubscription()
-        if (!sub || cancelled) return
-        await upsertDevice(serializeSubscription(sub), profileId)
+        const keys = await ensurePushSubscription(vapidPublicKey)
+        if (!keys || cancelled) return
+        await upsertDevice(keys, profileId)
       } catch {
-        // סנכרון שקט. כישלון כאן אינו משהו שהמשתמש יכול לתקן, והמכשיר
-        // ייבדק שוב בעלייה הבאה.
+        // סנכרון שקט. אם הדפדפן/מערכת ההפעלה דחו רישום רקע, ההפעלה הידנית
+        // עדיין זמינה והסנכרון ינסה שוב בעלייה הבאה.
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [profileId])
+  }, [profileId, vapidPublicKey])
 }
