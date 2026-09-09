@@ -1685,6 +1685,16 @@ export interface ClockConfig {
   }
 }
 
+/**
+ * הסיבה שהכניסה חסומה כרגע. ‏`reason` הוא לקוד שרוצה להבחין בין המקרים,
+ * ו-`message` הוא מה שנאמר לעובד — שניהם נגזרים בשרת, כדי שההודעה שלפני
+ * הלחיצה תהיה בדיוק זו שאחריה (0168).
+ */
+export interface ClockInBlock {
+  reason: 'clock_disabled' | 'no_shift' | 'too_early' | 'shift_ended'
+  message: string
+}
+
 /** מה שדף השעון צריך כדי לצייר את עצמו, מ-attendance_my_status. */
 export interface ClockStatus {
   open_entry: AttendanceEntry | null
@@ -1696,6 +1706,15 @@ export interface ClockStatus {
    * ידנית בלי קואורדינטות אינו מספק כזו, ואז אין מה לבקש מהעובד.
    */
   location_required: boolean
+  /**
+   * האם אפשר להחתים **כניסה** ברגע הזה. השרת מכריע (`app.clock_in_gate`),
+   * והמסך רק מצייר לפי התשובה — הכלל עצמו נאכף ב-`attendance_clock_in`
+   * ולא כאן (0168). כשיש משמרת פתוחה הכפתור ממילא מציע יציאה, ולכן המסך
+   * שואל את זה רק כשאין.
+   */
+  can_clock_in: boolean
+  /** למה הכניסה חסומה, ומה נאמר לעובד. null כשהיא פתוחה (0168) */
+  clock_in_block: ClockInBlock | null
   can_submit: boolean
   /** האם מותר לי לבקש תיקון שעות על רשומה קיימת (0165) */
   can_request_correction: boolean

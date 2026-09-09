@@ -192,7 +192,7 @@ export function EmployeeWorkSettingsCard({ profileId }: { profileId: string }) {
                   ))}
                 </Select>
               </Field>
-              <Field label="חלון חסד (דקות)" hint="כמה מוקדם מותר גם בלי ההרשאה">
+              <Field label="חלון חסד (דקות)" hint="כמה מוקדם מותר גם בלי ההרשאה, וכמה אחרי סוף המשמרת השעון עוד נפתח">
                 <Input
                   type="number"
                   dir="ltr"
