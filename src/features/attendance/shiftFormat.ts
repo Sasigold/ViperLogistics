@@ -127,6 +127,50 @@ export function shiftLocation(
   )
 }
 
+/**
+ * ואיפה היא נגמרה. אותו סדר הכרעה בדיוק של `shiftLocation`, על הקצה השני:
+ * מה שנכתב ברשומה, שם המחסן שחוזרים אליו, ואז סוג האתר.
+ *
+ * שתי השורות אינן כפילות: משמרת יכולה לצאת מהמחסן ולהסתיים בשטח, או להפך
+ * (0164), ובדיוק אז "איפה הייתי" אינה שאלה אחת אלא שתיים. כשהתשובה זהה
+ * לכניסה, מי שמצייר את השורה הוא שמחליט אם לכתוב אותה פעמיים.
+ */
+export function shiftEndLocation(
+  r: Pick<AttendanceReportRow, 'clock_out_place' | 'end_work_place' | 'end_work_site'>,
+): string | null {
+  return (
+    r.clock_out_place?.trim() ||
+    r.end_work_place?.trim() ||
+    (r.end_work_site ? WORK_SITE_LABELS[r.end_work_site] : null)
+  )
+}
+
+/**
+ * הנקודה שנדגמה בהחתמה, כקישור למפה.
+ *
+ * ‏OpenStreetMap ולא ספק אחר: אלה אריחי המפה שהמערכת כבר משתמשת בהם
+ * (`LocationPicker`, `ZoneMap`), ומיקום של עובד אינו נשלח לשירות שלישי רק
+ * כדי להיראות. `mlat/mlon` מציבים סיכה, וה-hash קובע את הזום.
+ *
+ * ‏null כשאין נקודה — החתמה בלי קריאת מיקום, או דיווח ידני.
+ */
+export function clockPointUrl(
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+): string | null {
+  if (lat == null || lng == null) return null
+  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`
+}
+
+/** '32.10010, 34.80020' — הנקודה עצמה, למי שרוצה להעתיק אותה. */
+export function fmtCoords(
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+): string | null {
+  if (lat == null || lng == null) return null
+  return `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+}
+
 /** דגלים שמצדיקים תשומת לב של מנהל, להבדיל מאלה שהם רק מידע. */
 export const ATTENTION_FLAGS = new Set(['no_site_coords', 'no_shift', 'auto_closed', 'low_accuracy'])
 

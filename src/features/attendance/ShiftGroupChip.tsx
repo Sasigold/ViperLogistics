@@ -17,13 +17,12 @@
  */
 import { ICON, Package, STROKE, Truck, Users } from '../../components/ui/icons'
 import { cx } from '../../components/ui'
-import { chipPaint } from '../../lib/colors'
-import { SHIFT_FS, ShiftChip } from './ShiftChip'
+import { SHIFT_FS, SHIFT_PAINT, ShiftChip } from './ShiftChip'
 import { fmtShiftRange, fmtTime } from './shiftFormat'
 import { warehouseBands } from './shiftBoard'
 import type { ShiftGroup } from './shiftBoard'
 
-/** הצללה מקווקוות על גבי צבע הלקוח — "זה עדיין אותה משמרת, אבל בדרך". */
+/** הצללה מקווקוות על גבי הכחול — "זה עדיין אותה משמרת, אבל בדרך". */
 const STRIPES =
   'repeating-linear-gradient(135deg, rgba(0,0,0,0.24) 0 5px, rgba(0,0,0,0) 5px 10px)'
 
@@ -37,12 +36,14 @@ export function ShiftGroupChip({
   className?: string
 }) {
   const { members, lead, onsiteStart, onsiteEnd, warehouseStart, warehouseName } = group
+  /* לאן חוזרים, ולא מאיפה יצאו: משמרת יכולה להתחיל בשטח ולהיגמר במחסן (0164) */
+  const backTo = group.endWarehouseName ?? warehouseName
 
   if (members.length === 1) {
     return <ShiftChip shift={lead} name={members[0].name} onClick={onClick} className={className} />
   }
 
-  const paint = chipPaint(lead.customer_color)
+  const paint = SHIFT_PAINT
   const { lead: leadPct, tail: tailPct } = warehouseBands(group)
   const label = lead.label ?? 'משמרת'
   // כשכולם יוצאים מהמחסן אין ממה להבדיל אותם, ולכן אין פס ואין אייקון לשם
@@ -56,7 +57,7 @@ export function ShiftGroupChip({
     warehouseStart &&
       `יציאה מ${warehouseName ?? 'המחסן'} ב-${fmtTime(warehouseStart)}: ${wh.map((m) => m.name).join(', ')}`,
     onsiteEnd &&
-      `נסיעה חזרה ל${warehouseName ?? 'מחסן'} ב-${fmtTime(onsiteEnd)}, סיום ${fmtTime(group.end)}`,
+      `נסיעה חזרה ל${backTo ?? 'מחסן'} ב-${fmtTime(onsiteEnd)}, סיום ${fmtTime(group.end)}`,
     `${members.length} עובדים: ${members.map((m) => m.name).join(', ')}`,
   ]
     .filter(Boolean)
@@ -140,7 +141,7 @@ export function ShiftGroupChip({
           <span className="shrink-0 tabular" dir="ltr">
             {fmtTime(group.end)}
           </span>
-          <span className="truncate opacity-90">חזרה{warehouseName ? ` ל${warehouseName}` : ' למחסן'}</span>
+          <span className="truncate opacity-90">חזרה{backTo ? ` ל${backTo}` : ' למחסן'}</span>
         </span>
       )}
     </Tag>

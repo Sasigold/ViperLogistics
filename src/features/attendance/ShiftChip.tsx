@@ -15,6 +15,24 @@ import type { PlannedShift } from '../../types/domain'
 /** הגודל של הטקסט הצפוף בלוחות המשמרות. ברירת המחדל תואמת את לוח העבודה. */
 export const SHIFT_FS = 'text-[length:var(--vl-shift-fs,0.8125rem)]'
 
+/**
+ * צבע אחד לכל המשמרות, וזהו.
+ *
+ * עד כאן הצ׳יפ נצבע בצבע הלקוח, וזו הייתה החלטה שהועתקה מלוח העבודה בלי
+ * לשאול מה היא עונה *כאן*. בלוח העבודה השאלה היא "של מי המשימה הזו", ושם
+ * הצבע הוא התשובה; בלוח המשמרות השאלה היא "מתי ואיפה אני עובד", והלקוח כתוב
+ * ממילא בתווית. מה שהצבע עשה בפועל היה להפוך לוח שבועי לפסיפס — שבע צבעים
+ * בשורה אחת, שכולם אומרים "משמרת".
+ *
+ * הכחול הוא `brand-500` של מערכת העיצוב, ולא ערך שנבחר כאן: הצ׳יפ נצבע
+ * בצבע הראשי של המערכת, ומה שנשאר לצבוע בו הוא ההבדלים שבתוך המשמרת —
+ * הפסים המקווקווים של הנסיעות, והאייקונים.
+ */
+export const SHIFT_COLOR = '#3563f0'
+
+/** נגזר פעם אחת: הצבע קבוע, ולכן אין טעם לחשב אותו מחדש בכל צ׳יפ. */
+export const SHIFT_PAINT = chipPaint(SHIFT_COLOR)
+
 export function ShiftChip({
   shift,
   name,
@@ -27,20 +45,24 @@ export function ShiftChip({
   onClick?: () => void
   className?: string
 }) {
-  const paint = chipPaint(shift.customer_color)
+  const paint = SHIFT_PAINT
   const tasks = shift.task_ids?.length ?? 0
   const Tag = onClick ? 'button' : 'div'
   /**
-   * הנסיעה חזרה למחסן, שכבר כלולה ב-`shift_end` (0079 §4). היא 0 למי שהגיע
-   * ישירות לשטח, ולכן המספר הזה הוא גם השאלה "האם חוזרים בכלל" וגם התשובה
-   * "מתי יורדים מהעבודה" — שעת סיום שהצ׳יפ הראה עד היום כאילו עבדו עד לה.
+   * הנסיעה חזרה למחסן, שכבר כלולה ב-`shift_end` (0079 §4). מאז 0164 היא 0
+   * לכל מי שהמשימה ה**אחרונה** שלו בשטח — שם הוא סיים, ואין למה לחזור —
+   * ולכן המספר הזה הוא גם השאלה "האם חוזרים בכלל" וגם התשובה "מתי יורדים
+   * מהעבודה".
    */
   const travel = shift.travel_hours ?? 0
+  const endWarehouse = shift.end_warehouse_name ?? shift.warehouse_name
   const title = [
     shift.label ?? 'משמרת',
     fmtShiftRange(shift.shift_start, shift.shift_end),
     travel > 0 &&
-      `סיום עבודה ${fmtWorkEnd(shift.shift_end, travel)}, ואחריו נסיעה חזרה ${fmtDuration(travel)}`,
+      `סיום עבודה ${fmtWorkEnd(shift.shift_end, travel)}, ואחריו נסיעה חזרה ${
+        endWarehouse ? `ל${endWarehouse}` : 'למחסן'
+      } ${fmtDuration(travel)}`,
   ]
     .filter(Boolean)
     .join(' · ')
@@ -70,7 +92,12 @@ export function ShiftChip({
         {/* התאום של הסימון שמימין: שם — יוצאים מהמחסן, כאן — חוזרים אליו,
             והשעה שבצ׳יפ היא שעת ההגעה למחסן ולא סוף העבודה */}
         {travel > 0 && (
-          <Truck size={ICON.xs} strokeWidth={STROKE} className="shrink-0" aria-label="כולל נסיעה חזרה למחסן" />
+          <Truck
+            size={ICON.xs}
+            strokeWidth={STROKE}
+            className="shrink-0"
+            aria-label={endWarehouse ? `כולל נסיעה חזרה ל${endWarehouse}` : 'כולל נסיעה חזרה למחסן'}
+          />
         )}
         {/* מספר המשימות הוא מה שהמגירה תפרט — כאן הוא רק רמז שיש מה לפתוח */}
         {tasks > 1 && (

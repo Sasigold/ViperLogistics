@@ -192,12 +192,19 @@ function TimeClock() {
       let lng: number | null = null
       let accuracy: number | null = null
 
-      if (needsLocation) {
-        const reading = await getPosition()
-        if (reading.status !== 'ok') throw new Error(GEO_MESSAGES[reading.status])
+      /**
+       * הנקודה נדגמת בכל החתמה, גם כשאין מול מה לאמת אותה (0164): המנהל
+       * צריך לדעת *מאיפה* הוחתם, ולא רק כמה רחוק מהאתר. מה שנשמר מ-0159 הוא
+       * מי חוסם את מי — כשהמיקום נדרש, קריאה שנכשלה עוצרת את ההחתמה
+       * ומסבירה למה; כשהוא אינו נדרש, הקריאה רכה וההחתמה נכנסת בלעדיה.
+       */
+      const reading = await getPosition({ soft: !needsLocation })
+      if (reading.status === 'ok') {
         lat = reading.lat
         lng = reading.lng
         accuracy = reading.accuracy
+      } else if (needsLocation) {
+        throw new Error(GEO_MESSAGES[reading.status])
       }
 
       const { data, error } = await supabase.rpc(

@@ -192,6 +192,11 @@ export interface ShiftGroup {
   /** היציאה המוקדמת מהמחסן. null כשאיש בקבוצה אינו מתחיל שם */
   warehouseStart: string | null
   warehouseName: string | null
+  /**
+   * המחסן שחוזרים אליו בסוף (0164). לרוב הוא זהה ל-`warehouseName`, אבל
+   * משמרת יכולה להתחיל בשטח ולהיגמר במחסן — ואז זה השם היחיד שיש לה.
+   */
+  endWarehouseName: string | null
 }
 
 /**
@@ -212,8 +217,8 @@ const soloKey = (s: PlannedShift) => `${s.profile_id}|${s.work_date}|${s.seq}`
 /**
  * מתי נגמרת העבודה עצמה, כשחלק מהקבוצה עוד נוסע אחריה חזרה למחסן.
  *
- * ‏`shift_end` של מי שיצא מהמחסן כולל את הנסיעה חזרה, ו-`travel_hours` הוא
- * בדיוק אותה נסיעה — לו, ו-0 למי שהגיע ישירות לשטח וסיים בשטח (0079 §4).
+ * ‏`shift_end` של מי שחוזר למחסן כולל את הנסיעה חזרה, ו-`travel_hours` הוא
+ * בדיוק אותה נסיעה — לו, ו-0 למי שהמשימה האחרונה שלו בשטח (0079 §4, 0164).
  * חיסור אחד מחזיר את השעה שבה יורדים מהעבודה, וזו השעה שהפס התחתון בצ׳יפ
  * מתחיל בה.
  *
@@ -278,6 +283,8 @@ export function groupShifts(
       onsiteEnd: onsiteEnd(members),
       warehouseStart: wh[0]?.shift.shift_start ?? null,
       warehouseName: wh.find((m) => m.shift.warehouse_name)?.shift.warehouse_name ?? null,
+      endWarehouseName:
+        members.find((m) => m.shift.end_warehouse_name)?.shift.end_warehouse_name ?? null,
     })
   }
   groups.sort((a, b) => ms(a.start) - ms(b.start) || a.key.localeCompare(b.key))
