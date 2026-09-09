@@ -17,6 +17,7 @@ export const PERM = {
   ATTENDANCE_VIEW_SCHEDULE: 'attendance.view_schedule',
   ATTENDANCE_CLOCK: 'attendance.clock',
   ATTENDANCE_SUBMIT_ENTRY: 'attendance.submit_entry',
+  ATTENDANCE_REQUEST_CORRECTION: 'attendance.request_correction',
   ATTENDANCE_APPROVE_ENTRY: 'attendance.approve_entry',
   ATTENDANCE_VIEW_OWN_PAY: 'attendance.view_own_pay',
   ATTENDANCE_VIEW_ALL: 'attendance.view_all',

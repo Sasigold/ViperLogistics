@@ -427,6 +427,16 @@ OUT="$OUT
 $OUT41"
 
 echo
+echo "== the worker asks to fix the hour suite =="
+# 42 מקימה לקוח, שני עובדים ומנהל מאשר משלה ורשומות נוכחות סביב now(). היא רצה
+# אחרונה כי היא משאירה אחריה רשומות נוכחות שאינן מנוקות, ואחת מהן יושבת
+# ארבעים יום אחורה כדי לבדוק את חלון הדיווח.
+OUT42=$($PSQL -d vl -f "$HERE/42_the_worker_asks_to_fix_the_hour.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT42"
+OUT="$OUT
+$OUT42"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

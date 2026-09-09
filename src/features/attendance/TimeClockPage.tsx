@@ -12,6 +12,7 @@ import {
   LogOut,
   MapPin,
   MessageSquarePlus,
+  PencilLine,
   Plus,
   STROKE,
   Trash2,
@@ -44,7 +45,9 @@ import { fmtDate } from '../../lib/dates'
 import { HIGHLIGHT_CLASS, useDeepLinkHighlight } from '../../lib/deepLink'
 import {
   useAttendanceInvalidate,
+  useCancelCorrection,
   useMyClockStatus,
+  useRequestCorrection,
   useSubmitAttendanceEntry,
 } from './attendanceQueries'
 import { GEO_MESSAGES, useGeolocation } from './useGeolocation'
@@ -123,6 +126,8 @@ function TimeClock() {
   const [showNoteInput, setShowNoteInput] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [reporting, setReporting] = useState(false)
+  /** ההחתמה שעליה נפתחה בקשת תיקון, או null כשהמודאל סגור (0165) */
+  const [correcting, setCorrecting] = useState<AttendanceEntry | null>(null)
 
   const open = status?.open_entry ?? null
   const shift = status?.shift ?? null
@@ -147,6 +152,12 @@ function TimeClock() {
   const reports = status?.reports ?? []
   const canSubmit =
     !!status?.can_submit && has(PERM.ATTENDANCE_SUBMIT_ENTRY) && rules?.self_entry?.enabled !== false
+  /**
+   * בקשת תיקון שעות (0165). השרת הוא שמכריע — `can_request_correction` נגזר
+   * שם מהמפתח — והבדיקה בצד הלקוח היא רק כדי לא לצייר כפתור שייפול.
+   */
+  const canCorrect = !!status?.can_request_correction && has(PERM.ATTENDANCE_REQUEST_CORRECTION)
+  const corrections = status?.corrections ?? []
 
   // חישוב נתוני תצוגה עפ"י ההחתמות
   const lastEntry = open ?? (today.length > 0 ? today[0] : null)
@@ -156,6 +167,12 @@ function TimeClock() {
     : formatClockDate(new Date().toISOString())
 
   const allToday = open ? [open, ...today.filter((t) => t.id !== open.id)] : today
+  /* רשימת ההחתמות שמוצגת למטה. `today` מגיע מהשרת לפי `work_date`, ומשמרת
+     שנפתחה אתמול בלילה ועדיין פתוחה אינה בתוכו — היא בדיוק זו שחסרה לה
+     שעת סיום, ולכן היא חייבת להופיע. */
+  const historyEntries = [...allToday].sort(
+    (a, b) => new Date(a.clock_in_at).getTime() - new Date(b.clock_in_at).getTime(),
+  )
   const earliestTodayEntry =
     allToday.length > 0
       ? [...allToday].sort(
@@ -465,6 +482,10 @@ function TimeClock() {
         {/* דיווחים ממתינים להסכמה במידה וקיימים */}
         {reports.length > 0 && <MyReportsCard reports={reports} />}
 
+        {/* ובקשות התיקון שנשלחו וטרם הוכרעו. הן אינן "דיווחים": המשמרת
+            עצמה קיימת ונספרת, ומה שממתין הוא רק השינוי בשעות שלה. */}
+        {corrections.length > 0 && <MyCorrectionsCard entries={corrections} />}
+
         {/* השכר אינו מוצג בשעון — מקומו בדוח הנוכחות (`/attendance`), שמרכז
             שעות, ש״נ ושכר. השעון עוסק בהחתמה של היום בלבד, והקישור למטה מוביל
             לדוח שבו העובד רואה את השכר החודשי שלו. */}
@@ -487,18 +508,18 @@ function TimeClock() {
             className="inline-flex items-center gap-1 text-xs text-ink-tertiary hover:text-ink-secondary transition-colors py-1"
           >
             <Clock size={13} />
-            <span>ההחתמות של היום ({today.length})</span>
+            <span>ההחתמות של היום ({historyEntries.length})</span>
             {showHistory ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
 
           {showHistory && (
             <div className="mt-2 text-right bg-surface rounded-2xl p-3 border border-line-subtle shadow-xs">
-              {today.length === 0 ? (
+              {historyEntries.length === 0 ? (
                 <p className="text-xs text-ink-tertiary text-center py-2">טרם הוחתם היום</p>
               ) : (
                 <ul className="divide-y divide-line-subtle">
-                  {today.map((e) => (
-                    <li key={e.id} className="flex items-center justify-between py-2 text-xs">
+                  {historyEntries.map((e) => (
+                    <li key={e.id} className="flex items-center gap-2 py-2 text-xs">
                       <span className="font-mono tabular-nums text-ink-secondary" dir="ltr">
                         {fmtShiftRange(e.clock_in_at, e.clock_out_at) || '—'}
                       </span>
@@ -510,6 +531,19 @@ function TimeClock() {
                           {flagLabel(f)}
                         </Badge>
                       ))}
+                      <span className="flex-1" />
+                      {/* ‏0165: תיקון השעה מתחיל כאן, על ההחתמה עצמה. משמרת
+                          שכבר יש עליה בקשה פתוחה מציגה אותה במקום הכפתור,
+                          כדי שלא תישלח פעמיים. */}
+                      {e.req_at ? (
+                        <Badge tone="warning">בקשת תיקון נשלחה</Badge>
+                      ) : (
+                        canCorrect && (
+                          <IconButton label="בקשת תיקון שעות" onClick={() => setCorrecting(e)}>
+                            <PencilLine size={ICON.sm} strokeWidth={STROKE} />
+                          </IconButton>
+                        )
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -521,6 +555,8 @@ function TimeClock() {
 
       {/* מודאל דיווח ידני */}
       {reporting && <SelfReportModal status={status} onClose={() => setReporting(false)} />}
+      {/* ומודאל בקשת התיקון, על ההחתמה שנבחרה */}
+      {correcting && <CorrectionModal entry={correcting} onClose={() => setCorrecting(null)} />}
     </div>
   )
 }
@@ -594,6 +630,164 @@ function MyReportsCard({ reports }: { reports: AttendanceEntry[] }) {
       </Card>
       {dialog}
     </>
+  )
+}
+
+/**
+ * בקשות התיקון שלי שממתינות להכרעה (0165).
+ *
+ * הכרטיס מציג את מה שביקשתי ולא את מה שרשום — השעות הרשומות נמצאות בדוח —
+ * כי השאלה היחידה שהוא עונה עליה היא "מה שלחתי, ומה קרה איתו".
+ */
+function MyCorrectionsCard({ entries }: { entries: AttendanceEntry[] }) {
+  const toast = useToast()
+  const { confirm, dialog } = useConfirm()
+  const cancel = useCancelCorrection()
+
+  return (
+    <>
+      <Card className="rounded-2xl border-line-subtle">
+        <CardHeader
+          title="בקשות תיקון שעות"
+          subtitle="ממתינות לאישור מנהל"
+          icon={<PencilLine size={ICON.md} strokeWidth={STROKE} />}
+        />
+        <CardBody className="p-3">
+          <ul className="divide-y divide-line-subtle">
+            {entries.map((e) => (
+              <li key={e.id} className="flex flex-wrap items-center gap-2 py-2 text-xs">
+                <span className="text-ink-secondary font-medium">{fmtDate(e.work_date)}</span>
+                <span className="text-ink-tertiary line-through font-mono tabular-nums" dir="ltr">
+                  {fmtShiftRange(e.clock_in_at, e.clock_out_at) || '—'}
+                </span>
+                <span className="font-mono tabular-nums font-semibold text-ink" dir="ltr">
+                  {fmtShiftRange(e.req_clock_in_at, e.req_clock_out_at ?? e.clock_out_at) || '—'}
+                </span>
+                {e.req_note && <span className="text-ink-tertiary">{e.req_note}</span>}
+                <span className="flex-1" />
+                <IconButton
+                  label="ביטול הבקשה"
+                  disabled={cancel.isPending}
+                  onClick={async () => {
+                    if (await confirm('לבטל את בקשת התיקון?', { tone: 'danger' })) {
+                      cancel.mutate(e.id, {
+                        onSuccess: () => toast.success('הבקשה בוטלה'),
+                        onError: (err) => toast.error(errorMessage(err)),
+                      })
+                    }
+                  }}
+                >
+                  <Trash2 size={ICON.sm} strokeWidth={STROKE} />
+                </IconButton>
+              </li>
+            ))}
+          </ul>
+        </CardBody>
+      </Card>
+      {dialog}
+    </>
+  )
+}
+
+/**
+ * בקשת תיקון על החתמה קיימת.
+ *
+ * שני מקרים באותו טופס: שעה שהוחתמה בזמן הלא נכון, ומשמרת שאין לה שעת סיום
+ * כלל. השני הוא הסיבה ששדה הסיום אינו חובה כאן — להבדיל מדיווח משמרת שלא
+ * הוחתמה, שם הוא חובה כי הוא מתאר משמרת שהסתיימה. השארתו ריק על משמרת
+ * פתוחה משאירה אותה פתוחה, וזה מה שההסבר מתחתיו אומר.
+ */
+function CorrectionModal({ entry, onClose }: { entry: AttendanceEntry; onClose: () => void }) {
+  const toast = useToast()
+  const request = useRequestCorrection()
+  const isOpenShift = !entry.clock_out_at
+
+  const [form, setForm] = useState(() => ({
+    clockIn: toLocalInput(entry.clock_in_at),
+    clockOut: toLocalInput(entry.clock_out_at),
+    note: '',
+  }))
+
+  const save = () => {
+    if (!form.clockIn) {
+      toast.error('חובה להזין שעת כניסה')
+      return
+    }
+    if (!form.note.trim()) {
+      toast.error('חובה לכתוב למה השעה צריכה להשתנות')
+      return
+    }
+    request.mutate(
+      { id: entry.id, clockIn: form.clockIn, clockOut: form.clockOut || null, note: form.note },
+      {
+        onSuccess: () => {
+          toast.success('הבקשה נשלחה לאישור', {
+            description: 'השעות ישתנו רק אחרי שמנהל יאשר',
+          })
+          onClose()
+        },
+        onError: (e) => toast.error(errorMessage(e)),
+      },
+    )
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="sm"
+      title="בקשת תיקון שעות"
+      footer={
+        <>
+          <Button onClick={onClose}>ביטול</Button>
+          <Button variant="primary" loading={request.isPending} onClick={save}>
+            שליחה לאישור
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="rounded-lg border border-line-subtle bg-subtle/50 px-3 py-2 type-caption text-ink-secondary">
+          השעות הרשומות אינן משתנות עד שמנהל יאשר, ובקשה שתידחה פשוט תימחק — המשמרת תישאר כפי שהיא.
+        </p>
+        <div className="rounded-lg border border-line-subtle px-3 py-2 type-caption text-ink-secondary">
+          <span className="type-overline">רשום כרגע</span>
+          <p className="mt-0.5 tabular-nums text-ink" dir="ltr">
+            {fmtShiftRange(entry.clock_in_at, entry.clock_out_at) || '—'}
+          </p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="כניסה" required>
+            <Input
+              data-autofocus
+              type="datetime-local"
+              dir="ltr"
+              value={form.clockIn}
+              onChange={(e) => setForm((f) => ({ ...f, clockIn: e.target.value }))}
+            />
+          </Field>
+          <Field
+            label="יציאה"
+            hint={isOpenShift ? 'המשמרת פתוחה — כאן משלימים לה סוף' : 'ריק = משאיר את שעת היציאה כפי שהיא'}
+          >
+            <Input
+              type="datetime-local"
+              dir="ltr"
+              value={form.clockOut}
+              onChange={(e) => setForm((f) => ({ ...f, clockOut: e.target.value }))}
+            />
+          </Field>
+        </div>
+        <Field label="סיבה" required hint="זה מה שהמנהל יראה כשיכריע">
+          <Textarea
+            rows={2}
+            value={form.note}
+            placeholder="למשל: יצאתי מהמחסן ב-06:40 והחתמתי רק כשהגעתי לרכב"
+            onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+          />
+        </Field>
+      </div>
+    </Modal>
   )
 }
 

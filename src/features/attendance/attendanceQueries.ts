@@ -285,6 +285,62 @@ export function useReviewAttendanceEntry() {
 }
 
 /**
+ * בקשת תיקון שעות של העובד על משמרת שלו (0165).
+ *
+ * ‏`clockOut` ריק הוא "אל תיגע ביציאה": במשמרת פתוחה היא נשארת פתוחה, ובמשמרת
+ * סגורה שעת היציאה שלה נשמרת. הרשומה עצמה אינה זזה עד שמנהל מאשר, ולכן זו
+ * אינה שמירה אלא שליחה — וכל הבדיקות (חפיפה, חלון אחורה, אורך מרבי) יושבות
+ * ב-RPC.
+ */
+export function useRequestCorrection() {
+  const invalidate = useAttendanceInvalidate()
+  return useMutation({
+    mutationFn: async (v: { id: string; clockIn: string; clockOut?: string | null; note?: string | null }) => {
+      const { error } = await supabase.rpc('attendance_request_correction', {
+        p_id: v.id,
+        p_clock_in: new Date(v.clockIn).toISOString(),
+        p_clock_out: v.clockOut ? new Date(v.clockOut).toISOString() : null,
+        p_note: v.note || null,
+      })
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+}
+
+/** משיכת בקשת תיקון שטרם הוכרעה, בידי מי שהגיש אותה. */
+export function useCancelCorrection() {
+  const invalidate = useAttendanceInvalidate()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.rpc('attendance_cancel_correction', { p_id: id })
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+}
+
+/**
+ * הכרעת המנהל בבקשת תיקון. נפרדת מ-`attendance_review_entry` בכוונה: שם
+ * דחייה כותבת `rejected` על המשמרת כולה, וכאן היא רק מוחקת את הבקשה
+ * ומשאירה את השעות כפי שהיו. דחייה מחייבת נימוק, כמו שם.
+ */
+export function useReviewCorrection() {
+  const invalidate = useAttendanceInvalidate()
+  return useMutation({
+    mutationFn: async (v: { id: string; approve: boolean; note?: string | null }) => {
+      const { error } = await supabase.rpc('attendance_review_correction', {
+        p_id: v.id,
+        p_approve: v.approve,
+        p_note: v.note || null,
+      })
+      if (error) throw error
+    },
+    onSuccess: invalidate,
+  })
+}
+
+/**
  * בונוס למשמרת. RPC משלו ולא פרמטר על attendance_save_entry, כי הוא נשמר
  * במפתח אחר: מי שמתקן שעות (attendance.edit_entry) אינו בהכרח מי שרשאי
  * לקבוע סכום כסף (attendance.manage_bonus). אפס מוחק את הבונוס.

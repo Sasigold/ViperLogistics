@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Check, ICON, MapPin, STROKE, Trash2, X } from '../../components/ui/icons'
+import { Check, Clock, ICON, MapPin, STROKE, Trash2, X } from '../../components/ui/icons'
 import {
   Badge,
   Button,
@@ -18,7 +18,10 @@ import { PERM } from '../../lib/permissions'
 import { fmtDate, fmtDateTime, fmtMoney } from '../../lib/dates'
 import {
   useAttendanceInvalidate,
+  useCancelCorrection,
+  useRequestCorrection,
   useReviewAttendanceEntry,
+  useReviewCorrection,
   useSetShiftBonus,
   useSetTopupWaiver,
 } from './attendanceQueries'
@@ -29,6 +32,7 @@ import {
   fmtDistance,
   fmtDuration,
   fmtPayLineRate,
+  fmtShiftRange,
   flagLabel,
   visibleFlags,
 } from './shiftFormat'
@@ -54,6 +58,7 @@ export function AttendanceEntryDrawer({
   const has = useAuth((s) => s.has)
   const { confirm, dialog } = useConfirm()
   const invalidate = useAttendanceInvalidate()
+  const me = useAuth((s) => s.me)
   const canEdit = has(PERM.ATTENDANCE_EDIT_ENTRY)
   const canDelete = has(PERM.ATTENDANCE_DELETE)
   // מנהל קבלן מאשר דיווח של הסגל שלו: המפתח המשרדי, או מפתח הפורטל שה-RPC
@@ -67,6 +72,22 @@ export function AttendanceEntryDrawer({
   const review = useReviewAttendanceEntry()
   const setBonus = useSetShiftBonus()
   const setTopupWaiver = useSetTopupWaiver()
+  const requestCorrection = useRequestCorrection()
+  const cancelCorrection = useCancelCorrection()
+  const reviewCorrection = useReviewCorrection()
+
+  /**
+   * הנתיב של העובד (0165): מי שאינו מתקן החתמות, אבל זו המשמרת שלו, מבקש
+   * ומנהל מכריע. הוא נסגר בפני מי שכן מחזיק את מפתח התיקון — למנהל אין מה
+   * לבקש מעצמו — ובפני משמרת שנדחתה, שאין בה מה לתקן.
+   *
+   * ‏`row.correction` הוא הבקשה שכבר ממתינה, לכל מי שפותח את השורה: היא
+   * הסיבה שהשעות שעל המסך אולי אינן השעות הנכונות.
+   */
+  const isMine = !!row && !!me?.profile?.id && row.profile_id === me.profile.id
+  const canRequest =
+    !!row && isMine && !canEdit && row.status !== 'rejected' && has(PERM.ATTENDANCE_REQUEST_CORRECTION)
+  const correction = row?.correction ?? null
 
   /**
    * `pay.bonus` מגיע מהשרת רק למי שרשאי לראות סכומים — הוא מושמט מהאובייקט
@@ -77,22 +98,30 @@ export function AttendanceEntryDrawer({
 
   const [form, setForm] = useState({
     clockIn: '', clockOut: '', note: '', bonus: '', bonusNote: '', inPlace: '', outPlace: '',
-    topupWaived: false,
+    topupWaived: false, reqNote: '',
   })
 
   useEffect(() => {
     if (!row) return
+    /* לעובד השדות מציגים את מה שהוא *מבקש*, ולמנהל את מה שרשום. בקשה
+       פתוחה שהעובד פותח שוב היא טיוטה שהוא ממשיך לערוך, ובקשה שהמנהל פותח
+       היא הצעה שהוא מכריע בה — ולכן היא יושבת אצלו בכרטיס נפרד ולא בשדות. */
+    const req = row.correction
+    const useReq = !!req && !canEdit && isMine
     setForm({
-      clockIn: toLocalInput(row.clock_in_at),
-      clockOut: toLocalInput(row.clock_out_at),
+      clockIn: toLocalInput(useReq ? req.clock_in_at : row.clock_in_at),
+      clockOut: toLocalInput(useReq ? (req.clock_out_at ?? row.clock_out_at) : row.clock_out_at),
       note: row.manager_note ?? '',
       bonus: row.pay?.bonus ? String(row.pay.bonus) : '',
       bonusNote: row.bonus_note ?? '',
       inPlace: row.clock_in_place ?? '',
       outPlace: row.clock_out_place ?? '',
       topupWaived: !!row.pay?.topup_waived,
+      reqNote: useReq ? (req?.note ?? '') : '',
     })
-  }, [row])
+    /* ‏`canEdit` ו-`isMine` הם בוליאנים ולא הפונקציה `has`: תלות בה הייתה
+       מאפסת את הטופס בכל שינוי במצב ההרשאות תוך כדי הקלדה. */
+  }, [row, canEdit, isMine])
 
   const bonusAmount = Number(form.bonus || 0)
   const bonusChanged =
@@ -179,6 +208,66 @@ export function AttendanceEntryDrawer({
     )
   }
 
+  /** שליחת בקשת התיקון. הנימוק חובה — הוא כל מה שהמנהל מכריע לפיו. */
+  const sendRequest = () => {
+    if (!row) return
+    if (!form.clockIn) {
+      toast.error('חובה להזין שעת כניסה')
+      return
+    }
+    if (!form.reqNote.trim()) {
+      toast.error('חובה לכתוב למה השעה צריכה להשתנות')
+      return
+    }
+    requestCorrection.mutate(
+      {
+        id: row.id,
+        clockIn: form.clockIn,
+        clockOut: form.clockOut || null,
+        note: form.reqNote,
+      },
+      {
+        onSuccess: () => {
+          toast.success('הבקשה נשלחה לאישור', {
+            description: 'השעות ישתנו רק אחרי שמנהל יאשר',
+          })
+          onClose()
+        },
+        onError: (e) => toast.error(errorMessage(e)),
+      },
+    )
+  }
+
+  /** ההכרעה בבקשה. אותו שדה נימוק של הדחייה הרגילה, מאותה סיבה. */
+  const decideCorrection = (approve: boolean) => {
+    if (!row) return
+    if (!approve && !form.note.trim()) {
+      toast.error('דחיית בקשה מחייבת נימוק — כתוב אותו בהערת המנהל')
+      return
+    }
+    reviewCorrection.mutate(
+      { id: row.id, approve, note: form.note },
+      {
+        onSuccess: () => {
+          toast.success(approve ? 'השעות תוקנו לפי הבקשה' : 'בקשת התיקון נדחתה')
+          onClose()
+        },
+        onError: (e) => toast.error(errorMessage(e)),
+      },
+    )
+  }
+
+  const withdrawRequest = () => {
+    if (!row) return
+    cancelCorrection.mutate(row.id, {
+      onSuccess: () => {
+        toast.success('הבקשה בוטלה')
+        onClose()
+      },
+      onError: (e) => toast.error(errorMessage(e)),
+    })
+  }
+
   const pay = row?.pay
   const corrected = !!row && (!!row.raw_clock_in_at || !!row.raw_clock_out_at)
 
@@ -195,7 +284,12 @@ export function AttendanceEntryDrawer({
           // canBonus לבדו מספיק כדי להצדיק כפתור שמירה: חשב שכר שרשאי רק
           // לקבוע בונוס אינו מחזיק attendance.edit_entry. canPay הוא אותו
           // מקרה — ביטול ההשלמה הוא החלטה שלו ולא של מי שמתקן שעות.
-          (canEdit || canBonus || (canPay && showTopupWaiver) || (isPending && canApprove)) && (
+          (canEdit ||
+            canBonus ||
+            (canPay && showTopupWaiver) ||
+            (isPending && canApprove) ||
+            canRequest ||
+            (!!correction && canApprove)) && (
             <>
               {canDelete && (
                 <Button
@@ -208,9 +302,49 @@ export function AttendanceEntryDrawer({
                   מחיקה
                 </Button>
               )}
-              {/* כשיש הכרעה לקבל, היא הפעולה הראשית. "שמירת תיקון" נשארת
-                  זמינה כדי לתקן שעה לפני האישור, אבל אינה מתחרה עליה. */}
-              {isPending && canApprove ? (
+              {/* סדר ההכרעות הוא סדר הדחיפוּת, והמסך מציג אחת בכל פעם: בקשת
+                  תיקון שממתינה קודמת לאישור המשמרת עצמה, כי היא שאלה על
+                  אותן שעות שהאישור עומד לאשר. אחרי שהוכרעה המגירה נסגרת,
+                  ופתיחה שנייה מציגה את ההכרעה הבאה. */}
+              {correction && canApprove ? (
+                <>
+                  <Button
+                    variant="danger"
+                    loading={reviewCorrection.isPending}
+                    onClick={() => decideCorrection(false)}
+                  >
+                    <X size={ICON.sm} strokeWidth={STROKE} />
+                    דחיית התיקון
+                  </Button>
+                  <Button
+                    variant="primary"
+                    loading={reviewCorrection.isPending}
+                    onClick={() => decideCorrection(true)}
+                  >
+                    <Check size={ICON.sm} strokeWidth={STROKE} />
+                    אישור התיקון
+                  </Button>
+                </>
+              ) : canRequest ? (
+                <>
+                  <Button onClick={onClose}>ביטול</Button>
+                  {correction && (
+                    <Button
+                      variant="ghost"
+                      loading={cancelCorrection.isPending}
+                      onClick={async () => {
+                        if (await confirm('לבטל את בקשת התיקון?', { tone: 'danger' })) withdrawRequest()
+                      }}
+                    >
+                      ביטול הבקשה
+                    </Button>
+                  )}
+                  <Button variant="primary" loading={requestCorrection.isPending} onClick={sendRequest}>
+                    <Clock size={ICON.sm} strokeWidth={STROKE} />
+                    {correction ? 'עדכון הבקשה' : 'שליחת בקשה לאישור'}
+                  </Button>
+                </>
+              ) : isPending && canApprove ? (
                 <>
                   {(canEdit || canBonus || (canPay && showTopupWaiver)) && (
                     <Button loading={save.isPending} onClick={() => save.mutate()}>
@@ -248,6 +382,7 @@ export function AttendanceEntryDrawer({
                   משמרת שאינה מושלמת ואין לזה הסבר על המסך היא באג לכל
                   מי שקורא אותה. */}
               {row.pay?.topup_waived && <Badge tone="neutral">ללא השלמה</Badge>}
+              {correction && <Badge tone="warning">בקשת תיקון</Badge>}
               {visibleFlags(row.flags).map((f) => (
                 <Badge key={f} tone="warning">
                   {flagLabel(f)}
@@ -267,26 +402,64 @@ export function AttendanceEntryDrawer({
               )
             )}
 
+            {/* הבקשה שממתינה, למי שאינו עורך אותה בשדות שמתחת — המנהל שמכריע
+                בה, ומי שרק קורא את השורה. היא הסיבה שהשעות שמעליה אולי אינן
+                השעות הנכונות, ולכן היא יושבת לפניהן ולא אחריהן. */}
+            {correction && !canRequest && (
+              <div className="rounded-lg border border-warning-border bg-warning-subtle px-3 py-2.5 type-body text-warning-text">
+                <p className="type-overline">בקשת תיקון שעות מהעובד</p>
+                <p className="mt-1 tabular-nums" dir="ltr">
+                  {fmtShiftRange(correction.clock_in_at, correction.clock_out_at) || '—'}
+                </p>
+                {correction.note && <p className="mt-1">{correction.note}</p>}
+                <p className="mt-1 type-caption">נשלחה ב-{fmtDateTime(correction.at)}</p>
+              </div>
+            )}
+
+            {/* בנתיב העובד השדות אינם "מה רשום" אלא "מה אני מבקש", ולכן גם
+                הכותרות משתנות: שמירה שקטה על שעה קיימת ובקשה לשנות אותה הן
+                שתי פעולות שונות, ומי שלוחץ צריך לדעת באיזו מהן הוא נמצא. */}
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="שעת כניסה" required>
+              <Field label={canRequest ? 'שעת כניסה מבוקשת' : 'שעת כניסה'} required>
                 <Input
                   type="datetime-local"
                   dir="ltr"
                   value={form.clockIn}
-                  disabled={!canEdit}
+                  disabled={!canEdit && !canRequest}
                   onChange={(e) => setForm((f) => ({ ...f, clockIn: e.target.value }))}
                 />
               </Field>
-              <Field label="שעת יציאה" hint="ריק = משמרת פתוחה">
+              <Field
+                label={canRequest ? 'שעת יציאה מבוקשת' : 'שעת יציאה'}
+                hint={canRequest && !row.clock_out_at ? 'המשמרת פתוחה — כאן משלימים לה סוף' : 'ריק = משמרת פתוחה'}
+              >
                 <Input
                   type="datetime-local"
                   dir="ltr"
                   value={form.clockOut}
-                  disabled={!canEdit}
+                  disabled={!canEdit && !canRequest}
                   onChange={(e) => setForm((f) => ({ ...f, clockOut: e.target.value }))}
                 />
               </Field>
             </div>
+
+            {canRequest && (
+              <>
+                <Field label="סיבת הבקשה" required hint="זה מה שהמנהל יראה כשיכריע">
+                  <Textarea
+                    rows={2}
+                    value={form.reqNote}
+                    placeholder="למשל: יצאתי מהמחסן ב-06:40 והחתמתי רק כשהגעתי לרכב"
+                    onChange={(e) => setForm((f) => ({ ...f, reqNote: e.target.value }))}
+                  />
+                </Field>
+                <p className="rounded-lg border border-line-subtle bg-subtle/50 px-3 py-2 type-caption text-ink-secondary">
+                  {/* מה שחשוב לעובד לדעת לפני שהוא שולח: השורה שלו אינה משתנה
+                      עכשיו, וגם לא תיפסל אם הבקשה תידחה. */}
+                  השעות שרשומות כרגע אינן משתנות עד שמנהל יאשר. בקשה שתידחה פשוט תימחק, והמשמרת תישאר כפי שהיא.
+                </p>
+              </>
+            )}
 
             {/* המיקום במילים. הוא נכתב בדיווח ידני — שבו אין GPS לאמת מולו —
                 ולכן הוא מוצג לכל מי שפותח את הרשומה ונערך בידי מי שמתקן
@@ -416,11 +589,15 @@ export function AttendanceEntryDrawer({
               </Field>
             )}
 
+            {/* ‏`canApprove` ולא `canEdit` בלבד: הנימוק הזה הוא מה שדחייה —
+                של דיווח או של בקשת תיקון — מחייבת, ומנהל קבלן שמאשר דרך
+                הפורטל אינו מחזיק את מפתח תיקון ההחתמות ולא יכול היה לכתוב
+                את הנימוק שהשרת דורש ממנו. */}
             <Field label="הערת מנהל">
               <Textarea
                 rows={2}
                 value={form.note}
-                disabled={!canEdit}
+                disabled={!canEdit && !canApprove}
                 onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
               />
             </Field>
