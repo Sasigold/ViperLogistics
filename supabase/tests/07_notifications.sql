@@ -26,10 +26,17 @@ select t_eq('וגם ערוץ ה-push',
 -- תשע-עשרה מאז 0110: אחת-עשרה פחות שלושה שפרשו (task_changed,
 -- event_status_changed, contractor_task — כבויים אך נשארים בקטלוג, כי שורות
 -- היסטוריות עדיין מצביעות עליהם) ועוד אחד-עשר חדשים. ‏0136 הוסיפה עשרים:
--- `task_performed_by_changed`. הספירה נשארת מדויקת ולא הופכת ל-`>= 9`:
+-- `task_performed_by_changed`, ו-0165 עשרים-ואחת:
+-- `attendance_correction_requested`. הספירה נשארת מדויקת ולא הופכת ל-`>= 9`:
 -- קטלוג שגדל בלי שאיש שם לב הוא בדיוק מה שהבדיקה הזו נועדה לתפוס.
-select t_eq('הקטלוג מכיר את עשרים הסוגים הפעילים',
-  (select count(*)::int from notification_types where is_active), 20);
+select t_eq('הקטלוג מכיר את עשרים-ואחת הסוגים הפעילים',
+  (select count(*)::int from notification_types where is_active), 21);
+
+-- ‏0165: בקשת תיקון שעות מגיעה רק למי שמאשר דיווחי נוכחות, בדיוק כמו הדיווח
+-- הידני עצמו — אחרת המטריצה הייתה מציעה את המתג לכל עובד.
+select t_eq('ובקשת תיקון השעות מגודרת במפתח האישור (0165)',
+  (select required_permission from notification_types
+    where key = 'attendance_correction_requested'), 'attendance.approve_entry');
 
 select t_eq('ובהם המעבר בין ארקו לוייפר (0136)',
   (select entity_type from notification_types where key = 'task_performed_by_changed'), 'task');

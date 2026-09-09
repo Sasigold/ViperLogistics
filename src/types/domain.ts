@@ -1473,6 +1473,21 @@ export interface PayBreakdown {
  */
 export type AttendanceStatus = 'pending' | 'approved' | 'rejected'
 
+/**
+ * בקשת תיקון שעות פתוחה על רשומת נוכחות (0165).
+ *
+ * העובד מבקש, והרשומה עצמה אינה זזה: `clock_in_at` ו-`clock_out_at` נשארים
+ * מה שהם עד שמנהל מאשר. לכן שני השדות כאן הם *הצעה* ולא נתון, ומי שמצייר
+ * שורה שיש עליה בקשה צריך לומר את זה למי שקורא אותה.
+ */
+export interface AttendanceCorrection {
+  clock_in_at: string
+  /** null = הבקשה אינה נוגעת ביציאה; במשמרת פתוחה זה אומר שהיא נשארת פתוחה */
+  clock_out_at: string | null
+  note: string | null
+  at: string
+}
+
 export interface AttendanceEntry {
   id: string
   profile_id: string
@@ -1503,6 +1518,11 @@ export interface AttendanceEntry {
   clock_in_place: string | null
   clock_out_place: string | null
   edited_at: string | null
+  /** בקשת תיקון פתוחה, כעמודות הגולמיות של הרשומה (0165) */
+  req_clock_in_at: string | null
+  req_clock_out_at: string | null
+  req_note: string | null
+  req_at: string | null
 }
 
 /** שורת הדוח, כפי ש-attendance_report מרכיב אותה. */
@@ -1544,6 +1564,8 @@ export interface AttendanceReportRow {
   overtime_enabled: boolean
   /** נימוק הבונוס. null גם כשאין בונוס וגם כשאין הרשאה לראות סכומים */
   bonus_note: string | null
+  /** בקשת תיקון שעות שממתינה להכרעה, או null כשאין (0165) */
+  correction: AttendanceCorrection | null
   pay: PayBreakdown
 }
 
@@ -1558,6 +1580,8 @@ export interface AttendanceReport {
     actual_hours: number
     paid_hours: number
     overtime_hours: number
+    /** כמה שורות בטווח נושאות בקשת תיקון פתוחה (0165) */
+    corrections: number
     /** סך הבונוסים. כלול ב-total ואינו נוסף עליו; null בלי הרשאת כסף */
     bonus: number | null
     total: number | null
@@ -1632,9 +1656,13 @@ export interface ClockStatus {
    */
   location_required: boolean
   can_submit: boolean
+  /** האם מותר לי לבקש תיקון שעות על רשומה קיימת (0165) */
+  can_request_correction: boolean
   today: AttendanceEntry[]
   /** הדיווחים הידניים שלי שממתינים לאישור או שנדחו, 45 יום אחורה */
   reports: AttendanceEntry[]
+  /** בקשות התיקון הפתוחות שלי, באותו חלון של 45 יום (0165) */
+  corrections: AttendanceEntry[]
 }
 
 /**

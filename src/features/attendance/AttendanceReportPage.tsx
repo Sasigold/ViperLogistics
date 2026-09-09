@@ -186,6 +186,8 @@ interface ShiftRowView {
   /** השורה שמתחת לסה"כ: הנוספות, החריגה, או מול מה נמדדה המשמרת */
   deltaText: string | null
   deltaTone: 'overtime' | 'over' | 'muted'
+  /** בקשת תיקון שעות שממתינה להכרעה (0165) */
+  hasCorrection: boolean
   /** הבונוס על המשמרת, או null כשאין או כשאין הרשאה לראות סכומים */
   bonus: number | null
   tone: ShiftTone
@@ -236,6 +238,7 @@ function toShiftView(r: AttendanceReportRow, sameDayCount: number): ShiftRowView
         ? `מתוך ${fmtDurationHHMM(planned)}`
         : null,
     deltaTone: overtime > 0 ? 'overtime' : overage > 0 ? 'over' : 'muted',
+    hasCorrection: !!r.correction,
     bonus: r.pay?.bonus ? r.pay.bonus : null,
     tone: shiftTone(r),
     row: r,
@@ -632,6 +635,10 @@ export function AttendanceReport({
           // ההערות לא הייתה אמורה לקבוע את גובה כל השורה בטבלה.
           <div className="flex flex-nowrap items-center gap-1">
             <Badge tone={STATUS_TONES[r.status]}>{STATUS_LABELS[r.status]}</Badge>
+            {/* ‏0165: בקשת תיקון אינה סטטוס ואינה דגל, ולכן היא לא הופיעה
+                באף אחת מהעמודות — והמנהל היה צריך לפתוח שורה כדי לגלות
+                שמישהו מחכה לו בה. */}
+            {r.correction && <Badge tone="warning">בקשת תיקון</Badge>}
             {r.source === 'manual' && <Badge tone="warning">ידני</Badge>}
             {visibleFlags(r.flags).map((f) => (
               <Badge key={f} tone={needsAttention([f]) ? 'error' : 'neutral'}>
@@ -1104,6 +1111,18 @@ function ShiftCard({
     >
       {showName && d.employeeName && (
         <p className="w-full truncate type-caption font-semibold text-ink-tertiary">{d.employeeName}</p>
+      )}
+
+      {/* ‏0165: השורה אומרת שמישהו ביקש לתקן אותה, בלי לומר מה — הפירוט
+          יושב במגירה שנפתחת בלחיצה עליה. בלי זה בקשה הייתה יכולה להמתין
+          שבוע בלי שאיש שיודע לאשר אותה יראה שהיא שם. */}
+      {d.hasCorrection && (
+        <p className="w-full">
+          <span className="inline-flex items-center gap-1 rounded-lg border border-warning-border bg-warning-subtle px-2 py-0.5 type-caption font-bold text-warning-text">
+            <AlertCircle size={ICON.xs} strokeWidth={STROKE} />
+            בקשת תיקון שעות
+          </span>
+        </p>
       )}
 
       {/* פתיחת המשמרת */}

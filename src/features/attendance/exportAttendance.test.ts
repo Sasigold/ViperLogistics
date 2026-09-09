@@ -51,6 +51,7 @@ function report(over: Partial<AttendanceReport> = {}): AttendanceReport {
       actual_hours: 8,
       paid_hours: 8,
       overtime_hours: 0,
+      corrections: 0,
       bonus: null,
       total: null,
     },
@@ -126,7 +127,7 @@ describe('buildAttendanceSheet', () => {
     const plan = buildAttendanceSheet(
       report({
         rows: [row(), row({ id: 'r2', status: 'pending' })],
-        totals: { entries: 2, pending: 1, pending_hours: 8, actual_hours: 8, paid_hours: 8, overtime_hours: 0, bonus: null, total: null },
+        totals: { entries: 2, pending: 1, pending_hours: 8, actual_hours: 8, paid_hours: 8, overtime_hours: 0, corrections: 0, bonus: null, total: null },
       }),
     )
     expect(plan.footer[0]!.values.actual_hours).toBe(8)
