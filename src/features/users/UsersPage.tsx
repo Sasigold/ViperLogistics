@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Clock, ICON, KeyRound, Plus, STROKE, Shield, User, UserCheck } from '../../components/ui/icons'
+import { Clock, ICON, KeyRound, Plus, STROKE, Shield, Trash2, User, UserCheck } from '../../components/ui/icons'
 import {
   Avatar,
   Badge,
@@ -24,6 +24,7 @@ import {
   Switch,
   Tabs,
   Textarea,
+  useConfirm,
   useToast,
 } from '../../components/ui'
 import type { Column } from '../../components/ui'
@@ -304,6 +305,50 @@ export default function UsersPage() {
   )
 }
 
+/* ===== מחיקת משתמש ========================================================
+   מה שהמנהל צריך לדעת לפני שהוא לוחץ. `user_delete_impact` (0160) מחזירה את
+   המספרים, וכאן הם הופכים למשפט אחד: מה יימחק *איתו*, ומה יישאר במקומו בלי
+   שמו. "לא ניתן לשחזר" בלי הפירוט הזה אינו אומר למי שקורא אותו מה הוא מאבד. */
+
+interface DeleteImpact {
+  full_name: string
+  is_self: boolean
+  has_login: boolean
+  /** יורד עם המשתמש */
+  shifts: number
+  assignments: number
+  /** נשאר, בלי שם היוצר */
+  events_created: number
+  tasks_created: number
+  receipts: number
+}
+
+/** ‏"3 משמרות, 2 שיבוצים וחשבון ההתחברות" — ו' החיבור לפני האחרון, כמו בעברית. */
+function hebrewList(parts: string[]): string {
+  if (parts.length <= 1) return parts[0] ?? ''
+  return `${parts.slice(0, -1).join(', ')} ו${parts[parts.length - 1]}`
+}
+
+const count = (n: number, one: string, many: string) => (n === 1 ? one : `${n} ${many}`)
+
+function purgeQuestion(name: string, x: DeleteImpact): string {
+  const gone = [
+    x.shifts ? count(x.shifts, 'משמרת נוכחות אחת', 'משמרות נוכחות') : null,
+    x.assignments ? count(x.assignments, 'שיבוץ אחד', 'שיבוצים') : null,
+    x.has_login ? 'חשבון ההתחברות' : null,
+  ].filter((v): v is string => !!v)
+  const kept = [
+    x.events_created ? count(x.events_created, 'אירוע אחד', 'אירועים') : null,
+    x.tasks_created ? count(x.tasks_created, 'משימה אחת', 'משימות') : null,
+    x.receipts ? count(x.receipts, 'קבלה אחת', 'קבלות') : null,
+  ].filter((v): v is string => !!v)
+
+  let text = `למחוק את "${name}" לצמיתות?`
+  if (gone.length) text += ` יימחקו איתו ${hebrewList(gone)}.`
+  if (kept.length) text += ` ${hebrewList(kept)} שהוא יצר יישארו במערכת, בלי שם היוצר.`
+  return `${text} לא ניתן לשחזר.`
+}
+
 /* ===== user drawer ======================================================== */
 
 const DRAWER_TABS = [
@@ -349,6 +394,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
   })
   const [login, setLogin] = useState({ email: '', password: '' })
   const [touched, setTouched] = useState(false)
+  const { confirm, dialog } = useConfirm()
 
   useEffect(() => {
     if (!open) return
@@ -497,6 +543,67 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
     onError: (e) => toast.error(errorMessage(e)),
   })
 
+  /* ‏0160: שתי מחיקות, ובכוונה לא אחת. "לסל" הפיכה ופתוחה למי שמחזיק
+     `users.delete`; "לצמיתות" אינה הפיכה ופתוחה למנהל מערכת בלבד, ועוברת
+     דרך `admin-users` כי היא נוגעת גם בחשבון ההתחברות שב-`auth.users`.
+     שתיהן חסומות על המשתמש שאתה מחובר בו — כמו ההשבתה ומחיקת ההתחברות. */
+  const isSelf = !!profile && profile.id === me?.profile.id
+
+  const softDelete = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.rpc('soft_delete', { p_table: 'profiles', p_id: profile!.id })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('המשתמש הועבר לסל המיחזור', { description: 'ניתן לשחזר אותו בהגדרות ← סל מיחזור' })
+      void qc.invalidateQueries({ queryKey: ['profiles'] })
+      onClose()
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
+  const purge = useMutation({
+    mutationFn: async () => {
+      await invokeFunction('admin-users', { action: 'purge_user', profile_id: profile!.id })
+    },
+    onSuccess: () => {
+      toast.success('המשתמש נמחק לצמיתות')
+      void qc.invalidateQueries({ queryKey: ['profiles'] })
+      onClose()
+    },
+    /* גם בכישלון: השלב הראשון בשרת הוא ההעברה לסל, וייתכן שהיא כן עברה.
+       רשימה שממשיכה להציג משתמש שכבר בסל היא בדיוק מה שגורם ללחיצה שנייה. */
+    onError: (e) => {
+      void qc.invalidateQueries({ queryKey: ['profiles'] })
+      toast.error(errorMessage(e))
+    },
+  })
+
+  /* המספרים נשלפים בלחיצה ולא בפתיחת המגירה: הם נחוצים למשפט אחד, ואין סיבה
+     שכל פתיחה של כרטיס משתמש תספור משמרות ואירועים. */
+  const askAndPurge = async () => {
+    if (!profile) return
+    const { data, error } = await supabase.rpc('user_delete_impact', { p_profile: profile.id })
+    if (error) {
+      toast.error(errorMessage(error))
+      return
+    }
+    const ok = await confirm(purgeQuestion(profile.full_name, data as DeleteImpact), {
+      title: 'מחיקת משתמש לצמיתות',
+      confirmLabel: 'מחיקה לצמיתות',
+    })
+    if (ok) purge.mutate()
+  }
+
+  const askAndSoftDelete = async () => {
+    if (!profile) return
+    const ok = await confirm(
+      `להעביר את "${profile.full_name}" לסל המיחזור? הוא יורד מהרשימות ולא יוכל להשתמש במערכת, וניתן לשחזר אותו בהגדרות ← סל מיחזור.`,
+      { title: 'מחיקת משתמש', confirmLabel: 'העברה לסל' },
+    )
+    if (ok) softDelete.mutate()
+  }
+
   const nameError = touched && !form.full_name.trim() ? 'חובה להזין שם' : undefined
   const linkError =
     touched && form.user_type === 'customer_user' && !form.customer_id
@@ -505,6 +612,7 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
         ? 'יש לבחור קבלן'
         : undefined
   const canSave = can('users', profile ? 'edit' : 'create') || isAdmin
+  const canDelete = has(PERM.USERS_DELETE)
   // הלשונית הזו כותבת ל-worker_pay_settings מאחורי מפתחות משלה; מי שאין לו
   // אף אחד משניהם היה מקבל כרטיס ריק.
   const canWorkTab = isAdmin || has(PERM.ATTENDANCE_MANAGE_PAY) || has(PERM.ATTENDANCE_MANAGE_CLOCK)
@@ -735,12 +843,42 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
               )}
             </CardBody>
           </Card>
+
+          {/* מחיקת משתמש (0160) */}
+          {profile && canDelete && (
+            <Card>
+              <CardHeader
+                title="מחיקת משתמש"
+                subtitle={isSelf ? 'לא ניתן למחוק את המשתמש שאתה מחובר בו' : 'לסל המיחזור, או לצמיתות'}
+                icon={<Trash2 size={ICON.md} strokeWidth={STROKE} />}
+              />
+              <CardBody>
+                <div className="flex flex-wrap gap-2">
+                  <Button disabled={isSelf} loading={softDelete.isPending} onClick={() => void askAndSoftDelete()}>
+                    <Trash2 size={ICON.sm} strokeWidth={STROKE} />
+                    העברה לסל המיחזור
+                  </Button>
+                  {isAdmin && (
+                    <Button variant="danger" disabled={isSelf} loading={purge.isPending} onClick={() => void askAndPurge()}>
+                      <Trash2 size={ICON.sm} strokeWidth={STROKE} />
+                      מחיקה לצמיתות
+                    </Button>
+                  )}
+                </div>
+                <p className="mt-2.5 type-caption text-ink-tertiary">
+                  העברה לסל היא הפיכה. מחיקה לצמיתות — למנהל מערכת בלבד — מוחקת את החשבון, את חשבון ההתחברות,
+                  ואת המשמרות והשיבוצים שלו; אירועים ומשימות שהוא יצר נשארים, בלי שם היוצר.
+                </p>
+              </CardBody>
+            </Card>
+          )}
         </div>
       ) : tab === 'work' ? (
         profile && <EmployeeWorkSettingsCard profileId={profile.id} />
       ) : (
         profile && <UserPermissionsTab profile={profile} />
       )}
+      {dialog}
     </Drawer>
   )
 }

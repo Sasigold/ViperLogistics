@@ -13,7 +13,7 @@ function json(body: unknown, status = 200) {
   })
 }
 
-type Action = 'create_login' | 'set_password' | 'set_active' | 'delete_login'
+type Action = 'create_login' | 'set_password' | 'set_active' | 'delete_login' | 'purge_user'
 
 /** Which registry key each action costs. */
 const REQUIRED: Record<Action, string> = {
@@ -21,6 +21,9 @@ const REQUIRED: Record<Action, string> = {
   set_password: 'users.reset_password',
   set_active: 'users.edit',
   delete_login: 'users.delete',
+  // המפתח הוא רק הכניסה; המחיקה לצמיתות עצמה נדרשת בנוסף להיות של מנהל
+  // מערכת, וזה נבדק פעמיים — כאן ובתוך `hard_delete` (0160).
+  purge_user: 'users.delete',
 }
 
 interface TargetProfile {
@@ -28,6 +31,7 @@ interface TargetProfile {
   user_id: string | null
   is_admin: boolean
   full_name: string
+  deleted_at: string | null
 }
 
 Deno.serve(async (req) => {
@@ -69,7 +73,7 @@ Deno.serve(async (req) => {
     const { profile_id, user_id } = body as { profile_id?: string; user_id?: string }
     if (!profile_id && !user_id) return json({ error: 'חסר מזהה משתמש' }, 400)
 
-    const lookup = admin.from('profiles').select('id, user_id, is_admin, full_name')
+    const lookup = admin.from('profiles').select('id, user_id, is_admin, full_name, deleted_at')
     const { data: target } = profile_id
       ? await lookup.eq('id', profile_id).maybeSingle()
       : await lookup.eq('user_id', user_id!).maybeSingle()
@@ -87,8 +91,42 @@ Deno.serve(async (req) => {
     if (t.is_admin && !caller.is_admin) {
       return json({ error: 'אין לך הרשאה לנהל מנהל מערכת' }, 403)
     }
-    if (isSelf && (action === 'set_active' || action === 'delete_login')) {
+    if (isSelf && (action === 'set_active' || action === 'delete_login' || action === 'purge_user')) {
       return json({ error: 'לא ניתן לבצע פעולה זו על עצמך' }, 403)
+    }
+
+    // ‏0160: מחיקה לצמיתות. היא נמצאת כאן ולא ב-RPC בלבד משום שהיא נוגעת
+    // בשני עולמות — שורת המסד ו-`auth.users` — ורק ה-service role יכול
+    // לגעת בשני.
+    if (action === 'purge_user') {
+      if (!caller.is_admin) {
+        return json({ error: 'רק מנהל מערכת יכול למחוק משתמש לצמיתות' }, 403)
+      }
+
+      // הסל נשאר השער היחיד (0124): מי שעוד לא בו נכנס אליו עכשיו, וכך
+      // כישלון בשלב הבא משאיר משתמש שניתן לשחזר ולא מצב חצי-מחוק.
+      if (!t.deleted_at) {
+        const { error } = await asUser.rpc('soft_delete', { p_table: 'profiles', p_id: t.id })
+        if (error) return json({ error: error.message }, 400)
+      }
+
+      // ‏hard_delete נקראת בזהות הקורא ולא ב-service role: `app.is_admin()`
+      // שבתוכה שואלת מי מחובר, ול-service role אין פרופיל.
+      const { error: purgeErr } = await asUser.rpc('hard_delete', { p_table: 'profiles', p_id: t.id })
+      if (purgeErr) return json({ error: purgeErr.message }, 400)
+
+      // ורק אחריה חשבון ההתחברות. הסדר הזה במכוון: `hard_delete` היא
+      // שמאפסת את ההצבעה מ-`contractor_workers.user_id`, ובלעדיה המחיקה
+      // כאן הייתה נופלת על FK.
+      if (t.user_id) {
+        const { error: authErr } = await admin.auth.admin.deleteUser(t.user_id)
+        if (authErr) {
+          return json({
+            error: `המשתמש נמחק, אך חשבון ההתחברות שלו נותר (${authErr.message}). יש למחוק אותו בלוח הבקרה של Supabase.`,
+          }, 500)
+        }
+      }
+      return json({ ok: true })
     }
 
     if (action === 'create_login') {
