@@ -101,7 +101,7 @@ export function ShiftDetailDrawer({
   const startsAtWarehouse = (data?.shift.work_site ?? shift.work_site) === 'warehouse'
   const warehouseName = data?.shift.warehouse_name ?? shift.warehouse_name
   /* לאן חוזרים בסוף, ולא מאיפה יצאו בבוקר: אלה שתי שאלות שיכולות להיענות
-     אחרת באותה משמרת (0164). נופל למחסן היציאה כשאין לסיום מחסן משלו. */
+     אחרת באותה משמרת (0166). נופל למחסן היציאה כשאין לסיום מחסן משלו. */
   const endWarehouse =
     data?.shift.end_warehouse_name ?? shift.end_warehouse_name ?? warehouseName
   const travel = totals?.travel_hours ?? shift.travel_hours ?? 0
@@ -281,7 +281,7 @@ export function ShiftDetailDrawer({
 
           {/* משימות שהזמנים שלהן נופלים זה על זה. ההודעה כתובה גם לעובד וגם
               למנהל, כי היא עונה על אותה שאלה לשניהם: למה "עבודה" קטן מסכום
-              המשימות שכתובות מעליו. השעות עצמן נספרות פעם אחת (0164). */}
+              המשימות שכתובות מעליו. השעות עצמן נספרות פעם אחת (0166). */}
           {overlap > 0 && (
             <p className="flex items-start gap-2 rounded-lg border border-warning-border bg-warning-subtle px-3 py-2 type-caption text-warning-text">
               <AlertTriangle size={ICON.sm} strokeWidth={STROKE} className="mt-px shrink-0" />
@@ -419,7 +419,7 @@ function TaskCard({ task: t, onOpen }: { task: ShiftTaskRow; onOpen: () => void 
         {t.assigned_count > 1 && (
           <Chip icon={<Users size={ICON.xs} strokeWidth={STROKE} />}>{t.assigned_count} משובצים</Chip>
         )}
-        {/* ‏0164: המשימה הזו רצה בזמן שכבר תפוס במשמרת. התג יושב על הכרטיס
+        {/* ‏0166: המשימה הזו רצה בזמן שכבר תפוס במשמרת. התג יושב על הכרטיס
             ולא רק בהודעה שמעל הרצף, כדי שיהיה ברור *איזו* משימה חופפת. */}
         {t.overlap_minutes > 0 && (
           <Badge tone="warning">

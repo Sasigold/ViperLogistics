@@ -125,7 +125,7 @@ describe('shiftLocation', () => {
  * הקצה השני של אותה שורה. הוא נבדק בנפרד כי הוא נשען על שדות אחרים לגמרי —
  * ‏`clock_out_place` ולא `clock_in_place`, והמחסן שחוזרים אליו ולא זה שיוצאים
  * ממנו — ומשמרת שיצאה מהמחסן וסיימה בשטח היא בדיוק המקרה שבו שתי הפונקציות
- * חייבות לענות תשובות שונות (0164).
+ * חייבות לענות תשובות שונות (0166).
  */
 describe('shiftEndLocation', () => {
   const at = (over: Partial<Parameters<typeof shiftEndLocation>[0]> = {}) => ({

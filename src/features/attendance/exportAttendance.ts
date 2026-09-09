@@ -66,7 +66,7 @@ export function buildAttendanceSheet(report: AttendanceReport): SheetPlan {
         ]
       : []),
     { header: 'יציאה מ', key: 'work_site', width: 10 },
-    // ‏0164: הקצה השני. משמרת יכולה לצאת מהמחסן ולהסתיים בשטח, ולהפך —
+    // ‏0166: הקצה השני. משמרת יכולה לצאת מהמחסן ולהסתיים בשטח, ולהפך —
     // ועד כאן הגיליון ידע לספר רק את חציה הראשון.
     { header: 'סיום ב', key: 'end_place', width: 16 },
     { header: 'נקודת כניסה', key: 'in_point', width: 20 },

@@ -1329,7 +1329,7 @@ export interface PlannedShift {
   warehouse_id: string | null
   warehouse_name: string | null
   /**
-   * איפה המשמרת נגמרת — לפי המשימה האחרונה בה, ולא לפי הראשונה (0164).
+   * איפה המשמרת נגמרת — לפי המשימה האחרונה בה, ולא לפי הראשונה (0166).
    * ‏`work_site` שלמעלה נשאר שאלה על ההתחלה בלבד.
    */
   end_site: WorkSite | null
@@ -1391,7 +1391,7 @@ export interface ShiftTaskRow {
   /** דקות מסיום המשימה הקודמת. null בראשונה שבמשמרת. */
   gap_minutes: number | null
   /**
-   * כמה דקות מהמשימה הזו כבר כוסו על ידי מה שקדם לה במשמרת (0164). ‏0 ברוב
+   * כמה דקות מהמשימה הזו כבר כוסו על ידי מה שקדם לה במשמרת (0166). ‏0 ברוב
    * המשמרות, וגדול מאפס בדיוק כשהזמנים חופפים — ואז השעות אינן נספרות
    * פעמיים, וזה מה שהמסך אומר.
    */
@@ -1423,7 +1423,7 @@ export interface ShiftBreakdown {
   tasks: ShiftTaskRow[]
   totals: {
     tasks: number
-    /** איחוד חלונות המשימות, ולא סכומם: חפיפה נספרת פעם אחת (0164) */
+    /** איחוד חלונות המשימות, ולא סכומם: חפיפה נספרת פעם אחת (0166) */
     work_hours: number
     /** ההפרש בין סכום המשימות לאיחוד שלהן — כמה מהיום נספר פעמיים */
     overlap_hours: number
@@ -1438,7 +1438,7 @@ export interface ShiftBreakdown {
     /** האתר שבו המשמרת מתחילה */
     work_site: WorkSite | null
     warehouse_name: string | null
-    /** והאתר שבו היא נגמרת — לפי המשימה האחרונה (0164) */
+    /** והאתר שבו היא נגמרת — לפי המשימה האחרונה (0166) */
     end_work_site: WorkSite | null
     end_warehouse_name: string | null
   }
@@ -1551,7 +1551,7 @@ export interface AttendanceReportRow {
   in_distance_m: number | null
   out_distance_m: number | null
   /**
-   * הנקודה שנדגמה ברגע ההחתמה (0164). המרחק אומר כמה, ולא לאיזה צד — ולכן
+   * הנקודה שנדגמה ברגע ההחתמה (0166). המרחק אומר כמה, ולא לאיזה צד — ולכן
    * שניהם מוצגים. ‏null כשלא נקראה קריאת מיקום, ובכל דיווח ידני.
    */
   in_lat: number | null
@@ -1575,7 +1575,7 @@ export interface AttendanceReportRow {
    */
   work_place: string | null
   /**
-   * ואיפה היא נגמרה: האתר של המשימה האחרונה, ושם המחסן שחוזרים אליו (0164).
+   * ואיפה היא נגמרה: האתר של המשימה האחרונה, ושם המחסן שחוזרים אליו (0166).
    * ‏null בדיווח ידני, שאין לו משמרת משובצת לגזור ממנה.
    */
   end_work_site: WorkSite | null

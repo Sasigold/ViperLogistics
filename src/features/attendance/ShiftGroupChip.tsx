@@ -36,7 +36,7 @@ export function ShiftGroupChip({
   className?: string
 }) {
   const { members, lead, onsiteStart, onsiteEnd, warehouseStart, warehouseName } = group
-  /* לאן חוזרים, ולא מאיפה יצאו: משמרת יכולה להתחיל בשטח ולהיגמר במחסן (0164) */
+  /* לאן חוזרים, ולא מאיפה יצאו: משמרת יכולה להתחיל בשטח ולהיגמר במחסן (0166) */
   const backTo = group.endWarehouseName ?? warehouseName
 
   if (members.length === 1) {

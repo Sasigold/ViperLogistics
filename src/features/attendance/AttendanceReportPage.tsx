@@ -184,7 +184,7 @@ interface ShiftRowView {
   locationVerified: boolean
   location: string | null
   /**
-   * ואיפה היא נגמרה (0164). null כשזה בדיוק אותו מקום שבו היא התחילה —
+   * ואיפה היא נגמרה (0166). null כשזה בדיוק אותו מקום שבו היא התחילה —
    * הרוב המוחלט של המשמרות — כדי שהשורה לא תכתוב "מחסן דרום" פעמיים.
    */
   endLocation: string | null
@@ -216,7 +216,7 @@ function toShiftView(r: AttendanceReportRow, sameDayCount: number): ShiftRowView
   // משמרת פתוחה לא "חסרה" — היא פשוט עוד לא נגמרה, והשעות שחסרות בה ימלאו
   // את עצמן כשהעובד יחתים יציאה. מולה מוצג המתוכנן בלבד.
   const shortfall = clockOut ? shiftShortfall(planned, actual) : 0
-  /* שני קצוות ולא אחד: מי שיצא מהמחסן יכול לסיים בשטח, ולהפך (0164) */
+  /* שני קצוות ולא אחד: מי שיצא מהמחסן יכול לסיים בשטח, ולהפך (0166) */
   const location = shiftLocation(r)
   const endLocation = shiftEndLocation(r)
 

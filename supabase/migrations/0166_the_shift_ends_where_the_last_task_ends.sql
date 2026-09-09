@@ -1,4 +1,4 @@
--- ‏0164: המשמרת נגמרת במקום שבו המשימה האחרונה נגמרת
+-- ‏0166: המשמרת נגמרת במקום שבו המשימה האחרונה נגמרת
 --
 -- ארבע הבהרות שנאמרו יחד, וכולן על אותו ציר — קצה אחד של המשמרת מול הקצה
 -- השני:
@@ -114,7 +114,7 @@ begin
       e.location_lng as b_end_lng,
       case when d.is_wh then wh.id end   as b_wh_id,
       case when d.is_wh then wh.name end as b_wh_name,
-      -- ‏0164: המחסן כנקודה, ולא רק כשם. עד כאן הוא נשלף רק דרך
+      -- ‏0166: המחסן כנקודה, ולא רק כשם. עד כאן הוא נשלף רק דרך
       -- ‏`b_start_lat`, ולכן משמרת שחוזרת אליו בלי לצאת ממנו לא ידעה איפה הוא.
       case when d.is_wh then wh.lat end as b_wh_lat,
       case when d.is_wh then wh.lng end as b_wh_lng
@@ -169,7 +169,7 @@ begin
       (array_agg(g.b_task     order by g.b_end desc, g.b_task desc))[1] as s_last,
       (array_agg(g.b_end_lat  order by g.b_end desc, g.b_task desc))[1] as s_last_lat,
       (array_agg(g.b_end_lng  order by g.b_end desc, g.b_task desc))[1] as s_last_lng,
-      -- ‏0164: הקצה השני נשאל מהמשימה האחרונה, באותו מיון שכבר בורר את
+      -- ‏0166: הקצה השני נשאל מהמשימה האחרונה, באותו מיון שכבר בורר את
       -- הנסיעה שלה. ‏`b_wh_*` הם null כשהיא אינה משימת מחסן, וזה בדיוק
       -- המקרה שבו המשמרת נגמרת בשטח.
       (array_agg(g.b_site     order by g.b_end desc, g.b_task desc))[1] as s_end_site,
@@ -209,7 +209,7 @@ begin
     s.s_first,
     s.s_last,
     s.s_first_lat, s.s_first_lng,
-    -- ‏0164: מקום הסיום — המחסן שחוזרים אליו, או השטח שמסיימים בו.
+    -- ‏0166: מקום הסיום — המחסן שחוזרים אליו, או השטח שמסיימים בו.
     case when s.s_end_site = 'warehouse' then s.s_end_wh_lat else s.s_last_lat end,
     case when s.s_end_site = 'warehouse' then s.s_end_wh_lng else s.s_last_lng end,
     v.travel,
@@ -225,7 +225,7 @@ begin
     s.s_last_lat,
     s.s_last_lng
   from shifts s
-  -- ‏0164: הנסיעה חזרה שייכת למי ש**מסיים** במחסן, ולא למי שיצא ממנו.
+  -- ‏0166: הנסיעה חזרה שייכת למי ש**מסיים** במחסן, ולא למי שיצא ממנו.
   -- היא, בהגדרה, החזרה מהמשימה האחרונה אל המחסן — ולכן המשימה האחרונה היא
   -- שנשאלת. ההכרעה נגזרת פעם אחת כאן ומוזנת לשלושת הצרכנים שלה: שעת
   -- הסיום, השעות המתוכננות והעמודה עצמה.
@@ -238,7 +238,7 @@ begin
 end $$;
 
 comment on function app.planned_shifts_many(uuid[], date, date) is
-  'גזירת המשמרות. ההתחלה לפי המשימה הראשונה, הסיום והמיקום שבו לפי האחרונה (0164).';
+  'גזירת המשמרות. ההתחלה לפי המשימה הראשונה, הסיום והמיקום שבו לפי האחרונה (0166).';
 
 -- ===== 3. השעון: שתי נקודות סיום, מהקצה הנכון =============================
 --
@@ -293,7 +293,7 @@ begin
 
   -- היציאה נמדדת מול המשמרת של אותו זמן, או הקרובה לה.
   v_shift := app.shift_at(v_me, now(), make_interval(hours => 2));
-  -- ‏0164: נקודת הסיום היא המקום שבו המשמרת נגמרת — המחסן כשחוזרים אליו,
+  -- ‏0166: נקודת הסיום היא המקום שבו המשמרת נגמרת — המחסן כשחוזרים אליו,
   -- והשטח כשמסיימים בו.
   v_site_lat := v_shift.end_lat;
   v_site_lng := v_shift.end_lng;
@@ -389,7 +389,7 @@ returns jsonb language sql stable set search_path = public as $$
 $$;
 
 comment on function app.shift_end_place(uuid, uuid[]) is
-  'האתר והמחסן של המשימה האחרונה במשמרת — איפה היא נגמרה (0164).';
+  'האתר והמחסן של המשימה האחרונה במשמרת — איפה היא נגמרה (0166).';
 
 -- ===== 5. שורת הנוכחות נושאת את הקואורדינטות שנדגמו =======================
 --
@@ -567,7 +567,7 @@ begin
                           and wh.deleted_at is null
        order by coalesce(t.warehouse_start_time, t.onsite_start_time), t.id
        limit 1) end,
-    -- ‏0164: והצד השני — איפה המשמרת נגמרה. מחסן כשחוזרים אליו, שטח כשלא.
+    -- ‏0166: והצד השני — איפה המשמרת נגמרה. מחסן כשחוזרים אליו, שטח כשלא.
     'end_work_site',  ep.place ->> 'work_site',
     'end_work_place', ep.place ->> 'warehouse_name',
     'task_ids',       to_jsonb(c.task_ids),
@@ -576,7 +576,7 @@ begin
     'actual_hours',   c.actual_hours,
     'in_distance_m',  c.clock_in_distance_m,
     'out_distance_m', c.clock_out_distance_m,
-    -- ‏0164: הנקודה שנדגמה ברגע ההחתמה. מרחק אומר כמה, ולא לאיזה צד.
+    -- ‏0166: הנקודה שנדגמה ברגע ההחתמה. מרחק אומר כמה, ולא לאיזה צד.
     'in_lat',         c.clock_in_lat,
     'in_lng',         c.clock_in_lng,
     'out_lat',        c.clock_out_lat,
@@ -789,7 +789,7 @@ begin
   numbered as (
     select x.*,
            row_number() over (order by x.start_at, x.task_id) as ord,
-           -- ‏0164: המאוחר מבין הסיומים שקדמו, ולא הסיום של הקודמת. משימה
+           -- ‏0166: המאוחר מבין הסיומים שקדמו, ולא הסיום של הקודמת. משימה
            -- שנבלעת בתוך אחת ארוכה ממנה אינה "אחריה".
            max(x.end_at) over (order by x.start_at, x.task_id
                                rows between unbounded preceding and 1 preceding) as prev_end
@@ -836,7 +836,7 @@ begin
            'gap_minutes',           case when n.prev_end is null then null
                                     else greatest(0, round(extract(epoch
                                            from (n.start_at - n.prev_end)) / 60))::int end,
-           -- ‏0164: כמה מהמשימה הזו כבר כוסה על ידי מה שלפניה. 0 בראשונה,
+           -- ‏0166: כמה מהמשימה הזו כבר כוסה על ידי מה שלפניה. 0 בראשונה,
            -- ו-0 בכל משימה שמתחילה אחרי שהכול נגמר — כלומר ברוב המשמרות.
            'overlap_minutes',       case when n.prev_end is null then 0
                                     else greatest(0, round(extract(epoch
@@ -896,11 +896,11 @@ begin
                  + make_interval(mins => round(v_travel * 60)::int),
       'work_site',      v_tasks -> 0 ->> 'work_site',
       'warehouse_name', v_tasks -> 0 ->> 'warehouse_name',
-      -- ‏0164: והקצה השני, באותה מגירה: איפה היום נגמר.
+      -- ‏0166: והקצה השני, באותה מגירה: איפה היום נגמר.
       'end_work_site',      v_last ->> 'work_site',
       'end_warehouse_name', case when v_last ->> 'work_site' = 'warehouse'
                                  then v_last ->> 'warehouse_name' end));
 end $$;
 
 comment on function shift_task_breakdown(uuid, uuid[]) is
-  'פירוק המשמרת למשימות. הסיום לפי האחרונה, והחפיפה נספרת פעם אחת (0164).';
+  'פירוק המשמרת למשימות. הסיום לפי האחרונה, והחפיפה נספרת פעם אחת (0166).';
