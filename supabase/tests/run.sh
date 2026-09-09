@@ -407,6 +407,16 @@ OUT="$OUT
 $OUT39"
 
 echo
+echo "== a user deleted for good suite =="
+# 40 מקימה לקוח, קבלן, אירוע, משימה ושלוש דמויות משלה ב-current_date + 570,
+# מעבר לכל טווח אחר. היא רצה אחרונה כי היא *מוחקת* משתמש לצמיתות — ולכן שום
+# חבילה שסופרת פרופילים, משמרות או שיבוצים לא יכולה לרוץ אחריה.
+OUT40=$($PSQL -d vl -f "$HERE/40_a_user_can_be_deleted_for_good.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT40"
+OUT="$OUT
+$OUT40"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

@@ -39,7 +39,7 @@ import {
   useConfirm,
   useToast,
 } from '../../components/ui'
-import { supabase } from '../../lib/supabase'
+import { supabase, invokeFunction } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { useExecutionMethods, useStatuses, useTaskTypes, useTrucks, useVehicleDocumentKinds } from '../../lib/queries'
 import { fmtDateTime } from '../../lib/dates'
@@ -802,6 +802,14 @@ function RecycleBinTab() {
 
   const purge = useMutation({
     mutationFn: async (id: string) => {
+      /* משתמש נמחק דרך `admin-users` ולא ב-RPC ישיר: המחיקה שלו נוגעת גם
+         ב-`auth.users`, ורק ה-service role שם יכול למחוק חשבון התחברות
+         (0160). הפונקציה קוראת ל-`hard_delete` בזהות הקורא, כך שאותו כלל —
+         מנהל מערכת, ורק פריט שכבר בסל — נאכף באותו מקום אחד. */
+      if (table === 'profiles') {
+        await invokeFunction('admin-users', { action: 'purge_user', profile_id: id })
+        return
+      }
       const { error } = await supabase.rpc('hard_delete', { p_table: table, p_id: id })
       if (error) throw error
     },
