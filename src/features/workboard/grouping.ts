@@ -1,3 +1,4 @@
+import { warehouseStartsPreviousDay } from '../../lib/dates'
 import type { WorkBoardRow } from '../../types/domain'
 
 /* כאן ישב `isOverdue` — "התאריך עבר והמשימה עדיין לא פורסמה לעובד" — והוא
@@ -30,14 +31,25 @@ import type { WorkBoardRow } from '../../types/domain'
 
 type TimedRow = Pick<WorkBoardRow, 'onsite_start_time' | 'warehouse_start_time'>
 
+/* היציאה מהמחסן כמרחק בדקות מחצות של יום המשימה, ולכן שלילית ליציאה שנסוגה
+   ליום שלפניו (0163). השוואת מחרוזות הייתה מציבה 23:00 של אמש *אחרי* 00:30
+   של הבוקר, כלומר בדיוק הפוך מהסדר שבו הדברים קורים. Infinity הוא היורש של
+   הסנטינל '99:99': מי שאינו יוצא מהמחסן שוקע לתחתית ואינו צף לראש. */
+function warehouseMinutes(r: TimedRow): number {
+  const t = r.warehouse_start_time
+  if (!t) return Infinity
+  const mins = Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5))
+  return warehouseStartsPreviousDay(t, r.onsite_start_time) ? mins - 24 * 60 : mins
+}
+
 export function byTaskTime(a: TimedRow, b: TimedRow): number {
   const at = a.onsite_start_time ?? '99:99'
   const bt = b.onsite_start_time ?? '99:99'
   if (at !== bt) return at.localeCompare(bt)
   /* אותה שעת שטח (או אין כזו) — היציאה מהמחסן היא מה שמפריד הלאה */
-  const aw = a.warehouse_start_time ?? '99:99'
-  const bw = b.warehouse_start_time ?? '99:99'
-  if (aw !== bw) return aw.localeCompare(bw)
+  const aw = warehouseMinutes(a)
+  const bw = warehouseMinutes(b)
+  if (aw !== bw) return aw < bw ? -1 : 1
   return 0
 }
 

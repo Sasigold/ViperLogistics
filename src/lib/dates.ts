@@ -1,4 +1,4 @@
-import { format, parseISO } from 'date-fns'
+import { addDays, format, parseISO } from 'date-fns'
 import { he } from 'date-fns/locale'
 
 export function fmtDate(d: string | Date | null | undefined): string {
@@ -70,4 +70,35 @@ export function fmtDateTime(d: string | null | undefined): string {
 export function fmtMoney(n: number | null | undefined): string {
   if (n == null) return ''
   return new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS', maximumFractionDigits: 0 }).format(n)
+}
+
+/**
+ * מהמחסן יוצאים לפני שמגיעים לשטח — ולכן שעת מחסן שגדולה משעת השטח היא של
+ * הערב שלפני, ולא של הערב שאחרי.
+ *
+ * זה בדיוק מה ש-`app.warehouse_start_at` עושה בשרת (0163), והעתק שלו כאן
+ * הוא במכוון: המסך צריך לומר את היום הנכון בזמן ההקלדה, לפני ששורה נשמרה
+ * ולפני שגזירת המשמרת רצה. שני הצדדים חייבים לומר אותו דבר, ולכן הכלל נכתב
+ * פעם אחת בכל צד ולא פעם אחת בכל מסך.
+ *
+ * ‏false כשחסרה אחת מהשתיים: משימה בלי שעת שטח מתחילה בשעת המחסן עצמה, ואין
+ * מול מה לסגת.
+ */
+export function warehouseStartsPreviousDay(
+  warehouse: string | null | undefined,
+  onsite: string | null | undefined,
+): boolean {
+  if (!warehouse || !onsite) return false
+  return warehouse.slice(0, 5) > onsite.slice(0, 5)
+}
+
+/** התאריך שבו ההגעה למחסן נופלת בפועל: יום המשימה, או היום שלפניו */
+export function warehouseStartDate(
+  taskDate: string,
+  warehouse: string | null | undefined,
+  onsite: string | null | undefined,
+): string {
+  return warehouseStartsPreviousDay(warehouse, onsite)
+    ? toISODate(addDays(parseISO(taskDate), -1))
+    : taskDate
 }

@@ -28,6 +28,18 @@ describe('byTaskTime', () => {
     expect(byTaskTime(t('18:00', '05:00'), t('06:00', '07:00'))).toBeGreaterThan(0)
   })
 
+  it('יציאה שנסוגה ליום הקודם מקדימה יציאה של אותו בוקר', () => {
+    /* שתי משימות של 01:00: אחת יוצאת מהמחסן ב-23:00 של אמש, השנייה ב-00:30
+       של אותו לילה. השוואת מחרוזות הייתה מציבה את 23:00 אחרי 00:30. */
+    expect(byTaskTime(t('01:00', '23:00'), t('01:00', '00:30'))).toBeLessThan(0)
+    expect(byTaskTime(t('01:00', '00:30'), t('01:00', '23:00'))).toBeGreaterThan(0)
+  })
+
+  it('ומי שאינו יוצא מהמחסן כלל נשאר אחרון', () => {
+    expect(byTaskTime(t('01:00', null), t('01:00', '23:00'))).toBeGreaterThan(0)
+    expect(byTaskTime(t('01:00', null), t('01:00', '00:30'))).toBeGreaterThan(0)
+  })
+
   it('תיקו מלא מחזיר אפס, ולכן סדר המקור נשמר', () => {
     expect(byTaskTime(t(null), t(null))).toBe(0)
     expect(byTaskTime(t('09:00', '06:00'), t('09:00', '06:00'))).toBe(0)
