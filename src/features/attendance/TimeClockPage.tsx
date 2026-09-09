@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router'
 import { useMutation } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import {
+  AlertTriangle,
   Calendar,
   CalendarClock,
   Clock,
@@ -158,6 +159,14 @@ function TimeClock() {
    */
   const canCorrect = !!status?.can_request_correction && has(PERM.ATTENDANCE_REQUEST_CORRECTION)
   const corrections = status?.corrections ?? []
+  /**
+   * השער של הכניסה (0168). השרת מכריע — אותה `app.clock_in_gate` שההחתמה
+   * עצמה עוברת דרכה — והמסך רק מצייר לפיה. הנפילה ל"פתוח" היא בשביל תשובה
+   * ישנה שנענתה מהמטמון של ה-service worker: מוטב כפתור שנלחץ ונדחה מאשר
+   * כפתור שנעול בטעות ואינו מסביר דבר.
+   */
+  const clockBlock = status?.clock_in_block ?? null
+  const blocked = !open && !!clockBlock && status?.can_clock_in === false
 
   // חישוב נתוני תצוגה עפ"י ההחתמות
   const lastEntry = open ?? (today.length > 0 ? today[0] : null)
@@ -315,22 +324,28 @@ function TimeClock() {
         {/* טבעת חיצונית זוהרת */}
         <div
           className={`w-72 h-72 rounded-full border flex items-center justify-center p-3 transition-all duration-300 shadow-xs ${
-            open ? 'border-error-border/70 bg-error-subtle/20' : 'border-success-border/70 bg-success-subtle/20'
+            blocked
+              ? 'border-line bg-subtle/40'
+              : open
+                ? 'border-error-border/70 bg-error-subtle/20'
+                : 'border-success-border/70 bg-success-subtle/20'
           }`}
         >
           {/* טבעת פנימית אמצעית */}
           <div
             className={`w-64 h-64 rounded-full border flex items-center justify-center p-2 ${
-              open ? 'border-error-border/40' : 'border-success-border/40'
+              blocked ? 'border-line-subtle' : open ? 'border-error-border/40' : 'border-success-border/40'
             }`}
           >
             {/* כפתור מעגלי ראשי */}
             <button
               type="button"
-              disabled={punch.isPending || !has(PERM.ATTENDANCE_CLOCK)}
+              disabled={punch.isPending || !has(PERM.ATTENDANCE_CLOCK) || blocked}
               onClick={() => punch.mutate(open ? 'out' : 'in')}
-              className={`w-56 h-56 rounded-full transition-all duration-200 active:scale-95 flex flex-col items-center justify-center text-white cursor-pointer select-none shadow-xl ${
-                open ? 'bg-error hover:brightness-110' : 'bg-success hover:brightness-110'
+              className={`w-56 h-56 rounded-full transition-all duration-200 flex flex-col items-center justify-center text-white select-none shadow-xl ${
+                blocked
+                  ? 'bg-ink-tertiary cursor-not-allowed shadow-none'
+                  : `active:scale-95 cursor-pointer ${open ? 'bg-error hover:brightness-110' : 'bg-success hover:brightness-110'}`
               } ${punch.isPending ? 'opacity-85 cursor-wait' : ''}`}
             >
               {punch.isPending ? (
@@ -344,7 +359,11 @@ function TimeClock() {
                 {open ? 'יציאה' : 'כניסה'}
               </span>
               <span className="text-xs font-medium text-white/80">
-                {open ? 'לחץ לסיום יום העבודה' : 'לחץ לתחילת יום העבודה'}
+                {blocked
+                  ? 'אין משמרת פעילה כרגע'
+                  : open
+                    ? 'לחץ לסיום יום העבודה'
+                    : 'לחץ לתחילת יום העבודה'}
               </span>
             </button>
           </div>
@@ -357,6 +376,28 @@ function TimeClock() {
             {open ? 'נמצא בעבודה' : 'מחוץ לעבודה'}
           </span>
         </div>
+
+        {/* ‏0168: הכפתור נעול, ולכן הוא חייב להגיד למה — ובאותה נשימה לאן
+            כן ללכת. ההודעה מגיעה מהשרת, ולכן היא בדיוק זו שההחתמה עצמה
+            הייתה מחזירה אילו נלחצה. */}
+        {blocked && clockBlock && (
+          <div className="mt-3 w-full max-w-sm rounded-2xl border border-warning-border bg-warning-subtle px-4 py-3 text-center text-xs text-warning-text">
+            <div className="flex items-center justify-center gap-1.5 font-semibold">
+              <AlertTriangle size={ICON.sm} strokeWidth={STROKE} className="shrink-0" />
+              <span>{clockBlock.message}</span>
+            </div>
+            {canSubmit && (
+              <button
+                type="button"
+                onClick={() => setReporting(true)}
+                className="mt-2 inline-flex items-center gap-1 font-bold underline underline-offset-2"
+              >
+                <Plus size={ICON.sm} strokeWidth={STROKE} />
+                דיווח משמרת שלא הוחתמה
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* כרטיס סיכום היום */}
@@ -474,8 +515,9 @@ function TimeClock() {
           )}
         </div>
 
-        {/* כפתור דיווח משמרת שלא הוחתמה */}
-        {canSubmit && !open && (
+        {/* כפתור דיווח משמרת שלא הוחתמה. כשהכניסה חסומה הוא כבר מוצע
+            בתוך ההודעה שמסבירה למה, ואין טעם בשני כפתורים זהים במסך אחד. */}
+        {canSubmit && !open && !blocked && (
           <Button
             variant="secondary"
             className="w-full justify-center rounded-2xl bg-surface border border-line text-ink-secondary hover:bg-hover text-xs py-2.5 font-semibold"

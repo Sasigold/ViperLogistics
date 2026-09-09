@@ -447,6 +447,17 @@ OUT="$OUT
 $OUT43"
 
 echo
+echo "== the clock opens only in the shift suite =="
+# 44 מקימה לקוח, קבלן, אירוע, שלושה עובדי סגל ועובד קבלן משלה, וארבע משימות
+# שהיא מזיזה על ציר הזמן סביב now() — כל בדיקה בה היא החתמת שעון אמיתית.
+# היא רצה אחרונה כי היא משאירה אחריה משימות ושיבוצים שאינם מנוקים,
+# והאירוע שלה יושב ב-current_date + 610.
+OUT44=$($PSQL -d vl -f "$HERE/44_the_clock_opens_only_in_the_shift.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT44"
+OUT="$OUT
+$OUT44"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
