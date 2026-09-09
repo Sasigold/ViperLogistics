@@ -65,6 +65,7 @@ import {
   flagLabel,
   fmtDuration,
   needsAttention,
+  shiftEndLocation,
   shiftLocation,
   shiftOverage,
   shiftTone,
@@ -182,6 +183,11 @@ interface ShiftRowView {
   /** אימות המיקום בהחתמה, לנקודה שליד שעת הכניסה */
   locationVerified: boolean
   location: string | null
+  /**
+   * ואיפה היא נגמרה (0166). null כשזה בדיוק אותו מקום שבו היא התחילה —
+   * הרוב המוחלט של המשמרות — כדי שהשורה לא תכתוב "מחסן דרום" פעמיים.
+   */
+  endLocation: string | null
   hoursText: string
   /** השורה שמתחת לסה"כ: הנוספות, החריגה, או מול מה נמדדה המשמרת */
   deltaText: string | null
@@ -212,6 +218,9 @@ function toShiftView(r: AttendanceReportRow, sameDayCount: number): ShiftRowView
   // משמרת פתוחה עוד לא "חרגה" — `actual_hours` נכתב ביציאה, ועד אז אין מול
   // מה להשוות. מולה מוצג המתוכנן בלבד.
   const overage = clockOut ? shiftOverage(planned, actual) : 0
+  /* שני קצוות ולא אחד: מי שיצא מהמחסן יכול לסיים בשטח, ולהפך (0166) */
+  const location = shiftLocation(r)
+  const endLocation = shiftEndLocation(r)
 
   return {
     key: r.id,
@@ -225,7 +234,8 @@ function toShiftView(r: AttendanceReportRow, sameDayCount: number): ShiftRowView
     // מה שידוע על המשמרת הזו, ולא קבוע שנכתב במסך: המיקום שנרשם בדיווח
     // הידני, שם המחסן שממנו יצאה, או סוג האתר. סדר ההכרעה יושב ב-shiftFormat
     // ונבדק שם — הוא מה שהעובד רואה על המשמרת שלו.
-    location: shiftLocation(r),
+    location,
+    endLocation: endLocation !== location ? endLocation : null,
     hoursText: fmtDurationHHMM(actual),
     // בלי המילה "נוספות": הסמל שבקצה השורה כבר אומר אותה, וברוחב של טלפון
     // עמודת השעות מחזיקה מספר אחד ולא משפט.
@@ -1171,10 +1181,20 @@ function ShiftCard({
           )}
         </ShiftCell>
 
-        <ShiftCell label="יציאה" divided>
+        <ShiftCell label="יציאה" divided wide={!!d.endLocation}>
           <p className="type-body font-semibold tabular" dir="ltr">
             {d.clockOut ?? '…'}
           </p>
+          {/* נכתב רק כשהוא שונה מהכניסה: משמרת שיצאה מהמחסן וחזרה אליו
+              אומרת את שמו פעם אחת, ומי שיצא ממנו וסיים בשטח — פעמיים. */}
+          {d.endLocation && (
+            <p className="flex items-center justify-center gap-1 type-caption text-ink-tertiary">
+              <MapPin size={ICON.xs} strokeWidth={STROKE} className="hidden shrink-0 sm:block" />
+              <span className="truncate" title={d.endLocation}>
+                {d.endLocation}
+              </span>
+            </p>
+          )}
         </ShiftCell>
 
         <ShiftCell label='סה"כ שעות' divided wide>

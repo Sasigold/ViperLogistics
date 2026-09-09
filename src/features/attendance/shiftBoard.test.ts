@@ -41,6 +41,11 @@ function shift(over: Partial<PlannedShift> & { profile_id: string; work_date: st
     customer_color: '#3563f0',
     warehouse_id: null,
     warehouse_name: null,
+    end_site: 'field' as WorkSite,
+    end_warehouse_id: null,
+    end_warehouse_name: null,
+    onsite_end_lat: null,
+    onsite_end_lng: null,
     ...over,
   }
 }
@@ -273,6 +278,27 @@ describe('groupShifts', () => {
     expect(g.warehouseName).toBe('מחסן רמלה')
     // מי שמגיע ישר לשטח הוא זה שמגדיר מתי העבודה עצמה מתחילה
     expect(g.onsiteStart).toBe('2026-08-12T07:00:00+03:00')
+  })
+
+  // ‏0166: משמרת יכולה להתחיל בשטח ולהיגמר במחסן, ואז שם המחסן שחוזרים
+  // אליו הוא היחיד שיש לה — `warehouseName` של הקבוצה נשאר null.
+  it('המחסן שחוזרים אליו נגזר בנפרד מזה שיוצאים ממנו', () => {
+    const groups = groupShifts(
+      [
+        shift({
+          profile_id: 'p1',
+          work_date: '2026-08-12',
+          task_ids: ['t1'],
+          travel_hours: 0.5,
+          end_site: 'warehouse',
+          end_warehouse_name: 'מחסן רמלה',
+        }),
+        shift({ profile_id: 'p2', work_date: '2026-08-12', task_ids: ['t1'] }),
+      ],
+      names,
+    )
+    expect(groups[0].warehouseName).toBeNull()
+    expect(groups[0].endWarehouseName).toBe('מחסן רמלה')
   })
 
   it('וכשכולם יוצאים מהמחסן אין התחלה בשטח להשוות מולה', () => {

@@ -437,6 +437,16 @@ OUT="$OUT
 $OUT42"
 
 echo
+echo "== the shift ends where the last task ends suite =="
+# 43 מקימה מחסן, לקוח, אירוע, ארבעה עובדים וחמש משימות משלה ב-current_date + 600,
+# מעבר לכל טווח אחר. היא רצה אחרונה כי היא משאירה אחריה משימות, שיבוצים
+# ורשומת נוכחות שאינם מנוקים, ואינה נשענת על אף חבילה קודמת.
+OUT43=$($PSQL -d vl -f "$HERE/43_the_shift_ends_where_the_last_task_ends.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT43"
+OUT="$OUT
+$OUT43"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

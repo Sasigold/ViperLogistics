@@ -1328,6 +1328,20 @@ export interface PlannedShift {
   /** המחסן שממנו יוצאים, כשהמשמרת מתחילה במחסן ומישהו נקב בו */
   warehouse_id: string | null
   warehouse_name: string | null
+  /**
+   * איפה המשמרת נגמרת — לפי המשימה האחרונה בה, ולא לפי הראשונה (0166).
+   * ‏`work_site` שלמעלה נשאר שאלה על ההתחלה בלבד.
+   */
+  end_site: WorkSite | null
+  /** המחסן שחוזרים אליו. null כשהמשמרת נגמרת בשטח */
+  end_warehouse_id: string | null
+  end_warehouse_name: string | null
+  /**
+   * השטח של המשימה האחרונה — הנקודה השנייה שהחתמת היציאה מקבלת, לצד
+   * ‏`end_lat/lng` שהוא מקום הסיום עצמו.
+   */
+  onsite_end_lat: number | null
+  onsite_end_lng: number | null
 }
 
 /**
@@ -1376,6 +1390,12 @@ export interface ShiftTaskRow {
   travel_hours: number | null
   /** דקות מסיום המשימה הקודמת. null בראשונה שבמשמרת. */
   gap_minutes: number | null
+  /**
+   * כמה דקות מהמשימה הזו כבר כוסו על ידי מה שקדם לה במשמרת (0166). ‏0 ברוב
+   * המשמרות, וגדול מאפס בדיוק כשהזמנים חופפים — ואז השעות אינן נספרות
+   * פעמיים, וזה מה שהמסך אומר.
+   */
+  overlap_minutes: number
   status_name: string | null
   status_color: string | null
   /** המשאית של העובד עצמו, או הראשית — לתאימות ולטקסט חופשי. ראו truck_list. */
@@ -1403,7 +1423,10 @@ export interface ShiftBreakdown {
   tasks: ShiftTaskRow[]
   totals: {
     tasks: number
+    /** איחוד חלונות המשימות, ולא סכומם: חפיפה נספרת פעם אחת (0166) */
     work_hours: number
+    /** ההפרש בין סכום המשימות לאיחוד שלהן — כמה מהיום נספר פעמיים */
+    overlap_hours: number
     /** הנסיעה של המשימה האחרונה בלבד — כמו בגזירה עצמה, ולא סכום */
     travel_hours: number
     idle_minutes: number
@@ -1412,8 +1435,12 @@ export interface ShiftBreakdown {
   shift: {
     start: string | null
     end: string | null
+    /** האתר שבו המשמרת מתחילה */
     work_site: WorkSite | null
     warehouse_name: string | null
+    /** והאתר שבו היא נגמרת — לפי המשימה האחרונה (0166) */
+    end_work_site: WorkSite | null
+    end_warehouse_name: string | null
   }
 }
 
@@ -1543,6 +1570,14 @@ export interface AttendanceReportRow {
   actual_hours: number | null
   in_distance_m: number | null
   out_distance_m: number | null
+  /**
+   * הנקודה שנדגמה ברגע ההחתמה (0166). המרחק אומר כמה, ולא לאיזה צד — ולכן
+   * שניהם מוצגים. ‏null כשלא נקראה קריאת מיקום, ובכל דיווח ידני.
+   */
+  in_lat: number | null
+  in_lng: number | null
+  out_lat: number | null
+  out_lng: number | null
   raw_clock_in_at: string | null
   raw_clock_out_at: string | null
   source: 'clock' | 'manual'
@@ -1559,6 +1594,12 @@ export interface AttendanceReportRow {
    * (0153). null במשמרת שטח ובדיווח ידני, שאין לו משמרת משובצת לגזור ממנה.
    */
   work_place: string | null
+  /**
+   * ואיפה היא נגמרה: האתר של המשימה האחרונה, ושם המחסן שחוזרים אליו (0166).
+   * ‏null בדיווח ידני, שאין לו משמרת משובצת לגזור ממנה.
+   */
+  end_work_site: WorkSite | null
+  end_work_place: string | null
   edited_at: string | null
   /** האם שעות נוספות חלות על העובד הזה — ההגדרה האפקטיבית שלו, לא כמה עשה */
   overtime_enabled: boolean

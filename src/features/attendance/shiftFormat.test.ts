@@ -6,7 +6,16 @@
  * "שעות חריגה", כך שסטייה ביניהן היא דוח שסותר את עצמו.
  */
 import { describe, expect, it } from 'vitest'
-import { OVERAGE_TOLERANCE_H, fmtWorkEnd, shiftLocation, shiftOverage, shiftTone } from './shiftFormat'
+import {
+  OVERAGE_TOLERANCE_H,
+  clockPointUrl,
+  fmtCoords,
+  fmtWorkEnd,
+  shiftEndLocation,
+  shiftLocation,
+  shiftOverage,
+  shiftTone,
+} from './shiftFormat'
 import type { AttendanceReportRow } from '../../types/domain'
 
 type ToneInput = Parameters<typeof shiftTone>[0]
@@ -110,6 +119,84 @@ describe('shiftLocation', () => {
   it('כשאין מה לומר לא נאמר דבר', () => {
     expect(shiftLocation(at())).toBeNull()
     expect(shiftLocation(at({ clock_in_place: '   ' }))).toBeNull()
+  })
+})
+
+/**
+ * הקצה השני של אותה שורה. הוא נבדק בנפרד כי הוא נשען על שדות אחרים לגמרי —
+ * ‏`clock_out_place` ולא `clock_in_place`, והמחסן שחוזרים אליו ולא זה שיוצאים
+ * ממנו — ומשמרת שיצאה מהמחסן וסיימה בשטח היא בדיוק המקרה שבו שתי הפונקציות
+ * חייבות לענות תשובות שונות (0166).
+ */
+describe('shiftEndLocation', () => {
+  const at = (over: Partial<Parameters<typeof shiftEndLocation>[0]> = {}) => ({
+    clock_out_place: null,
+    end_work_place: null,
+    end_work_site: null,
+    ...over,
+  })
+
+  it('מציג את המחסן שחוזרים אליו', () => {
+    expect(shiftEndLocation(at({ end_work_place: 'מרכז לוגיסטי', end_work_site: 'warehouse' }))).toBe(
+      'מרכז לוגיסטי',
+    )
+  })
+
+  it('והמלל שנכתב על הרשומה גובר גם כאן', () => {
+    expect(
+      shiftEndLocation(at({ clock_out_place: 'אולמי הגן', end_work_place: 'מרכז לוגיסטי', end_work_site: 'warehouse' })),
+    ).toBe('אולמי הגן')
+  })
+
+  it('משמרת שנגמרה בשטח אומרת שטח', () => {
+    expect(shiftEndLocation(at({ end_work_site: 'field' }))).toBe('שטח')
+  })
+
+  it('ובלי סיום ידוע לא נאמר דבר', () => {
+    expect(shiftEndLocation(at())).toBeNull()
+  })
+
+  // זה המקרה שבגללו יש שתי פונקציות ולא אחת
+  it('יציאה מהמחסן וסיום בשטח הן שתי תשובות שונות לאותה שורה', () => {
+    const row = {
+      clock_in_place: null,
+      work_place: 'מרכז לוגיסטי',
+      work_site: 'warehouse' as const,
+      clock_out_place: null,
+      end_work_place: null,
+      end_work_site: 'field' as const,
+    }
+    expect(shiftLocation(row)).toBe('מרכז לוגיסטי')
+    expect(shiftEndLocation(row)).toBe('שטח')
+  })
+})
+
+/**
+ * הנקודה שנדגמה בהחתמה. שתי הפונקציות מחזירות null על אותו קלט חסר, כי
+ * חצי נקודה אינה מקום — ורוחב וגובה שנכתבו זה בלי זה הם סיכה על קו המשווה.
+ */
+describe('clockPointUrl / fmtCoords', () => {
+  it('בונה קישור עם סיכה על הנקודה', () => {
+    expect(clockPointUrl(32.1, 34.8)).toBe(
+      'https://www.openstreetmap.org/?mlat=32.1&mlon=34.8#map=17/32.1/34.8',
+    )
+  })
+
+  it('בלי נקודה אין קישור', () => {
+    expect(clockPointUrl(null, 34.8)).toBeNull()
+    expect(clockPointUrl(32.1, null)).toBeNull()
+    expect(clockPointUrl(undefined, undefined)).toBeNull()
+  })
+
+  it('הנקודה נכתבת בחמש ספרות אחרי הנקודה', () => {
+    expect(fmtCoords(32.1, 34.8)).toBe('32.10000, 34.80000')
+    expect(fmtCoords(null, 34.8)).toBeNull()
+  })
+
+  // אפס הוא קו המשווה, לא "אין נקודה"
+  it('אפס אינו היעדר', () => {
+    expect(fmtCoords(0, 0)).toBe('0.00000, 0.00000')
+    expect(clockPointUrl(0, 0)).not.toBeNull()
   })
 })
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Check, Clock, ICON, MapPin, STROKE, Trash2, X } from '../../components/ui/icons'
+import { Check, Clock, ExternalLink, ICON, MapPin, STROKE, Trash2, X } from '../../components/ui/icons'
 import {
   Badge,
   Button,
@@ -29,11 +29,15 @@ import {
   STATUS_LABELS,
   STATUS_TONES,
   WORK_SITE_LABELS,
+  clockPointUrl,
+  fmtCoords,
   fmtDistance,
   fmtDuration,
   fmtPayLineRate,
   fmtShiftRange,
   flagLabel,
+  shiftEndLocation,
+  shiftLocation,
   visibleFlags,
 } from './shiftFormat'
 import type { AttendanceReportRow } from '../../types/domain'
@@ -503,13 +507,10 @@ export function AttendanceEntryDrawer({
               <Stat label="לתשלום" value={`${fmtDuration(pay?.paid_hours)} ש׳`} />
             </div>
 
-            {(row.in_distance_m != null || row.out_distance_m != null) && (
-              <p className="flex flex-wrap items-center gap-3 type-caption text-ink-tertiary">
-                <MapPin size={ICON.sm} strokeWidth={STROKE} />
-                {row.in_distance_m != null && <span>כניסה: {fmtDistance(row.in_distance_m)} מהאתר</span>}
-                {row.out_distance_m != null && <span>יציאה: {fmtDistance(row.out_distance_m)} מהאתר</span>}
-              </p>
-            )}
+            {/* איפה ההחתמה נעשתה, ולא רק כמה רחוק ממשהו היא הייתה. המרחק
+                לבדו ענה חצי תשובה — "240 מ׳ מהאתר" אינו אומר לאיזה צד — ולכן
+                לצידו יושבת עכשיו הנקודה עצמה, עם קישור למפה (0166). */}
+            <ClockPoints row={row} />
 
             {/* ההשלמה לשעות היא הגדרה של העובד — "מובטחות לו שש" — וכאן היא
                 מבוטלת על המשמרת הזו בלבד, בלי לגעת בכרטיס שלו ובלי לזייף
@@ -606,6 +607,73 @@ export function AttendanceEntryDrawer({
       </Drawer>
       {dialog}
     </>
+  )
+}
+
+/**
+ * שני קצות ההחתמה: איפה נכנסו, איפה יצאו, וכמה רחוק כל אחת הייתה מנקודת
+ * הייחוס שנמדדה מולה.
+ *
+ * הנקודה נדגמת בכל החתמה שבה הדפדפן החזיר קריאה — גם כשהמיקום אינו *נדרש*
+ * לאימות — ולכן היא קיימת גם בשורות שאין להן מרחק כלל (אתר בלי קואורדינטות).
+ * המרחק והנקודה נכתבים בנפרד: אחד אומר "האם זה הסתדר", והשנייה "איפה זה היה".
+ */
+function ClockPoints({ row }: { row: AttendanceReportRow }) {
+  const rows = [
+    {
+      label: 'כניסה',
+      place: shiftLocation(row),
+      distance: row.in_distance_m,
+      lat: row.in_lat,
+      lng: row.in_lng,
+    },
+    {
+      label: 'יציאה',
+      place: row.clock_out_at ? shiftEndLocation(row) : null,
+      distance: row.out_distance_m,
+      lat: row.out_lat,
+      lng: row.out_lng,
+    },
+  ].filter((r) => r.place || r.distance != null || r.lat != null)
+
+  if (rows.length === 0) return null
+
+  return (
+    <div className="surface space-y-2 p-3">
+      <p className="type-overline">המיקום בהחתמה</p>
+      {rows.map((r) => {
+        const url = clockPointUrl(r.lat, r.lng)
+        return (
+          <div key={r.label} className="flex flex-wrap items-center gap-x-2 gap-y-1 type-caption">
+            <span className="inline-flex shrink-0 items-center gap-1 text-ink-secondary">
+              <MapPin size={ICON.sm} strokeWidth={STROKE} />
+              {r.label}
+            </span>
+            {r.place && <span className="font-medium">{r.place}</span>}
+            {r.distance != null && (
+              <span className="text-ink-tertiary">{fmtDistance(r.distance)} מנקודת הייחוס</span>
+            )}
+            {url ? (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ms-auto inline-flex items-center gap-1 text-primary-text hover:underline"
+              >
+                <span className="tabular" dir="ltr">
+                  {fmtCoords(r.lat, r.lng)}
+                </span>
+                <ExternalLink size={ICON.xs} strokeWidth={STROKE} />
+              </a>
+            ) : (
+              /* החתמה שלא נדגם בה מיקום — דיווח ידני, או אתר בלי נקודה
+                 שהשעון לא ביקש מולו קריאה (0159) */
+              <span className="ms-auto text-ink-tertiary">לא נדגמה נקודה</span>
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }
 

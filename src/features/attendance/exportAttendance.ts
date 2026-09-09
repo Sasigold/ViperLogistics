@@ -18,7 +18,7 @@
  * ExcelJS ובלי DOM.
  */
 import type { AttendanceReport, AttendanceReportRow } from '../../types/domain'
-import { STATUS_LABELS, WORK_SITE_LABELS, flagLabel } from './shiftFormat'
+import { STATUS_LABELS, WORK_SITE_LABELS, flagLabel, fmtCoords, shiftEndLocation } from './shiftFormat'
 
 const hhmm = (iso: string | null): string =>
   iso ? new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', hour12: false }) : ''
@@ -66,6 +66,11 @@ export function buildAttendanceSheet(report: AttendanceReport): SheetPlan {
         ]
       : []),
     { header: 'יציאה מ', key: 'work_site', width: 10 },
+    // ‏0166: הקצה השני. משמרת יכולה לצאת מהמחסן ולהסתיים בשטח, ולהפך —
+    // ועד כאן הגיליון ידע לספר רק את חציה הראשון.
+    { header: 'סיום ב', key: 'end_place', width: 16 },
+    { header: 'נקודת כניסה', key: 'in_point', width: 20 },
+    { header: 'נקודת יציאה', key: 'out_point', width: 20 },
     { header: 'מקור', key: 'source', width: 8 },
     { header: 'סטטוס', key: 'status', width: 14 },
     { header: 'הערות מערכת', key: 'flags', width: 24 },
@@ -85,6 +90,10 @@ export function buildAttendanceSheet(report: AttendanceReport): SheetPlan {
       paid_hours: r.pay?.paid_hours ?? '',
       overtime_hours: r.pay?.overtime_hours ?? '',
       work_site: r.work_site ? WORK_SITE_LABELS[r.work_site] : '',
+      end_place: shiftEndLocation(r) ?? '',
+      // הנקודה כטקסט ולא כשתי עמודות: היא נקראת ונדבקת למפה כמו שהיא
+      in_point: fmtCoords(r.in_lat, r.in_lng) ?? '',
+      out_point: fmtCoords(r.out_lat, r.out_lng) ?? '',
       source: SOURCE_LABELS[r.source] ?? r.source,
       status: STATUS_LABELS[r.status] ?? r.status,
       flags: (r.flags ?? []).map(flagLabel).join(', '),

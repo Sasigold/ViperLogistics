@@ -16,6 +16,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import {
+  AlertTriangle,
   ChevronRight,
   Clock,
   ExternalLink,
@@ -99,7 +100,13 @@ export function ShiftDetailDrawer({
   // הכותרת נשענת על השורה שנלחצה כדי להצטייר מיד, ומתיישבת מול השרת כשהוא חוזר
   const startsAtWarehouse = (data?.shift.work_site ?? shift.work_site) === 'warehouse'
   const warehouseName = data?.shift.warehouse_name ?? shift.warehouse_name
+  /* לאן חוזרים בסוף, ולא מאיפה יצאו בבוקר: אלה שתי שאלות שיכולות להיענות
+     אחרת באותה משמרת (0166). נופל למחסן היציאה כשאין לסיום מחסן משלו. */
+  const endWarehouse =
+    data?.shift.end_warehouse_name ?? shift.end_warehouse_name ?? warehouseName
   const travel = totals?.travel_hours ?? shift.travel_hours ?? 0
+  /* שעות שנספרו פעם אחת אף שהן כתובות פעמיים: משימות שהזמנים שלהן חופפים */
+  const overlap = totals?.overlap_hours ?? 0
   const selected = tasks.find((t) => t.task_id === openTaskId) ?? null
   /**
    * מי קורא. הלוח האישי פותח את המגירה בלי שם — "המשמרת שלי" מדויק יותר —
@@ -258,16 +265,31 @@ export function ShiftDetailDrawer({
                   <RailNode
                     icon={<Truck size={ICON.xs} strokeWidth={STROKE} />}
                     time={workEnd}
-                    text={warehouseName ? `סיום העבודה, יציאה ל${warehouseName}` : 'סיום העבודה, יציאה חזרה למחסן'}
+                    text={endWarehouse ? `סיום העבודה, יציאה ל${endWarehouse}` : 'סיום העבודה, יציאה חזרה למחסן'}
                   />
                 ))}
               <RailNode
                 terminal
                 icon={<Clock size={ICON.xs} strokeWidth={STROKE} />}
                 time={hhmm(data?.shift.end ?? shift.shift_end)}
-                text="סיום המשמרת"
+                text={
+                  travel > 0 && endWarehouse ? `סיום המשמרת ב${endWarehouse}` : 'סיום המשמרת'
+                }
               />
             </ol>
+          )}
+
+          {/* משימות שהזמנים שלהן נופלים זה על זה. ההודעה כתובה גם לעובד וגם
+              למנהל, כי היא עונה על אותה שאלה לשניהם: למה "עבודה" קטן מסכום
+              המשימות שכתובות מעליו. השעות עצמן נספרות פעם אחת (0166). */}
+          {overlap > 0 && (
+            <p className="flex items-start gap-2 rounded-lg border border-warning-border bg-warning-subtle px-3 py-2 type-caption text-warning-text">
+              <AlertTriangle size={ICON.sm} strokeWidth={STROKE} className="mt-px shrink-0" />
+              <span>
+                יש במשמרת משימות שהזמנים שלהן חופפים — {fmtDuration(overlap)} ש׳ בסך הכול. השעות
+                החופפות נספרות פעם אחת, ולכן סך העבודה קטן מסכום המשימות.
+              </span>
+            </p>
           )}
 
           {totals &&
@@ -397,6 +419,14 @@ function TaskCard({ task: t, onOpen }: { task: ShiftTaskRow; onOpen: () => void 
         {t.assigned_count > 1 && (
           <Chip icon={<Users size={ICON.xs} strokeWidth={STROKE} />}>{t.assigned_count} משובצים</Chip>
         )}
+        {/* ‏0166: המשימה הזו רצה בזמן שכבר תפוס במשמרת. התג יושב על הכרטיס
+            ולא רק בהודעה שמעל הרצף, כדי שיהיה ברור *איזו* משימה חופפת. */}
+        {t.overlap_minutes > 0 && (
+          <Badge tone="warning">
+            <AlertTriangle size={ICON.xs} strokeWidth={STROKE} />
+            חופף {fmtDuration(t.overlap_minutes / 60)}
+          </Badge>
+        )}
         {t.status_name && <Badge color={t.status_color ?? undefined}>{t.status_name}</Badge>}
       </div>
 
@@ -486,6 +516,12 @@ function TaskDetails({
           <Badge tone="neutral">
             <Timer size={ICON.sm} strokeWidth={STROKE} />
             המתנה {fmtDuration(t.gap_minutes / 60)}
+          </Badge>
+        )}
+        {t.overlap_minutes > 0 && (
+          <Badge tone="warning">
+            <AlertTriangle size={ICON.sm} strokeWidth={STROKE} />
+            חופף למשימה אחרת {fmtDuration(t.overlap_minutes / 60)}
           </Badge>
         )}
       </div>

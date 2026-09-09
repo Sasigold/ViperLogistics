@@ -168,12 +168,14 @@ select t_eq('משמרת שמתחילה במחסן מתחילה בשעת המחס
      from app.planned_shifts('20000000-0000-0000-0000-0000000000f3', current_date, current_date)),
   '07:00');
 
--- הסיום לפי המשימה האחרונה במשמרת: 11:30 + 2 שעות + 0.5 נסיעה = 14:00
-select t_eq('הסיום נלקח מהמשימה האחרונה במשמרת ועוד זמן נסיעה',
+-- הסיום לפי המשימה האחרונה במשמרת, והיא בשטח: 11:30 + 2 שעות = 13:30, בלי
+-- נסיעה חזרה. ‏0166: מי שהמשימה האחרונה שלו בשטח מסיים בשטח — הנסיעה חזרה
+-- שייכת למי שחוזר למחסן, ולא למי שיצא ממנו בבוקר.
+select t_eq('הסיום נלקח מהמשימה האחרונה, ומי שמסיים בשטח אינו נוסע חזרה',
   (select to_char(shift_end at time zone 'Asia/Jerusalem', 'HH24:MI')
      from app.planned_shifts('20000000-0000-0000-0000-0000000000f3', current_date, current_date)
      order by shift_start limit 1),
-  '14:00');
+  '13:30');
 
 select t_eq('המשמרת הראשונה מאגדת שתי משימות',
   (select array_length(task_ids, 1)
@@ -210,11 +212,21 @@ update tasks set travel_hours = null where id = '60000000-0000-0000-0000-0000000
 insert into pricing_zones (name, shape, center_lat, center_lng, radius_km, travel_hours, priority)
 values ('מרכז לבדיקת נוכחות', 'circle', 32.0853, 34.7818, 10, 1.0, 1);
 
+-- ‏0166: הנסיעה נכנסת לשעת הסיום רק כשהמשימה האחרונה חוזרת למחסן, ולכן
+-- היא מוחלפת לרגע לאתר מחסן — אחרת אין לאזור הגיאופנס לאן להיכנס.
+update task_assignments set work_site = 'warehouse'
+ where task_id = '60000000-0000-0000-0000-00000000a002'
+   and profile_id = '20000000-0000-0000-0000-0000000000f3';
+
 select t_eq('בלי דריסה, זמן הנסיעה נשאב מאזור הגיאופנס',
   (select to_char(shift_end at time zone 'Asia/Jerusalem', 'HH24:MI')
      from app.planned_shifts('20000000-0000-0000-0000-0000000000f3', current_date, current_date)
      order by shift_start limit 1),
   '14:30');
+
+update task_assignments set work_site = 'field'
+ where task_id = '60000000-0000-0000-0000-00000000a002'
+   and profile_id = '20000000-0000-0000-0000-0000000000f3';
 
 update tasks set travel_hours = 0.5 where id = '60000000-0000-0000-0000-00000000a002';
 update pricing_zones set deleted_at = now() where name = 'מרכז לבדיקת נוכחות';
@@ -1288,9 +1300,11 @@ from (values
   ('60000000-0000-0000-0000-00000000b104'::uuid, null::time,    '08:00'::time, 2.0::numeric, 0::numeric)
 ) as v(id, wh, onsite, hrs, travel);
 
+-- ‏0166: האחרונה חוזרת למחסן, ולכן הנסיעה שלה (0.25) היא זו שנספרת. אילו
+-- הייתה בשטח — לא הייתה נסיעה כלל, וזה בדיוק מה שחבילה 43 בודקת.
 insert into task_assignments (task_id, profile_id, role, work_site) values
   ('60000000-0000-0000-0000-00000000b101', '20000000-0000-0000-0000-0000000000f3', 'worker', 'warehouse'),
-  ('60000000-0000-0000-0000-00000000b102', '20000000-0000-0000-0000-0000000000f3', 'worker', 'field'),
+  ('60000000-0000-0000-0000-00000000b102', '20000000-0000-0000-0000-0000000000f3', 'worker', 'warehouse'),
   ('60000000-0000-0000-0000-00000000b104', '20000000-0000-0000-0000-0000000000f7', 'worker', 'field');
 
 insert into task_contractor_workers (task_id, contractor_worker_id, work_site) values
