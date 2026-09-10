@@ -99,6 +99,35 @@ export interface ContractorPriceParts {
   penalty_total: number
 }
 
+/**
+ * שורה בסיכום המשימות של הקבלן, מ-`contractor_tasks` (0172).
+ *
+ * שדות הכסף הם `null` כשאין לקורא `portal.view_financials` — או כששורת
+ * התמחור עצמה סגורה בפניו (`contractors.view_pricing`). זו ההבחנה שהמסך
+ * מצייר: מקף, ולא אפס.
+ */
+export interface PortalTaskRow {
+  task_id: string
+  task_date: string
+  title: string | null
+  task_type_name: string
+  status_name: string
+  status_color: string
+  is_terminal: boolean
+  event_id: string | null
+  event_date: string | null
+  event_number: string | null
+  end_client_name: string | null
+  customer_name: string | null
+  /** המיקום של המשימה, ובהיעדרו זה של האירוע. null גם כשהשדה חסום בהרשאה. */
+  location_text: string | null
+  worker_count: number
+  price: number | null
+  price_parts: ContractorPriceParts | null
+  paid_at: string | null
+  paid_amount: number | null
+}
+
 export interface ContractorWorker {
   id: string
   contractor_id: string

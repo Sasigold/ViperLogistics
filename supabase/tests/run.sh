@@ -477,6 +477,16 @@ OUT="$OUT
 $OUT46"
 
 echo
+echo "== the contractor sees task by task suite =="
+# 47 מקימה לקוח, שני קבלנים, אירוע, ארבע דמויות ומשימות משלה ב-current_date + 640,
+# מעבר לכל טווח אחר. היא רצה אחרונה כי היא מוחקת רכות משימה משלה ומשאירה
+# אחריה תמחור ושורות האצלה שאינם מנוקים.
+OUT47=$($PSQL -d vl -f "$HERE/47_the_contractor_sees_task_by_task.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT47"
+OUT="$OUT
+$OUT47"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
