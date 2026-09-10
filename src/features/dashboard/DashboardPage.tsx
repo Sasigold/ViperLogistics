@@ -10,8 +10,17 @@ import {
   useConfirm,
   useToast,
 } from '../../components/ui'
-import { Download, ICON, LayoutGrid, RefreshCw, STROKE, SlidersHorizontal } from '../../components/ui/icons'
-import { fmtDate, toISODate } from '../../lib/dates'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  ICON,
+  LayoutGrid,
+  RefreshCw,
+  STROKE,
+  SlidersHorizontal,
+} from '../../components/ui/icons'
+import { fmtDate, fmtMonth, toISODate } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 import { PERM } from '../../lib/permissions'
 import { lazyPage } from '../../lib/lazyPage'
@@ -20,7 +29,7 @@ import { RequirePermission } from '../auth/guards'
 import { TaskDrawer, useCanOpenTaskCard } from '../tasks/TaskDrawer'
 import { EventFormModal } from '../events/EventFormModal'
 import { DashboardProvider } from './dashboardContext'
-import { RANGE_PRESETS, defaultRange, previousRange } from './dashboardRange'
+import { RANGE_PRESETS, defaultRange, isWholeMonth, monthRange, previousRange, stepMonth } from './dashboardRange'
 import type { DateRange } from './dashboardRange'
 import { DashboardGrid } from './DashboardGrid'
 import { CustomizeDrawer } from './CustomizeDrawer'
@@ -87,6 +96,22 @@ export default function DashboardPage() {
      שהוא נשאל עליו. הכותרת ממשיכה לומר את התאריכים גם כשאין מה לשנות בהם:
      טווח שלא כתוב הוא טווח שאפשר לטעות בו. */
   const canChangeRange = has(PERM.DASHBOARD_CHANGE_RANGE)
+  /**
+   * מעבר בין חודשים — לכל מי שהדשבורד נפתח לו, גם בלי `dashboard.change_range`.
+   *
+   * שתי שאלות שונות, ולכן שני פקדים: "איזה חודש" ו"איזה טווח". ‏0144 סגרה את
+   * השנייה בפני הלקוח — בורר טווח חופשי הוא כלי של מי שמסדר את המסך — אבל
+   * בדרך היא סגרה גם את הראשונה, והלקוח נשאר נעול על החודש הנוכחי בלי שום דרך
+   * לשאול "וכמה היה לי בחודש שעבר". החיצים נותנים בדיוק את זה ולא יותר: החלון
+   * שהם מייצרים הוא תמיד חודש שלם, והנתונים שמאחוריו הם אותם נתונים שהטבלה
+   * החודשית שלו כבר מציגה שנים־עשר חודשים אחורה (0143). אין כאן חשיפה חדשה,
+   * רק דרך לשאול עליה.
+   *
+   * הכיוון הוא של RTL, כמו בכל בורר חודש אחר במערכת (דוח הנוכחות, הקבלה,
+   * הפורטל): ימין הוא אחורה.
+   */
+  const monthLabel = useMemo(() => fmtMonth(new Date(range.from)), [range.from])
+  const onThisMonth = isWholeMonth(range) && range.from === defaultRange().from
   const custom = layout.customWidgets
   /* The catalogue is only needed by the builder, so it is fetched by the page
      rather than the drawer: opening the editor should not wait a round trip
@@ -274,6 +299,38 @@ export default function DashboardPage() {
             /* on a phone this is the widest control on the screen, so the
                presets scroll and the two date fields share one row */
             <div className="flex w-full flex-col gap-1.5 sm:w-auto sm:flex-row sm:items-center">
+              {/* לפני הפריסטים ולפני שדות התאריך, כי הוא הפקד היחיד שיש למי
+                  שאין לו `dashboard.change_range` — ומסך שהתנועה שלו קבורה
+                  בסוף שורה הוא מסך שאיש לא ימצא בו את התנועה. */}
+              <div className="flex shrink-0 items-center gap-0.5">
+                <IconButton
+                  size="sm"
+                  variant="ghost"
+                  label="חודש קודם"
+                  onClick={() => setRange((r) => stepMonth(r, -1))}
+                >
+                  <ChevronRight size={ICON.md} strokeWidth={STROKE} aria-hidden />
+                </IconButton>
+                {/* הכותרת היא גם הדרך חזרה, כמו בבורר החודש של לו״ז העבודה
+                    ושל הפורטל: לחיצה עליה מחזירה לחודש הנוכחי. */}
+                <button
+                  type="button"
+                  onClick={() => setRange(monthRange(new Date()))}
+                  title="חזרה לחודש הנוכחי"
+                  disabled={onThisMonth}
+                  className="min-w-28 rounded-md px-2 py-1 text-center type-caption font-medium text-ink transition-colors hover:bg-hover disabled:cursor-default disabled:hover:bg-transparent"
+                >
+                  {monthLabel}
+                </button>
+                <IconButton
+                  size="sm"
+                  variant="ghost"
+                  label="חודש הבא"
+                  onClick={() => setRange((r) => stepMonth(r, 1))}
+                >
+                  <ChevronLeft size={ICON.md} strokeWidth={STROKE} aria-hidden />
+                </IconButton>
+              </div>
               {canChangeRange && (
                 <>
                   <div className="scroll-row gap-1">
