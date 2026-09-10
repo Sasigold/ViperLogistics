@@ -235,7 +235,7 @@ export default function EventDetailPage() {
   // ‏0120: בורר "בוצע ע"י" מופיע רק אצל לקוח שהאפשרות מופעלת אצלו (ארקו).
   const performedByEnabled = !!data?.event.customers?.performed_by_enabled
 
-  /* ‏0169: הצעת מחיר ללקוח הקצה — אותו דפוס בדיוק, דגל פר-לקוח ולא שם.
+  /* ‏0170: הצעת מחיר ללקוח הקצה — אותו דפוס בדיוק, דגל פר-לקוח ולא שם.
      בנוסף למפתח נדרש `pricing.view`: הצעה שנבנתה ממחירים שה-view מיסך
      למי שאינו רשאי לקרוא אותם היא מסמך שגוי, לא מסמך חלקי. */
   const quoteEnabled = !!data?.event.customers?.quote_enabled

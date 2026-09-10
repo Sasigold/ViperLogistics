@@ -24,7 +24,7 @@ export interface Customer {
   commission_pct: number | null
   /** הסכום שאירוע צריך לעבור ממש כדי לזכות בעמלה. 0 = כל אירוע (0143) */
   commission_min_event: number
-  /** האם דף האירוע מציע הפקת הצעת מחיר ללקוח הקצה (0169) */
+  /** האם דף האירוע מציע הפקת הצעת מחיר ללקוח הקצה (0170) */
   quote_enabled: boolean
   is_active: boolean
   deleted_at: string | null
@@ -460,7 +460,7 @@ export interface EventRow {
   volume_m: number | null
   truck_count: number | null
   notes: string | null
-  /** מה שיודפס על הצעת המחיר תחת "תנאי תשלום" (0169) */
+  /** מה שיודפס על הצעת המחיר תחת "תנאי תשלום" (0170) */
   payment_terms: string | null
   status_id: string | null
   no_parking: boolean
@@ -538,7 +538,7 @@ export interface EventSpec {
 }
 
 /**
- * הצעת מחיר שהופקה לאירוע ונשלחה ללקוח הקצה (0169).
+ * הצעת מחיר שהופקה לאירוע ונשלחה ללקוח הקצה (0170).
  *
  * ‏`document_number` הוא צילום של `events.event_number` ואינו משתנה בין
  * הגרסאות — הוא מה שמודפס על הנייר. ‏`version` הוא ההיסטוריה הפנימית,
@@ -1689,7 +1689,7 @@ export interface WorkerPaySettings {
 
 /**
  * ‏`app_settings['company.details']` — פרטי החברה שמודפסים בכותרת של הצעת
- * המחיר (0169), ושיעור המע״מ שמופיע בה כשורה נפרדת.
+ * המחיר (0170), ושיעור המע״מ שמופיע בה כשורה נפרדת.
  *
  * הם יושבים בהגדרות ולא בקוד מסיבה אחת: מספר טלפון או שיעור מע״מ שמשתנים
  * אינם אמורים לדרוש פריסה. ‏`logo_path` מצביע לדלי `company-assets`.

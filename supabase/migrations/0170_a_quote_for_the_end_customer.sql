@@ -1,4 +1,4 @@
--- 0169: הצעת מחיר ללקוח הקצה — מסמך, מספר, ושליחה שנרשמת
+-- 0170: הצעת מחיר ללקוח הקצה — מסמך, מספר, ושליחה שנרשמת
 --
 -- לוייפר יש מנוע תמחור מצוין ואין מסמך מסחרי אחד. ‏`docs/ROADMAP.md` §1.5
 -- מנסח את זה במפורש: "אין הצעת מחיר, אין הזמנת עבודה חתומה, אין חשבונית".
@@ -41,7 +41,7 @@ alter type event_activity_kind add value if not exists 'quote_sent';
 alter table customers add column quote_enabled boolean not null default false;
 
 comment on column customers.quote_enabled is
-  'האם דף האירוע של הלקוח מציע הפקת הצעת מחיר ללקוח הקצה (0169). הדגל הוא מה '
+  'האם דף האירוע של הלקוח מציע הפקת הצעת מחיר ללקוח הקצה (0170). הדגל הוא מה '
   'שהלוגיקה בודקת — ההצמדה לקיסר היא נתון חד-פעמי, לא קוד.';
 
 -- הדלקה לקיסר — נתון, לא קוד. אין לקוח כזה (אשכול בדיקות) ⇒ אפס שורות.
@@ -146,7 +146,7 @@ create index event_quotes_event_live_idx on event_quotes (event_id, version desc
 revoke all on event_quotes from anon;
 
 comment on table event_quotes is
-  'הצעת מחיר שהופקה לאירוע ונשלחה ללקוח הקצה (0169). מספר המסמך הוא מספר '
+  'הצעת מחיר שהופקה לאירוע ונשלחה ללקוח הקצה (0170). מספר המסמך הוא מספר '
   'האירוע; version הוא היסטוריה פנימית ואינו מודפס.';
 
 -- ===== 6. מספור הגרסאות וזהות המפיק =======================================
@@ -628,7 +628,7 @@ $$;
 do $$
 begin
   if to_regclass('storage.buckets') is null or to_regclass('storage.objects') is null then
-    raise notice '0169: אין סכמת storage — הדלים והפוליסות מדולגים';
+    raise notice '0170: אין סכמת storage — הדלים והפוליסות מדולגים';
     return;
   end if;
 
@@ -706,6 +706,6 @@ begin
         using (bucket_id = 'company-assets' and app.may_touch_company_asset(true))
     $sql$;
   exception when insufficient_privilege then
-    raise warning '0169: אין בעלות על storage.objects — פוליסות הדלים event-quotes ו-company-assets לא נוצרו. יש להגדיר אותן ב-Dashboard → Storage → Policies עם הביטויים app.may_touch_event_quote(name, <false/true>) ו-app.may_touch_company_asset(<false/true>). עד אז RLS דוחה כל גישה לקבצים.';
+    raise warning '0170: אין בעלות על storage.objects — פוליסות הדלים event-quotes ו-company-assets לא נוצרו. יש להגדיר אותן ב-Dashboard → Storage → Policies עם הביטויים app.may_touch_event_quote(name, <false/true>) ו-app.may_touch_company_asset(<false/true>). עד אז RLS דוחה כל גישה לקבצים.';
   end;
 end $$;

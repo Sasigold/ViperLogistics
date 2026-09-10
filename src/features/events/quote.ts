@@ -1,5 +1,5 @@
 /**
- * הצעת מחיר ללקוח הקצה — הלוגיקה הטהורה (0169).
+ * הצעת מחיר ללקוח הקצה — הלוגיקה הטהורה (0170).
  *
  * המסמך פונה אל **הלקוח של הלקוח**: קיסר מביאה את האירוע, ומי שקורא את
  * ההצעה ומשלם עליה הוא בעל השמחה. לכן "לכבוד" נבנה מ-`end_client_name`
@@ -177,7 +177,7 @@ export function quoteFileName(documentNumber: string): string {
   return `הצעת מחיר ${documentNumber}.pdf`.replace(/[\\/:*?"<>|]/g, '-')
 }
 
-/** הנתיב בדלי. התיקייה הראשונה היא החוזה שהפוליסה קוראת (0169). */
+/** הנתיב בדלי. התיקייה הראשונה היא החוזה שהפוליסה קוראת (0170). */
 export function quoteStoragePath(eventId: string, uuid: string): string {
   return `${eventId}/${uuid}.pdf`
 }

@@ -60,7 +60,7 @@ export default defineConfig({
         ],
       },
       injectManifest: {
-        // ‏ttf נכנס בגלל שני קבצי Heebo שמסמך הצעת המחיר מטמיע (0169): הם
+        // ‏ttf נכנס בגלל שני קבצי Heebo שמסמך הצעת המחיר מטמיע (0170): הם
         // נטענים ב-fetch בזמן ההפקה, ובלי precache הפקה על רשת חלשה נתקעת
         // על 88KB שכבר ישבו על המכשיר.
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2,ttf}'],

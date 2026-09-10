@@ -30,7 +30,7 @@ export type EventForm = {
   contact_name: string
   contact_phone: string
   notes: string
-  /** מה שיודפס על הצעת המחיר תחת "תנאי תשלום" (0169) */
+  /** מה שיודפס על הצעת המחיר תחת "תנאי תשלום" (0170) */
   payment_terms: string
   status_id: string
   no_parking: boolean
