@@ -1,10 +1,12 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { addMonths, startOfMonth } from 'date-fns'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Card, EmptyState, PageHeader } from '../../components/ui'
 import { fmtMonth } from '../../lib/dates'
 import { supabase } from '../../lib/supabase'
 import { DashboardProvider } from './dashboardContext'
-import { defaultRange, previousRange } from './dashboardRange'
+import { MonthStepper } from './MonthStepper'
+import { monthRange, previousRange } from './dashboardRange'
 import type { DateRange } from './dashboardRange'
 import type { DashboardSections, SectionMap } from './useDashboardData'
 import {
@@ -19,7 +21,11 @@ import {
  *
  * הצוות והקבלן ממשיכים ב-`DashboardPage` המשותף, המסונן בהרשאות. הלקוח, לעומת
  * זאת, מקבל מסך ייעודי: כמות אירועים לחודש, הסכום, והעמלה — ולא דבר מעבר. אין
- * כאן בורר טווח, ייצוא, התאמה אישית או עריכה, פשוט משום שאין מה שיצייר אותם.
+ * כאן ייצוא, התאמה אישית או עריכה, פשוט משום שאין מה שיצייר אותם.
+ *
+ * ‏**ובורר התקופה היחיד שיש כאן הוא זוג חיצים בין חודשים.** לא טווח חופשי —
+ * זה מה ש-`dashboard.change_range` סגר בפניו (0144) — אלא "איזה חודש", שהיא
+ * שאלה אחרת שנסגרה בטעות יחד איתו.
  *
  * ‏**אין כאן שם לקוח.** ארקו וקיסר נבדלים אך ורק ב-`commission_pct` על שורתם
  * (0143): לקוח בלי עמלה רואה "סכום לתשלום לוייפר" ובלי כרטיס/עמודת עמלה, ולקוח
@@ -81,9 +87,27 @@ function useCustomerMonthly(range: DateRange, prev: DateRange): DashboardSection
 }
 
 export default function CustomerDashboard() {
-  const range = useMemo(() => defaultRange(), [])
+  /**
+   * החודש המוצג — וזה כל בורר התקופה שיש כאן.
+   *
+   * המסך הזה נפתח על החודש הנוכחי מאז שנכתב, ולא הייתה בו שום דרך לזוז ממנו:
+   * ‏`defaultRange()` נקרא פעם אחת והוחזק. ‏`dashboard.change_range` (0144)
+   * סגר את בורר הטווח בפני הלקוח, אבל "איזה חודש" ו"איזה טווח" הן שתי שאלות,
+   * ורק השנייה היא כלי של מי שמסדר את המסך.
+   *
+   * ‏**החיצים אינם חושפים דבר חדש.** הטבלה שמתחת לכרטיסים כבר מציגה שנים־עשר
+   * חודשים אחורה בלי קשר לטווח (0143) — היא נכתבה כך בדיוק מפני שהטווח היה
+   * נעול — והחיצים רק מביאים את שלושת הכרטיסים לאותם חודשים.
+   *
+   * ‏`keepPreviousData` על השאילתה כבר קיים, ולכן דפדוף אינו מהבהב: המספרים
+   * של החודש הקודם נשארים עד שאלה של החדש מגיעים. אותו הסדר של הפורטל.
+   */
+  const [monthDate, setMonthDate] = useState(() => startOfMonth(new Date()))
+  const range = useMemo(() => monthRange(monthDate), [monthDate])
   const prev = useMemo(() => previousRange(range), [range])
   const sections = useCustomerMonthly(range, prev)
+  const thisMonth = startOfMonth(new Date())
+  const atToday = monthDate.getTime() === thisMonth.getTime()
 
   const ctx = useMemo(
     () => ({ range, prev, today: range.to, sections, openNewEvent: () => {} }),
@@ -97,7 +121,18 @@ export default function CustomerDashboard() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="דשבורד" subtitle={fmtMonth(new Date())} />
+      <PageHeader
+        title="דשבורד"
+        subtitle={fmtMonth(monthDate)}
+        actions={
+          <MonthStepper
+            month={monthDate}
+            onStep={(d) => setMonthDate((m) => addMonths(m, d))}
+            onToday={() => setMonthDate(startOfMonth(new Date()))}
+            atToday={atToday}
+          />
+        }
+      />
 
       {declined ? (
         <Card>
