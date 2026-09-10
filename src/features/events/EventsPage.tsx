@@ -20,7 +20,7 @@ import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { useCustomFormFields, useCustomers, useStatuses } from '../../lib/queries'
-import { fmtDate } from '../../lib/dates'
+import { fmtDate, fmtMoney } from '../../lib/dates'
 import { shortAddress } from '../../lib/address'
 import { EventFormModal } from './EventFormModal'
 import { formatCustomValue } from './CustomFieldInput'
@@ -89,6 +89,34 @@ export default function EventsPage() {
     () => (showCancelled ? events : events.filter((e) => e.statuses?.code !== CANCELLED)),
     [events, showCancelled],
   )
+
+  /**
+   * המחיר של האירוע — סך המשימות שלו, ולא שדה שמישהו הקליד.
+   *
+   * שאילתה שנייה ולא join: הרשימה נשלפת מ-`events`, והכסף יושב על
+   * ‏`task_pricing` של המשימות ועל תוספות המחיר שלהן. ‏`event_task_totals`
+   * (0169) מסכם את שניהם בדיוק כמו כרטיס "סך תמחור" בדף האירוע, ולכן
+   * שני המסכים אומרים אותו מספר.
+   *
+   * תלויה בשורות שכבר חזרו: היא נשאלת על מה שמוצג בפועל ולא על השאילתה,
+   * ולכן היא אינה משכפלת את החיפוש, את הסינון ואת מתג "בוטלו" — ומזהי
+   * האירועים הם מפתח ה-cache שלה.
+   *
+   * ‏`pricing.view` הוא השער *במסך*; במסד `customer_price` ממוסך ממי שאין
+   * לו אותו ממילא. בלי המפתח אין עמודה, ולכן גם אין שאילתה.
+   */
+  const canSeePricing = has(PERM.PRICING_VIEW)
+  const priceIds = useMemo(() => visible.map((e) => e.id).sort(), [visible])
+  const { data: totals } = useQuery({
+    queryKey: ['events', 'task_totals', priceIds],
+    enabled: canSeePricing && priceIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('event_task_totals', { p_event_ids: priceIds })
+      if (error) throw error
+      const rows = data as { event_id: string; price_total: number | null }[]
+      return new Map(rows.map((r) => [r.event_id, r.price_total == null ? null : Number(r.price_total)]))
+    },
+  })
 
   /* Two rules shape the table, and they are the same two that shape the form:
      a field the reader's company configured off should not reappear as a
@@ -199,6 +227,31 @@ export default function EventsPage() {
         sortValue: (e) => e.statuses?.name,
         render: (e) => (e.statuses ? <StatusPill color={e.statuses.color}>{e.statuses.name}</StatusPill> : null),
       },
+      /* לפני השדות של הלקוח ולא אחריהם: זה מספר של המערכת, והם מה שהלקוח
+         מילא בטופס שלו. */
+      ...(canSeePricing
+        ? ([
+            {
+              key: 'tasks_price',
+              header: 'מחיר',
+              width: 120,
+              align: 'end',
+              sortValue: (e) => totals?.get(e.id) ?? undefined,
+              render: (e) => {
+                const total = totals?.get(e.id)
+                /* מקף ולא "0 ₪": אירוע שאיש עוד לא תמחר אינו אירוע ששווה
+                   אפס, וההבדל בין השניים הוא בדיוק מה שהמשרד מחפש כאן. */
+                return total == null ? (
+                  <span className="text-ink-tertiary">—</span>
+                ) : (
+                  <span dir="ltr" className="tabular font-medium">
+                    {fmtMoney(total)}
+                  </span>
+                )
+              },
+            },
+          ] as Column<EventListRow>[])
+        : []),
       ...customFields
         .filter((f) => showsEventField(f.field_key))
         .map<Column<EventListRow>>((f) => ({
@@ -220,7 +273,7 @@ export default function EventsPage() {
         })),
     ]
     return all.filter((c) => !hidden.has(c.key))
-  }, [showCustomer, showNumber, showLocation, showVolume, showTrucks, customFields, showsEventField])
+  }, [showCustomer, showNumber, showLocation, showVolume, showTrucks, canSeePricing, totals, customFields, showsEventField])
 
   const filtered = !!q || !!customer || showCancelled
 
@@ -311,7 +364,16 @@ export default function EventsPage() {
                   </StatusPill>
                 )}
               </div>
-              <p className="truncate type-body font-semibold">{e.end_client_name || '—'}</p>
+              {/* בטלפון אין עמודות, ולכן המחיר יושב על הכרטיס עצמו — אחרת
+                  התכונה קיימת רק במסך רחב. */}
+              <div className="flex items-baseline gap-2">
+                <p className="min-w-0 flex-1 truncate type-body font-semibold">{e.end_client_name || '—'}</p>
+                {canSeePricing && totals?.get(e.id) != null && (
+                  <span dir="ltr" className="shrink-0 type-caption font-bold tabular text-success-text">
+                    {fmtMoney(totals.get(e.id))}
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap items-center gap-x-2 type-caption text-ink-tertiary">
                 {showCustomer && e.customers && (
                   <span className="inline-flex min-w-0 items-center gap-1">

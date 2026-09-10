@@ -458,6 +458,16 @@ OUT="$OUT
 $OUT44"
 
 echo
+echo "== the list says what the event costs suite =="
+# 45 מקימה לקוח, קבלן, שני אירועים, ארבע משימות וארבעה פרופילים משלה
+# ב-current_date + 620, מעבר לכל טווח אחר. היא רצה אחרונה כי היא מוחקת רכות
+# משימה משלה ומשאירה אחריה תמחור ותוספות שאינם מנוקים.
+OUT45=$($PSQL -d vl -f "$HERE/45_the_list_says_what_the_event_costs.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT45"
+OUT="$OUT
+$OUT45"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

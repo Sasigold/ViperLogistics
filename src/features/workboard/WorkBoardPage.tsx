@@ -60,6 +60,7 @@ import type { Holiday } from '../../lib/hebrewHolidays'
 import { TaskDrawer, useCanOpenTaskCard } from '../tasks/TaskDrawer'
 import { ContractorPanel, StaffingPanel } from '../tasks/taskPanels'
 import { crewLead, crewPeople } from '../tasks/crew'
+import { useCrewVisibility } from '../tasks/crewVisibility'
 import { CrewMarks } from '../tasks/crewMarks'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
@@ -1779,6 +1780,15 @@ const MobileTaskCard = memo(function MobileTaskCard({
   /* אדם אחד, צ׳יפ אחד — ראש הצוות בראש הרשימה, כמו בלו״ז (0162). */
   const lead = crewLead(row)
   const team = [...(lead ? [lead] : []), ...crewPeople(row)]
+  /**
+   * ומה שהטבלה כבר שואלת, הכרטיס שואל גם הוא.
+   *
+   * ‏`available` מסננת את `BOARD_FIELDS` לפי `boardFieldState`, ולכן לקוח
+   * שנסגרו לו "צוות" ו"כמות עובדים" לא ראה אותם בטבלה — ובכרטיס הנייד, שאינו
+   * בנוי מאותם שדות אלא מצייר את השורה ישירות, הם המשיכו להופיע. הוק ולא prop
+   * שנודד דרך `MobileBoard`: התשובה היא של הקורא ולא של היום שמעליו.
+   */
+  const crewShows = useCrewVisibility()
 
   return (
     <div
@@ -1829,28 +1839,31 @@ const MobileTaskCard = memo(function MobileTaskCard({
 
         {/* every name, not a stack of initials: knowing who is on the job is
             the question this line exists to answer */}
-        <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-          {team.length > 0 ? (
-            team.map((p) => (
-              <span
-                key={p.key}
-                className="inline-flex items-center gap-0.5 rounded bg-subtle px-1 type-caption text-ink-secondary"
-              >
-                <CrewMarks person={p} lead={p === lead} />
-                {p.name}
+        {(crewShows.names || crewShows.count) && (
+          <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+            {crewShows.names &&
+              (team.length > 0 ? (
+                team.map((p) => (
+                  <span
+                    key={p.key}
+                    className="inline-flex items-center gap-0.5 rounded bg-subtle px-1 type-caption text-ink-secondary"
+                  >
+                    <CrewMarks person={p} lead={p === lead} />
+                    {p.name}
+                  </span>
+                ))
+              ) : (
+                <span className="type-caption text-ink-tertiary">לא שובץ</span>
+              ))}
+            {/* how many the job calls for — not how many of them are seated yet:
+                the names right beside it are the answer to that */}
+            {crewShows.count && row.worker_count > 0 && (
+              <span className="rounded bg-subtle px-1 type-caption font-bold tabular text-ink-secondary">
+                {row.worker_count} עובדים
               </span>
-            ))
-          ) : (
-            <span className="type-caption text-ink-tertiary">לא שובץ</span>
-          )}
-          {/* how many the job calls for — not how many of them are seated yet:
-              the names right beside it are the answer to that */}
-          {row.worker_count > 0 && (
-            <span className="rounded bg-subtle px-1 type-caption font-bold tabular text-ink-secondary">
-              {row.worker_count} עובדים
-            </span>
-          )}
-        </span>
+            )}
+          </span>
+        )}
       </button>
 
       {/* בטלפון אין תאים, ולכן שתי השאלות שהתאים פותחים בטבלה — מי משובץ
