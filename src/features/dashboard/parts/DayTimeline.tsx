@@ -3,6 +3,7 @@ import { AvatarGroup, EmptyState, Tooltip } from '../../../components/ui'
 import { fmtTime } from '../../../lib/dates'
 import { shortAddress } from '../../../lib/address'
 import { useIsPhone } from '../../../lib/useMediaQuery'
+import { useCrewVisibility } from '../../tasks/crewVisibility'
 import type { WorkBoardRow } from '../../../types/domain'
 
 /**
@@ -19,6 +20,9 @@ export function DayTimeline({ tasks, onOpen }: { tasks: WorkBoardRow[]; onOpen?:
      collapses to a sliver and the ruler's labels collide. There the same tasks
      are simply listed in time order. */
   const isPhone = useIsPhone()
+  /* אותה הכרעה של הלו״ז ושל דף האירוע: מי שהצוות נסגר לו בקונפיגורציה של
+     הלקוח (0109) אינו רואה שמות גם כשהם ראשי תיבות על ציר הזמן. */
+  const showCrew = useCrewVisibility().names
 
   const { startHour, endHour } = useMemo(() => {
     if (timed.length === 0) return { startHour: 6, endHour: 22 }
@@ -51,7 +55,9 @@ export function DayTimeline({ tasks, onOpen }: { tasks: WorkBoardRow[]; onOpen?:
         <ul className="space-y-1.5">
           {timed.map((t) => {
             const label = t.end_client_name || t.title || t.customer_name || t.task_type_name
-            const team = [...(t.workers ?? []).map((w) => w.name), ...(t.drivers ?? []).map((d) => d.name)]
+            const team = showCrew
+              ? [...(t.workers ?? []).map((w) => w.name), ...(t.drivers ?? []).map((d) => d.name)]
+              : []
             return (
               <li key={t.id}>
                 <button
@@ -103,7 +109,9 @@ export function DayTimeline({ tasks, onOpen }: { tasks: WorkBoardRow[]; onOpen?:
                 ? Math.max(6, pos(endTime) - start)
                 : Math.max(6, ((t.hours_count ?? 2) / span) * 100)
               const label = t.end_client_name || t.title || t.customer_name || t.task_type_name
-              const team = [...(t.workers ?? []).map((w) => w.name), ...(t.drivers ?? []).map((d) => d.name)]
+              const team = showCrew
+                ? [...(t.workers ?? []).map((w) => w.name), ...(t.drivers ?? []).map((d) => d.name)]
+                : []
               return (
                 <div key={t.id} className="relative h-8 rounded-md bg-subtle/50">
                   {/* hour gridlines */}

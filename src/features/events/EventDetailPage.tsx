@@ -63,6 +63,7 @@ import { EventSpecsModal } from './EventSpecsModal'
 import { CustomerSignatureModal } from './CustomerSignatureModal'
 import { useEventSpecs } from './specQueries'
 import { crewPeople, crewSize } from '../tasks/crew'
+import { useCrewVisibility } from '../tasks/crewVisibility'
 import { sumAddons, useEventPriceAddons } from '../pricing/addonQueries'
 import { useEventSignatures } from './signatureQueries'
 import type { EventPriceAddon, EventRow, PerformedBy, WorkBoardRow } from '../../types/domain'
@@ -229,8 +230,22 @@ export default function EventDetailPage() {
      not staff. An always-blank column reads as a broken table rather than as
      one that isn't theirs, so the key decides whether it exists. */
   const showStaffing = has(PERM.BOARD_VIEW_STAFFING)
+  /**
+   * ומה שהמפתח פותח, הקונפיגורציה של הלקוח עדיין יכולה לסגור.
+   *
+   * ‏`customer_board_fields` (0109) הוא המקום שבו מנהל המערכת כבר קבע ללקוח
+   * מסוים ש"כמות עובדים", "צוות", "ראש צוות", "משך" ו"סיום בשטח" אינם שלו
+   * לראות — והלו״ז כיבד את זה מהיום הראשון בעוד דף האירוע, שמצייר את אותם
+   * נתונים בדיוק, המשיך להציג את כולם. ההכרעה נקראת מ-`useCrewVisibility`
+   * כדי שכל המסכים יענו עליה אותו דבר. אצל המשרד `board_config` ריקה ולכן
+   * דבר לא משתנה.
+   */
+  const crewShows = useCrewVisibility()
   // הלקוח אינו רואה את משבצת "צוות משובץ" — מי מבצע בשטח אינו עניינו של הלקוח.
   const isCustomerUser = me?.profile.user_kind === 'customer_user'
+  /* אותו אריח, ושתי סיבות בלתי תלויות להעלים אותו: הלקוח, ומי שהצוות נסגר
+     לו בקונפיגורציה. אריח שסופר אנשים ששמם אינו מוצג הוא חצי תשובה. */
+  const showCrewTile = !isCustomerUser && crewShows.names
 
   // ‏0120: בורר "בוצע ע"י" מופיע רק אצל לקוח שהאפשרות מופעלת אצלו (ארקו).
   const performedByEnabled = !!data?.event.customers?.performed_by_enabled
@@ -313,19 +328,23 @@ export default function EventDetailPage() {
         render: (t) => (
           <span className="tabular" dir="ltr">
             {fmtTime(t.onsite_start_time) || '—'}
-            {t.onsite_end_time ? `–${fmtTime(t.onsite_end_time)}` : ''}
+            {crewShows.endTime && t.onsite_end_time ? `–${fmtTime(t.onsite_end_time)}` : ''}
           </span>
         ),
       },
-      {
-        key: 'hours',
-        header: 'משך',
-        width: 80,
-        align: 'end',
-        sortValue: (t) => t.hours_count,
-        render: (t) => <span className="tabular">{fmtHours(t.hours_count) || '—'}</span>,
-      },
-      ...(showStaffing ? ([{
+      ...(crewShows.hours
+        ? ([
+            {
+              key: 'hours',
+              header: 'משך',
+              width: 80,
+              align: 'end',
+              sortValue: (t) => t.hours_count,
+              render: (t) => <span className="tabular">{fmtHours(t.hours_count) || '—'}</span>,
+            },
+          ] as Column<WorkBoardRow>[])
+        : []),
+      ...(crewShows.names ? ([{
         key: 'team',
         header: 'צוות',
         width: 150,
@@ -343,9 +362,13 @@ export default function EventDetailPage() {
                   {n}
                 </span>
               ))}
-              <span className="type-caption tabular text-ink-tertiary">
-                {count}/{t.worker_count || '—'}
-              </span>
+              {/* המונה הוא שדה בפני עצמו: לקוח שנסגר לו "כמות עובדים" ולא
+                  "צוות" רואה את מי שמגיע, ולא כמה נדרשו. */}
+              {crewShows.count && (
+                <span className="type-caption tabular text-ink-tertiary">
+                  {count}/{t.worker_count || '—'}
+                </span>
+              )}
             </span>
           ) : (
             <span className="type-caption text-ink-tertiary">לא שובץ</span>
@@ -359,22 +382,28 @@ export default function EventDetailPage() {
         sortValue: (t) => t.execution_method_name,
         render: (t) => t.execution_method_name || <span className="text-ink-tertiary">—</span>,
       },
-      ...(showStaffing ? ([
-        {
-          key: 'lead',
-          header: 'ראש צוות',
-          width: 130,
-          sortValue: (t) => t.team_lead_name,
-          render: (t) => t.team_lead_name || <span className="text-ink-tertiary">—</span>,
-        },
-        {
-          key: 'contractor',
-          header: 'קבלן',
-          width: 130,
-          sortValue: (t) => t.contractor_name,
-          render: (t) => t.contractor_name || <span className="text-ink-tertiary">—</span>,
-        },
-      ] as Column<WorkBoardRow>[]) : []),
+      ...(crewShows.lead
+        ? ([
+            {
+              key: 'lead',
+              header: 'ראש צוות',
+              width: 130,
+              sortValue: (t) => t.team_lead_name,
+              render: (t) => t.team_lead_name || <span className="text-ink-tertiary">—</span>,
+            },
+          ] as Column<WorkBoardRow>[])
+        : []),
+      ...(showStaffing
+        ? ([
+            {
+              key: 'contractor',
+              header: 'קבלן',
+              width: 130,
+              sortValue: (t) => t.contractor_name,
+              render: (t) => t.contractor_name || <span className="text-ink-tertiary">—</span>,
+            },
+          ] as Column<WorkBoardRow>[])
+        : []),
       {
         key: 'status',
         header: 'סטטוס',
@@ -426,7 +455,7 @@ export default function EventDetailPage() {
           ] as Column<WorkBoardRow>[])
         : []),
     ],
-    [pricing, showStaffing, performedByEnabled, canSetPerformedBy, setPerformedBy],
+    [pricing, showStaffing, crewShows, performedByEnabled, canSetPerformedBy, setPerformedBy],
   )
 
   if (isLoading || !data) {
@@ -504,8 +533,8 @@ export default function EventDetailPage() {
     [
       fmtDate(t.task_date),
       fmtTime(t.onsite_start_time),
-      t.worker_count ? `${t.worker_count} עובדים` : null,
-      t.hours_count != null ? `${fmtHours(t.hours_count)} שעות` : null,
+      crewShows.count && t.worker_count ? `${t.worker_count} עובדים` : null,
+      crewShows.hours && t.hours_count != null ? `${fmtHours(t.hours_count)} שעות` : null,
       t.execution_method_name,
     ]
       .filter(Boolean)
@@ -841,7 +870,7 @@ export default function EventDetailPage() {
               className={cx(
                 'grid grid-cols-2 gap-3',
                 { 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'sm:grid-cols-4' }[
-                  2 + (isCustomerUser ? 0 : 1) + (canSeePricing ? 1 : 0)
+                  2 + (showCrewTile ? 1 : 0) + (canSeePricing ? 1 : 0)
                 ],
               )}
             >
@@ -864,7 +893,7 @@ export default function EventDetailPage() {
                 </div>
               </div>
 
-              {!isCustomerUser && (
+              {showCrewTile && (
                 <div className="rounded-xl border border-line-subtle bg-surface p-3 flex flex-col justify-between shadow-xs">
                   <span className="type-caption text-ink-tertiary">צוות משובץ</span>
                   <div className="flex items-center gap-1.5 mt-1">
@@ -1061,9 +1090,11 @@ export default function EventDetailPage() {
                               <span className="inline-flex items-center gap-1 bg-subtle px-2 py-1 rounded-md border border-line-subtle tabular" dir="ltr">
                                 <Clock size={ICON.xs} className="text-ink-tertiary" />
                                 {fmtTime(t.onsite_start_time) || '—'}
-                                {t.onsite_end_time ? `–${fmtTime(t.onsite_end_time)}` : ''}
+                                {crewShows.endTime && t.onsite_end_time
+                                  ? `–${fmtTime(t.onsite_end_time)}`
+                                  : ''}
                               </span>
-                              {t.hours_count != null && (
+                              {crewShows.hours && t.hours_count != null && (
                                 <span className="type-caption tabular text-ink-tertiary">
                                   ({fmtHours(t.hours_count)} שעות)
                                 </span>
@@ -1093,9 +1124,9 @@ export default function EventDetailPage() {
                             )}
 
                             {/* Team Lead & Contractor info if available */}
-                            {(t.team_lead_name || t.contractor_name || t.execution_method_name) && (
+                            {((crewShows.lead && t.team_lead_name) || t.contractor_name || t.execution_method_name) && (
                               <div className="flex flex-wrap items-center gap-1.5 type-caption pt-1 border-t border-line-subtle/60">
-                                {t.team_lead_name && (
+                                {crewShows.lead && t.team_lead_name && (
                                   <span className="inline-flex items-center gap-1 text-ink-secondary">
                                     <HardHat size={ICON.xs} className="text-warning-text" />
                                     <span>ר"צ: {t.team_lead_name}</span>
@@ -1116,7 +1147,7 @@ export default function EventDetailPage() {
 
                           {/* Card Footer: Team Assigned Avatars */}
                           <div className="mt-4 pt-2.5 border-t border-line-subtle flex items-center justify-between">
-                            {count > 0 ? (
+                            {crewShows.names && count > 0 ? (
                               <div className="flex flex-wrap items-center gap-1">
                                 {names.map((n) => (
                                   <span
@@ -1126,11 +1157,13 @@ export default function EventDetailPage() {
                                     {n}
                                   </span>
                                 ))}
-                                <span className="type-caption tabular text-ink-tertiary">
-                                  {count}/{t.worker_count || '—'} עובדים
-                                </span>
+                                {crewShows.count && (
+                                  <span className="type-caption tabular text-ink-tertiary">
+                                    {count}/{t.worker_count || '—'} עובדים
+                                  </span>
+                                )}
                               </div>
-                            ) : showStaffing ? (
+                            ) : crewShows.names ? (
                               <span className="type-caption text-ink-tertiary">לא שובצו עובדים</span>
                             ) : (
                               <span />
