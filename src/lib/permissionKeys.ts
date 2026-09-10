@@ -129,6 +129,11 @@ export const PERM = {
      המפתחות האלה — הם פותחים את החתימה גם לרכז משרדי שהוענק לו במפורש. */
   EVENTS_SIGN_VIEW: 'events.sign_view',
   EVENTS_SIGN_CAPTURE: 'events.sign_capture',
+  /* הצעת מחיר ללקוח הקצה (0170). שניהם `applies_to = staff` בלבד: המסמך
+     יוצא בשם וייפר, ולקוח וקבלן אינם צד לו. הכפתור עצמו דורש בנוסף
+     `pricing.view` — הצעה שנבנתה ממחירים ממוסכים אינה הצעה. */
+  EVENTS_QUOTE_VIEW: 'events.quote_view',
+  EVENTS_QUOTE_SEND: 'events.quote_send',
   FINANCE_INCOME_VIEW: 'finance.income_view',
   FINANCE_INCOME_EDIT: 'finance.income_edit',
   FINANCE_MANAGE_SPLITS: 'finance.manage_splits',

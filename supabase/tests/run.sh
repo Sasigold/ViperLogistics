@@ -468,6 +468,15 @@ OUT="$OUT
 $OUT45"
 
 echo
+echo "== a quote for the end customer suite =="
+# 46 מקימה לקוח, קבלן, ארבעה קהלים ואירוע משלה ב-current_date + 630, ואינה
+# נשענת על אף חבילה קודמת. היא מפיקה שתי הצעות ומשאירה אותן.
+OUT46=$($PSQL -d vl -f "$HERE/46_a_quote_for_the_end_customer.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT46"
+OUT="$OUT
+$OUT46"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

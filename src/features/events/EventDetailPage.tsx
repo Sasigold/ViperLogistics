@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   Clock,
+  FileText,
   HardHat,
   ICON,
   LayoutGrid,
@@ -57,6 +58,7 @@ import { EventFormModal } from './EventFormModal'
 import { formatCustomValue } from './CustomFieldInput'
 import { TaskDrawer, useCanOpenTaskCard } from '../tasks/TaskDrawer'
 import { EventActivityLog } from './EventActivityLog'
+import { EventQuoteModal } from './EventQuoteModal'
 import { EventSpecsModal } from './EventSpecsModal'
 import { CustomerSignatureModal } from './CustomerSignatureModal'
 import { useEventSpecs } from './specQueries'
@@ -79,6 +81,7 @@ export default function EventDetailPage() {
   const [editOpen, setEditOpen] = useState(false)
   const [specsOpen, setSpecsOpen] = useState(false)
   const [signOpen, setSignOpen] = useState(false)
+  const [quoteOpen, setQuoteOpen] = useState(false)
   const [taskDrawer, setTaskDrawer] = useState<{ open: boolean; taskId: string | null }>({ open: false, taskId: null })
   const [activeTab, setActiveTab] = useState<TaskTab>('all')
   const [viewMode, setViewMode] = useState<TaskViewMode>('cards')
@@ -87,7 +90,7 @@ export default function EventDetailPage() {
     queryKey: ['events', 'one', id],
     queryFn: async () => {
       const [e, contact, sup] = await Promise.all([
-        supabase.from('events').select('*, customers(name, color, performed_by_enabled), statuses(name, color)').eq('id', id).single(),
+        supabase.from('events').select('*, customers(name, color, performed_by_enabled, quote_enabled), statuses(name, color)').eq('id', id).single(),
         supabase.from('event_contacts').select('*').eq('event_id', id).maybeSingle(),
         supabase.from('event_suppliers').select('supplier_id, suppliers(name)').eq('event_id', id),
       ])
@@ -246,6 +249,12 @@ export default function EventDetailPage() {
 
   // ‏0120: בורר "בוצע ע"י" מופיע רק אצל לקוח שהאפשרות מופעלת אצלו (ארקו).
   const performedByEnabled = !!data?.event.customers?.performed_by_enabled
+
+  /* ‏0170: הצעת מחיר ללקוח הקצה — אותו דפוס בדיוק, דגל פר-לקוח ולא שם.
+     בנוסף למפתח נדרש `pricing.view`: הצעה שנבנתה ממחירים שה-view מיסך
+     למי שאינו רשאי לקרוא אותם היא מסמך שגוי, לא מסמך חלקי. */
+  const quoteEnabled = !!data?.event.customers?.quote_enabled
+  const canSendQuote = quoteEnabled && has(PERM.EVENTS_QUOTE_SEND) && has(PERM.PRICING_VIEW)
   const canSetPerformedBy = !!me?.profile.is_admin || has(PERM.TASKS_EDIT) || isCustomerUser
   const setPerformedBy = useMutation({
     mutationFn: async ({ taskId, value }: { taskId: string; value: PerformedBy }) => {
@@ -604,6 +613,9 @@ export default function EventDetailPage() {
         ] as [string, React.ReactNode][])
       : []),
     ...sectionRows,
+    ...(show('payment_terms')
+      ? ([['תנאי תשלום', event.payment_terms]] as [string, React.ReactNode][])
+      : []),
     ...(show('notes') ? ([['הערות', event.notes]] as [string, React.ReactNode][]) : []),
     /* the customer's own fields, under the same rule as everything above */
     ...(customFields
@@ -671,6 +683,12 @@ export default function EventDetailPage() {
                 <Paperclip size={ICON.sm} strokeWidth={STROKE} />
                 מפרט
                 {specs.length > 0 && <Badge tone="primary">{specs.length}</Badge>}
+              </Button>
+            )}
+            {canSendQuote && (
+              <Button size="sm" onClick={() => setQuoteOpen(true)}>
+                <FileText size={ICON.sm} strokeWidth={STROKE} />
+                הצעת מחיר
               </Button>
             )}
             {canViewSignature && (
@@ -1200,6 +1218,17 @@ export default function EventDetailPage() {
         contact={contact}
         supplierIds={supplierIds}
       />
+      {canSendQuote && (
+        <EventQuoteModal
+          open={quoteOpen}
+          onClose={() => setQuoteOpen(false)}
+          event={event}
+          customerName={customer?.name ?? ''}
+          contact={contact}
+          tasks={tasks}
+          addons={priceAddons}
+        />
+      )}
       <EventSpecsModal
         eventId={event.id}
         eventTitle={event.end_client_name ?? fmtDateLong(event.event_date)}

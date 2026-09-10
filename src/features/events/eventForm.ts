@@ -30,6 +30,8 @@ export type EventForm = {
   contact_name: string
   contact_phone: string
   notes: string
+  /** מה שיודפס על הצעת המחיר תחת "תנאי תשלום" (0170) */
+  payment_terms: string
   status_id: string
   no_parking: boolean
   porterage: boolean
@@ -59,7 +61,7 @@ export const emptyEventForm: EventForm = {
   customer_id: '', end_client_name: '', event_number: '', event_date: '', location_text: '',
   location_provider: '', location_place_id: '', location_lat: null, location_lng: null,
   location_notes: '', volume_m: '', truck_count: '', contact_name: '', contact_phone: '',
-  notes: '', status_id: '', no_parking: false, porterage: false, supplier_pickup: false, supplier_ids: [],
+  notes: '', payment_terms: '', status_id: '', no_parking: false, porterage: false, supplier_pickup: false, supplier_ids: [],
   setup_date: '', setup_time: '', setup_worker_count: '', setup_hours_count: '', setup_execution_method: '',
   setup_price: '', setup_performed_by: '',
   teardown_date: '', teardown_time: '', teardown_worker_count: '', teardown_hours_count: '', teardown_execution_method: '',
@@ -117,6 +119,7 @@ export function eventFormValues(
     contact_name: contact?.contact_name ?? '',
     contact_phone: contact?.contact_phone ?? '',
     notes: event.notes ?? '',
+    payment_terms: event.payment_terms ?? '',
     status_id: event.status_id ?? '',
     no_parking: event.no_parking,
     porterage: event.porterage,
