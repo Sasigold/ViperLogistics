@@ -121,7 +121,7 @@ type StepDef = {
 const STEPS: StepDef[] = [
   { key: 'basics', label: 'פרטי האירוע', icon: PartyPopper, fields: ['end_client_name', 'event_number', 'event_date'] },
   { key: 'location', label: 'מיקום ואיש קשר', icon: MapPin, fields: ['location', 'location_notes', 'contact_name', 'contact_phone'] },
-  { key: 'logistics', label: 'לוגיסטיקה ותוספות', icon: Package, fields: ['volume_m', 'truck_count', 'addons', 'notes'] },
+  { key: 'logistics', label: 'לוגיסטיקה ותוספות', icon: Package, fields: ['volume_m', 'truck_count', 'addons', 'payment_terms', 'notes'] },
   { key: 'sections', label: 'הקמה ופירוק', icon: Clock, fields: [...sectionFields('setup'), ...sectionFields('teardown')] },
 ]
 
@@ -466,6 +466,7 @@ export function EventFormModal({
         volume_m: form.volume_m,
         truck_count: form.truck_count,
         notes: form.notes,
+        payment_terms: form.payment_terms,
         status_id: form.status_id || undefined,
         no_parking: form.no_parking,
         porterage: form.porterage,
@@ -482,7 +483,7 @@ export function EventFormModal({
         if (show(key) && !ro(key)) continue
         for (const k of PAYLOAD_KEYS[key]) delete payload[k]
       }
-      for (const key of ['end_client_name', 'event_number', 'location_notes', 'volume_m', 'truck_count', 'notes']) {
+      for (const key of ['end_client_name', 'event_number', 'location_notes', 'volume_m', 'truck_count', 'payment_terms', 'notes']) {
         if (!show(key) || ro(key)) delete payload[key]
       }
       // hidden sections are never sent, so the RPC leaves their tasks alone
@@ -915,6 +916,24 @@ export function EventFormModal({
                 </Field>
               )}
             </div>
+          )}
+
+          {/* תנאי התשלום מודפסים על הצעת המחיר (0169), ולכן הם שדה של
+              האירוע ולא משפט שנכתב בגוף המסמך בכל פעם מחדש. */}
+          {show('payment_terms') && (
+            <Field
+              label="תנאי תשלום"
+              required={req('payment_terms')}
+              error={err('payment_terms', form.payment_terms)}
+              hint="מודפס על הצעת המחיר ללקוח הקצה"
+            >
+              <Input
+                value={form.payment_terms}
+                onChange={(e) => set({ payment_terms: e.target.value })}
+                disabled={ro('payment_terms')}
+                placeholder="שוטף + 30"
+              />
+            </Field>
           )}
 
           {show('notes') && (

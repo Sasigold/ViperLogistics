@@ -200,6 +200,7 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
           suppliers: supplierNames,
           contact_name: contact?.contact_name ?? '',
           contact_phone: contact?.contact_phone ?? '',
+          payment_terms: String(e.payment_terms ?? ''),
           notes: String(e.notes ?? ''),
         }
       })

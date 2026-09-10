@@ -24,6 +24,8 @@ export interface Customer {
   commission_pct: number | null
   /** הסכום שאירוע צריך לעבור ממש כדי לזכות בעמלה. 0 = כל אירוע (0143) */
   commission_min_event: number
+  /** האם דף האירוע מציע הפקת הצעת מחיר ללקוח הקצה (0169) */
+  quote_enabled: boolean
   is_active: boolean
   deleted_at: string | null
 }
@@ -458,6 +460,8 @@ export interface EventRow {
   volume_m: number | null
   truck_count: number | null
   notes: string | null
+  /** מה שיודפס על הצעת המחיר תחת "תנאי תשלום" (0169) */
+  payment_terms: string | null
   status_id: string | null
   no_parking: boolean
   porterage: boolean
@@ -469,7 +473,7 @@ export interface EventRow {
   custom_fields: Record<string, CustomFieldValue>
   created_by: string | null
   deleted_at: string | null
-  customers?: { name: string; color: string; performed_by_enabled?: boolean }
+  customers?: { name: string; color: string; performed_by_enabled?: boolean; quote_enabled?: boolean }
   statuses?: { name: string; color: string } | null
 }
 
@@ -486,6 +490,7 @@ export type EventActivityKind =
   | 'customer_signed'
   | 'price_addon_added'
   | 'price_addon_removed'
+  | 'quote_sent'
 
 /**
  * A line of an event's activity log, as `event_activity_feed` returns it: a
@@ -528,6 +533,37 @@ export interface EventSpec {
   note: string | null
   uploaded_by: string | null
   uploader_name: string | null
+  created_at: string
+  deleted_at: string | null
+}
+
+/**
+ * הצעת מחיר שהופקה לאירוע ונשלחה ללקוח הקצה (0169).
+ *
+ * ‏`document_number` הוא צילום של `events.event_number` ואינו משתנה בין
+ * הגרסאות — הוא מה שמודפס על הנייר. ‏`version` הוא ההיסטוריה הפנימית,
+ * נקבע בשרת תחת נעילה פר-אירוע, ואינו מופיע במסמך. ‏`lines` הוא צילום של
+ * מה שהודפס: מחיר שישתנה מחר לא ישכתב הצעה שכבר יצאה.
+ */
+export interface EventQuote {
+  id: string
+  event_id: string
+  version: number
+  document_number: string
+  storage_path: string
+  file_name: string
+  size_bytes: number | null
+  lines: { kind: string; label: string; when_text: string; amount: number }[]
+  subtotal: number
+  vat_pct: number
+  vat_amount: number
+  total: number
+  payment_terms: string | null
+  notes: string | null
+  issued_by: string | null
+  issuer_name: string | null
+  /** ‏null = הופקה ולא נשלחה. הכתיבה חד-פעמית, ומדליקה את שורת היומן. */
+  sent_at: string | null
   created_at: string
   deleted_at: string | null
 }
@@ -1649,6 +1685,24 @@ export interface WorkerPaySettings {
   early_grace_minutes: number | null
   allow_clock_without_shift: boolean | null
   notes: string | null
+}
+
+/**
+ * ‏`app_settings['company.details']` — פרטי החברה שמודפסים בכותרת של הצעת
+ * המחיר (0169), ושיעור המע״מ שמופיע בה כשורה נפרדת.
+ *
+ * הם יושבים בהגדרות ולא בקוד מסיבה אחת: מספר טלפון או שיעור מע״מ שמשתנים
+ * אינם אמורים לדרוש פריסה. ‏`logo_path` מצביע לדלי `company-assets`.
+ */
+export interface CompanyDetails {
+  name: string
+  tax_id: string
+  phone: string
+  email: string
+  logo_path: string | null
+  vat_pct: number
+  /** ההתחלה של שורת החתימה; התאריך והשעה נוספים אליה בזמן ההפקה */
+  quote_footer: string
 }
 
 export interface OvertimeTier {

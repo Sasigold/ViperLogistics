@@ -57,6 +57,7 @@ export const EVENT_COLUMNS: SheetColumn[] = [
   { key: 'suppliers', header: 'ספקים (מופרדים בפסיק)', width: 26 },
   { key: 'contact_name', header: 'איש קשר', width: 18 },
   { key: 'contact_phone', header: 'טלפון איש קשר', width: 16 },
+  { key: 'payment_terms', header: 'תנאי תשלום', width: 18 },
   { key: 'notes', header: 'הערות', width: 30 },
 ]
 

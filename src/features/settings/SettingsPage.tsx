@@ -4,6 +4,7 @@ import {
   Banknote,
   Bell,
   Boxes,
+  Building2,
   ClipboardList,
   Clock,
   FileText,
@@ -49,6 +50,7 @@ import { RolesTab } from '../permissions/RolesTab'
 import { PricingZonesEditor } from '../pricing/PricingZonesEditor'
 import { OvertimeSettingsTab } from '../attendance/OvertimeSettingsTab'
 import { FinanceSettingsTab } from './FinanceSettingsTab'
+import { CompanyTab } from './CompanyTab'
 import { NotificationsAdminTab } from '../notifications/NotificationsAdminTab'
 import { errorMessage } from '../../lib/errors'
 
@@ -77,6 +79,7 @@ const TABS = [
     alt: PERM.ATTENDANCE_MANAGE_WAREHOUSES,
   },
   { key: 'finance', label: 'כספים', icon: <Banknote size={ICON.sm} />, perm: PERM.SETTINGS_EDIT },
+  { key: 'company', label: 'פרטי החברה', icon: <Building2 size={ICON.sm} />, perm: PERM.SETTINGS_EDIT },
   { key: 'attendance', label: 'נוכחות ושעות נוספות', icon: <Clock size={ICON.sm} />, perm: PERM.ATTENDANCE_SETTINGS },
   { key: 'notifications', label: 'התראות', icon: <Bell size={ICON.sm} />, perm: PERM.NOTIFICATIONS_MANAGE },
   { key: 'roles', label: 'הרשאות ותפקידים', icon: <Shield size={ICON.sm} />, perm: PERM.SETTINGS_PERMISSIONS },
@@ -104,6 +107,7 @@ export default function SettingsPage() {
         {/* customerId=null — האזורים שחלים על כל הלקוחות שאין להם אזור משלהם */}
         {active === 'zones' && <PricingZonesEditor customerId={null} />}
         {active === 'finance' && <FinanceSettingsTab />}
+        {active === 'company' && <CompanyTab />}
         {active === 'attendance' && <OvertimeSettingsTab />}
         {active === 'notifications' && <NotificationsAdminTab />}
         {active === 'roles' && <RolesTab />}
