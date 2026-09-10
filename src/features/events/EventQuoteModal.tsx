@@ -15,16 +15,25 @@ import { fmtDateTime } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 import { downloadBlob } from '../reports/download'
 import { useCompanyDetails, fetchCompanyLogo } from '../settings/companyQueries'
-import type { EventPriceAddon, EventQuote, EventRow, WorkBoardRow } from '../../types/domain'
+import type { EventPriceAddon, EventQuote, EventRow, FormField, WorkBoardRow } from '../../types/domain'
 import {
+  PAYMENT_TERMS_LABEL,
   buildQuoteLines,
+  findPaymentTermsField,
   quoteFileName,
   quoteFixedNote,
   quoteTotals,
   quoteWhatsAppText,
   toWhatsAppNumber,
 } from './quote'
-import { useEventQuotes, useIssueQuote, useMarkQuoteSent, useQuoteSignedUrl } from './quoteQueries'
+import { formatCustomValue } from './CustomFieldInput'
+import {
+  downloadQuote,
+  useEventQuotes,
+  useIssueQuote,
+  useMarkQuoteSent,
+  useQuoteSignedUrl,
+} from './quoteQueries'
 
 /**
  * הפקת הצעת מחיר ללקוח הקצה ושליחתה (0170).
@@ -47,6 +56,7 @@ export function EventQuoteModal({
   contact,
   tasks,
   addons,
+  customFields,
 }: {
   open: boolean
   onClose: () => void
@@ -55,12 +65,24 @@ export function EventQuoteModal({
   contact: { contact_name: string | null; contact_phone: string | null } | null
   tasks: WorkBoardRow[]
   addons: EventPriceAddon[]
+  /** השדות המותאמים של הלקוח — מהם נלקחים תנאי התשלום (0171) */
+  customFields: FormField[]
 }) {
   const toast = useToast()
   const { company } = useCompanyDetails()
   const { data: history = [] } = useEventQuotes(event.id, open)
   const issue = useIssueQuote(event.id)
   const markSent = useMarkQuoteSent(event.id)
+
+  /**
+   * תנאי התשלום מגיעים מהשדה המותאם של הלקוח ולא משדה מערכת (0171).
+   * ‏`formatCustomValue` היא אותה פונקציה שמציירת את הערך בדף האירוע, ולכן
+   * מה שמודפס על המסמך הוא בדיוק מה שרואים על המסך.
+   */
+  const termsField = useMemo(() => findPaymentTermsField(customFields), [customFields])
+  const paymentTerms = termsField
+    ? formatCustomValue(termsField, event.custom_fields?.[termsField.field_key]) || null
+    : null
 
   const allLines = useMemo(() => buildQuoteLines(tasks, addons), [tasks, addons])
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
@@ -112,7 +134,7 @@ export function EventQuoteModal({
         vatPct: company.vat_pct,
         fixedNote: quoteFixedNote(documentNumber, customerName, issuedAt),
         notes: notes.trim() || null,
-        paymentTerms: event.payment_terms,
+        paymentTerms,
       })
       const fileName = quoteFileName(documentNumber)
       const quote = await issue.mutateAsync({
@@ -122,7 +144,7 @@ export function EventQuoteModal({
         lines,
         totals,
         vatPct: company.vat_pct,
-        paymentTerms: event.payment_terms,
+        paymentTerms,
         notes: notes.trim() || null,
       })
       setIssued({
@@ -281,7 +303,11 @@ export function EventQuoteModal({
             />
           </Field>
           <p className="type-caption text-ink-tertiary">
-            תנאי תשלום: {event.payment_terms || 'לא הוזנו באירוע'}
+            תנאי תשלום:{' '}
+            {paymentTerms ??
+              (termsField
+                ? 'לא נבחרו באירוע'
+                : `אין ללקוח שדה בשם "${PAYMENT_TERMS_LABEL}"`)}
           </p>
         </section>
 
@@ -301,6 +327,7 @@ export function EventQuoteModal({
 }
 
 function QuoteHistoryRow({ quote }: { quote: EventQuote }) {
+  const toast = useToast()
   const { data: url } = useQuoteSignedUrl(quote)
   return (
     <li className="flex flex-wrap items-center gap-2 px-3 py-2">
@@ -326,6 +353,15 @@ function QuoteHistoryRow({ quote }: { quote: EventQuote }) {
           פתיחה
         </a>
       )}
+      <button
+        type="button"
+        className="type-caption text-accent underline"
+        onClick={() => {
+          void downloadQuote(quote).catch((e) => toast.error(errorMessage(e)))
+        }}
+      >
+        הורדה
+      </button>
     </li>
   )
 }

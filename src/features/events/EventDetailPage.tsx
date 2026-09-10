@@ -613,9 +613,6 @@ export default function EventDetailPage() {
         ] as [string, React.ReactNode][])
       : []),
     ...sectionRows,
-    ...(show('payment_terms')
-      ? ([['תנאי תשלום', event.payment_terms]] as [string, React.ReactNode][])
-      : []),
     ...(show('notes') ? ([['הערות', event.notes]] as [string, React.ReactNode][]) : []),
     /* the customer's own fields, under the same rule as everything above */
     ...(customFields
@@ -1227,6 +1224,7 @@ export default function EventDetailPage() {
           contact={contact}
           tasks={tasks}
           addons={priceAddons}
+          customFields={customFields}
         />
       )}
       <EventSpecsModal

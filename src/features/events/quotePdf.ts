@@ -283,10 +283,19 @@ export async function generateQuotePdf(doc: QuoteDocModel): Promise<Uint8Array<A
     ['תאריך אירוע', isoToHe(doc.eventDate)],
     ['מיקום אירוע', doc.eventLocation || '—'],
   ] as const
+  // ההיסט נמדד ואינו מספר קסם: תווית עברית מיושרת לימין גדלה **שמאלה**,
+  // כלומר לתוך עמודת הערך, ומספר קבוע היה מחזיק עד לתווית הראשונה שתחרוג
+  // ממנו. הרוחב נלקח מהתווית הרחבה מבין השתיים, ועוד רווח.
+  const metaLabelX = Math.max(...meta.map(([l]) => measure(`${l}:`, 9.5))) + 10
   for (const [label, value] of meta) {
     right(`${label}:`, PAGE_W - M, y, { size: 9.5, color: MUTED })
-    right(value, PAGE_W - M - 74, y, { size: 9.5 })
-    y -= 15
+    // והערך נגלש: `location_text` הוא טקסט חופשי, ובלי גלישה כתובת ארוכה
+    // רצה מעבר לשוליים השמאליים בלי שדבר יעצור אותה.
+    for (const w of wrapLogical(value, PAGE_W - 2 * M - metaLabelX, 9.5, widthOf)) {
+      right(w, PAGE_W - M - metaLabelX, y, { size: 9.5 })
+      y -= 14
+    }
+    y -= 1
   }
 
   y -= 12
@@ -341,8 +350,12 @@ export async function generateQuotePdf(doc: QuoteDocModel): Promise<Uint8Array<A
     if (line.whenText) right(line.whenText, COL_WHEN_RIGHT, y, { size: 9.5, color: MUTED })
     right(money(line.amount), COL_AMOUNT_RIGHT, y, { size: 10, bold: !isAddon })
 
+    // ‏y כאן הוא כבר קו הבסיס של השורה **הבאה**, ולכן הקו נמדד ממנה כלפי
+    // מעלה. ‏4pt היו נופלים בתוך הגליפים שלה (‏Heebo בגודל 10 עולה כ-7.5pt
+    // מעל קו הבסיס) והקו היה מוחק את השורה שאחריו. ‎12 מציב אותו במרווח,
+    // בדיוק כמו `rule(y + 14)` בבלוק הסיכום שלמטה בגודל 11.
     y = ly - 7
-    rule(y + 4)
+    rule(y + 12)
   }
 
   // ===== הסיכום =====

@@ -64,25 +64,43 @@ select t_eq('פרטי החברה נזרעו עם ח.פ',
 select t_eq('ואחוז המע״מ יושב לצדם',
   (select (value ->> 'vat_pct')::numeric from app_settings where key = 'company.details'), 18::numeric);
 
-\echo '--- 2. תנאי תשלום הם שדה של האירוע ---'
+\echo '--- 2. תנאי תשלום הם שדה של הלקוח, לא של המערכת (0171) ---'
+-- ‏0170 הוסיפה שדה מערכת בשם הזה, ו-0171 הסירה אותו: לכל לקוח יש שדה
+-- מותאם משלו, והמסמך קורא ממנו. שלוש הבדיקות כאן הן שהנסיגה שלמה.
+select t_eq('אין עמודה `payment_terms` על אירוע',
+  (select count(*)::int from information_schema.columns
+    where table_schema = 'public' and table_name = 'events' and column_name = 'payment_terms'), 0);
+select t_eq('וגם לא בתצוגה המאובטחת',
+  (select count(*)::int from information_schema.columns
+    where table_schema = 'public' and table_name = 'events_secure' and column_name = 'payment_terms'), 0);
+select t_eq('ואין שדה מערכת כזה בקטלוג הטפסים',
+  (select count(*)::int from form_fields where field_key = 'payment_terms'), 0);
+select t_eq('ולא במרשם השדות',
+  (select count(*)::int from field_registry where entity = 'event' and field_key = 'payment_terms'), 0);
+
+-- והצילום על ההצעה נשאר: הוא מה שהודפס, ואינו מצביע לשום מקום.
+select t_eq('העמודה על ההצעה כן נשארה',
+  (select count(*)::int from information_schema.columns
+    where table_schema = 'public' and table_name = 'event_quotes' and column_name = 'payment_terms'), 1);
+
+-- שדה מותאם של לקוח, בדיוק כמו זה שקיסר מחזיקה בייצור.
+insert into form_fields (field_key, label_he, customer_id, field_type, options, sort_order)
+values ('custom_terms046a', 'תנאי תשלום', '10000000-0000-0000-0000-00000000046a',
+        'select', '["תאריך הארוע","שוטף + 30"]'::jsonb, 1000);
+
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000046a1', false);
-select t_eq('העדכון כותב את תנאי התשלום',
-  (select payment_terms from t_updated_event('30000000-0000-0000-0000-00000000046a',
-     '{"payment_terms":"שוטף + 30"}'::jsonb)), 'שוטף + 30');
-select t_eq('ויצירה נושאת אותם מלכתחילה',
-  (select payment_terms from t_created_event(jsonb_build_object(
-     'customer_id', '10000000-0000-0000-0000-00000000046a',
-     'event_date', (current_date + 631)::text,
-     'end_client_name', 'אירוע נוסף 46',
-     'payment_terms', 'מזומן במעמד האירוע'))), 'מזומן במעמד האירוע');
+select t_eq('הערך נשמר בשדה המותאם של הלקוח',
+  (select custom_fields ->> 'custom_terms046a'
+     from t_updated_event('30000000-0000-0000-0000-00000000046a',
+       '{"custom_terms046a":"שוטף + 30"}'::jsonb)), 'שוטף + 30');
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
-select t_eq('והיומן רשם אותם כשינוי בשמם',
+select t_eq('והיומן רשם אותו בשם שהלקוח נתן לשדה',
   (select count(*)::int from event_activity
     where event_id = '30000000-0000-0000-0000-00000000046a'
-      and kind = 'changed' and field_key = 'payment_terms'
+      and kind = 'changed' and field_key = 'custom_terms046a'
       and field_label = 'תנאי תשלום' and new_value = 'שוטף + 30'), 1);
 
 \echo '--- 3. הרשאות: מי מפיק ומי אפילו לא רואה ---'

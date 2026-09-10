@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildQuoteLines,
+  findPaymentTermsField,
   quoteFileName,
   quoteFixedNote,
   quoteFooterText,
@@ -10,7 +11,7 @@ import {
   taskWhenText,
   toWhatsAppNumber,
 } from './quote'
-import type { EventPriceAddon, WorkBoardRow } from '../../types/domain'
+import type { EventPriceAddon, FormField, WorkBoardRow } from '../../types/domain'
 
 function task(over: Partial<WorkBoardRow> & { id: string }): WorkBoardRow {
   return {
@@ -112,6 +113,46 @@ describe('quoteTotals', () => {
   it('אחוז אפס אינו מוסיף שורת מע״מ', () => {
     const lines = buildQuoteLines([task({ id: 't1', customer_price: 500 })], [])
     expect(quoteTotals(lines, 0)).toEqual({ subtotal: 500, vatAmount: 0, total: 500 })
+  })
+})
+
+function field(over: Partial<FormField> & { field_key: string }): FormField {
+  return {
+    label_he: 'תנאי תשלום',
+    sort_order: 1000,
+    customer_id: 'cust-1',
+    field_type: 'select',
+    options: [],
+    deleted_at: null,
+    ...over,
+  } as FormField
+}
+
+describe('findPaymentTermsField', () => {
+  it('מוצא את השדה לפי התווית שהלקוח נתן לו', () => {
+    const f = field({ field_key: 'custom_abc' })
+    expect(findPaymentTermsField([field({ field_key: 'custom_x', label_he: 'מחיר ריהוט' }), f])).toBe(f)
+  })
+
+  it('מתעלם מרווחים בקצוות התווית', () => {
+    const f = field({ field_key: 'custom_abc', label_he: '  תנאי תשלום  ' })
+    expect(findPaymentTermsField([f])).toBe(f)
+  })
+
+  it('אינו בוחר שדה מערכת, גם אם התווית זהה', () => {
+    // ‏0171: שדה מערכת בשם הזה הוא בדיוק מה שהוסר. אם יחזור, אין לקרוא ממנו.
+    expect(findPaymentTermsField([field({ field_key: 'payment_terms', customer_id: null })])).toBeNull()
+  })
+
+  it('אינו בוחר שדה שנמחק', () => {
+    expect(
+      findPaymentTermsField([field({ field_key: 'custom_abc', deleted_at: '2026-01-01T00:00:00Z' })]),
+    ).toBeNull()
+  })
+
+  it('מחזיר null כשללקוח אין שדה כזה', () => {
+    expect(findPaymentTermsField([field({ field_key: 'custom_x', label_he: 'מי גובה' })])).toBeNull()
+    expect(findPaymentTermsField([])).toBeNull()
   })
 })
 

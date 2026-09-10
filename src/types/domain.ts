@@ -460,8 +460,6 @@ export interface EventRow {
   volume_m: number | null
   truck_count: number | null
   notes: string | null
-  /** מה שיודפס על הצעת המחיר תחת "תנאי תשלום" (0170) */
-  payment_terms: string | null
   status_id: string | null
   no_parking: boolean
   porterage: boolean

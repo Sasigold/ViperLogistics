@@ -12,6 +12,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { downloadBlob } from '../reports/download'
 import type { EventQuote } from '../../types/domain'
 import type { QuoteLine, QuoteTotals } from './quote'
 import { quoteStoragePath } from './quote'
@@ -38,6 +39,14 @@ export function useEventQuotes(eventId: string, enabled = true) {
   })
 }
 
+/**
+ * כתובת חתומה **לצפייה**, בלי `download`.
+ *
+ * זו אינה קמצנות: האפשרות `download` הופכת לכותרת `Content-Disposition`,
+ * וכותרות HTTP הן ISO-8859-1 (‏RFC 7230). שם קובץ עברי שנשלח בה נקרא בדפדפן
+ * כלטינית-1 ונוחת על הדיסק כג׳יבריש. השם נקבע במקום זאת בדפדפן — ראו
+ * `downloadQuote` למטה.
+ */
 export function useQuoteSignedUrl(quote: EventQuote | null | undefined) {
   return useQuery({
     queryKey: ['event_quote_url', quote?.id],
@@ -48,11 +57,24 @@ export function useQuoteSignedUrl(quote: EventQuote | null | undefined) {
       if (!quote) return null
       const { data, error } = await supabase.storage
         .from(QUOTE_BUCKET)
-        .createSignedUrl(quote.storage_path, SIGNED_URL_TTL_SECONDS, { download: quote.file_name })
+        .createSignedUrl(quote.storage_path, SIGNED_URL_TTL_SECONDS)
       if (error) throw error
       return data.signedUrl
     },
   })
+}
+
+/**
+ * הורדה ששומרת את השם העברי.
+ *
+ * הקובץ נמשך כ-Blob ונשמר דרך `a.download`, שהיא מחרוזת JS ואינה עוברת שום
+ * קידוד — בדיוק כמו שהלוגו נמשך ב-`fetchCompanyLogo`. זו הדרך היחידה לשמור
+ * שם עברי תקין, כי את כותרת ה-HTTP איננו כותבים.
+ */
+export async function downloadQuote(quote: EventQuote): Promise<void> {
+  const { data, error } = await supabase.storage.from(QUOTE_BUCKET).download(quote.storage_path)
+  if (error || !data) throw error ?? new Error('הקובץ לא נמצא')
+  downloadBlob(data, quote.file_name)
 }
 
 function invalidateQuotes(qc: QueryClient, eventId: string) {

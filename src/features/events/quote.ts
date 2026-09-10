@@ -9,7 +9,7 @@
  * שדף האירוע כבר החזיק — משימות, תוספות מחיר, פרטי החברה — למודל שורות
  * וסכומים, וזה מה שנבדק ב-`quote.test.ts`. הציור יושב ב-`quotePdf.ts`.
  */
-import type { CompanyDetails, EventPriceAddon, WorkBoardRow } from '../../types/domain'
+import type { CompanyDetails, EventPriceAddon, FormField, WorkBoardRow } from '../../types/domain'
 
 /** שורה במסמך: משימה, או תוספת מחיר שיושבת עליה. */
 export interface QuoteLine {
@@ -165,6 +165,36 @@ export function toWhatsAppNumber(phone: string | null | undefined): string | nul
   // אחר אינו מספר טלפון ישראלי.
   if (!/^[2-9]\d{7,8}$/.test(local)) return null
   return `972${local}`
+}
+
+/**
+ * התווית שלפיה נמצא שדה תנאי התשלום של הלקוח.
+ *
+ * לכל לקוח יש שדות מותאמים משלו (0053), ולקיסר יש בהם בורר עם הערכים
+ * "תאריך הארוע", "שוטף + 30" וכו׳. זה מה שהמסמך צריך, ולא שדה מערכת נוסף
+ * שהיה מופיע אצל כל לקוח במערכת.
+ */
+export const PAYMENT_TERMS_LABEL = 'תנאי תשלום'
+
+/**
+ * שדה תנאי התשלום של הלקוח, לפי התווית שהוא נתן לו.
+ *
+ * **לפי התווית ולא לפי המפתח**: ‏`field_key` נוצר בשרת כ-`custom_<uuid>`
+ * (‏0053:506), כלומר הוא שונה אצל כל לקוח, וקיבועו בקוד היה הופך את המסמך
+ * לשל קיסר בלבד. התווית, לעומת זאת, היא מה שהמנהל הקליד — ויש עליה אינדקס
+ * ייחודי פר-לקוח (‏0053:41), ולכן "השדה שנקרא כך אצל הלקוח הזה" הוא ביטוי
+ * חד-משמעי. זה גם מה שגורם לזה לעבוד לארקו, שיש לה שדה באותה תווית, בלי
+ * שורת קוד נוספת.
+ *
+ * שדה מערכת (‏`customer_id === null`) אינו נבחר: הוא של כולם, וזו בדיוק
+ * ההכרעה שנסוגה ב-0171.
+ */
+export function findPaymentTermsField(fields: FormField[]): FormField | null {
+  return (
+    fields.find(
+      (f) => f.customer_id !== null && !f.deleted_at && f.label_he.trim() === PAYMENT_TERMS_LABEL,
+    ) ?? null
+  )
 }
 
 /** ההודעה שנפתחת בוואטסאפ לצד הקובץ. */
