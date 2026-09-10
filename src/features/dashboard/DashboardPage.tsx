@@ -10,17 +10,8 @@ import {
   useConfirm,
   useToast,
 } from '../../components/ui'
-import {
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  ICON,
-  LayoutGrid,
-  RefreshCw,
-  STROKE,
-  SlidersHorizontal,
-} from '../../components/ui/icons'
-import { fmtDate, fmtMonth, toISODate } from '../../lib/dates'
+import { Download, ICON, LayoutGrid, RefreshCw, STROKE, SlidersHorizontal } from '../../components/ui/icons'
+import { fmtDate, toISODate } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 import { PERM } from '../../lib/permissions'
 import { lazyPage } from '../../lib/lazyPage'
@@ -32,6 +23,7 @@ import { DashboardProvider } from './dashboardContext'
 import { RANGE_PRESETS, defaultRange, isWholeMonth, monthRange, previousRange, stepMonth } from './dashboardRange'
 import type { DateRange } from './dashboardRange'
 import { DashboardGrid } from './DashboardGrid'
+import { MonthStepper } from './MonthStepper'
 import { CustomizeDrawer } from './CustomizeDrawer'
 import { SavedViewsMenu } from './SavedViewsMenu'
 import { ViewSettingsMenu } from './ViewSettingsMenu'
@@ -110,7 +102,7 @@ export default function DashboardPage() {
    * הכיוון הוא של RTL, כמו בכל בורר חודש אחר במערכת (דוח הנוכחות, הקבלה,
    * הפורטל): ימין הוא אחורה.
    */
-  const monthLabel = useMemo(() => fmtMonth(new Date(range.from)), [range.from])
+  const monthShown = useMemo(() => new Date(range.from), [range.from])
   const onThisMonth = isWholeMonth(range) && range.from === defaultRange().from
   const custom = layout.customWidgets
   /* The catalogue is only needed by the builder, so it is fetched by the page
@@ -302,35 +294,12 @@ export default function DashboardPage() {
               {/* לפני הפריסטים ולפני שדות התאריך, כי הוא הפקד היחיד שיש למי
                   שאין לו `dashboard.change_range` — ומסך שהתנועה שלו קבורה
                   בסוף שורה הוא מסך שאיש לא ימצא בו את התנועה. */}
-              <div className="flex shrink-0 items-center gap-0.5">
-                <IconButton
-                  size="sm"
-                  variant="ghost"
-                  label="חודש קודם"
-                  onClick={() => setRange((r) => stepMonth(r, -1))}
-                >
-                  <ChevronRight size={ICON.md} strokeWidth={STROKE} aria-hidden />
-                </IconButton>
-                {/* הכותרת היא גם הדרך חזרה, כמו בבורר החודש של לו״ז העבודה
-                    ושל הפורטל: לחיצה עליה מחזירה לחודש הנוכחי. */}
-                <button
-                  type="button"
-                  onClick={() => setRange(monthRange(new Date()))}
-                  title="חזרה לחודש הנוכחי"
-                  disabled={onThisMonth}
-                  className="min-w-28 rounded-md px-2 py-1 text-center type-caption font-medium text-ink transition-colors hover:bg-hover disabled:cursor-default disabled:hover:bg-transparent"
-                >
-                  {monthLabel}
-                </button>
-                <IconButton
-                  size="sm"
-                  variant="ghost"
-                  label="חודש הבא"
-                  onClick={() => setRange((r) => stepMonth(r, 1))}
-                >
-                  <ChevronLeft size={ICON.md} strokeWidth={STROKE} aria-hidden />
-                </IconButton>
-              </div>
+              <MonthStepper
+                month={monthShown}
+                onStep={(d) => setRange((r) => stepMonth(r, d))}
+                onToday={() => setRange(monthRange(new Date()))}
+                atToday={onThisMonth}
+              />
               {canChangeRange && (
                 <>
                   <div className="scroll-row gap-1">
