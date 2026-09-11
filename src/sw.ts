@@ -49,10 +49,16 @@ cleanupOutdatedCaches()
 
 precacheAndRoute(self.__WB_MANIFEST)
 
-// SPA: כל ניווט מוגש מ-index.html. הרשימה השחורה היא הנתיבים שאינם מסכים.
+/*
+ * SPA: כל ניווט מוגש מ-index.html. הרשימה השחורה היא הנתיבים שאינם מסכים.
+ *
+ * ‏`/employee-guide/` הוא עמוד סטטי ולא מסך (ראו public/): בלי השורה הזו כל
+ * מי שהתקין את האפליקציה היה מקבל את ה-shell שלה במקום המדריך — והקישור
+ * נשלח דווקא לעובדים, שהם מי שהתקין.
+ */
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL('index.html'), {
-    denylist: [/^\/functions\//, /^\/rest\//, /^\/auth\//, /^\/storage\//],
+    denylist: [/^\/functions\//, /^\/rest\//, /^\/auth\//, /^\/storage\//, /^\/employee-guide\//],
   }),
 )
 

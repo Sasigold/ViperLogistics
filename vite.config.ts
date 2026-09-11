@@ -64,6 +64,10 @@ export default defineConfig({
         // נטענים ב-fetch בזמן ההפקה, ובלי precache הפקה על רשת חלשה נתקעת
         // על 88KB שכבר ישבו על המכשיר.
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2,ttf}'],
+        /* מדריך העובד הוא עמוד סטטי שנשלח בקישור, ולא חלק מהאפליקציה: שני
+           מגה של צילומי מסך שהיו נכנסים ל-precache הם התקנה כפולה בנפח לכל
+           מי שמתקין, בשביל דף שנפתח פעם אחת. */
+        globIgnores: ['**/employee-guide/**'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       devOptions: { enabled: false, type: 'module' },
