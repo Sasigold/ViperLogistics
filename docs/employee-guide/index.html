@@ -1,0 +1,816 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="מדריך מסכי הנוכחות לעובד ViperLogistics — שעון נוכחות, הלו״ז והדוח החודשי.">
+<meta name="robots" content="noindex">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>מדריך הנוכחות לעובד</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700;900&family=Heebo:wght@400;500;700;800&display=swap">
+<style>
+  :root {
+    --ground: #f2f5fb;
+    --surface: #ffffff;
+    --surface-2: #f7f9fe;
+    --ink: #0e1626;
+    --ink-2: #48536a;
+    --ink-3: #75809a;
+    --line: #dce2ef;
+    --line-soft: #e9edf6;
+    --accent: #3563f0;
+    --accent-soft: #e7ecfe;
+    --accent-ink: #1d3fad;
+    --ok: #15803d;
+    --ok-soft: #e6f5ec;
+    --warn: #8f5405;
+    --warn-soft: #fdf2e0;
+    --stop: #b42318;
+    --stop-soft: #fdecea;
+    --shadow: 0 1px 2px rgba(14, 22, 38, .05), 0 8px 24px -16px rgba(14, 22, 38, .18);
+    --serif: "Frank Ruhl Libre", "David Libre", "Times New Roman", Georgia, serif;
+    --sans: "Heebo", "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0a1019;
+      --surface: #121a27;
+      --surface-2: #18212f;
+      --ink: #e9eef8;
+      --ink-2: #a6b1c6;
+      --ink-3: #7a8499;
+      --line: #27313f;
+      --line-soft: #1e2734;
+      --accent: #8aa5ff;
+      --accent-soft: #1b2540;
+      --accent-ink: #b5c6ff;
+      --ok: #5cc98a;
+      --ok-soft: #13291d;
+      --warn: #e5a952;
+      --warn-soft: #2c2114;
+      --stop: #f08076;
+      --stop-soft: #2c1715;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 28px -18px rgba(0, 0, 0, .8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0a1019;
+    --surface: #121a27;
+    --surface-2: #18212f;
+    --ink: #e9eef8;
+    --ink-2: #a6b1c6;
+    --ink-3: #7a8499;
+    --line: #27313f;
+    --line-soft: #1e2734;
+    --accent: #8aa5ff;
+    --accent-soft: #1b2540;
+    --accent-ink: #b5c6ff;
+    --ok: #5cc98a;
+    --ok-soft: #13291d;
+    --warn: #e5a952;
+    --warn-soft: #2c2114;
+    --stop: #f08076;
+    --stop-soft: #2c1715;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 28px -18px rgba(0, 0, 0, .8);
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.65;
+    direction: rtl;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 0 72px;
+  }
+
+  /* ---------- כותרת ---------- */
+  .masthead {
+    padding-block: 48px 32px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 40px;
+  }
+  .eyebrow {
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    color: var(--accent-ink);
+    text-transform: uppercase;
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 900;
+    font-size: clamp(2.1rem, 6vw, 3.1rem);
+    line-height: 1.1;
+    letter-spacing: -.01em;
+    margin: 0 0 16px;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: clamp(1.02rem, 2.4vw, 1.16rem);
+    color: var(--ink-2);
+    max-width: 60ch;
+    margin: 0;
+  }
+
+  .notice {
+    margin-top: 26px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-inline-start: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 14px 16px;
+    font-size: 14.5px;
+    color: var(--ink-2);
+    max-width: 72ch;
+  }
+  .notice b { color: var(--ink); }
+
+  /* ---------- סקשנים ---------- */
+  section { margin-bottom: 64px; scroll-margin-top: 20px; }
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 8px;
+  }
+  .sec-num {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 1.5rem;
+    color: var(--accent);
+    line-height: 1;
+    flex: none;
+    font-variant-numeric: tabular-nums;
+  }
+  h2 {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: clamp(1.5rem, 4vw, 2rem);
+    line-height: 1.2;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .sec-lede {
+    color: var(--ink-2);
+    max-width: 64ch;
+    margin: 0 0 28px;
+  }
+  h3 {
+    font-family: var(--sans);
+    font-weight: 800;
+    font-size: 1.08rem;
+    margin: 0 0 10px;
+    color: var(--ink);
+  }
+  p { margin: 0 0 14px; max-width: 64ch; }
+  p:last-child { margin-bottom: 0; }
+
+  /* ---------- שורת מסך: צילום + הסבר ---------- */
+  .screen {
+    display: grid;
+    grid-template-columns: 288px minmax(0, 1fr);
+    gap: 40px;
+    align-items: center;
+    padding-block: 26px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .screen:first-of-type { border-top: none; padding-top: 4px; }
+  .screen > figure { margin: 0; }
+  .shot {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  .shot.dialog { border-radius: 10px; }
+  figcaption {
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: var(--ink-3);
+    text-align: center;
+  }
+  @media (max-width: 860px) {
+    .screen { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+    .screen > figure { max-width: 320px; margin-inline: auto; }
+  }
+
+  /* ---------- רשימות ---------- */
+  ul.notes, ol.notes { margin: 0 0 14px; padding-inline-start: 0; list-style: none; }
+  ul.notes li, ol.notes li {
+    position: relative;
+    padding-inline-start: 20px;
+    margin-bottom: 9px;
+    max-width: 64ch;
+  }
+  ul.notes li::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: 4px;
+    top: .68em;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  ol.notes { counter-reset: step; }
+  ol.notes li { padding-inline-start: 30px; }
+  ol.notes li::before {
+    counter-increment: step;
+    content: counter(step);
+    position: absolute;
+    inset-inline-start: 0;
+    top: .1em;
+    width: 21px; height: 21px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-size: 12px;
+    font-weight: 700;
+    display: grid;
+    place-items: center;
+    font-variant-numeric: tabular-nums;
+  }
+  li b { color: var(--ink); }
+
+  /* ---------- טבלאות ---------- */
+  .table-scroll { overflow-x: auto; margin-bottom: 14px; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 420px;
+    font-size: 14.5px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  caption {
+    caption-side: top;
+    text-align: start;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-bottom: 8px;
+  }
+  th, td {
+    text-align: start;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+  th {
+    font-weight: 700;
+    color: var(--ink);
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    background: var(--surface-2);
+    border: 1px solid var(--line-soft);
+    border-radius: 4px;
+    padding: 1px 5px;
+    direction: ltr;
+    display: inline-block;
+  }
+
+  /* ---------- צ׳יפים של סטטוס ---------- */
+  .chips {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .chip-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+  .tag {
+    flex: none;
+    font-size: 12.5px;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 2px 10px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .t-warn { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+  .t-stop { background: var(--stop-soft); color: var(--stop); border-color: color-mix(in srgb, var(--stop) 30%, transparent); }
+  .t-ok   { background: var(--ok-soft); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
+  .t-flat { background: var(--surface-2); color: var(--ink-2); border-color: var(--line); }
+  .t-mony { background: var(--ok-soft); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, transparent); font-variant-numeric: tabular-nums; }
+
+  /* ---------- קריאה מודגשת ---------- */
+  .callout {
+    background: var(--warn-soft);
+    border: 1px solid color-mix(in srgb, var(--warn) 28%, transparent);
+    border-radius: 8px;
+    padding: 15px 17px;
+    margin: 4px 0 16px;
+    max-width: 68ch;
+  }
+  .callout p { margin: 0; max-width: none; color: var(--ink); font-size: 15px; }
+  .callout .lbl {
+    display: block;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--warn);
+    margin-bottom: 5px;
+  }
+
+  /* ---------- שאלות ---------- */
+  .qa {
+    display: grid;
+    gap: 2px;
+    background: var(--line-soft);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .qa > div { background: var(--surface); padding: 16px 18px; }
+  .qa dt {
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 5px;
+  }
+  .qa dd { margin: 0; color: var(--ink-2); font-size: 15px; }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding-top: 22px;
+    font-size: 13.5px;
+    color: var(--ink-3);
+  }
+  footer p { max-width: 70ch; }
+</style>
+</head>
+<body>
+
+<div class="wrap" dir="rtl">
+
+  <header class="masthead">
+    <p class="eyebrow">ViperLogistics · נוכחות</p>
+    <h1>מדריך הנוכחות לעובד</h1>
+    <p class="standfirst">
+      שלושה מסכים מלווים כל יום עבודה: השעון שבו מחתימים כניסה ויציאה, הלו״ז
+      שאומר מתי ואיפה עובדים, והדוח שמסכם את החודש. המדריך עובר עליהם אחד־אחד,
+      ועל שני הנתיבים שצריך כשהשעון לא עבד.
+    </p>
+    <div class="notice">
+      <span aria-hidden="true">📱</span>
+      <span>
+        כל הצילומים כאן צולמו מהמערכת עצמה בטלפון. <b>הנתונים בהם הם נתוני
+        הדגמה</b> — עובד בשם "ישראל ישראלי", לקוחות ואירועים בדויים. במערכת שלכם
+        יופיעו השמות, המחסנים והשעות האמיתיים.
+      </span>
+    </div>
+  </header>
+
+  <!-- ============ איפה כל מסך ============ -->
+  <section id="nav">
+    <div class="sec-head"><h2>איפה מוצאים כל מסך</h2></div>
+    <p class="sec-lede">
+      בתחתית המסך בטלפון יש חמישה כפתורים. הרביעי מימין הוא השעון, והחמישי —
+      "עוד" — פותח את התפריט המלא, שבו הכול מרוכז תחת הכותרת "הנוכחות שלי".
+    </p>
+
+    <div class="screen">
+      <figure>
+        <img class="shot" src="01-menu.png" width="860" height="1864" alt="התפריט המלא נפתח מעל מסך השעון ומציג את הסקשן &quot;הנוכחות שלי&quot; עם ארבע רשומות: משמרות, שעון נוכחות, דוח הנוכחות שלי והתראות.">
+        <figcaption>התפריט המלא, נפתח מ״עוד״</figcaption>
+      </figure>
+      <div>
+        <div class="table-scroll">
+          <table>
+            <caption>ארבעת המסכים שלכם</caption>
+            <thead>
+              <tr><th>המסך</th><th>מה הוא עושה</th><th>כתובת</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><b>שעון נוכחות</b></td><td>החתמת כניסה ויציאה, ודיווחים על היום</td><td><code>/my/attendance</code></td></tr>
+              <tr><td><b>משמרות</b></td><td>הלו״ז השבועי — המשמרות המשובצות לכם</td><td><code>/my/schedule</code></td></tr>
+              <tr><td><b>דוח הנוכחות שלי</b></td><td>שעות, שעות נוספות ושכר, לפי חודש</td><td><code>/attendance</code></td></tr>
+              <tr><td><b>התראות</b></td><td>אילו הודעות תקבלו ובאיזה אופן</td><td><code>/my/notifications</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          המערכת עובדת בדפדפן וגם כאפליקציה מותקנת. אם התקנתם אותה למסך הבית,
+          היא נפתחת כאפליקציה רגילה — ושני המסכים הראשונים נטענים גם בלי קליטה,
+          מהעותק השמור במכשיר.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 1 · שעון ============ -->
+  <section id="clock">
+    <div class="sec-head"><span class="sec-num">1</span><h2>שעון נוכחות</h2></div>
+    <p class="sec-lede">
+      מסך אחד לכל יום העבודה: כפתור אחד גדול שמתחלף בין כניסה ליציאה, ומתחתיו
+      מה שהמערכת מצפה לו — שעות המשמרת, נקודת ההתחלה ודרישת המיקום.
+    </p>
+
+    <div class="screen">
+      <figure>
+        <img class="shot" src="02-clock-before.png" width="860" height="2728" alt="מסך השעון לפני החתמת כניסה: כפתור ירוק גדול &quot;כניסה&quot;, סטטוס &quot;מחוץ לעבודה&quot;, כרטיס סיכום היום ריק, שורת דרישת מיקום ושורת המשמרת המתוכננת 06:30–16:00 במחסן ראשון לציון.">
+        <figcaption>לפני החתמת כניסה</figcaption>
+      </figure>
+      <div>
+        <h3>לפני שלוחצים</h3>
+        <ul class="notes">
+          <li><b>משמרת מתוכננת</b> — השעות שהמערכת מצפה להן, ולידן נקודת ההתחלה: שם המחסן אם יוצאים מהמחסן, או "שטח" אם מגיעים ישר לאתר.</li>
+          <li><b>נדרש שיתוף מיקום להחתמה</b> — כשהשורה הזו מופיעה, ההחתמה תיכנס רק מתוך הרדיוס שמצוין בה. צריך לאשר לדפדפן גישה למיקום.</li>
+          <li><b>הוסף הערה להחתמה</b> — שדה חופשי ואופציונלי, נשמר על ההחתמה עצמה.</li>
+        </ul>
+        <p>
+          אם לאתר או למחסן לא הוגדרו קואורדינטות, אין מול מה לאמת — ואז המסך
+          אומר זאת במפורש, ואפשר להחתים מכל מקום לפי שעות המשמרת.
+        </p>
+      </div>
+    </div>
+
+    <div class="screen">
+      <figure>
+        <img class="shot" src="03-clock-open.png" width="860" height="3010" alt="מסך השעון במשמרת פתוחה: כפתור אדום &quot;יציאה&quot;, סטטוס &quot;נוכח בעבודה&quot;, וסיכום היום עם שעת כניסה 06:34 ומונה משך עבודה שרץ.">
+        <figcaption>במשמרת פתוחה</figcaption>
+      </figure>
+      <div>
+        <h3>במהלך המשמרת</h3>
+        <p>
+          אחרי הכניסה הכפתור מתחלף לאדום, הסטטוס הופך ל״נוכח בעבודה״,
+          ו״משך עבודה״ מתחיל לרוץ בזמן אמת.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <caption>כרטיס סיכום היום</caption>
+            <tbody>
+              <tr><th>שעת כניסה</th><td>ההחתמה הראשונה של היום</td></tr>
+              <tr><th>משך עבודה</th><td>מונה חי כל עוד המשמרת פתוחה; אחרי היציאה — סך השעות שנסגרו היום</td></tr>
+              <tr><th>שעת יציאה</th><td>היציאה האחרונה שנסגרה היום. <code>--:--</code> אומר שעדיין לא יצאתם</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>מול איזו נקודה נמדדים</h3>
+        <ul class="notes">
+          <li><b>בכניסה</b> — מול נקודת ההתחלה. מי שיוצא מהמחסן נמדד מול המחסן, מי שמגיע לאתר נמדד מול האתר.</li>
+          <li><b>ביציאה</b> — מול נקודת הסיום. מי שסיים בשטח נמדד מולו; מי שחוזר למחסן נמדד מול הקרוב מבין השניים.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="screen">
+      <figure>
+        <img class="shot" src="04-clock-punches.png" width="860" height="2040" alt="החלק התחתון של מסך השעון: כרטיס &quot;הדיווחים שלי&quot; עם דיווח בסטטוס ממתין לאישור, כרטיס &quot;בקשות תיקון שעות&quot;, קישור לדוח החודשי, ורשימת ההחתמות של היום עם משמרת פתוחה.">
+        <figcaption>החלק התחתון של המסך</figcaption>
+      </figure>
+      <div>
+        <h3>מה מחכה למטה</h3>
+        <ul class="notes">
+          <li><b>הדיווחים שלי</b> — משמרות שדיווחתם ידנית והסטטוס שלהן. דיווח שממתין לאישור אפשר לבטל בלחיצה על פח האשפה.</li>
+          <li><b>בקשות תיקון שעות</b> — מה שנשלח וטרם הוכרע. השעה הרשומה מופיעה במחיקה, והמבוקשת לידה.</li>
+          <li><b>דוח הנוכחות החודשי שלי</b> — קישור ישיר לדוח.</li>
+          <li><b>ההחתמות של היום</b> — נפתח בלחיצה. משמרת שלא נסגרה מסומנת "משמרת פתוחה", ולצד כל החתמה יש עיפרון לבקשת תיקון.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="screen">
+      <figure>
+        <img class="shot dialog" src="05-correction-modal.png" width="768" height="1144" alt="חלון &quot;בקשת תיקון שעות&quot;: השעה הרשומה כרגע, שדות כניסה ויציאה לעריכה, ושדה סיבה חובה.">
+        <figcaption>בקשת תיקון שעות</figcaption>
+      </figure>
+      <div>
+        <h3>כשהשעה שנרשמה אינה נכונה</h3>
+        <p>
+          הכפתור יושב ליד כל החתמה ברשימת ״ההחתמות של היום״, וגם על כל שורה
+          בדוח החודשי.
+        </p>
+        <ul class="notes">
+          <li><b>השעות אינן משתנות עד שמנהל מאשר.</b> בקשה שנדחית פשוט נמחקת, והמשמרת נשארת כפי שהיא.</li>
+          <li><b>סיבה היא שדה חובה</b> — זה מה שהמנהל רואה כשהוא מכריע.</li>
+          <li>שדה <b>יציאה</b> ריק משאיר את שעת היציאה כפי שהיא. במשמרת פתוחה, זה המקום להשלים לה סוף.</li>
+          <li>על משמרת שיש עליה בקשה פתוחה מופיע התג <span class="tag t-warn">בקשת תיקון נשלחה</span> במקום הכפתור.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="screen">
+      <figure>
+        <img class="shot" src="06-clock-blocked.png" width="860" height="2348" alt="מסך השעון כשהכניסה חסומה: הכפתור אפור, ומתחתיו הודעה צהובה &quot;אין לך משמרת משובצת כרגע, ולכן אי אפשר להחתים כניסה&quot; עם קישור לדיווח משמרת שלא הוחתמה.">
+        <figcaption>הכניסה חסומה, והמסך אומר למה</figcaption>
+      </figure>
+      <div>
+        <h3>כשהכפתור אפור</h3>
+        <p>
+          הכניסה נפתחת רק כשיש משמרת <b>עכשיו</b>: מתחילת המשמרת פחות ״חסד״
+          שנקבע בכרטיס שלכם, ועד סיומה ועוד אותו חסד. ההודעה מגיעה מהשרת, ולכן
+          היא בדיוק זו שהייתם מקבלים אם הייתם לוחצים.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <caption>ארבע הסיבות האפשריות</caption>
+            <tbody>
+              <tr><th>אין משמרת משובצת</th><td>אין לכם שיבוץ בחלון הזמן הנוכחי</td></tr>
+              <tr><th>מוקדם מדי</th><td>המשמרת עוד לא נפתחה — יש להמתין</td></tr>
+              <tr><th>המשמרת הסתיימה</th><td>חלון הזמן נסגר</td></tr>
+              <tr><th>השעון כבוי</th><td>ההחתמה בשעון כובתה עבורכם בכרטיס העובד</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>בכל אחד מהמקרים האלה הדרך היא דיווח משמרת שלא הוחתמה.</p>
+      </div>
+    </div>
+
+    <div class="screen">
+      <figure>
+        <img class="shot dialog" src="07-selfreport-modal.png" width="768" height="1304" alt="חלון &quot;דיווח משמרת שלא הוחתמה&quot;, ממולא: התחלה 07:00, סיום 15:30, מיקום כניסה מחסן ראשון לציון, מיקום יציאה אולמי הגן, וסיבה על טלפון שנגמרה לו הסוללה.">
+        <figcaption>דיווח משמרת שלא הוחתמה</figcaption>
+      </figure>
+      <div>
+        <h3>לדווח על עבודה שהשעון לא תפס</h3>
+        <ul class="notes">
+          <li><b>התחלה וסיום הן שדות חובה.</b> משמרת שעדיין פתוחה מדווחים בשעון, לא כאן.</li>
+          <li><b>מיקום כניסה ומיקום יציאה — חובה, במילים.</b> לדיווח ידני אין GPS לאמת מולו, ולכן המלל הוא מה שהמנהל מאשר לפיו.</li>
+          <li><b>סיבה</b> — למה השעון לא הוחתם.</li>
+          <li>חלון הזמן לאחור כתוב בראש הטופס עצמו.</li>
+        </ul>
+        <div class="callout">
+          <span class="lbl">שווה לזכור</span>
+          <p>
+            הדיווח נשמר בסטטוס ״ממתין לאישור״ ואינו נספר בשעות ובשכר עד שמנהל
+            יאשר אותו. עד אז הוא מופיע ברשימה עם תג כתום.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <h3>ואם אין קליטה?</h3>
+    <p>
+      <b>החתמה בלי רשת פשוט לא נכנסת.</b> אין תור שמשלים אותה אחר כך — השרת
+      חותם את השעה שבה הבקשה הגיעה אליו, ושליחה מאוחרת הייתה רושמת שעה שגויה.
+      המסך יאמר ״אין חיבור לרשת — ההחתמה לא נקלטה״.
+    </p>
+    <p>
+      מה שכן אפשר: לנסות שוב כשהקליטה חוזרת, או לדווח את המשמרת ידנית. המסכים
+      עצמם ממשיכים להיטען מהעותק השמור במכשיר, כך שאת המשמרת אפשר לראות גם בשטח
+      בלי רשת.
+    </p>
+
+    <div class="table-scroll">
+      <table>
+        <caption>הודעות מיקום, ומה לעשות איתן</caption>
+        <thead><tr><th>מה שכתוב</th><th>מה לעשות</th></tr></thead>
+        <tbody>
+          <tr><td>שיתוף המיקום נחסם</td><td>לאשר גישה למיקום בהגדרות הדפדפן, ולנסות שוב</td></tr>
+          <tr><td>לא הצלחנו לאתר את המיקום שלך</td><td>לבדוק שה־GPS פעיל; אם אתם בתוך מבנה, לצאת לרגע לחוץ</td></tr>
+          <tr><td>הדפדפן הזה אינו תומך באיתור מיקום</td><td>להשתמש בדפדפן או במכשיר אחר</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 2 · לו״ז ============ -->
+  <section id="schedule">
+    <div class="sec-head"><span class="sec-num">2</span><h2>הלו״ז — מסך המשמרות</h2></div>
+    <p class="sec-lede">
+      המסך כולו לוח אחד: שבוע, כל 24 השעות, בלי גלילה. מעבר בין שבועות נעשה
+      בהחלקה שמאלה או ימינה, והקו האדום הוא השעה הנוכחית.
+    </p>
+
+    <div class="screen">
+      <figure>
+        <img class="shot" src="08-schedule-week.png" width="860" height="1864" alt="לוח המשמרות השבועי: שבעה טורים מא׳ עד ש׳, שש משמרות כחולות פרוסות על השבוע, כל אחת עם שם, טווח שעות וסמנים, וקו אדום על השעה הנוכחית.">
+        <figcaption>הלו״ז השבועי</figcaption>
+      </figure>
+      <div>
+        <h3>מה כתוב על משמרת</h3>
+        <ul class="notes">
+          <li><b>שם המשמרת</b> — סוג העבודה והאירוע, למשל ״הקמה — אולמי הגן״.</li>
+          <li><b>טווח השעות</b> של המשמרת כולה.</li>
+          <li><b>סמן מיקום</b> — המשמרת מתחילה במחסן ולא בשטח.</li>
+          <li><b>סמן משאית</b> — המשמרת כוללת נסיעה חזרה למחסן, והשעה המוצגת היא שעת ההגעה למחסן ולא שעת סיום העבודה.</li>
+          <li><b>מספר בעיגול</b> — כמה משימות במשמרת. לחיצה פותחת את הפירוט.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="screen">
+      <figure>
+        <img class="shot dialog" src="09-shift-drawer.png" width="860" height="2104" alt="מגירת פירוט משמרת: ציר זמן מהגעה למחסן ב־06:30, דרך שני כרטיסי משימה — הקמה 08:00–12:00 ופירוק 13:00–15:00 — ועד סיום המשמרת ב־16:00, עם סיכום 8:30 עבודה ו־9:30 סך המשמרת.">
+        <figcaption>פירוט משמרת, כציר זמן</figcaption>
+      </figure>
+      <div>
+        <h3>מה יש במגירה</h3>
+        <ol class="notes">
+          <li><b>הגעה למחסן</b> — השעה ושם המחסן, כשהמשמרת מתחילה שם.</li>
+          <li><b>תחילת העבודה בשטח.</b></li>
+          <li><b>כרטיס לכל משימה</b> — סוג המשימה, טווח השעות ואורכה, הלקוח והלקוח הסופי, כתובת האתר, המשאית, התפקיד שלכם, כמה משובצים, מי עוד בצוות, והערות המשימה.</li>
+          <li><b>סיום העבודה והיציאה חזרה למחסן.</b></li>
+          <li><b>סיום המשמרת.</b></li>
+        </ol>
+        <p>
+          בתחתית שני מספרים: <b>עבודה</b> — השעות שבהן עבדתם בפועל,
+          ו<b>סך המשמרת</b> — כולל הנסיעה חזרה.
+        </p>
+      </div>
+    </div>
+
+    <h3>מאיפה המשמרת מתחילה, ואיפה היא נגמרת</h3>
+    <p>
+      המשמרת אינה נקבעת ידנית — היא נגזרת מהמשימות ששובצתם אליהן, ולכן היא
+      זזה מעצמה כששעות המשימה משתנות.
+    </p>
+    <ul class="notes">
+      <li><b>ההתחלה</b> תלויה במה שסומן עבורכם באותה משימה: מי שיוצא מהמחסן מתחיל בשעת המחסן, מי שמגיע לשטח — בשעת השטח.</li>
+      <li><b>הסיום נקבע לפי המשימה האחרונה.</b> נגמרה בשטח — השעה היא שעת השטח. נגמרה במחסן — נוספת אליה הנסיעה חזרה.</li>
+    </ul>
+    <div class="callout">
+      <span class="lbl">מקרה שמבלבל</span>
+      <p>
+        <b>שעת מחסן שגדולה משעת השטח היא של הערב שלפני.</b> משימה של 11.9
+        שמתחילה ב־01:00 עם מחסן ב־23:00 יוצאת ב־23:00 של <b>10.9</b>, והמשמרת
+        נתלית על היום שבו היא התחילה. הלו״ז מסמן ״1-״ על השעה.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 3 · דוח ============ -->
+  <section id="report">
+    <div class="sec-head"><span class="sec-num">3</span><h2>דוח הנוכחות שלי</h2></div>
+    <p class="sec-lede">
+      חודש שלם במסך אחד: כמה ימים, כמה שעות, כמה מהן נוספות, ומה הסכום.
+      החצים ליד שם החודש מדפדפים אחורה וקדימה.
+    </p>
+
+    <div class="screen">
+      <figure>
+        <img class="shot" src="10-report.png" width="860" height="3440" alt="דוח הנוכחות לספטמבר 2026: חמישה אריחי סיכום — 8 ימי עבודה, 62:53 שעות, 6:53 שעות נוספות, 150 ₪ בונוסים ו־3,509 ₪ לתשלום — ומתחתיהם רשימת כרטיסי המשמרות ושורת סיכום החודש.">
+        <figcaption>הדוח החודשי, מלמעלה למטה</figcaption>
+      </figure>
+      <div>
+        <div class="table-scroll">
+          <table>
+            <caption>האריחים שבראש המסך</caption>
+            <tbody>
+              <tr><th>ימי עבודה</th><td>כמה משמרות מאושרות נספרו בחודש</td></tr>
+              <tr><th>שעות עבודה</th><td>סך השעות שעבדתם בפועל</td></tr>
+              <tr><th>שעות נוספות</th><td>כמה מהשעות האלה נספרו כשעות נוספות</td></tr>
+              <tr><th>בונוסים</th><td>סך הבונוסים. <b>כלול</b> בסך לתשלום ואינו נוסף עליו</td></tr>
+              <tr><th>סה״כ לתשלום</th><td>הסכום — <b>מאושר בלבד</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout">
+          <span class="lbl">״מאושר בלבד״</span>
+          <p>
+            משמרת שממתינה לאישור אינה נספרת באריחים ולא בסכום. היא מופיעה
+            ברשימה עם תג ״ממתין״, ונכנסת לסיכום ברגע שתאושר.
+          </p>
+        </div>
+        <p>
+          בתחתית הרשימה יש שורת <b>סיכום החודש</b> — אותם מספרים שבאריחים,
+          במשפט אחד, בלי לגלול חזרה למעלה.
+        </p>
+      </div>
+    </div>
+
+    <h3>התגים שעל כרטיס משמרת</h3>
+    <p>
+      כל שורה בדוח היא משמרת אחת: התאריך ויום השבוע, שעת כניסה ושעת יציאה,
+      ומקום ההחתמה מתחת לשעה. נקודה ירוקה ליד שעת הכניסה אומרת שהמיקום אומת.
+    </p>
+    <div class="chips">
+      <div class="chip-row"><span class="tag t-warn">ממתין</span><span>דיווח שטרם אושר, ואינו נספר בשעות ובשכר</span></div>
+      <div class="chip-row"><span class="tag t-stop">נדחה</span><span>הדיווח נדחה; נימוק המנהל מופיע לידו</span></div>
+      <div class="chip-row"><span class="tag t-warn">ידני</span><span>המשמרת דווחה ולא הוחתמה בשעון</span></div>
+      <div class="chip-row"><span class="tag t-warn">בקשת תיקון שעות</span><span>יש בקשה פתוחה על המשמרת הזו</span></div>
+      <div class="chip-row"><span class="tag t-mony">150 ₪</span><span>בונוס שנקבע למשמרת</span></div>
+      <div class="chip-row"><span class="tag t-flat">תוקן</span><span>מנהל שינה את השעות</span></div>
+      <div class="chip-row"><span class="tag t-flat">ללא משמרת משובצת</span><span>ההחתמה נכנסה בלי שיבוץ מולו למדוד אותה</span></div>
+      <div class="chip-row"><span class="tag t-flat">ללא השלמה</span><span>ההשלמה לשעות בוטלה על המשמרת הזו</span></div>
+    </div>
+
+    <div class="screen">
+      <figure>
+        <img class="shot" src="11-report-filters.png" width="860" height="3664" alt="הדוח עם פאנל הסינון פתוח: בורר סטטוס במצב &quot;הכול&quot; ותיבת סימון &quot;רק רשומות מסומנות&quot;, מעל רשימת המשמרות.">
+        <figcaption>פאנל הסינון</figcaption>
+      </figure>
+      <div>
+        <h3>סינון וייצוא</h3>
+        <ul class="notes">
+          <li><b>סטטוס</b> — הכול, ממתין לאישור, מאושר או נדחה.</li>
+          <li><b>רק רשומות מסומנות</b> — משמרות שהשעון תלה עליהן דגל: מיקום שלא אומת, סגירה אוטומטית, החתמה בלי שיבוץ.</li>
+          <li><b>ייצוא</b> מוריד קובץ Excel של בדיוק מה שמוצג במסך, כולל הסינון שהופעל.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="screen">
+      <figure>
+        <img class="shot dialog" src="12-entry-drawer.png" width="860" height="3066" alt="מגירת משמרת בדוח: סטטוס מאושר, שדות שעת כניסה ויציאה מבוקשת, שלוש שורות מתוכנן/בפועל/לתשלום, המיקום בהחתמה עם מרחקים וקואורדינטות, ופירוט שכר — שעות רגילות 416 ₪, שעות נוספות 125% ‎33 ₪, בונוס 150 ₪, סך הכול 599 ₪.">
+        <figcaption>משמרת אחת, עד פירוט השכר</figcaption>
+      </figure>
+      <div>
+        <h3>לפתוח משמרת מתוך הדוח</h3>
+        <p>לחיצה על שורה פותחת את כל הפרטים — וגם דרך שנייה לבקש תיקון שעות.</p>
+        <ul class="notes">
+          <li><b>סטטוס</b> ומתי אושרה, ותג נקודת ההתחלה (מחסן או שטח).</li>
+          <li><b>שעת כניסה ויציאה מבוקשת</b> — כאן מגישים בקשת תיקון. גם כאן הסיבה היא שדה חובה, והשעות אינן משתנות עד אישור.</li>
+          <li><b>מתוכנן / בפועל / לתשלום</b> — שלוש השעות, זו מול זו.</li>
+          <li><b>המיקום בהחתמה</b> — המרחק מנקודת הייחוס בכניסה וביציאה, והקואורדינטות שנדגמו. לחיצה עליהן פותחת מפה.</li>
+          <li><b>פירוט השכר</b> — שורה לכל רכיב: שעות רגילות ותעריף, כל מדרגת שעות נוספות בנפרד, בונוס, וסך הכול.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ איך נספר ============ -->
+  <section id="pay">
+    <div class="sec-head"><h2>איך נספרות השעות והשכר</h2></div>
+    <ul class="notes">
+      <li><b>שעות נוספות</b> נקבעות ברמת החברה — בסיס יומי, מדרגות, ויום מנוחה — והאם הן חלות עליכם נקבע בכרטיס העובד שלכם.</li>
+      <li><b>בונוס למשמרת הוא שורה, לא שעות.</b> הוא נוסף לסכום אבל אינו משפיע על מדרגות השעות הנוספות, כדי שבונוס זהה יהיה שווה אותו דבר לכל עובד.</li>
+      <li><b>השלמה לשעות</b> — ״מובטחות X שעות למשמרת״, אם הוגדרה לכם — נמדדת מתחילת המשמרת המתוכננת, ולכן איחור מקצר אותה. מעל סף איחור שנקבע בכרטיס היא נשמטת לגמרי.</li>
+      <li><b>התאריך על הכרטיס הוא תאריך הכניסה בפועל.</b> משמרת פירוק שמתחילה ב־00:30 ונכנסים אליה ב־23:45 מוצגת ביום שבו נכנסתם, גם אם התשלום נרשם על היום שאחריו.</li>
+      <li><b>השעות מעוגלות</b> לפי כלל עיגול שנקבע ברמת החברה. אם הפער גדול ממה שעיגול מסביר — זה מקרה לבקשת תיקון.</li>
+    </ul>
+  </section>
+
+  <!-- ============ שאלות ============ -->
+  <section id="faq">
+    <div class="sec-head"><h2>שאלות שחוזרות</h2></div>
+    <dl class="qa">
+      <div>
+        <dt>החתמתי כניסה ושכחתי לצאת. מה עושים?</dt>
+        <dd>פותחים את ״ההחתמות של היום״, לוחצים על העיפרון ליד המשמרת הפתוחה, ומשלימים לה שעת יציאה בבקשת תיקון. השעות ייכנסו אחרי אישור מנהל.</dd>
+      </div>
+      <div>
+        <dt>הכפתור אפור ואני כן בעבודה.</dt>
+        <dd>ההודעה הצהובה מתחתיו אומרת בדיוק למה. אם אין לכם משמרת משובצת כרגע, הדרך היא ״דיווח משמרת שלא הוחתמה״.</dd>
+      </div>
+      <div>
+        <dt>המערכת לא מקבלת את המיקום שלי.</dt>
+        <dd>ודאו שאישרתם לדפדפן גישה למיקום ושה־GPS פעיל. בתוך מבנה — צאו לרגע לחוץ. אם זה לא עוזר, דווחו את המשמרת ידנית.</dd>
+      </div>
+      <div>
+        <dt>עבדתי 9 שעות והדוח מראה 8:30.</dt>
+        <dd>השעות מעוגלות לפי כלל שנקבע ברמת החברה. אם הפער גדול ממה שעיגול מסביר, פתחו את המשמרת בדוח ושלחו בקשת תיקון.</dd>
+      </div>
+      <div>
+        <dt>הדיווח שלי לא מופיע בסך החודשי.</dt>
+        <dd>דיווח בסטטוס ״ממתין לאישור״ אינו נספר עד שמנהל יאשר אותו. הוא מופיע ברשימה עם תג כתום.</dd>
+      </div>
+      <div>
+        <dt>למה יש משמרת עם ״1-״ על השעה בלו״ז?</dt>
+        <dd>זו משמרת שיוצאת מהמחסן בערב שלפני — שעת המחסן גדולה משעת השטח, ולכן היציאה היא של היום הקודם.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <footer>
+    <p>
+      ViperLogistics · מדריך הנוכחות לעובד. צילומי המסך צולמו מהמערכת עצמה
+      בגודל טלפון, עם נתוני הדגמה. שמות העובד, הלקוחות, האירועים והמחסנים
+      שמופיעים בהם אינם אמיתיים.
+    </p>
+  </footer>
+
+</div>
+</body>
+</html>
