@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Clock,
   FileText,
+  Flame,
   HardHat,
   LayoutDashboard,
   PartyPopper,
@@ -215,6 +216,9 @@ export const NAV_SECTIONS: NavSection[] = [
       },
       { to: '/attendance', label: 'דוח נוכחות', shortLabel: 'נוכחות', icon: Clock, perm: PERM.ATTENDANCE_VIEW_ALL },
       { to: '/reports', label: 'דוחות', shortLabel: 'דוחות', icon: BarChart3, perm: PERM.REPORTS_VIEW },
+      /* מפת העומסים יושבת ראשונה בין הדוחות (0173): היא השאלה שנשאלת לפני
+         שמקבלים עבודה נוספת, ולא אחרי שהחודש נגמר. */
+      { to: '/reports/load', label: 'מפת עומסים', shortLabel: 'עומסים', icon: Flame, perm: PERM.REPORTS_LOAD },
       /* שני דפי הרווחיות הם יעדים ולא לשוניות של "דוחות": הם המסכים שנפתחים
          הכי הרבה בסקשן הזה, והדרך היחידה אליהם הייתה שני קישורים בתוך שורת
          התבניות של /reports — מקום שצריך לדעת עליו כדי למצוא אותו. */
@@ -284,6 +288,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/attendance': 'דוח נוכחות',
   '/shifts': 'לוח משמרות צוות',
   '/reports': 'דוחות',
+  '/reports/load': 'מפת עומסים',
   '/reports/profitability': 'רווחיות לקוחות',
   '/reports/task-pnl': 'רווחיות לפי משימה',
   '/receipts': 'רישום תקבולים',

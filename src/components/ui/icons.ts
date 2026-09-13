@@ -108,6 +108,9 @@ export {
   // crew marks (0162) — who is on the task, and where he starts from
   Crown,
   Warehouse,
+  // מפת עומסים (0173) — העומס עצמו, והשעה הצפופה שבתוכו
+  Flame,
+  Activity,
   // fleet (0089)
   Fuel,
   Gauge,
