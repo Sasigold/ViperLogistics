@@ -487,6 +487,16 @@ OUT="$OUT
 $OUT47"
 
 echo
+echo "== the load heatmap suite =="
+# 48 מקימה שני לקוחות, קבלן, שלוש משאיות, מחסן, שישה קהלים ומשימות משלה
+# ב-current_date + 700, מעבר לכל טווח אחר. היא רצה אחרונה כי היא כותבת את
+# app_settings['ops.capacity'] ומשאירה אותו כתוב, ומוחקת רכות משימה משלה.
+OUT48=$($PSQL -d vl -f "$HERE/48_the_load_heatmap.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT48"
+OUT="$OUT
+$OUT48"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

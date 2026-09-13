@@ -163,6 +163,9 @@ export const PERM = {
   PRICING_REVENUE: 'pricing.revenue',
   REPORTS_VIEW: 'reports.view',
   REPORTS_EXPORT: 'reports.export',
+  /* מפת העומסים (0173). נגזר מ-`reports.view`, ולכן מי שרואה דוחות רואה
+     אותה — והיא ניתנת לכיבוי בנפרד למי שרואה מספרים ולא את הקיבולת. */
+  REPORTS_LOAD: 'reports.load',
   PORTAL_VIEW: 'portal.view',
   PORTAL_ATTENDANCE: 'portal.attendance',
   PORTAL_ATTENDANCE_PAY: 'portal.attendance_pay',

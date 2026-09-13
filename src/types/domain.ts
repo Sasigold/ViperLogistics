@@ -1822,3 +1822,103 @@ export interface AssignmentConflict {
   starts_at: string
   ends_at: string
 }
+
+/* ===== מפת עומסים (0173) ===================================================
+ *
+ * שלושת הממדים שהקיבולת נמדדת בהם. הם מפתחות ולא מחרוזות חופשיות מפני
+ * שהם מופיעים בשלושה מקומות — התקרה, האחוז, ושם הצוואר — וכל שלושתם
+ * חייבים להסכים על אותו שם.
+ */
+export type LoadDimension = 'workers' | 'trucks' | 'leads'
+
+/** ‏`configured` = המשרד נקב במספר; `derived` = נספר מהמאגר הפעיל. */
+export type CapacitySource = 'configured' | 'derived'
+
+export interface LoadCapacity {
+  workers: number
+  trucks: number
+  team_leads: number
+  source: { workers: CapacitySource; trucks: CapacitySource; team_leads: CapacitySource }
+}
+
+/**
+ * יום אחד על המפה החודשית.
+ *
+ * ‏`peak_*` הם **מקבילות** — כמה רץ באותו רגע בשעה הצפופה של היום — ואילו
+ * השדות בלי הקידומת הם הסך היומי. שתי משימות זו אחר זו ושתיים חופפות
+ * נושאות אותו `tasks` ו-`peak_tasks` שונה, וזה כל מה שהמפה מנסה לומר.
+ */
+export interface LoadDay {
+  day: string
+  tasks: number
+  /** משימות של היום שאין להן שעה, ולכן אינן על ציר השעות */
+  untimed: number
+  worker_need: number
+  staffed: number
+  /** ‏`worker_need` פחות `staffed`, לא שלילי — מה שעוד צריך לאייש */
+  gap: number
+  worker_hours: number
+  delegated: number
+  customers: number
+  sites: number
+  /** השעה שבה נמדדה הפסגה. null ביום בלי משימות מתוזמנות */
+  peak_hour: number | null
+  peak_tasks: number
+  peak_workers: number
+  peak_trucks: number
+  peak_leads: number
+  peak_sites: number
+  peak_warehouses: number
+  /** כמה שעות ביום יש בהן ולו משימה אחת — חפיפה נספרת פעם אחת */
+  busy_hours: number
+}
+
+export interface LoadHeatmapResult {
+  /** ‏null = הנתון אינו זמין בהרשאות הקורא (היקף מצומצם, או שאינו מהמשרד) */
+  days: LoadDay[] | null
+  meta: { from?: string; to?: string; capacity?: LoadCapacity; denied: boolean }
+}
+
+/** משבצת שעה אחת בפילוח היומי. כל המספרים הם מקבילות. */
+export interface LoadHour {
+  hour: number
+  tasks: number
+  workers: number
+  staffed: number
+  gap: number
+  trucks: number
+  leads: number
+  customers: number
+  sites: number
+  /** כמה מחסנים שונים משלחים באותה שעה — תחרות על רציף ההעמסה */
+  warehouses: number
+  delegated: number
+}
+
+/** משימה שנוגעת ביום הנבחר, גם כשהיא מתוארכת ליום אחר (0163). */
+export interface LoadTask {
+  task_id: string
+  task_date: string
+  label: string | null
+  task_type: string | null
+  customer: string | null
+  color: string | null
+  /** קצות החלון כ-ISO, כולל היציאה מהמחסן כשיש כזו */
+  start: string
+  end: string
+  worker_need: number
+  staffed: number
+  needs_lead: boolean
+  trucks: number
+  truck_names: { id: string; name: string }[] | null
+  site: string | null
+  delegated: boolean
+  status_name: string | null
+  status_color: string | null
+}
+
+export interface LoadDayResult {
+  hours: LoadHour[] | null
+  tasks: LoadTask[] | null
+  meta: { date?: string; capacity?: LoadCapacity; denied: boolean }
+}

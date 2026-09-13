@@ -41,6 +41,7 @@ const ReportsPage = lazyPage(() => import('../features/reports/ReportsPage'))
 const ReceiptsPage = lazyPage(() => import('../features/finance/ReceiptsPage'))
 const CustomerProfitabilityPage = lazyPage(() => import('../features/reports/CustomerProfitabilityPage'))
 const TaskPnlPage = lazyPage(() => import('../features/reports/TaskPnlPage'))
+const LoadHeatmapPage = lazyPage(() => import('../features/reports/LoadHeatmapPage'))
 const ShiftBoardPage = lazyPage(() => import('../features/attendance/ShiftBoardPage'))
 const NotificationPreferencesPage = lazyPage(() => import('../features/notifications/NotificationPreferencesPage'))
 
@@ -142,6 +143,15 @@ export const router = createBrowserRouter([
             path: '/reports/task-pnl',
             handle: { perm: PERM.REPORTS_VIEW },
             element: page(<TaskPnlPage />),
+          },
+          /* מפתח משלה ולא `reports.view` (0173): המפה אומרת כמה עובדים
+             ומשאיות יש לעסק ומתי הם נגמרים, וזו תמונה שאפשר לרצות לפתוח
+             למי שרואה דוחות — או לסגור ממנו. `implied_by` פותח אותה ביום
+             המיגרציה לכל מי שכבר מחזיק `reports.view`. */
+          {
+            path: '/reports/load',
+            handle: { perm: PERM.REPORTS_LOAD },
+            element: page(<LoadHeatmapPage />),
           },
           { path: '/receipts', handle: { perm: PERM.FINANCE_RECEIPTS_VIEW }, element: page(<ReceiptsPage />) },
           /* הרשימה והדף אינם אותו מפתח: עובד שטח פותח אירוע שהוא משובץ אליו,
