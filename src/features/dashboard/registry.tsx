@@ -91,6 +91,7 @@ import {
   ClientShareWidget,
   FurnitureIncomeWidget,
   IncomeMixWidget,
+  KeisarCommissionWidget,
   LogisticsIncomeWidget,
   PayrollEmployerWidget,
   ProfitSummaryWidget,
@@ -240,8 +241,8 @@ export const WIDGETS: WidgetDef[] = [
   },
   {
     id: 'finance.client_share',
-    title: 'הכנסות ללקוח',
-    description: 'חלק הלקוח מהכנסות הקטגוריה, לפי האחוז שנשמר על כל אירוע',
+    title: 'הכנסות לשיא עיצובים',
+    description: 'חלק שיא עיצובים: 80% מריהוט חדש ו-30% מריהוט ישן',
     group: 'finance',
     icon: icon(Percent),
     perms: [PERM.FINANCE_INCOME_VIEW],
@@ -251,6 +252,20 @@ export const WIDGETS: WidgetDef[] = [
     wantsDelta: true,
     sections: ['finance.client_share'],
     Component: ClientShareWidget,
+  },
+  {
+    id: 'finance.keisar_commission',
+    title: 'עמלה לקיסר',
+    description: '10% מאירועים של קיסר שסך כל המשימות של האירוע עולה על 2,000 ש״ח',
+    group: 'finance',
+    icon: icon(Percent),
+    perms: [PERM.FINANCE_INCOME_VIEW],
+    sizes: ['sm'],
+    defaultOn: true,
+    usesRange: true,
+    wantsDelta: true,
+    sections: ['finance.keisar_commission'],
+    Component: KeisarCommissionWidget,
   },
   {
     id: 'finance.income_mix',
@@ -1278,6 +1293,7 @@ export const BUILT_IN_DEFAULT: DashboardLayout = {
     { id: 'finance.viper_paid', size: 'sm' },
     { id: 'finance.viper_unpaid', size: 'sm' },
     { id: 'finance.client_share', size: 'sm' },
+    { id: 'finance.keisar_commission', size: 'sm' },
 
     /* הצד של הלקוח (0074). יושב באותה שורה ולא בסקשן משלו: אצל הלקוח כל
        השורה שמעליו נעלמת, ואצל איש משרד נעלם רק הוא. */

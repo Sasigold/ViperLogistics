@@ -1,4 +1,6 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
+import { addDays, parseISO } from 'date-fns'
 import {
   Button,
   Card,
@@ -10,6 +12,8 @@ import {
 import {
   Calendar,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   Clock,
   FileText,
@@ -19,7 +23,7 @@ import {
   Plus,
   STROKE,
 } from '../../../components/ui/icons'
-import { fmtDate } from '../../../lib/dates'
+import { fmtDate, fmtWeekday, fmtWeekdayShort, toISODate } from '../../../lib/dates'
 import { PERM } from '../../../lib/permissions'
 import { useAuth } from '../../../state/auth'
 import { DayTimeline } from '../parts/DayTimeline'
@@ -39,21 +43,124 @@ import type { WidgetProps } from '../dashboardTypes'
 export function DayTimelineWidget(_props: WidgetProps) {
   const navigate = useNavigate()
   const { today, openTask } = useDashboard()
-  const { data = [], isLoading } = useBoardSlice('today', today)
+  const [selectedDate, setSelectedDate] = useState(today)
+  const { data = [], isLoading } = useBoardSlice('today', selectedDate)
+  const selectedPillRef = useRef<HTMLButtonElement>(null)
+
+  const isToday = selectedDate === today
+
+  const handlePrevDay = () => {
+    setSelectedDate((prev) => toISODate(addDays(parseISO(prev), -1)))
+  }
+
+  const handleNextDay = () => {
+    setSelectedDate((prev) => toISODate(addDays(parseISO(prev), 1)))
+  }
+
+  const handleToday = () => {
+    setSelectedDate(today)
+  }
+
+  // 31-day scroll strip centered around today (-15 to +15 days)
+  const dayStrip = useMemo(() => {
+    const base = parseISO(today)
+    return Array.from({ length: 31 }, (_, i) => {
+      const d = addDays(base, i - 15)
+      return toISODate(d)
+    })
+  }, [today])
+
+  useEffect(() => {
+    selectedPillRef.current?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
+  }, [selectedDate])
 
   return (
     <Card>
       <CardHeader
         title="ציר הזמן של היום"
-        subtitle={fmtDate(today)}
+        subtitle={isToday ? fmtDate(today) : `${fmtWeekday(selectedDate)}, ${fmtDate(selectedDate)}`}
         icon={<Clock size={ICON.md} strokeWidth={STROKE} />}
         actions={
-          <Button size="sm" variant="ghost" onClick={() => navigate(`/board?date=${today}`)}>
-            ללוח העבודה
-          </Button>
+          <div className="flex items-center gap-1">
+            {!isToday && (
+              <Button size="sm" variant="outlined" onClick={handleToday}>
+                היום
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => navigate(`/board?date=${selectedDate}`)}>
+              ללוח העבודה
+            </Button>
+          </div>
         }
       />
-      <CardBody>{isLoading ? <SkeletonList rows={4} /> : <DayTimeline tasks={data} onOpen={openTask} />}</CardBody>
+      <CardBody className="space-y-3">
+        {/* Day navigation & scroll strip */}
+        <div className="flex items-center gap-1 border-b border-line-subtle pb-2">
+          {/* RTL: ChevronRight is previous day, ChevronLeft is next day */}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handlePrevDay}
+            title="יום קודם"
+            aria-label="יום קודם"
+            className="shrink-0"
+          >
+            <ChevronRight size={15} />
+          </Button>
+
+          {/* Horizontal scrollable days strip */}
+          <div className="flex flex-1 items-center gap-1 overflow-x-auto py-0.5 no-scrollbar scroll-smooth">
+            {dayStrip.map((d) => {
+              const isSelected = d === selectedDate
+              const isCurrentToday = d === today
+              const dateObj = parseISO(d)
+              const dayNum = dateObj.getDate()
+              const weekday = fmtWeekdayShort(d)
+              return (
+                <button
+                  key={d}
+                  ref={isSelected ? selectedPillRef : undefined}
+                  onClick={() => setSelectedDate(d)}
+                  className={cx(
+                    'flex shrink-0 flex-col items-center justify-center rounded-lg px-2.5 py-1 text-center transition-all',
+                    isSelected
+                      ? 'bg-brand-primary text-white shadow-xs font-semibold'
+                      : 'hover:bg-subtle text-ink-secondary hover:text-ink'
+                  )}
+                >
+                  <span className="type-caption text-[11px] opacity-80">{weekday}</span>
+                  <span className="type-caption font-bold text-xs">{dayNum}</span>
+                  {isCurrentToday && (
+                    <span
+                      className={cx(
+                        'size-1 rounded-full mt-0.5',
+                        isSelected ? 'bg-white' : 'bg-brand-primary'
+                      )}
+                    />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleNextDay}
+            title="יום הבא"
+            aria-label="יום הבא"
+            className="shrink-0"
+          >
+            <ChevronLeft size={15} />
+          </Button>
+        </div>
+
+        {isLoading ? (
+          <SkeletonList rows={4} />
+        ) : (
+          <DayTimeline tasks={data} onOpen={openTask} isToday={isToday} />
+        )}
+      </CardBody>
     </Card>
   )
 }

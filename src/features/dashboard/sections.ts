@@ -33,6 +33,7 @@ export const SECTIONS = [
   'income.mix',
   'finance.receivables',
   'finance.client_share',
+  'finance.keisar_commission',
   'cost.payroll_employer',
   'finance.profit_summary',
   // הצד של הלקוח (0074) — הוצאה, לא הכנסה

@@ -192,17 +192,22 @@ export function StatCard({
         )}
         <div className="min-w-0 flex-1">
           <p className="truncate type-caption font-medium text-ink-tertiary">{label}</p>
-          <p className="mt-0.5 type-display tabular leading-8">{value}</p>
+          <p
+            className="mt-0.5 type-display tabular leading-8 truncate max-w-full text-[clamp(1.15rem,2.2vw,1.75rem)]"
+            title={typeof value === 'string' || typeof value === 'number' ? String(value) : undefined}
+          >
+            {value}
+          </p>
         </div>
       </div>
       {/* Always rendered, with the populated row's height reserved, so a tile
           with no delta or hint stands exactly as tall as one that has them —
           KPI tiles sharing a row line up instead of stair-stepping. */}
-      <div className="mt-2.5 flex min-h-5 items-center gap-2">
+      <div className="mt-2.5 flex min-h-5 items-center gap-2 overflow-hidden">
         {showDelta && (
             <span
               className={cx(
-                'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 type-caption font-semibold tabular',
+                'inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 type-caption font-semibold tabular',
                 good ? 'bg-success-subtle text-success-text' : 'bg-error-subtle text-error-text',
               )}
             >
@@ -227,7 +232,7 @@ export function StatCard({
              fills its cell — two tiles side by side in the same grid column
              came out different widths, and the inline baseline put them at
              different heights too. */
-          'surface block w-full p-4 text-start transition-[box-shadow,border-color,transform] duration-200',
+          'surface overflow-hidden block w-full p-4 text-start transition-[box-shadow,border-color,transform] duration-200',
           'hover:-translate-y-px hover:border-line-strong hover:shadow-md focus-visible:outline-none focus-visible:focus-ring',
           className,
         )}
@@ -236,7 +241,7 @@ export function StatCard({
       </button>
     )
 
-  return <div className={cx('surface p-4', className)}>{inner}</div>
+  return <div className={cx('surface overflow-hidden p-4', className)}>{inner}</div>
 }
 
 /* ===== PageHeader =========================================================

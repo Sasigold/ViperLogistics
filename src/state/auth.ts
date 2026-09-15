@@ -58,8 +58,12 @@ const FIELD_COLUMNS: Record<string, string[]> = {
 const columnsOf = (key: string) => FIELD_COLUMNS[key] ?? [key]
 
 function applyTheme(theme: 'light' | 'dark') {
-  document.documentElement.dataset.theme = theme
-  localStorage.setItem('vl-theme', theme)
+  if (typeof document !== 'undefined') {
+    document.documentElement.dataset.theme = theme
+  }
+  if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
+    localStorage.setItem('vl-theme', theme)
+  }
 }
 
 export const useAuth = create<AuthState>((set, get) => ({
@@ -67,7 +71,10 @@ export const useAuth = create<AuthState>((set, get) => ({
   me: null,
   booted: false,
   meError: null,
-  theme: (localStorage.getItem('vl-theme') as 'light' | 'dark') ?? 'light',
+  theme:
+    (typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function'
+      ? (localStorage.getItem('vl-theme') as 'light' | 'dark')
+      : null) ?? 'light',
 
   boot: async () => {
     applyTheme(get().theme)

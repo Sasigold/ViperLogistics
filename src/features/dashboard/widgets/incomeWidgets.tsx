@@ -16,6 +16,7 @@ import {
   HandCoins,
   ICON,
   Info,
+  Percent,
   Receipt,
   STROKE,
   Truck,
@@ -46,7 +47,17 @@ interface Receivables {
 
 interface ClientShare {
   total: number
+  furniture_new_share?: number
+  furniture_old_share?: number
+  furniture_new_raw?: number
+  furniture_old_raw?: number
   rows: { name: string; color: string; total: number }[] | null
+}
+
+interface KeisarCommission {
+  total: number
+  events_count: number
+  tasks_total: number
 }
 
 interface PayrollEmployer {
@@ -138,17 +149,32 @@ export const ViperUnpaidWidget = sectionKpi<Receivables>({
 
 export const ClientShareWidget = sectionKpi<ClientShare>({
   section: 'finance.client_share',
-  label: 'הכנסות ללקוח',
+  label: 'הכנסות לשיא עיצובים',
   icon: HandCoins,
-  tone: '#16a34a',
+  tone: '#3563f0',
   delta: true,
   select: (v) => Number(v.total),
   format: (v) => fmtMoney(v),
-  // ה-snapshot: החישוב לפי האחוז שנשמר על כל אירוע בעת ההזנה, לא האחוז של היום
   hint: (v) =>
-    v.rows?.length
-      ? v.rows.map((r) => `${r.name} ${fmtMoney(Number(r.total))}`).join(' · ')
-      : 'חלק הלקוח לפי האחוזים שנשמרו על האירועים',
+    v.furniture_new_share != null && v.furniture_old_share != null
+      ? `חדש (80%): ${fmtMoney(v.furniture_new_share)} · ישן (30%): ${fmtMoney(v.furniture_old_share)}`
+      : v.rows?.length
+        ? v.rows.map((r) => `${r.name} ${fmtMoney(Number(r.total))}`).join(' · ')
+        : '80% מריהוט חדש ו-30% מריהוט ישן',
+})
+
+export const KeisarCommissionWidget = sectionKpi<KeisarCommission>({
+  section: 'finance.keisar_commission',
+  label: 'עמלה לקיסר',
+  icon: Percent,
+  tone: '#ef4444',
+  delta: true,
+  select: (v) => Number(v.total),
+  format: (v) => fmtMoney(v),
+  hint: (v) =>
+    v.events_count > 0
+      ? `10% מעל 2,000 ₪ · ${v.events_count} אירועים (${fmtMoney(v.tasks_total)})`
+      : '10% מאירועים שסך משימותיהם מעל 2,000 ₪',
 })
 
 /* ===== income mix — the legacy pie ========================================
@@ -164,7 +190,7 @@ export function IncomeMixWidget({ height }: WidgetProps) {
   const total = rows.reduce((s, r) => s + Number(r.total), 0)
 
   return (
-    <Card>
+    <Card className="overflow-hidden">
       <CardHeader title="פילוח הכנסות" subtitle={total ? fmtMoney(total) : undefined} />
       <CardBody>
         {isLoading && !data ? (
@@ -192,8 +218,13 @@ export function IncomeMixWidget({ height }: WidgetProps) {
                   <RTooltip content={<ChartTooltip />} />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <span className="type-title tabular leading-none">{fmtMoney(total)}</span>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-2 text-center">
+                <span
+                  className="type-title tabular leading-none truncate max-w-[105px]"
+                  title={fmtMoney(total)}
+                >
+                  {fmtMoney(total)}
+                </span>
                 <span className="type-caption text-ink-tertiary">סה״כ הכנסות</span>
               </div>
             </div>
@@ -205,12 +236,16 @@ export function IncomeMixWidget({ height }: WidgetProps) {
                   max={total}
                   color={r.color}
                   label={
-                    <span className="flex items-center gap-1.5">
-                      <span className="size-2 rounded-full" style={{ background: r.color }} />
-                      {r.label}
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span className="size-2 shrink-0 rounded-full" style={{ background: r.color }} />
+                      <span className="truncate">{r.label}</span>
                     </span>
                   }
-                  hint={`${fmtMoney(Number(r.total))} · ${total > 0 ? Math.round((Number(r.total) / total) * 100) : 0}%`}
+                  hint={
+                    <span className="tabular truncate">
+                      {`${fmtMoney(Number(r.total))} · ${total > 0 ? Math.round((Number(r.total) / total) * 100) : 0}%`}
+                    </span>
+                  }
                 />
               ))}
             </div>
