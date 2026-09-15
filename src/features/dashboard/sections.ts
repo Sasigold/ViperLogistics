@@ -62,6 +62,7 @@ export const SECTIONS = [
   'attendance.hours_by_worker',
   'attendance.pending',
   'attendance.flags',
+  'attendance.active_and_recent',
   'hr.headcount',
 ] as const
 

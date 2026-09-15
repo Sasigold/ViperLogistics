@@ -27,6 +27,7 @@ declare
   v_scoped boolean := exists (select 1 from app.scope_rows('tasks') where scope_type <> 'all');
   v_com_pct numeric;
   v_com_min numeric;
+  v_rev    numeric;
 begin
   if p_from is null or p_to is null then
     raise exception 'חסר טווח תאריכים' using errcode = '22023';
@@ -180,27 +181,92 @@ begin
     elsif v_key = 'margin.by_customer' and v_margin and not v_scoped and app.has('customers.view') then
       v_val := app.margin_by_customer(p_from, p_to, v_limit);
 
-    -- ── סיכום רווח במתכונת המערכת הישנה: הכנסות − שכר×מעביד − קבלנים ─────
+    -- ── סיכום רווח: סך הכנסות מהאירועים לפי הפילוח פחות הוצאות (שכר×מעביד + קבלנים) ─────
     elsif v_key = 'finance.profit_summary' and v_margin and not v_scoped then
       v_m := app.margin_summary(p_from, p_to);
       v_pct := coalesce((select (value ->> 'pct')::numeric
                            from app_settings where key = 'finance.employer_cost'), 0);
+
+      -- סך הכנסות לפי פילוח הכנסות
+      with 
+      trans_sia as (
+        select coalesce(sum(ei.amount), 0) as total
+          from event_income ei
+          join app.live_events e on e.id = ei.event_id and e.deleted_at is null
+               and e.event_date between p_from and p_to
+          join customers c on c.id = e.customer_id
+          join income_categories ic on ic.id = ei.category_id
+         where c.name = 'שיא עיצובים' and ic.name = 'הובלות'
+      ),
+      event_tasks as (
+        select e.id as event_id, e.customer_id, c.name as customer_name,
+               coalesce(c.commission_pct, 0) as commission_pct,
+               coalesce(c.commission_min_event, 0) as commission_min_event,
+               coalesce(sum(tp.price), 0) as task_sum
+          from app.live_events e
+          join customers c on c.id = e.customer_id
+          left join app.live_tasks t on t.event_id = e.id and t.deleted_at is null
+          left join app.task_revenue tp on tp.task_id = t.id
+         where e.deleted_at is null
+           and e.event_date between p_from and p_to
+         group by e.id, e.customer_id, c.name, c.commission_pct, c.commission_min_event
+        union all
+        select null as event_id, t.customer_id, c.name as customer_name,
+               0 as commission_pct, 0 as commission_min_event,
+               sum(tp.price) as task_sum
+          from app.live_tasks t
+          join app.task_revenue tp on tp.task_id = t.id
+          join customers c on c.id = t.customer_id
+         where t.event_id is null and t.deleted_at is null
+           and t.task_date between p_from and p_to
+         group by t.customer_id, c.name
+      ),
+      cust_logistics as (
+        select coalesce(sum(
+                 case 
+                   when (et.commission_pct > 0 or et.customer_name = 'קיסר') and et.task_sum > coalesce(et.commission_min_event, 2000) then
+                     et.task_sum - round(et.task_sum * (case when et.commission_pct > 0 then et.commission_pct else 10 end) / 100, 2)
+                   else
+                     et.task_sum
+                 end
+               ), 0) as total
+          from event_tasks et
+      ),
+      furn_new as (
+        select coalesce(sum(ei.amount * 0.20), 0) as total
+          from event_income ei
+          join app.live_events e on e.id = ei.event_id and e.deleted_at is null
+               and e.event_date between p_from and p_to
+          join income_categories ic on ic.id = ei.category_id
+         where ic.name = 'ריהוט חדש'
+      ),
+      furn_old as (
+        select coalesce(sum(ei.amount * 0.70), 0) as total
+          from event_income ei
+          join app.live_events e on e.id = ei.event_id and e.deleted_at is null
+               and e.event_date between p_from and p_to
+          join income_categories ic on ic.id = ei.category_id
+         where ic.name = 'ריהוט ישן'
+      )
+      select round((select total from trans_sia) + (select total from cust_logistics) + (select total from furn_new) + (select total from furn_old), 2)
+        into v_rev;
+
       v_val := jsonb_build_object(
-        'revenue',      v_m -> 'revenue',
+        'revenue',      v_rev,
         'payroll',      v_m -> 'payroll',
         'employer_pct', v_pct,
         'payroll_with_employer',
           round(coalesce((v_m ->> 'payroll')::numeric, 0) * (1 + v_pct / 100), 2),
         'contractor',   v_m -> 'contractor',
         'profit',
-          round(coalesce((v_m ->> 'revenue')::numeric, 0)
+          round(coalesce(v_rev, 0)
                 - coalesce((v_m ->> 'payroll')::numeric, 0) * (1 + v_pct / 100)
                 - coalesce((v_m ->> 'contractor')::numeric, 0), 2),
-        'pct', case when coalesce((v_m ->> 'revenue')::numeric, 0) > 0
-                    then round((coalesce((v_m ->> 'revenue')::numeric, 0)
+        'pct', case when coalesce(v_rev, 0) > 0
+                    then round((coalesce(v_rev, 0)
                                 - coalesce((v_m ->> 'payroll')::numeric, 0) * (1 + v_pct / 100)
                                 - coalesce((v_m ->> 'contractor')::numeric, 0))
-                               / (v_m ->> 'revenue')::numeric * 100, 1) end,
+                               / v_rev * 100, 1) end,
         'unrated_shifts', v_m -> 'unrated_shifts',
         'excludes_overhead', true);
 
@@ -597,6 +663,44 @@ begin
          where e.deleted_at is null and e.work_date between p_from and p_to
          group by f order by 2 desc) x;
 
+    elsif v_key = 'attendance.active_and_recent' and (app.has('attendance.view_all') or exists (select 1 from profiles where user_id = auth.uid() and is_admin)) then
+      select jsonb_build_object(
+        'active_count', count(*) filter (where e.clock_out_at is null),
+        'total_count', count(*),
+        'shifts', coalesce(jsonb_agg(jsonb_build_object(
+          'id', e.id,
+          'profile_id', e.profile_id,
+          'worker_name', p.full_name,
+          'phone', p.phone,
+          'work_site', e.work_site,
+          'task_or_event', (
+            select coalesce(ev.end_client_name, t.title, ev.location_text)
+            from tasks t left join events ev on ev.id = t.event_id
+            where t.id = e.task_ids[1] limit 1
+          ),
+          'clock_in_at', e.clock_in_at,
+          'clock_out_at', e.clock_out_at,
+          'is_active', (e.clock_out_at is null),
+          'status', e.status,
+          'actual_hours', e.actual_hours,
+          'duration_minutes', case
+            when e.clock_out_at is not null then round(extract(epoch from (e.clock_out_at - e.clock_in_at)) / 60)
+            else round(extract(epoch from (now() - e.clock_in_at)) / 60)
+          end
+        ) order by
+          (e.clock_out_at is null) desc,
+          e.clock_in_at desc
+        ), '[]'::jsonb)
+      ) into v_val
+      from (
+        select * from attendance_entries
+        where deleted_at is null
+          and (clock_out_at is null or clock_out_at >= now() - interval '24 hours' or clock_in_at >= now() - interval '24 hours')
+        order by (clock_out_at is null) desc, clock_in_at desc
+        limit 50
+      ) e
+      join profiles p on p.id = e.profile_id;
+
     elsif v_key = 'hr.headcount' and app.has('dashboard.all_workers') then
       select jsonb_build_object(
         'active', count(*) filter (where p.is_active),
@@ -651,38 +755,25 @@ begin
         select ev.*,
                case when v_com_pct is null or ev.total <= v_com_min then 0
                     else round(ev.total * v_com_pct / 100, 2) end as commission,
-               case when v_com_pct is not null and ev.total = 0 then false
-                    else true end as billed
+               (v_com_pct is null or ev.total > 0) as billed
           from ev
-      ), cur as (
-        select * from ec where event_date between p_from and p_to
-      ), m_agg as (
-        select ec.month,
-               count(*) filter (where ec.billed) as events_count,
-               round(coalesce(sum(ec.total), 0), 2) as total,
-               round(coalesce(sum(ec.commission), 0), 2) as commission
-          from ec
-         group by ec.month
-      ), gen as (
-        select generate_series(
-          least(date_trunc('month', p_from), date_trunc('month', p_to) - interval '11 months'),
-          date_trunc('month', p_to),
-          interval '1 month'
-        )::date as month
       )
       select jsonb_build_object(
+        'events',     (select count(*) from ec where billed and event_date between p_from and p_to),
+        'total',      (select round(coalesce(sum(total), 0), 2)
+                         from ec where billed and event_date between p_from and p_to),
+        'commission', case when v_com_pct is null then null
+                           else (select round(coalesce(sum(commission), 0), 2)
+                                   from ec where event_date between p_from and p_to) end,
         'commission_pct', v_com_pct,
-        'events_count', coalesce((select count(*) filter (where cur.billed) from cur), 0),
-        'total',        round(coalesce((select sum(cur.total) from cur), 0), 2),
-        'commission',   round(coalesce((select sum(cur.commission) from cur), 0), 2),
-        'months', (select coalesce(jsonb_agg(row_to_json(r) order by r.month desc), '[]') from (
-            select g.month,
-                   coalesce(a.events_count, 0) as events_count,
-                   coalesce(a.total, 0) as total,
-                   coalesce(a.commission, 0) as commission
-              from gen g
-              left join m_agg a on a.month = g.month
-             order by g.month desc) r))
+        'commission_min', v_com_min,
+        'months', (select coalesce(jsonb_agg(row_to_json(m) order by m.month), '[]') from (
+            select month,
+                   count(*)             as events,
+                   round(sum(total), 2) as total,
+                   case when v_com_pct is null then null
+                        else round(sum(commission), 2) end as commission
+              from ec where billed group by month) m))
         into v_val;
 
     elsif v_key = 'fleet.status' and app.has('fleet.view') then

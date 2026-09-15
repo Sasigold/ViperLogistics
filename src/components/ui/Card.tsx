@@ -180,43 +180,45 @@ export function StatCard({
 
   const inner = (
     <>
-      <div className="flex items-start gap-3">
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0 flex-1 type-caption font-medium text-ink-tertiary leading-snug break-words">
+          {label}
+        </p>
         {icon && (
           <span
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl"
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg"
             style={{ background: `color-mix(in srgb, ${tone} 12%, transparent)`, color: tone }}
             aria-hidden
           >
             {icon}
           </span>
         )}
-        <div className="min-w-0 flex-1">
-          <p className="truncate type-caption font-medium text-ink-tertiary">{label}</p>
-          <p
-            className="mt-0.5 type-display tabular leading-8 truncate max-w-full text-[clamp(1.15rem,2.2vw,1.75rem)]"
-            title={typeof value === 'string' || typeof value === 'number' ? String(value) : undefined}
-          >
-            {value}
-          </p>
-        </div>
+      </div>
+      <div className="mt-2 min-w-0">
+        <p
+          className="type-display tabular font-bold tracking-tight text-ink leading-tight break-words text-[clamp(1.15rem,2.2vw,1.65rem)]"
+          title={typeof value === 'string' || typeof value === 'number' ? String(value) : undefined}
+        >
+          {value}
+        </p>
       </div>
       {/* Always rendered, with the populated row's height reserved, so a tile
           with no delta or hint stands exactly as tall as one that has them —
           KPI tiles sharing a row line up instead of stair-stepping. */}
-      <div className="mt-2.5 flex min-h-5 items-center gap-2 overflow-hidden">
+      <div className="mt-2.5 flex min-h-5 flex-wrap items-center gap-x-2 gap-y-1 border-t border-line-subtle/40 pt-1.5 type-caption text-ink-tertiary">
         {showDelta && (
-            <span
-              className={cx(
-                'inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 type-caption font-semibold tabular',
-                good ? 'bg-success-subtle text-success-text' : 'bg-error-subtle text-error-text',
-              )}
-            >
-              {up ? <TrendingUp size={11} aria-hidden /> : <TrendingDown size={11} aria-hidden />}
-              {up ? '+' : ''}
-              {delta}
-            </span>
-          )}
-          {hint && <span className="min-w-0 truncate type-caption text-ink-tertiary">{hint}</span>}
+          <span
+            className={cx(
+              'inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 type-caption font-semibold tabular',
+              good ? 'bg-success-subtle text-success-text' : 'bg-error-subtle text-error-text',
+            )}
+          >
+            {up ? <TrendingUp size={11} aria-hidden /> : <TrendingDown size={11} aria-hidden />}
+            {up ? '+' : ''}
+            {delta}
+          </span>
+        )}
+        {hint && <div className="min-w-0 flex-1 leading-snug break-words text-ink-tertiary">{hint}</div>}
       </div>
     </>
   )

@@ -152,15 +152,26 @@ export const ClientShareWidget = sectionKpi<ClientShare>({
   label: 'הכנסות לשיא עיצובים',
   icon: HandCoins,
   tone: '#3563f0',
-  delta: true,
+  delta: false,
   select: (v) => Number(v.total),
   format: (v) => fmtMoney(v),
   hint: (v) =>
-    v.furniture_new_share != null && v.furniture_old_share != null
-      ? `חדש (80%): ${fmtMoney(v.furniture_new_share)} · ישן (30%): ${fmtMoney(v.furniture_old_share)}`
-      : v.rows?.length
-        ? v.rows.map((r) => `${r.name} ${fmtMoney(Number(r.total))}`).join(' · ')
-        : '80% מריהוט חדש ו-30% מריהוט ישן',
+    v.furniture_new_share != null && v.furniture_old_share != null ? (
+      <span className="flex flex-col gap-0.5 text-xs">
+        <span>חדש (80%): {fmtMoney(v.furniture_new_share)}</span>
+        <span>ישן (30%): {fmtMoney(v.furniture_old_share)}</span>
+      </span>
+    ) : v.rows?.length ? (
+      <span className="flex flex-col gap-0.5 text-xs">
+        {v.rows.map((r) => (
+          <span key={r.name}>
+            {r.name} {fmtMoney(Number(r.total))}
+          </span>
+        ))}
+      </span>
+    ) : (
+      '80% מריהוט חדש ו-30% מריהוט ישן'
+    ),
 })
 
 export const KeisarCommissionWidget = sectionKpi<KeisarCommission>({
@@ -168,13 +179,20 @@ export const KeisarCommissionWidget = sectionKpi<KeisarCommission>({
   label: 'עמלה לקיסר',
   icon: Percent,
   tone: '#ef4444',
-  delta: true,
+  delta: false,
   select: (v) => Number(v.total),
   format: (v) => fmtMoney(v),
   hint: (v) =>
-    v.events_count > 0
-      ? `10% מעל 2,000 ₪ · ${v.events_count} אירועים (${fmtMoney(v.tasks_total)})`
-      : '10% מאירועים שסך משימותיהם מעל 2,000 ₪',
+    v.events_count > 0 ? (
+      <span className="flex flex-col gap-0.5 text-xs">
+        <span>10% מעל 2,000 ₪ לאירוע</span>
+        <span>
+          {v.events_count} אירועים ({fmtMoney(v.tasks_total)})
+        </span>
+      </span>
+    ) : (
+      '10% מאירועים שסך משימותיהם מעל 2,000 ₪'
+    ),
 })
 
 /* ===== income mix — the legacy pie ========================================
@@ -220,7 +238,7 @@ export function IncomeMixWidget({ height }: WidgetProps) {
               </ResponsiveContainer>
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-2 text-center">
                 <span
-                  className="type-title tabular leading-none truncate max-w-[105px]"
+                  className="type-title tabular leading-none truncate max-w-[120px]"
                   title={fmtMoney(total)}
                 >
                   {fmtMoney(total)}
@@ -262,7 +280,7 @@ export function IncomeMixWidget({ height }: WidgetProps) {
    GrossMarginWidget: the number carries its own limits on the card.         */
 
 const PROFIT_NOTE =
-  'רווח לפני הוצאות = תמחור משימות + הכנסות קטגוריה שהוזנו על אירועים. ' +
+  'סך ההכנסות מחושב לפי פילוח ההכנסות מהאירועים (הובלות שיא עיצובים, לוגיסטיקה לפי לקוח, 20% מריהוט חדש ו-70% מריהוט ישן). ' +
   'עלות השכר היא משמרות מאושרות בלבד, מוכפלת באחוז עלות המעביד שבהגדרות. ' +
   'אינו כולל תקורה, רכב, ביטוח ומע״מ. ההכנסה מיוחסת לתאריך המשימה/האירוע.'
 
@@ -274,7 +292,7 @@ export function ProfitSummaryWidget(_props: WidgetProps) {
   const profit = Number(data.profit)
   const before = prev ? Number(prev.profit) : null
   const lines = [
-    { label: 'רווח לפני הוצאות', value: Number(data.revenue), tone: 'text-success-text' },
+    { label: 'סך הכנסות (לפי פילוח)', value: Number(data.revenue), tone: 'text-success-text' },
     {
       label: `עלות שכר (כולל מעביד ${Number(data.employer_pct)}%)`,
       value: -Number(data.payroll_with_employer),
@@ -287,7 +305,7 @@ export function ProfitSummaryWidget(_props: WidgetProps) {
     <Card>
       <CardHeader
         title="רווח"
-        subtitle="במתכונת המערכת הישנה"
+        subtitle="הכנסות לפי פילוח פחות הוצאות"
         actions={
           <Tooltip content={<span className="block max-w-xs">{PROFIT_NOTE}</span>}>
             <span className="text-ink-tertiary" aria-label="מה נכלל בחישוב">

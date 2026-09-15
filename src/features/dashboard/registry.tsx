@@ -17,6 +17,7 @@ import {
   Percent,
   STROKE,
   Truck,
+  UserCheck,
   Users,
   Wallet,
   Zap,
@@ -70,6 +71,7 @@ import {
   UnpricedTasksWidget,
 } from './widgets/financeWidgets'
 import {
+  ActiveAndRecentShiftsWidget,
   AttendanceFlagsWidget,
   CustomerLeaderboardWidget,
   EventTrucksWidget,
@@ -249,7 +251,7 @@ export const WIDGETS: WidgetDef[] = [
     sizes: ['sm'],
     defaultOn: true,
     usesRange: true,
-    wantsDelta: true,
+    wantsDelta: false,
     sections: ['finance.client_share'],
     Component: ClientShareWidget,
   },
@@ -263,7 +265,7 @@ export const WIDGETS: WidgetDef[] = [
     sizes: ['sm'],
     defaultOn: true,
     usesRange: true,
-    wantsDelta: true,
+    wantsDelta: false,
     sections: ['finance.keisar_commission'],
     Component: KeisarCommissionWidget,
   },
@@ -1007,6 +1009,18 @@ export const WIDGETS: WidgetDef[] = [
     options: SERIES_OPTIONS,
     Component: AttendanceFlagsWidget,
   },
+  {
+    id: 'hr.active_and_recent_shifts',
+    title: 'עובדים במשמרת (24 שעות)',
+    description: 'עובדים הנמצאים כרגע במשמרת פעילה או שעבדו ב-24 השעות האחרונות, עם שעות כניסה ויציאה',
+    group: 'people',
+    icon: icon(UserCheck),
+    perms: [PERM.ATTENDANCE_VIEW_ALL],
+    sizes: ['md', 'lg'],
+    defaultOn: true,
+    sections: ['attendance.active_and_recent'],
+    Component: ActiveAndRecentShiftsWidget,
+  },
 
   /* ── מונים נוספים מ-dashboard_stats ────────────────────────────────────
      הנתון כבר הגיע מהשרת מאז 0026 ופשוט לא צויר. */
@@ -1315,6 +1329,7 @@ export const BUILT_IN_DEFAULT: DashboardLayout = {
     { id: 'cust.tasks_by_customer', size: 'md' },
     { id: 'hr.workload', size: 'md' },
     { id: 'hr.contractor_split', size: 'md' },
+    { id: 'hr.active_and_recent_shifts', size: 'lg' },
 
     { id: 'finance.income_mix', size: 'md' },
     { id: 'finance.profit_summary', size: 'md' },

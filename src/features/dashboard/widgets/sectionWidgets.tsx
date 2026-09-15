@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router'
 import { Legend, Line, LineChart, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import {
@@ -13,7 +14,19 @@ import {
   fmtMoney,
 } from '../../../components/ui'
 import type { Column } from '../../../components/ui'
-import { AlertTriangle, CheckCheck, ICON, STROKE, Truck, Users } from '../../../components/ui/icons'
+import {
+  AlertTriangle,
+  CheckCheck,
+  Clock,
+  ICON,
+  LogIn,
+  LogOut,
+  MapPin,
+  STROKE,
+  Truck,
+  UserCheck,
+  Users,
+} from '../../../components/ui/icons'
 import { fmtDate } from '../../../lib/dates'
 import { ChartTooltip } from '../parts/ChartTooltip'
 import { ChartFrame } from '../parts/ChartFrame'
@@ -305,6 +318,256 @@ export function AttendancePendingWidget(_props: WidgetProps) {
                 <span className="shrink-0 type-caption tabular font-semibold">
                   {fmtHoursShort(Number(r.actual_hours))}
                 </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardBody>
+    </Card>
+  )
+}
+
+/* ===== active and recent shifts (last 24 hours) =========================== */
+
+interface RecentShiftWorker {
+  id: string
+  profile_id: string
+  worker_name: string
+  phone: string | null
+  work_site: string | null
+  task_or_event: string | null
+  clock_in_at: string
+  clock_out_at: string | null
+  is_active: boolean
+  status: string
+  actual_hours: number | null
+  duration_minutes: number
+}
+
+interface ActiveAndRecentShiftsData {
+  active_count: number
+  total_count: number
+  shifts: RecentShiftWorker[]
+}
+
+function fmtTimeOfDay(isoString: string | null | undefined): string {
+  if (!isoString) return ''
+  try {
+    const d = new Date(isoString)
+    return d.toLocaleTimeString('he-IL', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Jerusalem',
+    })
+  } catch {
+    return ''
+  }
+}
+
+function fmtDateOrToday(isoString: string | null | undefined): string {
+  if (!isoString) return ''
+  try {
+    const d = new Date(isoString)
+    const now = new Date()
+    const isToday =
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear()
+    if (isToday) return 'היום'
+    return d.toLocaleDateString('he-IL', {
+      day: 'numeric',
+      month: 'numeric',
+      timeZone: 'Asia/Jerusalem',
+    })
+  } catch {
+    return ''
+  }
+}
+
+function fmtDurationMins(minutes: number): string {
+  if (!minutes || minutes <= 0) return '0 דק׳'
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (h === 0) return `${m} דק׳`
+  if (m === 0) return `${h} שעות`
+  return `${h} שעות ו-${m} דק׳`
+}
+
+export function ActiveAndRecentShiftsWidget(_props: WidgetProps) {
+  const { data, isLoading } = useSection<ActiveAndRecentShiftsData>('attendance.active_and_recent')
+  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all')
+
+  if (data === null) return null
+
+  const shifts = data?.shifts ?? []
+  const activeCount = data?.active_count ?? 0
+  const totalCount = shifts.length
+  const completedCount = totalCount - activeCount
+
+  const filtered = shifts.filter((s) => {
+    if (filter === 'active') return s.is_active
+    if (filter === 'completed') return !s.is_active
+    return true
+  })
+
+  return (
+    <Card>
+      <CardHeader
+        title="עובדים במשמרת / 24 שעות האחרונות"
+        subtitle={
+          activeCount > 0 ? (
+            <span className="flex items-center gap-1.5 text-success-text font-medium">
+              <span className="inline-block size-2 rounded-full bg-success animate-pulse" />
+              <span>{activeCount} עובדים במשמרת כעת</span>
+              <span className="text-ink-tertiary font-normal">· {totalCount} ב-24 שעות האחרונות</span>
+            </span>
+          ) : (
+            `אין עובדים פעילים כעת · ${totalCount} ב-24 שעות האחרונות`
+          )
+        }
+        icon={<UserCheck size={ICON.md} strokeWidth={STROKE} />}
+        actions={
+          <Link to="/attendance" className="rounded px-2 py-1 type-caption font-medium text-primary-text hover:bg-hover">
+            לדוח נוכחות
+          </Link>
+        }
+      />
+      {shifts.length > 0 && (
+        <div className="flex items-center gap-1 border-b border-line-subtle px-4 py-2 bg-subtle/30 text-xs">
+          <button
+            type="button"
+            onClick={() => setFilter('all')}
+            className={`rounded px-2.5 py-1 font-medium transition-colors ${
+              filter === 'all' ? 'bg-surface shadow-xs text-ink font-semibold' : 'text-ink-secondary hover:text-ink'
+            }`}
+          >
+            הכל ({totalCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter('active')}
+            className={`flex items-center gap-1.5 rounded px-2.5 py-1 font-medium transition-colors ${
+              filter === 'active' ? 'bg-surface shadow-xs text-success-text font-semibold' : 'text-ink-secondary hover:text-ink'
+            }`}
+          >
+            <span className="size-1.5 rounded-full bg-success" />
+            במשמרת כעת ({activeCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter('completed')}
+            className={`rounded px-2.5 py-1 font-medium transition-colors ${
+              filter === 'completed' ? 'bg-surface shadow-xs text-ink font-semibold' : 'text-ink-secondary hover:text-ink'
+            }`}
+          >
+            הסתיימו ({completedCount})
+          </button>
+        </div>
+      )}
+      <CardBody padded={false}>
+        {isLoading && !data ? (
+          <div className="p-4">
+            <SkeletonList rows={3} />
+          </div>
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            compact
+            art="check"
+            title={
+              filter === 'active'
+                ? 'אין עובדים במשמרת כעת'
+                : filter === 'completed'
+                  ? 'אין משמרות שהסתיימו ב-24 השעות האחרונות'
+                  : 'אין עובדים במשמרת או ב-24 השעות האחרונות'
+            }
+          />
+        ) : (
+          <ul className="max-h-[360px] divide-y divide-line-subtle overflow-y-auto">
+            {filtered.map((r) => (
+              <li
+                key={r.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-4 py-3 hover:bg-hover/40 transition-colors"
+              >
+                {/* Worker Identity and status */}
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className={`flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                      r.is_active
+                        ? 'bg-success-subtle text-success-text ring-2 ring-success/30'
+                        : 'bg-subtle text-ink-secondary'
+                    }`}
+                  >
+                    {r.worker_name.trim().charAt(0)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-ink type-body truncate">{r.worker_name}</span>
+                      {r.is_active ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-success-subtle px-2 py-0.5 text-xs font-medium text-success-text">
+                          <span className="size-1.5 rounded-full bg-success animate-pulse" />
+                          במשמרת כעת
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-subtle px-1.5 py-0.5 text-xs text-ink-tertiary">
+                          הסתיימה ({fmtDurationMins(r.duration_minutes)})
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-2 text-xs text-ink-tertiary flex-wrap">
+                      {r.task_or_event && (
+                        <span className="inline-flex items-center gap-0.5 text-ink-secondary">
+                          <MapPin size={11} className="shrink-0 text-primary-text" />
+                          <span className="truncate max-w-[150px]">{r.task_or_event}</span>
+                        </span>
+                      )}
+                      {r.work_site && !r.task_or_event && (
+                        <span className="inline-flex items-center gap-0.5">
+                          <MapPin size={11} className="shrink-0 text-ink-tertiary" />
+                          <span>{r.work_site === 'field' ? 'שטח' : r.work_site === 'warehouse' ? 'מחסן' : r.work_site}</span>
+                        </span>
+                      )}
+                      {r.phone && (
+                        <a href={`tel:${r.phone}`} className="hover:text-primary-text transition-colors">
+                          {r.phone}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Clock In / Out Times */}
+                <div className="flex items-center gap-4 shrink-0 ps-12 sm:ps-0 text-xs">
+                  {/* Clock-in */}
+                  <div className="flex flex-col items-start sm:items-end">
+                    <span className="flex items-center gap-1 text-ink-tertiary">
+                      <LogIn size={11} className="text-success-text shrink-0" />
+                      <span>כניסה</span>
+                    </span>
+                    <span className="font-semibold tabular text-ink mt-0.5">
+                      {fmtTimeOfDay(r.clock_in_at)}{' '}
+                      <span className="text-ink-tertiary font-normal text-[11px]">({fmtDateOrToday(r.clock_in_at)})</span>
+                    </span>
+                  </div>
+
+                  {/* Clock-out */}
+                  <div className="flex flex-col items-start sm:items-end">
+                    <span className="flex items-center gap-1 text-ink-tertiary">
+                      <LogOut size={11} className="text-ink-tertiary shrink-0" />
+                      <span>יציאה</span>
+                    </span>
+                    {r.clock_out_at ? (
+                      <span className="font-semibold tabular text-ink mt-0.5">
+                        {fmtTimeOfDay(r.clock_out_at)}{' '}
+                        <span className="text-ink-tertiary font-normal text-[11px]">({fmtDateOrToday(r.clock_out_at)})</span>
+                      </span>
+                    ) : (
+                      <span className="text-warning-text font-medium mt-0.5 flex items-center gap-1">
+                        <Clock size={11} />
+                        <span>טרם יצא</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
               </li>
             ))}
           </ul>
