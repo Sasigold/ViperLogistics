@@ -4,6 +4,7 @@ import { Bar, BarChart, Cell, ReferenceLine, Tooltip, XAxis, YAxis } from 'recha
 import { addMonths, endOfMonth, isSameMonth, startOfMonth } from 'date-fns'
 import {
   Badge,
+  Button,
   Card,
   CardBody,
   CardHeader,
@@ -24,6 +25,7 @@ import {
   ICON,
   MapPin,
   STROKE,
+  Settings,
   Truck,
   UserPlus,
   Users,
@@ -34,9 +36,11 @@ import { shortAddress } from '../../lib/address'
 import { errorMessage } from '../../lib/errors'
 import { PERM } from '../../lib/permissions'
 import { supabase } from '../../lib/supabase'
+import { useContractors } from '../../lib/queries'
 import { RequirePermission } from '../auth/guards'
 import { MonthStepper } from '../dashboard/MonthStepper'
 import { ChartFrame } from '../dashboard/parts/ChartFrame'
+import { CapacitySettingsDialog } from './CapacitySettingsDialog'
 import {
   LOAD_BANDS,
   LOAD_DIMENSIONS,
@@ -57,6 +61,7 @@ import type {
   LoadDayResult,
   LoadHeatmapResult,
   LoadHour,
+  LoadScope,
   LoadTask,
 } from '../../types/domain'
 
@@ -66,10 +71,6 @@ import type {
  * חודש של תאים, ותא אחד נפתח לעשרים וארבע שעות. שתי התצוגות עונות על שתי
  * שאלות שונות: **"מתי אני עמוס"** — שהיא שאלה על החודש, ונענית בצבע — ו-
  * **"באיזו שעה, ובגלל מה"**, שהיא שאלה על היום ונענית בעמודות ובשמות.
- *
- * המידה בשתיהן זהה, וזה מה שמאפשר להשוות ביניהן: **המרבי מבין הממדים** מול
- * התקרה (‏`loadScale.ts`), ולצדו שם הצוואר. עומס אינו ממוצע — יום שאין בו
- * ראש צוות שלישי הוא יום סגור גם כשמחצית העובדים יושבים בבית.
  *
  * כל מספר כאן מגיע מהשרת; המסך מחשב **אחוזים בלבד**, מול התקרה שהשרת שלח
  * באותה תשובה. כך "היום העמוס" בכרטיס ו"התא הכהה" ברשת אינם יכולים
@@ -87,14 +88,31 @@ export default function LoadHeatmapPage() {
 function LoadHeatmapScreen() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
   const [selected, setSelected] = useState<string | null>(() => toISODate(new Date()))
+  const [scope, setScope] = useState<LoadScope>('internal')
+  const [selectedContractorId, setSelectedContractorId] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  const { data: contractors = [] } = useContractors()
+  const activeContractors = useMemo(() => contractors.filter((c) => c.is_active), [contractors])
+  const currentContractor = useMemo(
+    () => activeContractors.find((c) => c.id === selectedContractorId),
+    [activeContractors, selectedContractorId],
+  )
 
   const from = toISODate(startOfMonth(month))
   const to = toISODate(endOfMonth(month))
 
+  const contractorIdParam = scope === 'contractor' ? selectedContractorId : null
+
   const map = useQuery({
-    queryKey: ['load_heatmap', from, to],
+    queryKey: ['load_heatmap', from, to, scope, contractorIdParam],
     queryFn: async (): Promise<LoadHeatmapResult> => {
-      const { data, error } = await supabase.rpc('load_heatmap', { p_from: from, p_to: to })
+      const { data, error } = await supabase.rpc('load_heatmap', {
+        p_from: from,
+        p_to: to,
+        p_scope: scope,
+        p_contractor_id: contractorIdParam,
+      })
       if (error) throw error
       return data as LoadHeatmapResult
     },
@@ -107,9 +125,6 @@ function LoadHeatmapScreen() {
   const stepMonth = (delta: number) => {
     const next = startOfMonth(addMonths(month, delta))
     setMonth(next)
-    /* היום הנבחר עובר איתו: מפה של אוגוסט מתחת לפילוח של יולי היא שני
-       מסכים שמראים שני דברים ומתיימרים להיות אחד. ה-1 בחודש, אלא אם זה
-       החודש הנוכחי — ואז היום. */
     setSelected(toISODate(isSameMonth(next, new Date()) ? new Date() : next))
   }
 
@@ -127,7 +142,13 @@ function LoadHeatmapScreen() {
       )
     return (
       <>
-        <SummaryTiles summary={summary} capacity={capacity} />
+        <SummaryTiles
+          summary={summary}
+          capacity={capacity}
+          scope={scope}
+          contractorName={currentContractor?.name}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
         <MonthHeatmap
           month={month}
           days={days}
@@ -135,7 +156,14 @@ function LoadHeatmapScreen() {
           selected={selected}
           onSelect={setSelected}
         />
-        {selected && <DayPanel date={selected} />}
+        {selected && (
+          <DayPanel
+            date={selected}
+            scope={scope}
+            contractorId={contractorIdParam}
+            contractorName={currentContractor?.name}
+          />
+        )}
       </>
     )
   }
@@ -144,20 +172,89 @@ function LoadHeatmapScreen() {
     <div className="space-y-4">
       <PageHeader
         title="מפת עומסים"
-        subtitle="כמה רץ באותו רגע, מול מה שאפשר להפעיל — לפי היום הצפוף ולפי השעה שבתוכו"
+        subtitle={
+          scope === 'contractor'
+            ? `עומס מחושב עבור קבלן: ${currentContractor?.name || 'בחר קבלן'} — מול העובדים והמשימות שלו`
+            : scope === 'internal'
+              ? 'עומס מחושב עבור הצוות הפנימי בלבד (משימות קבלן אינן מעמיסות על הצוות)'
+              : 'כמה רץ באותו רגע, מול מה שאפשר להפעיל — לפי היום הצפוף ולפי השעה שבתוכו'
+        }
         actions={
-          <MonthStepper
-            month={month}
-            onStep={stepMonth}
-            onToday={() => {
-              setMonth(startOfMonth(new Date()))
-              setSelected(toISODate(new Date()))
-            }}
-            atToday={isSameMonth(month, new Date())}
-          />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outlined"
+              size="sm"
+              onClick={() => setSettingsOpen(true)}
+              className="gap-1.5"
+            >
+              <Settings size={ICON.xs} />
+              הגדרת קיבולת
+            </Button>
+            <MonthStepper
+              month={month}
+              onStep={stepMonth}
+              onToday={() => {
+                setMonth(startOfMonth(new Date()))
+                setSelected(toISODate(new Date()))
+              }}
+              atToday={isSameMonth(month, new Date())}
+            />
+          </div>
         }
       />
+
+      {/* בורר בסיס החישוב */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface p-2.5 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="type-caption font-semibold text-ink-secondary ms-1">חישוב עומסים לפי:</span>
+          <SegmentedControl
+            items={[
+              { key: 'internal', label: '🏢 צוות פנימי בלבד' },
+              { key: 'contractor', label: '🤝 קבלן ספציפי' },
+              { key: 'all', label: '🌐 כללי (הכל יחד)' },
+            ]}
+            value={scope}
+            onChange={(val) => {
+              const newScope = val as LoadScope
+              setScope(newScope)
+              if (newScope === 'contractor' && !selectedContractorId && activeContractors[0]) {
+                setSelectedContractorId(activeContractors[0].id)
+              }
+            }}
+          />
+
+          {scope === 'contractor' && (
+            <div className="flex items-center gap-2">
+              <span className="type-caption text-ink-tertiary">קבלן:</span>
+              <select
+                aria-label="בחר קבלן לבדיקת עומס"
+                value={selectedContractorId ?? ''}
+                onChange={(e) => setSelectedContractorId(e.target.value || null)}
+                className="h-8 rounded-lg border border-line bg-surface px-2.5 type-caption font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                {activeContractors.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        <div className="type-caption text-ink-tertiary">
+          {scope === 'internal' && 'משימות שהועברו לקבלנים אינן נספרות כעומס פנימי'}
+          {scope === 'contractor' && currentContractor && `מציג משימות ועומס של ${currentContractor.name}`}
+          {scope === 'all' && 'משקלל את כל המשימות בכלל המערכת'}
+        </div>
+      </div>
+
       {body()}
+
+      <CapacitySettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
     </div>
   )
 }
@@ -167,12 +264,25 @@ function LoadHeatmapScreen() {
 function SummaryTiles({
   summary,
   capacity,
+  scope,
+  contractorName,
+  onOpenSettings,
 }: {
   summary: ReturnType<typeof monthSummary>
   capacity: LoadCapacity | undefined
+  scope: LoadScope
+  contractorName?: string
+  onOpenSettings?: () => void
 }) {
   const busiest = summary.busiest
   const topDim = LOAD_DIMENSIONS.find((d) => d.key === summary.topBottleneck)
+
+  const gapHint =
+    scope === 'contractor'
+      ? `${summary.totalTasks} משימות מתוזמנות לקבלן בחודש`
+      : summary.untimed > 0
+        ? `${summary.delegated} משימות הואצלו · ${summary.untimed} ללא שעה`
+        : `${summary.delegated} משימות הואצלו לקבלנים`
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -207,13 +317,16 @@ function SummaryTiles({
         label="תקנים שטרם אוישו"
         value={summary.gap}
         tone="#8b5cf6"
-        hint={
-          summary.untimed > 0
-            ? `${summary.delegated} משימות הואצלו · ${summary.untimed} ללא שעה`
-            : `${summary.delegated} משימות הואצלו לקבלנים`
-        }
+        hint={gapHint}
       />
-      {capacity && <CapacityNote capacity={capacity} />}
+      {capacity && (
+        <CapacityNote
+          capacity={capacity}
+          scope={scope}
+          contractorName={contractorName}
+          onOpenSettings={onOpenSettings}
+        />
+      )}
     </div>
   )
 }
@@ -225,25 +338,58 @@ function SummaryTiles({
  * היא ניחוש מושכל, ותקרה שהמשרד נקב בה היא הכרעה. שתיהן לגיטימיות, ואסור
  * שייראו אותו דבר.
  */
-function CapacityNote({ capacity }: { capacity: LoadCapacity }) {
+function CapacityNote({
+  capacity,
+  scope,
+  contractorName,
+  onOpenSettings,
+}: {
+  capacity: LoadCapacity
+  scope: LoadScope
+  contractorName?: string
+  onOpenSettings?: () => void
+}) {
   const derived = LOAD_DIMENSIONS.filter((d) => capacity.source?.[d.capacityKey] === 'derived')
+  const scopeLabel =
+    scope === 'internal'
+      ? 'צוות פנימי בלבד'
+      : scope === 'contractor'
+        ? `קבלן: ${contractorName || 'קבלן'}`
+        : 'כללי (פנימי + קבלנים)'
+
+  const dimensionsToShow =
+    scope === 'contractor'
+      ? LOAD_DIMENSIONS.filter((d) => (capacity[d.capacityKey] ?? 0) > 0 || d.key === 'workers')
+      : LOAD_DIMENSIONS
+
   return (
     <div className="sm:col-span-2 lg:col-span-4">
-      <Card padded className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span className="type-caption font-semibold text-ink-tertiary">הקיבולת שמולה נמדד העומס:</span>
-        {LOAD_DIMENSIONS.map((d) => (
-          <span key={d.key} className="inline-flex items-center gap-1.5 type-caption text-ink-secondary">
-            <span className="font-bold tabular text-ink">{capacity[d.capacityKey]}</span>
-            {d.label}
-            {capacity.source?.[d.capacityKey] === 'derived' && (
-              <Badge tone="neutral">נגזר</Badge>
-            )}
+      <Card padded className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span className="type-caption font-semibold text-ink-tertiary">
+            הקיבולת שמולה נמדד העומס ({scopeLabel}):
           </span>
-        ))}
-        {derived.length > 0 && (
-          <span className="type-caption text-ink-tertiary">
-            ‏"נגזר" = נספר מהמאגר הפעיל. אפשר לקבוע מספר מדויק בהגדרות המערכת.
-          </span>
+          {dimensionsToShow.map((d) => (
+            <span key={d.key} className="inline-flex items-center gap-1.5 type-caption text-ink-secondary">
+              <span className="font-bold tabular text-ink">{capacity[d.capacityKey]}</span>
+              {d.label}
+              {capacity.source?.[d.capacityKey] === 'derived' && (
+                <Badge tone="neutral">נגזר</Badge>
+              )}
+            </span>
+          ))}
+          {derived.length > 0 && (
+            <span className="type-caption text-ink-tertiary">
+              ‏"נגזר" = נספר מהמאגר הפעיל. אפשר להגדיר מספר מדויק ב"הגדרת קיבולת".
+            </span>
+          )}
+        </div>
+
+        {onOpenSettings && (
+          <Button variant="outlined" size="sm" onClick={onOpenSettings} className="gap-1.5 ms-auto">
+            <Settings size={ICON.xs} />
+            הגדרת קיבולת
+          </Button>
         )}
       </Card>
     </div>
@@ -437,13 +583,27 @@ const HOUR_MEASURES = [
 
 type HourMeasure = (typeof HOUR_MEASURES)[number]['key']
 
-function DayPanel({ date }: { date: string }) {
+function DayPanel({
+  date,
+  scope,
+  contractorId,
+  contractorName,
+}: {
+  date: string
+  scope: LoadScope
+  contractorId: string | null
+  contractorName?: string
+}) {
   const [measure, setMeasure] = useState<HourMeasure>('pct')
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['load_day', date],
+    queryKey: ['load_day', date, scope, contractorId],
     queryFn: async (): Promise<LoadDayResult> => {
-      const { data, error } = await supabase.rpc('load_day', { p_date: date })
+      const { data, error } = await supabase.rpc('load_day', {
+        p_date: date,
+        p_scope: scope,
+        p_contractor_id: contractorId,
+      })
       if (error) throw error
       return data as LoadDayResult
     },
@@ -551,7 +711,14 @@ function DayPanel({ date }: { date: string }) {
       </div>
 
       <div className="lg:col-span-2">
-        <DayTasksCard date={date} tasks={tasks} loading={isLoading} denied={data?.meta?.denied} />
+        <DayTasksCard
+          date={date}
+          tasks={tasks}
+          loading={isLoading}
+          denied={data?.meta?.denied}
+          scope={scope}
+          contractorName={contractorName}
+        />
       </div>
     </div>
   )
@@ -611,11 +778,15 @@ function DayTasksCard({
   tasks,
   loading,
   denied,
+  scope,
+  contractorName,
 }: {
   date: string
   tasks: LoadTask[]
   loading: boolean
   denied?: boolean
+  scope?: LoadScope
+  contractorName?: string
 }) {
   const time = (iso: string) =>
     new Date(iso).toLocaleTimeString('he-IL', {
@@ -624,11 +795,18 @@ function DayTasksCard({
       timeZone: 'Asia/Jerusalem',
     })
 
+  const subtitle =
+    scope === 'contractor'
+      ? `${tasks.length} משימות עבור ${contractorName || 'הקבלן'} ב-${fmtDate(date)}`
+      : scope === 'internal'
+        ? `${tasks.length} משימות בצוות הפנימי ב-${fmtDate(date)}`
+        : `${tasks.length} משימות נוגעות ב-${fmtDate(date)}`
+
   return (
     <Card className="h-full">
       <CardHeader
         title="מה רץ ביום הזה"
-        subtitle={`${tasks.length} משימות נוגעות ב-${fmtDate(date)}`}
+        subtitle={subtitle}
         icon={<Clock size={ICON.lg} strokeWidth={STROKE} />}
       />
       <CardBody className="max-h-[19rem] overflow-y-auto p-3">

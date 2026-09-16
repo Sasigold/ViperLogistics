@@ -1834,11 +1834,22 @@ export type LoadDimension = 'workers' | 'trucks' | 'leads'
 /** ‏`configured` = המשרד נקב במספר; `derived` = נספר מהמאגר הפעיל. */
 export type CapacitySource = 'configured' | 'derived'
 
+export type LoadScope = 'internal' | 'contractor' | 'all'
+
 export interface LoadCapacity {
   workers: number
   trucks: number
   team_leads: number
   source: { workers: CapacitySource; trucks: CapacitySource; team_leads: CapacitySource }
+  scope?: LoadScope
+  contractor_id?: string | null
+}
+
+export interface OpsCapacityConfig {
+  workers: number | null
+  trucks: number | null
+  team_leads: number | null
+  contractors?: Record<string, { workers?: number | null; trucks?: number | null; team_leads?: number | null }>
 }
 
 /**
@@ -1876,7 +1887,7 @@ export interface LoadDay {
 export interface LoadHeatmapResult {
   /** ‏null = הנתון אינו זמין בהרשאות הקורא (היקף מצומצם, או שאינו מהמשרד) */
   days: LoadDay[] | null
-  meta: { from?: string; to?: string; capacity?: LoadCapacity; denied: boolean }
+  meta: { from?: string; to?: string; capacity?: LoadCapacity; scope?: LoadScope; contractor_id?: string | null; denied: boolean }
 }
 
 /** משבצת שעה אחת בפילוח היומי. כל המספרים הם מקבילות. */
@@ -1913,6 +1924,7 @@ export interface LoadTask {
   truck_names: { id: string; name: string }[] | null
   site: string | null
   delegated: boolean
+  contractor_id?: string | null
   status_name: string | null
   status_color: string | null
 }
@@ -1920,5 +1932,5 @@ export interface LoadTask {
 export interface LoadDayResult {
   hours: LoadHour[] | null
   tasks: LoadTask[] | null
-  meta: { date?: string; capacity?: LoadCapacity; denied: boolean }
+  meta: { date?: string; capacity?: LoadCapacity; scope?: LoadScope; contractor_id?: string | null; denied: boolean }
 }
