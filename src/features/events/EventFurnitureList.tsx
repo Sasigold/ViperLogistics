@@ -127,10 +127,13 @@ export function EventFurnitureList({
           נאמרת פעם אחת בתחתית ולא כשורה בטבלה. */}
       {(summary.trucks !== null || summary.workers !== null) && (
         <footer className="border-t border-line-subtle bg-subtle/40 px-3 py-2 type-caption text-ink-secondary">
-          בהזמנה גם
-          {summary.trucks !== null && <span className="tabular"> {summary.trucks} משאיות</span>}
-          {summary.trucks !== null && summary.workers !== null && ' ·'}
-          {summary.workers !== null && <span className="tabular"> {summary.workers} עובדים</span>}
+          בהזמנה גם{' '}
+          {[
+            summary.trucks !== null && (summary.trucks === 1 ? 'משאית אחת' : `${summary.trucks} משאיות`),
+            summary.workers !== null && (summary.workers === 1 ? 'עובד אחד' : `${summary.workers} עובדים`),
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </footer>
       )}
     </section>

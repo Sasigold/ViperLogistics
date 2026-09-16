@@ -38,6 +38,7 @@ import {
   SkeletonList,
   StatCard,
   StatusPill,
+  Switch,
   cx,
   fmtRelative,
   useToast,
@@ -70,20 +71,37 @@ export default function IntegrationsPage() {
 
   const { data: connections = [], isLoading, error, refetch } = useViperflowStatus()
   const [feed, setFeed] = useState<'all' | 'failed'>('all')
-  const { data: deliveries = [], isLoading: loadingFeed } = useViperflowDeliveries(feed === 'failed')
+  const {
+    data: deliveries = [],
+    isLoading: loadingFeed,
+    error: feedError,
+    refetch: refetchFeed,
+  } = useViperflowDeliveries(feed === 'failed')
 
   const sync = useViperflowSync()
   const toast = useToast()
+  /* איזה חיבור מסנכרן כרגע. `sync.isPending` לבדו היה מסובב את הספינר על כל
+     הכרטיסים, כולל אלה שאיש לא לחץ עליהם. */
+  const [syncing, setSyncing] = useState<string | null>(null)
 
   async function runSync(connectionId: string) {
+    setSyncing(connectionId)
     try {
       const summary = await sync.mutateAsync(connectionId)
-      toast.success(
+      const line =
         `נסרקו ${summary.scanned} הזמנות · הוחלו ${summary.applied} · ללא שינוי ${summary.duplicate}` +
-          (summary.failed > 0 ? ` · נכשלו ${summary.failed}` : ''),
-      )
+        (summary.failed > 0 ? ` · נכשלו ${summary.failed}` : '')
+      /* ריצה אחת מוגבלת במספר ההזמנות כדי לא לחרוג ממכסת הקריאות שלהם. אם
+         נשאר עוד — צריך לומר את זה, אחרת "נסרקו 80" נראה כמו "זה הכול". */
+      if (summary.has_more) {
+        toast.info(`${line} · יש עוד — כדאי ללחוץ שוב`)
+      } else {
+        toast.success(line)
+      }
     } catch (e) {
       toast.error(errorMessage(e))
+    } finally {
+      setSyncing(null)
     }
   }
 
@@ -115,7 +133,7 @@ export default function IntegrationsPage() {
             key={connection.id}
             connection={connection}
             canManage={canManage}
-            syncing={sync.isPending}
+            syncing={sync.isPending && syncing === connection.id}
             onSync={() => void runSync(connection.id)}
           />
         ))}
@@ -139,7 +157,10 @@ export default function IntegrationsPage() {
           />
           <CardBody>
             {loadingFeed && <SkeletonList rows={4} />}
-            {!loadingFeed && deliveries.length === 0 && (
+            {/* שגיאה שאינה מוצגת נראית בדיוק כמו "לא נכשל כלום", וזו התשובה
+                ההפוכה מזו שהמסך הזה קיים בשבילה. */}
+            {feedError && <ErrorState error={feedError} onRetry={() => void refetchFeed()} />}
+            {!loadingFeed && !feedError && deliveries.length === 0 && (
               <EmptyState
                 art="box"
                 title={feed === 'failed' ? 'אין משלוחים שנכשלו' : 'עוד לא נכנס דבר'}
@@ -150,7 +171,7 @@ export default function IntegrationsPage() {
                 }
               />
             )}
-            {deliveries.length > 0 && (
+            {!feedError && deliveries.length > 0 && (
               <ul className="divide-y divide-line-subtle">
                 {deliveries.map((delivery) => (
                   <DeliveryRow
@@ -181,6 +202,24 @@ function ConnectionCard({
   syncing: boolean
   onSync: () => void
 }) {
+  const save = useSetViperflowConnection()
+  const toast = useToast()
+
+  async function toggle(next: boolean) {
+    try {
+      await save.mutateAsync({
+        customerId: connection.customer_id,
+        label: connection.label,
+        isActive: next,
+        notes: connection.notes,
+        connectionId: connection.id,
+      })
+      toast.success(next ? 'החיבור הודלק' : 'החיבור כובה')
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
+
   /* "חי" אינו `is_active` לבדו: חיבור דלוק שלא נכנס דרכו דבר יומיים הוא
      בדיוק המצב שמסך כזה קיים כדי להראות. */
   const quiet =
@@ -204,17 +243,28 @@ function ConnectionCard({
         }
         icon={
           connection.failed_open > 0 ? (
-            <AlertTriangle size={ICON.md} strokeWidth={STROKE} className="text-danger" />
+            <AlertTriangle size={ICON.md} strokeWidth={STROKE} className="text-error-text" />
           ) : (
             <CircleCheck size={ICON.md} strokeWidth={STROKE} />
           )
         }
         actions={
           canManage ? (
-            <Button size="sm" loading={syncing} onClick={onSync}>
-              <RefreshCw size={ICON.sm} strokeWidth={STROKE} />
-              סנכרון עכשיו
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* הכיבוי הוא מה שעוצר את הקליטה בפועל: המתרגם דורש חיבור
+                  פעיל (0177 §4), ולכן מתג כאן אינו קישוט אלא ברז. */}
+              <Switch
+                checked={connection.is_active}
+                onChange={(next) => void toggle(next)}
+                disabled={save.isPending}
+                aria-label={connection.is_active ? 'כיבוי החיבור' : 'הדלקת החיבור'}
+                label="פעיל"
+              />
+              <Button size="sm" loading={syncing} onClick={onSync}>
+                <RefreshCw size={ICON.sm} strokeWidth={STROKE} />
+                סנכרון עכשיו
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -360,7 +410,7 @@ function DeliveryRow({
   }
 
   return (
-    <li className={cx('flex flex-wrap items-center gap-2 py-2', delivery.status === 'failed' && 'bg-danger/5')}>
+    <li className={cx('flex flex-wrap items-center gap-2 py-2', delivery.status === 'failed' && 'bg-error-subtle')}>
       <StatusPill color={tone.color}>{tone.label}</StatusPill>
       <span className="type-caption font-semibold text-ink">{delivery.event_type}</span>
       <span className="min-w-0 flex-1 truncate type-caption text-ink-secondary">

@@ -275,10 +275,13 @@ select t_eq('ולשעה המקומית שלו',
   (select t.onsite_start_time from tasks t join task_types tt on tt.id = t.task_type_id
     where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
   '00:00'::time);
-select t_eq('שעת יציאה שנופלת ביום הקודם אינה נכתבת על המשימה',
+-- ‏05:00 של הסנכרון הקודם **מתרוקנת** ואינה נשארת: היא הייתה שעת יציאה
+-- לאספקה שכבר אינה קיימת. שעה שגויה גרועה מהיעדר שעה, כי היא נראית כמו
+-- החלטה — והיומן אומר את המספר האמיתי ואת הסיבה.
+select t_eq('שעת יציאה שנסוגה ליום הקודם מרוקנת את השדה ואינה משאירה את הישנה',
   (select t.warehouse_start_time from tasks t join task_types tt on tt.id = t.task_type_id
     where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
-  '05:00'::time);
+  null::time);
 select t_eq('אישור ההזמנה קידם את האירוע',
   (select s.code from events e join statuses s on s.id = e.status_id
     where e.id = (select event_id from ev49)), 'approved');
@@ -310,11 +313,43 @@ select t_eq('והמשלוח נרשם כלא-רלוונטי ולא כנכשל',
   (select status from viperflow_deliveries where event_id = 'evt_' || repeat('c', 32)), 'ignored');
 
 
+\echo '--- 7א. ו-force עובר גם את השומר וגם את האי-כפילות ---'
+
+-- אותו evt_ בדיוק כמו ב-§7, ואותה חותמת ישנה. בלי force הוא כבר נענה
+-- 'stale'; עם force הוא מוחל, כי זה הכלי של מי שאומר "המצב אצלנו שגוי".
+select t_eq('אותה מעטפה עם force מוחלת',
+  (select viperflow_ingest(
+     t49_envelope('evt_' || repeat('c', 32), '2026-09-16T08:30:00.000Z',
+                  'order.updated', 'confirmed',
+                  '2026-10-05T05:00:00.000Z', '2026-10-07T07:00:00.000Z',
+                  t49_items(7)),
+     jsonb_build_object('connection_id', (select connection_id from vf49),
+                        'force', true)) ->> 'status'),
+  'processed');
+select t_eq('וההקמה זזה למה שהמעטפה אומרת',
+  (select t.task_date from tasks t join task_types tt on tt.id = t.task_type_id
+    where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
+  '2026-10-05'::date);
+select t_eq('והריהוט הוחלף',
+  (select quantity from viperflow_order_items
+    where event_id = (select event_id from ev49) and name = 'כיסא נפוליאון'), 7::numeric);
+select t_eq('ושורת המשלוח נכתבה מחדש ולא הוכפלה',
+  (select count(*)::int from viperflow_deliveries where event_id = 'evt_' || repeat('c', 32)), 1);
+
+-- ומחזירים את המצב למה שהיה, כדי ש-§11 תבטל את האירוע האמיתי.
+select viperflow_ingest(
+  t49_envelope('evt_' || repeat('7', 32), '2026-09-16T09:30:00.000Z',
+               'order.updated', 'confirmed',
+               '2026-10-01T21:00:00.000Z', '2026-10-03T07:00:00.000Z',
+               t49_items(120)),
+  jsonb_build_object('connection_id', (select connection_id from vf49)));
+
+
 \echo '--- 8. היומן אומר מי הזיז, גם כשאיש לא לחץ ---'
 
-select t_eq('נכתבה שורת סנכרון',
+select t_eq('נכתבה שורת סנכרון לכל החלה',
   (select count(*)::int from event_activity
-    where event_id = (select event_id from ev49) and kind = 'synced'), 2);
+    where event_id = (select event_id from ev49) and kind = 'synced'), 4);
 select t_eq('והכותב הוא ViperFlow',
   (select distinct actor_name from event_activity
     where event_id = (select event_id from ev49) and kind = 'synced'), 'ViperFlow');
@@ -392,6 +427,47 @@ select t_eq('הביטול הוחל',
 select t_eq('והאירוע מבוטל',
   (select s.code from events e join statuses s on s.id = e.status_id
     where e.id = (select event_id from ev49)), 'cancelled');
+
+
+\echo '--- 11א. מחיקה שהגיעה לפני הלידה אינה מייצרת אירוע רפאים ---'
+
+-- הזמנה אחרת, שלא נראתה כאן מעולם: קודם נמחקת, ואז ה-`order.created` שלה
+-- מגיע באיחור. סדר כזה אפשרי — at-least-once בלי הבטחת סדר.
+select t_eq('מחיקה של הזמנה שאינה מקושרת נרשמת ואינה עושה דבר',
+  (select viperflow_ingest(
+     jsonb_build_object('id', 'evt_' || repeat('2', 32), 'type', 'order.deleted',
+       'created_at', '2026-09-16T13:00:00.000Z', 'api_version', 'v1', 'livemode', true,
+       'origin', jsonb_build_object('source', 'app'),
+       'data', jsonb_build_object(
+         'id', '99999999-4444-4444-4444-000000000249', 'object', 'order',
+         'order_number', 'ORD-49-0003', 'status', 'draft', 'deleted', true,
+         'updated_at', '2026-09-16T13:00:00.000Z'),
+       'previous', null),
+     jsonb_build_object('connection_id', (select connection_id from vf49))) ->> 'status'),
+  'ignored');
+
+select t_eq('והלידה שהגיעה אחריה אינה יוצרת אירוע',
+  (select viperflow_ingest(
+     jsonb_build_object('id', 'evt_' || repeat('3', 32), 'type', 'order.created',
+       'created_at', '2026-09-16T12:00:00.000Z', 'api_version', 'v1', 'livemode', true,
+       'origin', jsonb_build_object('source', 'app'),
+       'data', jsonb_build_object(
+         'id', '99999999-4444-4444-4444-000000000249', 'object', 'order',
+         'order_number', 'ORD-49-0003', 'status', 'draft', 'customer_name', 'רפאים',
+         'event', jsonb_build_object('date', '2026-11-11', 'location', 'אולם'),
+         'delivery_date', '2026-11-10T05:00:00.000Z',
+         'return_date', '2026-11-12T07:00:00.000Z',
+         'items', '[]'::jsonb,
+         'updated_at', '2026-09-16T12:00:00.000Z'),
+       'previous', null),
+     jsonb_build_object('connection_id', (select connection_id from vf49))) ->> 'status'),
+  'ignored');
+
+select t_eq('לא נולד קישור להזמנה המתה',
+  (select count(*)::int from viperflow_links
+    where order_id = '99999999-4444-4444-4444-000000000249'), 0);
+select t_eq('ולא נולד אירוע בשם הלקוח שלה',
+  (select count(*)::int from events where end_client_name = 'רפאים'), 0);
 
 
 \echo '--- 12. מי רואה מה ---'

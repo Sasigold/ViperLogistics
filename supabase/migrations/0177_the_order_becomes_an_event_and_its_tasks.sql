@@ -141,12 +141,16 @@ end $$;
 -- ‏`p_warehouse` ריק אינו מוחק שעת יציאה קיימת: הזמנה בלי חיץ (`buffer_hours`
 -- ריק = ברירת המחדל של החשבון) אינה אומרת "צאו בשעת האירוע".
 create or replace function app.viperflow_apply_task(
-  p_event     uuid,
-  p_code      text,
-  p_date      date,
-  p_onsite    time,
-  p_warehouse time,
-  p_workers   int)
+  p_event      uuid,
+  p_code       text,
+  p_date       date,
+  p_onsite     time,
+  p_warehouse  time,
+  p_workers    int,
+  -- ‏true כשההזמנה כן קבעה יציאה מהמחסן אבל היא אינה ניתנת לביטוי: חיץ
+  -- שנסוג ליום הקודם. אז השדה **מתרוקן** ואינו נשאר על מה שסנכרון קודם
+  -- כתב — שעה שגויה גרועה מהיעדר שעה, כי היא נראית כמו החלטה.
+  p_clear_warehouse boolean default false)
 returns uuid language plpgsql security definer set search_path = public as $$
 declare
   v_type    task_types;
@@ -154,7 +158,8 @@ declare
   v_task_id uuid;
   v_sys     boolean := app.in_system_write();
 begin
-  if p_date is null and p_onsite is null and p_warehouse is null and p_workers is null then
+  if p_date is null and p_onsite is null and p_warehouse is null and p_workers is null
+     and not coalesce(p_clear_warehouse, false) then
     return null;
   end if;
 
@@ -191,7 +196,10 @@ begin
   update tasks set
     task_date            = coalesce(p_date, task_date),
     onsite_start_time    = coalesce(p_onsite, onsite_start_time),
-    warehouse_start_time = coalesce(p_warehouse, warehouse_start_time),
+    warehouse_start_time = case
+                             when p_warehouse is not null then p_warehouse
+                             when coalesce(p_clear_warehouse, false) then null
+                             else warehouse_start_time end,
     worker_count         = coalesce(p_workers, worker_count)
   where id = v_task_id;
 
@@ -211,7 +219,13 @@ end $$;
 create or replace function app.viperflow_apply_order(
   p_connection uuid,
   p_order      jsonb,
-  p_event_type text)
+  p_event_type text,
+  -- ‏§3 של שומר הסדר מגן על המקרה השכיח — ניסיון חוזר שהתעכב — אבל
+  -- ‏`updated_at` של ViperFlow הוא זמן *תחילת* הטרנזקציה, ולכן יש חלון צר
+  -- שבו שינוי מאוחר נושא חותמת מוקדמת ונדחה לתמיד. ‏`p_force` הוא הדרך
+  -- חזרה: היא פתוחה רק ל-`integrations.manage` ולסנכרון היזום, והיא אומרת
+  -- "מה שבמעטפה הוא האמת, בלי קשר לחותמת".
+  p_force      boolean default false)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
   v_conn        viperflow_connections;
@@ -237,9 +251,11 @@ declare
   v_sys         boolean := app.in_system_write();
   v_current     text;
 begin
+  -- ‏`is_active` ולא רק `deleted_at`: כיבוי החיבור במסך אמור לעצור את
+  -- הקליטה, וגם כשהכתובת שנקודת הקצה מצביעה עליה נושאת את המזהה שלו בנתיב.
   select * into v_conn from viperflow_connections
-   where id = p_connection and deleted_at is null;
-  if v_conn.id is null then raise exception 'חיבור ViperFlow לא נמצא'; end if;
+   where id = p_connection and is_active and deleted_at is null;
+  if v_conn.id is null then raise exception 'חיבור ViperFlow אינו פעיל'; end if;
 
   if coalesce(p_order ->> 'id', '') !~* '^[0-9a-f-]{36}$' then
     raise exception 'מעטפה בלי מזהה הזמנה';
@@ -268,7 +284,8 @@ begin
 
   -- ‏§3 בראש הקובץ: משלוח שנושא חותמת ישנה ממה שכבר הוחל אינו מתקדם.
   -- שוויון כן מוחל: הוא ניסיון חוזר של אותו שינוי, וההחלה אידמפוטנטית.
-  if v_link.event_id is not null
+  if not coalesce(p_force, false)
+     and v_link.event_id is not null
      and v_link.order_updated_at is not null
      and v_updated is not null
      and v_updated < v_link.order_updated_at then
@@ -280,15 +297,18 @@ begin
     if v_link.event_id is null then
       return jsonb_build_object('status', 'ignored', 'reason', 'הזמנה שבוטלה ואינה מקושרת');
     end if;
-    perform app.system_write(true);
-    update events set status_id = (
-        select id from statuses
-         where entity = 'event' and code = 'cancelled' and deleted_at is null limit 1)
-     where id = v_link.event_id
-       and status_id is distinct from (
-         select id from statuses
-          where entity = 'event' and code = 'cancelled' and deleted_at is null limit 1);
-    if not v_sys then perform app.system_write(false); end if;
+    -- הסטטוס נקרא למשתנה ולא נכתב מתוך תת-שאילתה: מסד שבו "בוטל" נמחק ממסך
+    -- ההגדרות היה מחזיר null, והתנאי `is distinct from null` היה מכניס אותו
+    -- לעמודה. אירוע בלי סטטוס אינו ביטול — הוא אירוע שבור.
+    select id into v_status_id from statuses
+     where entity = 'event' and code = 'cancelled' and deleted_at is null limit 1;
+
+    if v_status_id is not null then
+      perform app.system_write(true);
+      update events set status_id = v_status_id
+       where id = v_link.event_id and status_id is distinct from v_status_id;
+      if not v_sys then perform app.system_write(false); end if;
+    end if;
 
     update viperflow_links set
       order_status     = coalesce(v_status, 'deleted'),
@@ -299,9 +319,12 @@ begin
 
     insert into event_activity (event_id, kind, actor_name, note)
     values (v_link.event_id, 'synced', 'ViperFlow',
-            case when p_event_type = 'order.deleted'
-                 then 'ההזמנה נמחקה ב-ViperFlow — האירוע סומן כמבוטל'
-                 else 'ההזמנה בוטלה ב-ViperFlow — האירוע סומן כמבוטל' end);
+            (case when p_event_type = 'order.deleted'
+                  then 'ההזמנה נמחקה ב-ViperFlow'
+                  else 'ההזמנה בוטלה ב-ViperFlow' end)
+            || (case when v_status_id is null
+                     then ' — אין סטטוס "בוטל" בקטלוג, והאירוע נשאר כפי שהוא'
+                     else ' — האירוע סומן כמבוטל' end));
 
     return jsonb_build_object('status', 'processed', 'event_id', v_link.event_id,
                               'cancelled', true);
@@ -324,6 +347,25 @@ begin
 
   if v_link.event_id is null then
     -- ── לידה ────────────────────────────────────────────────────────────────
+    --
+    -- **אלא אם ההזמנה הזו כבר מתה.** ‏ViperFlow מבטיח at-least-once ואינו
+    -- מבטיח סדר: ‏`order.created` שהתעכב יכול להגיע *אחרי* ה-`order.deleted`
+    -- של אותה הזמנה, וכשאין קישור הביטול לא השאיר סימן — אז היינו יוצרים
+    -- אירוע לערב שכבר בוטל, ומישהו היה צריך לגלות ולבטל אותו ביד. יומן
+    -- המשלוחים הוא הסימן: הוא כבר נושא את המחיקה, והשאלה עולה כאן בלבד —
+    -- בנתיב הלידה, ופעם אחת לכל הזמנה.
+    if exists (
+      select 1 from viperflow_deliveries d
+       where d.connection_id = p_connection
+         and d.entity_id = v_order_id::text
+         and d.event_type in ('order.deleted', 'order.cancelled')
+         and d.status in ('processed', 'ignored'))
+    then
+      if not v_sys then perform app.system_write(false); end if;
+      return jsonb_build_object('status', 'ignored',
+        'reason', 'ההזמנה כבר נמחקה או בוטלה ב-ViperFlow — אירוע אינו נוצר בדיעבד');
+    end if;
+
     -- מספר האירוע נלקח ממספר ההזמנה, אך ורק אם הוא פנוי אצל הלקוח הזה:
     -- ‏`events_customer_number_uq` ייחודי, ואירוע שרכז הקליד ידנית באותו מספר
     -- אינו נעלם בגלל שהגיעה הזמנה. במקרה כזה האירוע נולד בלי מספר, והיומן
@@ -425,7 +467,10 @@ begin
       v_delivery::date,
       v_delivery::time,
       case when v_warehouse::date = v_delivery::date then v_warehouse::time end,
-      v_workers::int);
+      v_workers::int,
+      -- חיץ שכן נקבע אך נסוג ליום הקודם: השדה מתרוקן ואינו נשאר על מה
+      -- שסנכרון קודם כתב.
+      v_warehouse is not null and v_warehouse::date <> v_delivery::date);
 
     v_parts := v_parts || ('הקמה ' || to_char(v_delivery, 'DD/MM/YYYY HH24:MI')
       || case
@@ -483,6 +528,7 @@ declare
   v_type       text := p_envelope ->> 'type';
   v_data       jsonb := p_envelope -> 'data';
   v_conn       uuid;
+  v_active     int;
   v_row        uuid;
   v_result     jsonb;
   v_entity     text;
@@ -502,11 +548,19 @@ begin
   -- ורק הם: כל שאר המערכת פשוט אינה מגדירה את ה-GUC הזה.
   perform set_config('app.actor_label', 'ViperFlow', true);
 
-  -- החיבור: לפי מה שפונקציית הקצה זיהתה מהנתיב, ואם לא — החיבור הפעיל היחיד.
+  -- החיבור: לפי מה שפונקציית הקצה זיהתה מהנתיב, ואם לא — החיבור הפעיל
+  -- **היחיד**.
+  --
+  -- ‏`into` על שאילתה שמחזירה שתי שורות לוקח את הראשונה ולא מתלונן, וזה היה
+  -- מפיל הזמנה של לקוח אחד על הלקוח השני. לכן הספירה: אחד נבחר, יותר מאחד
+  -- נרשם ככישלון עם סיבה שאומרת בדיוק מה לעשות — להוסיף את מזהה החיבור
+  -- לכתובת נקודת הקצה.
   v_conn := nullif(p_meta ->> 'connection_id', '')::uuid;
   if v_conn is null then
-    select c.id into v_conn from viperflow_connections c
+    select count(*), min(c.id) into v_active, v_conn
+      from viperflow_connections c
      where c.is_active and c.deleted_at is null;
+    if v_active <> 1 then v_conn := null; end if;
   end if;
 
   v_entity := v_data ->> 'id';
@@ -523,20 +577,30 @@ begin
 
   -- ניסיון חוזר של אותו אירוע. ‏ViperFlow מבטיח at-least-once, והאינדקס
   -- הייחודי הוא כל מנגנון האי-כפילות.
+  --
+  -- ‏`force` מדלג גם על זה, ובכוונה: הוא הכלי של מי שאומר "המצב אצלנו שגוי,
+  -- משוך שוב" — ותשובת "כבר ראינו את המעטפה הזו" היא בדיוק מה שהוא מנסה
+  -- לעקוף. השורה הקיימת נכתבת מחדש ואינה מוכפלת.
   if v_row is null then
-    return jsonb_build_object('status', 'duplicate', 'event_id', v_event_id);
+    if not coalesce((p_meta ->> 'force')::boolean, false) then
+      return jsonb_build_object('status', 'duplicate', 'event_id', v_event_id);
+    end if;
+    select id into v_row from viperflow_deliveries where event_id = v_event_id;
   end if;
 
   begin
     if v_type = 'webhook.test' then
       v_result := jsonb_build_object('status', 'ignored', 'reason', 'אירוע בדיקה');
     elsif v_conn is null then
-      v_result := jsonb_build_object('status', 'failed',
-                                     'reason', 'אין חיבור ViperFlow פעיל');
+      v_result := jsonb_build_object('status', 'failed', 'reason',
+        case when coalesce(v_active, 0) > 1
+             then 'יש ' || v_active || ' חיבורים פעילים ולא נאמר לאיזה מהם — יש להוסיף את מזהה החיבור לכתובת נקודת הקצה'
+             else 'אין חיבור ViperFlow פעיל' end);
     elsif v_type in ('order.created', 'order.updated', 'order.confirmed',
                      'order.status_changed', 'order.picked', 'order.delivered',
                      'order.returned', 'order.cancelled', 'order.deleted') then
-      v_result := app.viperflow_apply_order(v_conn, v_data, v_type);
+      v_result := app.viperflow_apply_order(
+        v_conn, v_data, v_type, coalesce((p_meta ->> 'force')::boolean, false));
     else
       -- ‏41 סוגי אירוע קיימים אצלם, ורובם אינם אומרים דבר על עבודה שלנו.
       -- הם נרשמים כדי שיהיה אפשר לראות מה נכנס, ולא מתורגמים.
@@ -544,6 +608,17 @@ begin
                                      'reason', 'סוג אירוע שאינו מתורגם');
     end if;
   exception when others then
+    -- **לא כל כישלון הוא כישלון עסקי.** ‏deadlock מול רכז ששומר את אותו
+    -- אירוע, נעילה שלא התפנתה, או statement_timeout על הזמנה כבדה — כולם
+    -- ייעלמו בניסיון הבא, ולכן הם צריכים להיזרק החוצה: ה-RPC ייכשל,
+    -- פונקציית הקצה תענה 503, ו-ViperFlow ינסה שוב לפי לוח הזמנים שלו.
+    -- ‏`failed` שמור למה שלא ישתנה מעצמו — "הזמנה בלי תאריך אירוע" — ושם
+    -- דווקא נכון להחזיר 200, כי ניסיון חוזר רק יבזבז את עשרת הכישלונות
+    -- שאחריהם הם מכבים את נקודת הקצה.
+    if sqlstate like '40%' or sqlstate like '53%' or sqlstate in ('55P03', '57014') then
+      raise;
+    end if;
+
     update viperflow_deliveries set
       status = 'failed', reason = left(sqlerrm, 500), processed_at = now()
      where id = v_row;
@@ -627,9 +702,9 @@ revoke execute on function app.viperflow_line_quantity(jsonb, text)
   from anon, authenticated, public;
 revoke execute on function app.viperflow_apply_items(uuid, uuid, jsonb)
   from anon, authenticated, public;
-revoke execute on function app.viperflow_apply_task(uuid, text, date, time, time, int)
+revoke execute on function app.viperflow_apply_task(uuid, text, date, time, time, int, boolean)
   from anon, authenticated, public;
-revoke execute on function app.viperflow_apply_order(uuid, jsonb, text)
+revoke execute on function app.viperflow_apply_order(uuid, jsonb, text, boolean)
   from anon, authenticated, public;
 
 -- ===== 7. מה שהאירוע יודע לספר על עצמו ====================================

@@ -601,7 +601,12 @@ export interface ViperflowEventLink {
   order_number: string | null
   order_status: string | null
   last_synced_at: string
-  connection_label: string
+  /**
+   * שם החיבור — null למי שאין לו `integrations.view`. ה-view מצרף את טבלת
+   * החיבורים ב-`left join` במכוון (0177 §7): העובדות על האירוע שייכות למי
+   * שהאירוע נפתח לו, ושם החיבור הוא של המשרד.
+   */
+  connection_label: string | null
   /** כמה שורות ריהוט (ללא רכיבים) יש בהזמנה — המונה שעל הכפתור */
   furniture_lines: number
 }
@@ -614,6 +619,8 @@ export interface ViperflowConnectionStatus {
   customer_name: string
   api_base_url: string
   is_active: boolean
+  /** עד מתי הסנכרון היזום כבר סרק. null = טרם רץ. */
+  synced_through: string | null
   notes: string | null
   linked_events: number
   last_event_at: string | null

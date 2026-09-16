@@ -22,8 +22,12 @@
 //   VIPERFLOW_API_KEY     vf_live_… , needs the `orders:read` scope
 //   VIPERFLOW_SYNC_SECRET optional; without it the scheduled path is closed
 //
-// Deploy normally (JWT verification on): both callers send an Authorization
-// header. Unlike viperflow-webhook, nothing here comes from ViperFlow.
+// Deploy normally — JWT verification stays ON here, unlike viperflow-webhook,
+// because nothing in this direction comes from ViperFlow. The consequence is
+// that BOTH callers must send an `Authorization` header or the gateway answers
+// 401 before this code runs: the browser sends the user's JWT by itself, and
+// the scheduler must carry the (public) anon key alongside its `x-sync-secret`.
+// docs/VIPERFLOW.md §6 has the exact curl.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { redactMoney } from '../_shared/viperflow.ts'
@@ -145,12 +149,15 @@ Deno.serve(async (req) => {
     connection_id?: string
     since?: string
     order_ids?: string[]
+    /** Re-apply even when nothing changed on their side — see below. */
+    force?: boolean
   }
+  const force = body.force === true
 
   // ── which connection ────────────────────────────────────────────────────
   let query = admin
     .from('viperflow_connections')
-    .select('id, label, api_base_url, customer_id')
+    .select('id, label, api_base_url, customer_id, synced_through')
     .is('deleted_at', null)
     .eq('is_active', true)
   if (body.connection_id) query = query.eq('id', body.connection_id)
@@ -169,25 +176,27 @@ Deno.serve(async (req) => {
     label: string
     api_base_url: string
     customer_id: string
+    synced_through: string | null
   }
   const base = connection.api_base_url.replace(/\/+$/, '')
 
   // ── from when ───────────────────────────────────────────────────────────
-  // The newest order state we already applied, minus the overlap. With no link
-  // rows at all this is the first backfill, and thirty days back is the window
-  // an event-rental business actually plans in.
+  //
+  // The watermark is the connection's own `synced_through`, which only this
+  // function advances — NOT max(order_updated_at) over the links.
+  //
+  // That distinction is the whole backfill. The webhook is live from the
+  // moment the endpoint is created, so the newest link is always a brand new
+  // order; a watermark derived from the links would jump to "a minute ago"
+  // after the very first delivery, and the scan — which walks updated_at
+  // ascending — would never reach the orders that existed beforehand.
+  //
+  // Nothing scanned yet means the first backfill: thirty days back is the
+  // window an event-rental business actually plans in.
   let since = body.since ?? null
   if (!since && !body.order_ids) {
-    const { data: newest } = await admin
-      .from('viperflow_links')
-      .select('order_updated_at')
-      .eq('connection_id', connection.id)
-      .order('order_updated_at', { ascending: false, nullsFirst: false })
-      .limit(1)
-
-    const latest = newest?.[0]?.order_updated_at as string | undefined
-    since = latest
-      ? new Date(new Date(latest).getTime() - OVERLAP_MINUTES * 60_000).toISOString()
+    since = connection.synced_through
+      ? new Date(new Date(connection.synced_through).getTime() - OVERLAP_MINUTES * 60_000).toISOString()
       : new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString()
   }
 
@@ -195,6 +204,7 @@ Deno.serve(async (req) => {
   const summary = {
     connection: connection.label,
     since,
+    forced: force,
     scanned: 0,
     applied: 0,
     duplicate: 0,
@@ -204,6 +214,7 @@ Deno.serve(async (req) => {
   }
 
   let ids: string[] = []
+  let scannedThrough: string | null = null
   try {
     if (body.order_ids?.length) {
       ids = body.order_ids.slice(0, MAX_ORDERS)
@@ -222,16 +233,29 @@ Deno.serve(async (req) => {
           pagination: { has_more: boolean; next_cursor: string | null }
         }
 
-        for (const order of page.data ?? []) {
-          if (ids.length >= MAX_ORDERS) break
+        const rows = page.data ?? []
+        for (const order of rows) {
+          if (ids.length >= MAX_ORDERS) {
+            // Dropped on the floor by the cap, not by the end of the data.
+            // This has to be recorded HERE: when the truncation lands on the
+            // last page there is no surviving cursor, and setting the flag
+            // after the `break` below would leave the caller believing the
+            // scan finished. The watermark still advances to what we did
+            // read, so the next run picks up exactly here.
+            summary.has_more = true
+            break
+          }
           ids.push(order.id)
         }
 
         if (!page.pagination?.has_more || !page.pagination.next_cursor) break
+        if (ids.length >= MAX_ORDERS) {
+          summary.has_more = true
+          break
+        }
         // A cursor is bound to the query that issued it, so nothing else about
         // the request may change while paging.
         cursor = page.pagination.next_cursor
-        if (ids.length >= MAX_ORDERS) summary.has_more = true
       }
     }
   } catch (e) {
@@ -264,13 +288,20 @@ Deno.serve(async (req) => {
 
       const { data: result, error } = await admin.rpc('viperflow_ingest', {
         p_envelope: envelope,
-        p_meta: { connection_id: connection.id, origin: 'system' },
+        p_meta: { connection_id: connection.id, origin: 'system', force },
       })
 
       if (error) {
         summary.failed += 1
         summary.errors.push(`${order.order_number ?? id}: ${error.message}`)
         continue
+      }
+
+      // The watermark follows what we SCANNED, not what we applied: an order
+      // that came back "duplicate" was still read, and a run that refused to
+      // advance past it would re-read it forever.
+      if (order.updated_at && (!scannedThrough || order.updated_at > scannedThrough)) {
+        scannedThrough = order.updated_at
       }
 
       const status = (result as { status?: string })?.status
@@ -290,6 +321,17 @@ Deno.serve(async (req) => {
       // way; a 429 means backing off now costs less than being throttled.
       if (err.status === 401 || err.status === 403 || err.status === 429) break
     }
+  }
+
+  // Advance the watermark only for a plain forward scan. An explicit `since`,
+  // an `order_ids` list or a `force` repair are all "look at this again", and
+  // letting them move the watermark would skip whatever sits between.
+  if (!body.since && !body.order_ids && !force && scannedThrough) {
+    const { error: markErr } = await admin
+      .from('viperflow_connections')
+      .update({ synced_through: scannedThrough })
+      .eq('id', connection.id)
+    if (markErr) summary.errors.push(`סמן הסנכרון לא נשמר: ${markErr.message}`)
   }
 
   // Housekeeping rides along with the scheduled run: the delivery log is an

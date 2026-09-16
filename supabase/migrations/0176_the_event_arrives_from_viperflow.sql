@@ -127,10 +127,20 @@ create table viperflow_connections (
   customer_id   uuid not null references customers(id),
   label         text not null,
   -- כתובת ה-API של ViperFlow, לגיבוי ולהשלמה (`viperflow-sync`).
-  -- אינה סוד: הסוד הוא המפתח שנשלח אליה, והוא יושב בפונקציית הקצה.
+  --
+  -- **אינה נקבעת מהמסך, ובכוונה.** ‏`viperflow-sync` שולח לכתובת הזו את
+  -- ‏`VIPERFLOW_API_KEY` בכותרת Authorization; מי שיכול היה להחליף אותה
+  -- בכתובת שלו היה מקבל את המפתח במתנה. לכן `viperflow_set_connection`
+  -- אינה מקבלת אותה כלל, והיא נשארת ברירת מחדל — שינוי שלה הוא מיגרציה,
+  -- כלומר החלטה של מי שיש לו גישה למסד ולא של מי שיש לו מפתח הרשאה.
   api_base_url  text not null default 'https://xmcopljkqmjrpvhujpev.supabase.co/functions/v1/api/v1'
     check (api_base_url ~ '^https://'),
   is_active     boolean not null default true,
+  -- עד מתי `viperflow-sync` כבר סרק. **סמן של הסנכרון בלבד** ולא נגזרת של
+  -- הקישורים: ‏`max(order_updated_at)` היה קופץ קדימה בכל Webhook של הזמנה
+  -- חדשה, והמילוי ההיסטורי — שסורק מהישן לחדש — לא היה מגיע לעולם למה
+  -- שקדם לחיבור.
+  synced_through timestamptz,
   notes         text,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
@@ -289,9 +299,10 @@ begin
       'label',         c.label,
       'customer_id',   c.customer_id,
       'customer_name', cu.name,
-      'api_base_url',  c.api_base_url,
-      'is_active',     c.is_active,
-      'notes',         c.notes,
+      'api_base_url',   c.api_base_url,
+      'is_active',      c.is_active,
+      'synced_through', c.synced_through,
+      'notes',          c.notes,
       'linked_events', (select count(*) from viperflow_links l where l.connection_id = c.id),
       'last_event_at', (select max(d.received_at) from viperflow_deliveries d
                          where d.connection_id = c.id),
@@ -323,7 +334,6 @@ create or replace function viperflow_set_connection(
   p_customer_id   uuid,
   p_label         text,
   p_is_active     boolean default true,
-  p_api_base_url  text default null,
   p_notes         text default null,
   p_connection_id uuid default null)
 returns uuid language plpgsql security definer set search_path = public as $$
@@ -339,19 +349,17 @@ begin
   end if;
 
   if p_connection_id is null then
-    insert into viperflow_connections (customer_id, label, is_active, api_base_url, notes)
+    -- `api_base_url` אינה ברשימה: היא נשארת על ברירת המחדל שלה (§4.1).
+    insert into viperflow_connections (customer_id, label, is_active, notes)
     values (p_customer_id, btrim(p_label), coalesce(p_is_active, true),
-            coalesce(nullif(btrim(p_api_base_url), ''),
-                     'https://xmcopljkqmjrpvhujpev.supabase.co/functions/v1/api/v1'),
             nullif(btrim(p_notes), ''))
     returning id into v_id;
   else
     update viperflow_connections set
-      customer_id  = p_customer_id,
-      label        = btrim(p_label),
-      is_active    = coalesce(p_is_active, is_active),
-      api_base_url = coalesce(nullif(btrim(p_api_base_url), ''), api_base_url),
-      notes        = nullif(btrim(p_notes), '')
+      customer_id = p_customer_id,
+      label       = btrim(p_label),
+      is_active   = coalesce(p_is_active, is_active),
+      notes       = nullif(btrim(p_notes), '')
     where id = p_connection_id and deleted_at is null
     returning id into v_id;
     if v_id is null then raise exception 'חיבור לא נמצא'; end if;
@@ -360,9 +368,9 @@ begin
   return v_id;
 end $$;
 
-revoke execute on function viperflow_set_connection(uuid, text, boolean, text, text, uuid)
+revoke execute on function viperflow_set_connection(uuid, text, boolean, text, uuid)
   from anon, public;
-grant  execute on function viperflow_set_connection(uuid, text, boolean, text, text, uuid)
+grant  execute on function viperflow_set_connection(uuid, text, boolean, text, uuid)
   to authenticated;
 
 /**
