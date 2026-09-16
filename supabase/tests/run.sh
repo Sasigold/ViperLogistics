@@ -497,6 +497,17 @@ OUT="$OUT
 $OUT48"
 
 echo
+echo "== the event arrives from viperflow suite =="
+# 49 מקימה לקוח, חיבור, אירוע וארבע דמויות משלה, והאירוע שלה יושב על תאריך
+# קבוע (2026-10-02) ולא על current_date — כל הבדיקה היא על המרת אזור זמן,
+# ותאריך שזז עם יום ההרצה אינו יכול לאשר שהיא נכונה. היא רצה אחרונה כי היא
+# משאירה אחריה אירוע, משימות, שורות ריהוט ומשלוחים שאינם מנוקים.
+OUT49=$($PSQL -d vl -f "$HERE/49_the_event_arrives_from_viperflow.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT49"
+OUT="$OUT
+$OUT49"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

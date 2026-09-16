@@ -1,12 +1,17 @@
 /**
  * מפרט האירוע.
  *
- * מסך אחד בשני מצבים: צפייה בגרסה הפעילה, והשוואה של שתי גרסאות זו לצד זו.
- * בעברית החדשה יושבת מימין והישנה משמאל — זה כיוון הקריאה, ולכן זה גם הכיוון
- * שבו "מה השתנה" נקרא נכון.
+ * מסך אחד בשלושה מצבים: רשימת הריהוט שהגיעה מההזמנה, צפייה בגרסה הפעילה של
+ * המסמך שהועלה, והשוואה של שתי גרסאות זו לצד זו. בעברית החדשה יושבת מימין
+ * והישנה משמאל — זה כיוון הקריאה, ולכן זה גם הכיוון שבו "מה השתנה" נקרא נכון.
+ *
+ * ‏**הריהוט הוא מצב ולא מסך** (0176). לאירוע שהגיע מ-ViperFlow, "מה צריך
+ * לטעון" כבר כתוב בהזמנה, ומי שלוחץ "מפרט" מחפש בדיוק את זה — ולכן הוא
+ * נפתח עליו. המסמך שהועלה נשאר במקומו, לשונית אחת משם.
  */
 import { useEffect, useMemo, useState } from 'react'
 import {
+  Armchair,
   Columns2,
   Download,
   ExternalLink,
@@ -54,8 +59,10 @@ import {
 import type { SpecDraft } from './specs'
 import { SpecPicker } from './SpecPicker'
 import { specDownloadUrl, useEventSpecs, useRemoveSpec, useSpecSignedUrl, useUploadSpec } from './specQueries'
+import { EventFurnitureList } from './EventFurnitureList'
+import { useViperflowLink } from './furnitureQueries'
 
-type Mode = 'view' | 'compare'
+type Mode = 'furniture' | 'view' | 'compare'
 
 export function EventSpecsModal({
   eventId,
@@ -95,10 +102,15 @@ export function EventSpecsModal({
   const { data: specs = [], isLoading, error, refetch } = useEventSpecs(eventId, open)
   const remove = useRemoveSpec(eventId)
 
+  /* הקישור להזמנה ב-ViperFlow, אם יש. שאילתה זולה — שורה אחת — והיא מה
+     שמכריע אם יש בכלל לשונית ריהוט. השורות עצמן נטענות רק כשפותחים אותה. */
+  const { data: link = null } = useViperflowLink(eventId, open)
+  const hasFurniture = (link?.furniture_lines ?? 0) > 0
+
   const live = useMemo(() => sortedSpecs(specs), [specs])
   const active = currentSpec(specs)
 
-  const [mode, setMode] = useState<Mode>('view')
+  const [mode, setMode] = useState<Mode | null>(null)
   const [rightId, setRightId] = useState<string | null>(null)
   const [leftId, setLeftId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
@@ -113,9 +125,25 @@ export function EventSpecsModal({
 
   const right = live.find((s) => s.id === rightId) ?? active ?? null
   const left = live.find((s) => s.id === leftId) ?? null
-  /* מי שאין לו השוואה רואה תמיד את הגרסה הפעילה: הבורר מוסתר, וגם ה-state
-     אינו יכול להשאיר אותו על מצב שאין לו דרך לצאת ממנו. */
-  const view = canCompare ? mode : 'view'
+
+  /**
+   * המצבים שיש להם על מה לדבר, בסדר שבו הם נקראים.
+   *
+   * הריהוט ראשון כשהוא קיים, וזו ההכרעה של 0176: באירוע שהגיע מ-ViperFlow
+   * הוא המפרט. ‏`view` נגזר מהרשימה ואינו state נפרד — מי שאין לו השוואה,
+   * או שהגרסה היחידה שלו הוסרה בזמן שהמסך פתוח, אינו יכול להישאר תקוע על
+   * מצב שאין לו דרך לצאת ממנו. זה אותו כלל שקיים כאן מאז שני המצבים, רק
+   * שעכשיו הוא נאמר פעם אחת במקום להיות משוכפל לכל מצב חדש.
+   */
+  const modes = useMemo<Mode[]>(() => {
+    const list: Mode[] = []
+    if (hasFurniture) list.push('furniture')
+    if (live.length > 0) list.push('view')
+    if (live.length > 0 && canCompare) list.push('compare')
+    return list
+  }, [hasFurniture, live.length, canCompare])
+
+  const view = mode && modes.includes(mode) ? mode : (modes[0] ?? null)
 
   async function onRemove(spec: EventSpec) {
     const ok = await confirm(`להסיר את גרסה ${spec.version} של המפרט?`, {
@@ -141,20 +169,24 @@ export function EventSpecsModal({
           <Paperclip size={ICON.lg} strokeWidth={STROKE} />
           מפרט האירוע
           {live.length > 0 && <Badge tone="primary">{live.length}</Badge>}
+          {hasFurniture && <Badge tone="info">{link?.furniture_lines} שורות ריהוט</Badge>}
         </span>
       }
       description={eventTitle}
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          {live.length > 0 && canCompare && (
+          {view && modes.length > 1 && (
             <SegmentedControl<Mode>
-              value={mode}
+              value={view}
               onChange={setMode}
-              items={[
-                { key: 'view', label: 'צפייה', icon: <FileText size={ICON.sm} strokeWidth={STROKE} /> },
-                { key: 'compare', label: 'השוואה', icon: <Columns2 size={ICON.sm} strokeWidth={STROKE} /> },
-              ]}
+              items={modes.map((key) =>
+                key === 'furniture'
+                  ? { key, label: 'רשימת ריהוט', icon: <Armchair size={ICON.sm} strokeWidth={STROKE} /> }
+                  : key === 'view'
+                    ? { key, label: 'מסמך', icon: <FileText size={ICON.sm} strokeWidth={STROKE} /> }
+                    : { key, label: 'השוואה', icon: <Columns2 size={ICON.sm} strokeWidth={STROKE} /> },
+              )}
             />
           )}
           {canUpload && !adding && (
@@ -172,7 +204,7 @@ export function EventSpecsModal({
         {isLoading && <SkeletonList rows={3} />}
         {error && <ErrorState error={error} onRetry={() => void refetch()} />}
 
-        {!isLoading && !error && live.length === 0 && (
+        {!isLoading && !error && modes.length === 0 && (
           <EmptyState
             art="box"
             title="טרם הועלה מפרט"
@@ -190,6 +222,10 @@ export function EventSpecsModal({
               ) : undefined
             }
           />
+        )}
+
+        {view === 'furniture' && (
+          <EventFurnitureList eventId={eventId} link={link} enabled={open} />
         )}
 
         {live.length > 0 && view === 'view' && right && (

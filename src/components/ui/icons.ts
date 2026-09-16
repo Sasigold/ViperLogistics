@@ -161,5 +161,7 @@ export {
   Columns2,
   Image,
   Link2,
+  // אינטגרציות (0176) — החיבור עצמו
+  Plug,
 } from 'lucide-react'
 

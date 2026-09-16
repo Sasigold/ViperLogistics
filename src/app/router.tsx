@@ -34,6 +34,7 @@ const PortalPage = lazyPage(() => import('../features/portal/PortalPage'))
 const MyStaffPage = lazyPage(() => import('../features/contractors/MyStaffPage'))
 const MyCrewPage = lazyPage(() => import('../features/customers/MyCrewPage'))
 const SettingsPage = lazyPage(() => import('../features/settings/SettingsPage'))
+const IntegrationsPage = lazyPage(() => import('../features/integrations/IntegrationsPage'))
 const TimeClockPage = lazyPage(() => import('../features/attendance/TimeClockPage'))
 const MySchedulePage = lazyPage(() => import('../features/attendance/MySchedulePage'))
 const AttendanceReportPage = lazyPage(() => import('../features/attendance/AttendanceReportPage'))
@@ -208,6 +209,14 @@ export const router = createBrowserRouter([
             element: page(<NotificationPreferencesPage />),
           },
           { path: '/settings', handle: { perm: PERM.SETTINGS_VIEW }, element: page(<SettingsPage />) },
+          /* ‏0176: מסך משלו ולא לשונית בהגדרות. ‏`/settings` כולו עטוף ב-
+             `settings.view`, והחיבור ל-ViperFlow הוא מודול הרשאות נפרד —
+             מי שמנטר אותו אינו בהכרח מי שמסדר סוגי משימה. */
+          {
+            path: '/integrations',
+            handle: { perm: PERM.INTEGRATIONS_VIEW },
+            element: page(<IntegrationsPage />),
+          },
         ],
       },
     ],

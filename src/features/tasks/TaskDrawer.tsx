@@ -56,6 +56,7 @@ import {
   withLeadAsDriver,
 } from './taskPanels'
 import { EventSpecsModal } from '../events/EventSpecsModal'
+import { useViperflowLink } from '../events/furnitureQueries'
 import { useEventSpecs } from '../events/specQueries'
 import { TaskPnlCard } from '../reports/TaskPnlCard'
 import { useWarehouses } from '../attendance/attendanceQueries'
@@ -242,6 +243,13 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
    */
   const specEventId = form.event_id ?? null
   const { data: specs = [] } = useEventSpecs(specEventId ?? '', open && !!specEventId && canViewSpecs)
+  /* אירוע שהגיע מ-ViperFlow: המונה על הכפתור הוא שורות הריהוט (0176).
+     עובד הקבלן אינו פותח את /events/:id, והמגירה היא הדלת היחידה שלו
+     אל מה שצריך לטעון. */
+  const { data: viperflowLink = null } = useViperflowLink(
+    specEventId,
+    open && !!specEventId && canViewSpecs,
+  )
   const { data: specEvent } = useQuery({
     queryKey: ['events', 'specHeader', specEventId],
     enabled: specsOpen && !!specEventId,
@@ -602,6 +610,9 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
                     <Paperclip size={ICON.sm} strokeWidth={STROKE} />
                     מפרט
                     {specs.length > 0 && <Badge tone="primary">{specs.length}</Badge>}
+                    {(viperflowLink?.furniture_lines ?? 0) > 0 && (
+                      <Badge tone="info">{viperflowLink?.furniture_lines}</Badge>
+                    )}
                   </Button>
                 ) : undefined
               }

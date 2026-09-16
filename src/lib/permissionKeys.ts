@@ -178,6 +178,11 @@ export const PERM = {
   PORTAL_WORKER_SETTINGS: 'portal.worker_settings',
   NOTIFICATIONS_PREFERENCES: 'notifications.preferences',
   NOTIFICATIONS_MANAGE: 'notifications.manage',
+  /* ‏0176: מודול משלו ולא מפתח תחת `settings` — מסך ההגדרות עונה על "מה
+     המערכת יודעת", והאינטגרציה על "עם מי היא מדברת". */
+  INTEGRATIONS_VIEW: 'integrations.view',
+  INTEGRATIONS_MANAGE: 'integrations.manage',
+
   SETTINGS_VIEW: 'settings.view',
   SETTINGS_EDIT: 'settings.edit',
   SETTINGS_TASK_TYPES: 'settings.task_types',

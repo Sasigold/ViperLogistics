@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   PartyPopper,
   Percent,
+  Plug,
   Settings,
   TrendingUp,
   Truck,
@@ -229,7 +230,10 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     title: 'מערכת',
-    items: [{ to: '/settings', label: 'הגדרות', icon: Settings, perm: PERM.SETTINGS_VIEW }],
+    items: [
+      { to: '/settings', label: 'הגדרות', icon: Settings, perm: PERM.SETTINGS_VIEW },
+      { to: '/integrations', label: 'אינטגרציות', shortLabel: 'חיבורים', icon: Plug, perm: PERM.INTEGRATIONS_VIEW },
+    ],
   },
 ]
 
@@ -298,5 +302,6 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/my/staff': 'העובדים שלי',
   '/my/crew': 'הסגל שלי',
   '/settings': 'הגדרות',
+  '/integrations': 'אינטגרציות',
   '/portal': 'כספים ותשלומים',
 }

@@ -565,6 +565,81 @@ export interface EventSpec {
 }
 
 /**
+ * שורה אחת מההזמנה ב-ViperFlow (0176).
+ *
+ * **אין כאן מחיר, ולא במקרה.** לטבלה במסד אין עמודת מחיר, והכסף מנוקה
+ * בפונקציית הקצה לפני שהמעטפה נשמרת — הטיפוס הזה הוא בדיוק מה שקיים, ולא
+ * גרסה מצונזרת של משהו רחב יותר.
+ */
+export interface ViperflowOrderItem {
+  id: string
+  event_id: string
+  connection_id: string
+  external_item_id: string | null
+  parent_external_item_id: string | null
+  /** `product` — ריהוט ומוצר חופשי; `worker` — סידור ואיסוף; `truck` — הובלה */
+  line_type: string
+  name: string
+  quantity: number
+  spare_quantity: number
+  is_component: boolean
+  /** `mandatory` | `optional` | `choice_group` | `combination` */
+  component_type: string | null
+  is_custom: boolean
+  /** הבחירות של הפריט, בשמות בלבד: [{"group":"מפה","value":"מפה לבנה"}] */
+  options: { group: string | null; value: string | null }[]
+  notes: string | null
+  position: number
+  synced_at: string
+}
+
+/** הקישור בין אירוע אצלנו להזמנה ב-ViperFlow (0177 §7). */
+export interface ViperflowEventLink {
+  event_id: string
+  connection_id: string
+  order_id: string
+  order_number: string | null
+  order_status: string | null
+  last_synced_at: string
+  connection_label: string
+  /** כמה שורות ריהוט (ללא רכיבים) יש בהזמנה — המונה שעל הכפתור */
+  furniture_lines: number
+}
+
+/** שורה אחת ממה ש-`viperflow_connection_status()` מחזיר (0176 §6). */
+export interface ViperflowConnectionStatus {
+  id: string
+  label: string
+  customer_id: string
+  customer_name: string
+  api_base_url: string
+  is_active: boolean
+  notes: string | null
+  linked_events: number
+  last_event_at: string | null
+  received_24h: number
+  failed_open: number
+}
+
+/** משלוח אחד שנכנס מ-ViperFlow (0176 §4.3). ה-payload אינו נקרא במסך. */
+export interface ViperflowDelivery {
+  id: string
+  connection_id: string | null
+  event_id: string
+  delivery_id: string | null
+  event_type: string
+  attempt: number | null
+  origin: string | null
+  entity_id: string | null
+  occurred_at: string | null
+  received_at: string
+  processed_at: string | null
+  status: 'received' | 'processed' | 'ignored' | 'failed'
+  reason: string | null
+  event_row_id: string | null
+}
+
+/**
  * הצעת מחיר שהופקה לאירוע ונשלחה ללקוח הקצה (0170).
  *
  * ‏`document_number` הוא צילום של `events.event_number` ואינו משתנה בין

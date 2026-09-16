@@ -8,7 +8,14 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    /**
+     * ‏`supabase/functions` ולא רק `src`: החצי הטהור של פונקציית הקצה —
+     * אימות החתימה של ViperFlow וניקוי הכסף — הוא בדיוק "לוגיקה טהורה"
+     * שהחבילה הזו קיימת בשבילה, וחתימה שגויה אינה אינטגרציה מדרדרת אלא
+     * אינטגרציה שאינה קיימת. ‏`_shared/viperflow.ts` נכתב בלי שום import
+     * של Deno כדי שזה יהיה אפשרי.
+     */
+    include: ['src/**/*.test.ts', 'supabase/functions/**/*.test.ts'],
     setupFiles: ['./vitest.setup.ts'],
     /**
      * `lib/supabase.ts` builds its client at import time and throws without a

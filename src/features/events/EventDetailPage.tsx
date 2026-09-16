@@ -62,6 +62,7 @@ import { EventQuoteModal } from './EventQuoteModal'
 import { EventSpecsModal } from './EventSpecsModal'
 import { CustomerSignatureModal } from './CustomerSignatureModal'
 import { useEventSpecs } from './specQueries'
+import { useViperflowLink } from './furnitureQueries'
 import { crewPeople, crewSize } from '../tasks/crew'
 import { useCrewVisibility } from '../tasks/crewVisibility'
 import { sumAddons, useEventPriceAddons } from '../pricing/addonQueries'
@@ -142,6 +143,10 @@ export default function EventDetailPage() {
 
   // רק בשביל המונה על הכפתור. המסך עצמו נטען כשהמודאל נפתח.
   const { data: specs = [] } = useEventSpecs(id ?? '', !!id && has(PERM.EVENTS_SPECS_VIEW))
+
+  /* אירוע שהגיע מ-ViperFlow (0177). שורה אחת, והיא עונה על שתי שאלות:
+     מה לכתוב בכותרת, וכמה שורות ריהוט יש לפתוח מאחורי כפתור המפרט. */
+  const { data: viperflowLink = null } = useViperflowLink(id, !!id)
 
   /**
    * ראש צוות ההקמה — לא מפתח במרשם אלא תפקיד על משימת ההקמה של האירוע (0107),
@@ -666,6 +671,13 @@ export default function EventDetailPage() {
             )}
             <span>{fmtDateLong(event.event_date)}</span>
             {event.event_number && <span className="tabular">· אירוע #{event.event_number}</span>}
+            {/* מאיפה האירוע הגיע. רק כשהוא לא נוצר כאן — לרוב האירועים
+                במערכת אין קישור, ושורת כותרת אינה מקום להערות שקטות. */}
+            {viperflowLink && (
+              <span className="tabular">
+                · מ-ViperFlow{viperflowLink.order_number ? ` · הזמנה ${viperflowLink.order_number}` : ''}
+              </span>
+            )}
             {event.location_text && (
               <span>
                 · <LocationText value={event.location_text} />
@@ -680,6 +692,11 @@ export default function EventDetailPage() {
                 <Paperclip size={ICON.sm} strokeWidth={STROKE} />
                 מפרט
                 {specs.length > 0 && <Badge tone="primary">{specs.length}</Badge>}
+                {/* אירוע מ-ViperFlow: המונה הוא שורות הריהוט, כי זה מה
+                    שנפתח מאחורי הכפתור כשאין מסמך שהועלה (0176). */}
+                {(viperflowLink?.furniture_lines ?? 0) > 0 && (
+                  <Badge tone="info">{viperflowLink?.furniture_lines}</Badge>
+                )}
               </Button>
             )}
             {canSendQuote && (
