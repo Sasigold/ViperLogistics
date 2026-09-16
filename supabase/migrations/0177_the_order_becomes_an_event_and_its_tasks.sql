@@ -146,11 +146,7 @@ create or replace function app.viperflow_apply_task(
   p_date       date,
   p_onsite     time,
   p_warehouse  time,
-  p_workers    int,
-  -- ‏true כשההזמנה כן קבעה יציאה מהמחסן אבל היא אינה ניתנת לביטוי: חיץ
-  -- שנסוג ליום הקודם. אז השדה **מתרוקן** ואינו נשאר על מה שסנכרון קודם
-  -- כתב — שעה שגויה גרועה מהיעדר שעה, כי היא נראית כמו החלטה.
-  p_clear_warehouse boolean default false)
+  p_workers    int)
 returns uuid language plpgsql security definer set search_path = public as $$
 declare
   v_type    task_types;
@@ -158,8 +154,7 @@ declare
   v_task_id uuid;
   v_sys     boolean := app.in_system_write();
 begin
-  if p_date is null and p_onsite is null and p_warehouse is null and p_workers is null
-     and not coalesce(p_clear_warehouse, false) then
+  if p_date is null and p_onsite is null and p_warehouse is null and p_workers is null then
     return null;
   end if;
 
@@ -196,10 +191,7 @@ begin
   update tasks set
     task_date            = coalesce(p_date, task_date),
     onsite_start_time    = coalesce(p_onsite, onsite_start_time),
-    warehouse_start_time = case
-                             when p_warehouse is not null then p_warehouse
-                             when coalesce(p_clear_warehouse, false) then null
-                             else warehouse_start_time end,
+    warehouse_start_time = coalesce(p_warehouse, warehouse_start_time),
     worker_count         = coalesce(p_workers, worker_count)
   where id = v_task_id;
 
@@ -453,11 +445,14 @@ begin
   -- ── שתי המשימות ────────────────────────────────────────────────────────
   --
   -- ‏`buffer_hours.before` של ViperFlow הוא הזמן שהציוד צריך להיות בדרך לפני
-  -- האירוע, וזו בדיוק "יציאה מהמחסן" אצלנו. חיץ שחוצה חצות הוא היוצא מן
-  -- הכלל: ‏`warehouse_start_time` הוא `time` על `task_date` ואינו יודע לומר
-  -- "אתמול ב-23:00", ולכן במקרה כזה הוא אינו נכתב כלל — שעה שנראית כמו
-  -- 23:00 של יום האירוע גרועה מהיעדר שעה. היומן אומר את המספר האמיתי,
-  -- והרכז מפצל את המשימה בעצמו.
+  -- האירוע, וזו בדיוק "יציאה מהמחסן" אצלנו.
+  --
+  -- **וחיץ שנסוג ליום הקודם נכתב כמו שהוא**, כי `0163` כבר עונה על זה: שם
+  -- נקבע שהעמודה היא שעה ולא רגע, ושהכלל היחיד הוא "מהמחסן יוצאים לפני
+  -- שמגיעים לשטח" — ולכן `warehouse_start_time` שגדולה מ-`onsite_start_time`
+  -- היא של הערב שלפני. ‏אספקה ב-00:00 עם חיץ של שלוש שעות מקבלת 21:00,
+  -- ו-`app.warehouse_start_at` מרכיבה מזה 21:00 של אתמול — בחלון
+  -- ההתנגשויות, בגזירת המשמרות ובלוח. אין כאן מקרה קצה, יש כלל שכבר קיים.
   if v_delivery is not null then
     v_warehouse := case when v_buffer is not null and v_buffer > 0
                         then v_delivery - make_interval(hours => v_buffer) end;
@@ -466,11 +461,8 @@ begin
       v_event_id, 'setup',
       v_delivery::date,
       v_delivery::time,
-      case when v_warehouse::date = v_delivery::date then v_warehouse::time end,
-      v_workers::int,
-      -- חיץ שכן נקבע אך נסוג ליום הקודם: השדה מתרוקן ואינו נשאר על מה
-      -- שסנכרון קודם כתב.
-      v_warehouse is not null and v_warehouse::date <> v_delivery::date);
+      v_warehouse::time,
+      v_workers::int);
 
     v_parts := v_parts || ('הקמה ' || to_char(v_delivery, 'DD/MM/YYYY HH24:MI')
       || case
@@ -478,7 +470,7 @@ begin
            when v_warehouse::date = v_delivery::date
              then ' (יציאה מהמחסן ' || to_char(v_warehouse, 'HH24:MI') || ')'
            else ' (יציאה מהמחסן ' || to_char(v_warehouse, 'DD/MM HH24:MI') ||
-                ' — יום קודם, לא נכתבה על המשימה)'
+                ' — הערב שלפני, 0163)'
          end);
   end if;
 
@@ -702,7 +694,7 @@ revoke execute on function app.viperflow_line_quantity(jsonb, text)
   from anon, authenticated, public;
 revoke execute on function app.viperflow_apply_items(uuid, uuid, jsonb)
   from anon, authenticated, public;
-revoke execute on function app.viperflow_apply_task(uuid, text, date, time, time, int, boolean)
+revoke execute on function app.viperflow_apply_task(uuid, text, date, time, time, int)
   from anon, authenticated, public;
 revoke execute on function app.viperflow_apply_order(uuid, jsonb, text, boolean)
   from anon, authenticated, public;

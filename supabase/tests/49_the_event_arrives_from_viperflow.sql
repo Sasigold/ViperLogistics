@@ -275,13 +275,17 @@ select t_eq('ולשעה המקומית שלו',
   (select t.onsite_start_time from tasks t join task_types tt on tt.id = t.task_type_id
     where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
   '00:00'::time);
--- ‏05:00 של הסנכרון הקודם **מתרוקנת** ואינה נשארת: היא הייתה שעת יציאה
--- לאספקה שכבר אינה קיימת. שעה שגויה גרועה מהיעדר שעה, כי היא נראית כמו
--- החלטה — והיומן אומר את המספר האמיתי ואת הסיבה.
-select t_eq('שעת יציאה שנסוגה ליום הקודם מרוקנת את השדה ואינה משאירה את הישנה',
+-- אספקה ב-00:00 וחיץ של שלוש שעות: היציאה מהמחסן היא 21:00 של הערב שלפני,
+-- והיא נכתבת כמו שהיא — 0163 הוא שמרכיב ממנה את הרגע הנכון.
+select t_eq('שעת היציאה היא 21:00, גם כשהיא נסוגה לערב שלפני',
   (select t.warehouse_start_time from tasks t join task_types tt on tt.id = t.task_type_id
     where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
-  null::time);
+  '21:00'::time);
+select t_eq('ו-0163 מרכיב ממנה את הערב שלפני ולא את זה שאחרי',
+  (select app.warehouse_start_at(t.task_date, t.warehouse_start_time, t.onsite_start_time)
+     from tasks t join task_types tt on tt.id = t.task_type_id
+    where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
+  ('2026-10-01 21:00'::timestamp at time zone 'Asia/Jerusalem'));
 select t_eq('אישור ההזמנה קידם את האירוע',
   (select s.code from events e join statuses s on s.id = e.status_id
     where e.id = (select event_id from ev49)), 'approved');
