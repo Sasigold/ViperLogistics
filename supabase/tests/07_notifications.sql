@@ -3,9 +3,10 @@
 
 -- 07: מטריצת ההתראות, ערוץ ה-push וההכרעה שמאחוריהם (0046 + 0047)
 --
--- החבילה רצה אחרונה ובכוונה: היא מדליקה את notifications.email ואת
--- notifications.push, וכל חבילה שרצה אחריה ומסתכלת על notification_deliveries
--- הייתה רואה תמונה אחרת. בסוף היא מחזירה את שני הערוצים לכבוי.
+-- החבילה רצה אחרונה ובכוונה: היא מדליקה את notifications.email, מכבה ומדליקה
+-- את notifications.push, וכל חבילה שרצה אחריה ומסתכלת על notification_deliveries
+-- הייתה רואה תמונה אחרת. בסוף היא מחזירה כל מפתח למקום שבו מצאה אותו:
+-- המייל לכבוי, וה-push לדלוק (0113/0167).
 --
 -- הדגש כאן אינו על "האם נכתבה שורה" אלא על *סדר ההכרעה*: מי גובר על מי כאשר
 -- למנהל, לקהל, לחריג האישי ולמשתמש עצמו יש דעות סותרות. זו הפונקציונליות
@@ -20,8 +21,11 @@
 
 -- 04 החזירה את המפתח לכבוי בסופה
 select t_eq('ערוץ המייל כבוי בתחילת החבילה', app.email_enabled(), false);
-select t_eq('וגם ערוץ ה-push',
-  coalesce((app.attendance_config('notifications.push') ->> 'enabled')::boolean, false), false);
+-- ‏0113 ו-0167 הכריעו אחרת על ה-push: הוא **דלוק** לכל סוג התראה, בלי
+-- מושתקים גלובליים. זו הכרעה תפעולית מפורשת ולא ברירת מחדל שנשכחה, ולכן
+-- הבדיקה אומרת אותה במפורש — ו-§7 היא שמוודאת שהבלמים עצמם עדיין עובדים.
+select t_eq('וערוץ ה-push דלוק מאז 0113/0167',
+  coalesce((app.attendance_config('notifications.push') ->> 'enabled')::boolean, false), true);
 
 -- תשע-עשרה מאז 0110: אחת-עשרה פחות שלושה שפרשו (task_changed,
 -- event_status_changed, contractor_task — כבויים אך נשארים בקטלוג, כי שורות
@@ -249,14 +253,28 @@ delete from notification_policies where audience = 'staff' and type = 'event_cre
 insert into push_subscriptions (profile_id, endpoint, p256dh, auth, user_agent) values
   ('20000000-0000-0000-0000-0000000000f1', 'https://fcm.googleapis.com/fcm/send/AAA', 'k1', 'a1', 'Chrome');
 
--- שני בלמים בלתי תלויים: הקטלוג אומר off, והמפתח אומר enabled=false
-select t_eq('מכשיר רשום עדיין אינו מספיק — הערוץ כבוי',
+-- שני בלמים בלתי תלויים — המפתח הגלובלי והקטלוג — ושניהם **פתוחים** מאז
+-- ‏0113/0167: הערוץ דלוק, וברירת המחדל של כל סוג היא opt_out. לכן מכשיר
+-- רשום מספיק, וזו ההכרעה שנבדקת ראשונה.
+select t_eq('מכשיר רשום מספיק — הערוץ דלוק וברירת המחדל opt_out',
+  app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'task_assigned', 'push'), true);
+
+-- ושני הבלמים עדיין בלמים. הראשון: המפתח הגלובלי סוגר את הערוץ לכולם,
+-- בלי קשר לקטלוג ולמדיניות.
+update app_settings set value = jsonb_set(value, '{enabled}', 'false'::jsonb)
+ where key = 'notifications.push';
+select t_eq('כיבוי המפתח הגלובלי סוגר את הערוץ',
   app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'task_assigned', 'push'), false);
 
 update app_settings set value = jsonb_set(value, '{enabled}', 'true'::jsonb)
  where key = 'notifications.push';
 
-select t_eq('גם אחרי הדלקת הערוץ — ברירת המחדל בקטלוג היא opt_in',
+-- והשני: מדיניות קהל מפורשת. `off` סוגרת את הסוג הזה גם כשהערוץ דלוק,
+-- ו-`opt_out` מחזירה אותו.
+insert into notification_policies (audience, type, channel, mode) values
+  ('staff', 'task_assigned', 'push', 'off')
+on conflict (audience, type, channel) do update set mode = excluded.mode;
+select t_eq('ומדיניות off סוגרת את הסוג הזה',
   app.notification_enabled('20000000-0000-0000-0000-0000000000f1', 'task_assigned', 'push'), false);
 
 insert into notification_policies (audience, type, channel, mode) values
@@ -973,8 +991,16 @@ select t_eq('עובד של קבלן מחוץ לתחולה — אף אחד אינ
 delete from notification_scope_modes;
 
 -- ===== 12. ניקוי =====================================================
+--
+-- המייל חוזר לכבוי, וה-push חוזר **לדלוק** — לא לכבוי. החבילה משאילה את
+-- המפתחות ומחזירה אותם למקום שבו 0113/0167 השאירו אותם, ולא למקום שבו
+-- ‏0046 נולד.
 
 update app_settings set value = jsonb_set(value, '{enabled}', 'false'::jsonb)
- where key in ('notifications.email', 'notifications.push');
+ where key = 'notifications.email';
+update app_settings set value = jsonb_set(value, '{enabled}', 'true'::jsonb)
+ where key = 'notifications.push';
 
-select t_eq('שני הערוצים חזרו לכבוי', app.email_enabled(), false);
+select t_eq('המייל חזר לכבוי', app.email_enabled(), false);
+select t_eq('וה-push נשאר דלוק, כפי שההכרעה התפעולית קבעה',
+  coalesce((app.attendance_config('notifications.push') ->> 'enabled')::boolean, false), true);

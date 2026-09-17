@@ -232,9 +232,15 @@ select t_eq('income.by_category: סך הריהוט',
 select t_eq('income.by_category: אין לוגיסטיקה',
   (select (v -> 'income.by_category' ->> 'logistics_total')::numeric from t12sec), 0::numeric);
 
--- חלק הלקוח: 1000×30% + 500×80% = 700
-select t_eq('finance.client_share: לפי ה-snapshot',
-  (select (v -> 'finance.client_share' ->> 'total')::numeric from t12sec), 700::numeric);
+-- ‏0174 שינתה את משמעות הסקשן: מ"חלוקת ההכנסות לפי ה-snapshot של כל שורה"
+-- ל**כרטיס של לקוח אחד** — "שיא עיצובים" — עם פילוח קבוע (80% מריהוט חדש,
+-- ‏30% מריהוט ישן) ועם `where c.name = 'שיא עיצובים'` על השאילתה כולה.
+-- ללקוח של החבילה הזו, שאינו הוא, התשובה הנכונה היא אפס — והסקשן עדיין רץ
+-- ומחזיר אובייקט, כלומר הוא מצומצם ולא חסום.
+select t_eq('finance.client_share: הכרטיס הוא של לקוח אחד בשמו (0174)',
+  (select (v -> 'finance.client_share' ->> 'total')::numeric from t12sec), 0::numeric);
+select t_eq('והסקשן עצמו רץ — הוא מצומצם, לא חסום',
+  (select jsonb_typeof(v -> 'finance.client_share') from t12sec), 'object');
 
 -- החוב: 1500 הכנסות קטגוריה + 1000 תמחור משימה; שולם 800
 select t_eq('finance.receivables: החוב כולל את שני המקורות',
@@ -249,13 +255,23 @@ select t_eq('revenue.trend כולל הכנסות קטגוריה',
   (select (select sum((e ->> 'total')::numeric)
              from jsonb_array_elements(v -> 'revenue.trend') e) from t12sec), 2500::numeric);
 
--- העוגה: שלוש פרוסות — שתי קטגוריות ו"צוות"
+-- העוגה: שלוש פרוסות. ‏0174 כתבה אותה מחדש — במקום "קטגוריות + צוות" היא
+-- מפרטת הובלות של שיא עיצובים, לוגיסטיקה לפי לקוח (בניכוי עמלה), ריהוט חדש
+-- ב-20% וריהוט ישן ב-70%. שלוש הפרוסות כאן הן בדיוק שלוש מהן.
 select t_eq('income.mix: שלוש פרוסות',
   (select jsonb_array_length(v -> 'income.mix') from t12sec), 3);
-select t_eq('income.mix: פרוסת הצוות נושאת את תמחור המשימות',
+select t_eq('income.mix: הלוגיסטיקה של הלקוח נושאת את תמחור המשימות',
   (select (e ->> 'total')::numeric from t12sec,
      jsonb_array_elements(v -> 'income.mix') e
-    where e ->> 'label' = 'צוות לקוח חלוקת הכנסות'), 1000::numeric);
+    where e ->> 'label' = 'לוגיסטיקה לקוח חלוקת הכנסות'), 1000::numeric);
+select t_eq('income.mix: ריהוט חדש נספר ב-20% (0174)',
+  (select (e ->> 'total')::numeric from t12sec,
+     jsonb_array_elements(v -> 'income.mix') e
+    where e ->> 'label' = 'ריהוט חדש'), 100::numeric);
+select t_eq('income.mix: וריהוט ישן ב-70%',
+  (select (e ->> 'total')::numeric from t12sec,
+     jsonb_array_elements(v -> 'income.mix') e
+    where e ->> 'label' = 'ריהוט ישן'), 700::numeric);
 
 -- עלות מעביד: dashboard.payroll אינו אצל המשתמשת — הסקשן חוזר null
 select t_eq('cost.payroll_employer בלי dashboard.payroll: null',

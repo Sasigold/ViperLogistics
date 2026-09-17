@@ -90,9 +90,17 @@ select t_eq('איש הצוות המשויך מופיע במאגר, עם שורת
       and x ->> 'worker_id' is not null), 1);
 
 -- והמתגים באמת ניתנים להגדרה: התפקיד נכתב על שורת הסגל שנוצרה.
+--
+-- מזהה השורה נלקח מ-`contractor_assignable_workers()` ולא מ-`profiles`, וזה
+-- לא קיצור דרך אלא הנתיב האמיתי: `profiles_select` (0066) אינה מכירה זרוע
+-- של קבלן, ולכן מנהל הקבלן אינו קורא את שורת הפרופיל של עובדו כלל — הוא
+-- מקבל את המזהה מהרשימה, שהיא `security definer`, וזה גם מה שמסך "העובדים
+-- שלי" עושה. ‏`select` שקורא `profiles` היה חוזר ריק, וה-insert היה כותב
+-- אפס שורות בלי להיכשל — כלומר בדיקה שנראית ירוקה על כלום.
 insert into contractor_worker_roles (contractor_worker_id, role)
-select p.contractor_worker_id, 'driver' from profiles p
- where p.id = '20000000-0000-0000-0000-0000000036a3';
+select (x ->> 'worker_id')::uuid, 'driver'
+  from jsonb_array_elements(contractor_assignable_workers()) x
+ where x ->> 'profile_id' = '20000000-0000-0000-0000-0000000036a3';
 
 select t_eq('ואפשר להגדיר עליו תפקיד נהג',
   (select (x -> 'roles') @> '"driver"'::jsonb
