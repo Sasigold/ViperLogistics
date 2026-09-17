@@ -2,7 +2,14 @@ import { create } from 'zustand'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { PERM } from '../lib/permissionKeys'
-import type { BoardFieldState, FieldState, MyPermissions, PermissionAction, UserKind } from '../types/domain'
+import type {
+  BoardFieldState,
+  FieldState,
+  MyPermissions,
+  PermissionAction,
+  TaskPerformance,
+  UserKind,
+} from '../types/domain'
 
 interface AuthState {
   session: Session | null
@@ -35,7 +42,15 @@ interface AuthState {
    * נשלט במפתחות כפי שהיה תמיד, וזו הנקודה: הקונפיגורציה הזו היא הצרה
    * *נוספת* על קהל הלקוחות, לא שכבה חדשה שכולם עוברים בה.
    */
-  boardFieldState: (key: string) => BoardFieldState
+  boardFieldState: (key: string, task?: TaskPerformance | null) => BoardFieldState
+  /**
+   * האם המשימה הזו היא של הקורא לבצע (0179).
+   *
+   * הניסוח המלא של השאלה יושב בשרת, ב-`app.task_performed_by_caller`,
+   * והוא הגבול; זה כאן רק כדי שהמסך לא יצייר תא נעול שהשרת
+   * יקבל — ולהפך: תא שנראה פתוח ונדחה בשמירה גרוע מתא שנראה נעול.
+   */
+  performsTask: (task?: TaskPerformance | null) => boolean
   /** form composition AND data access — what a client actually gets to see */
   showsEventField: (key: string) => boolean
   /** `events.create` plus the per-company switch the RPC enforces anyway */
@@ -180,10 +195,24 @@ export const useAuth = create<AuthState>((set, get) => ({
 
   formFieldState: (key) => get().me?.form_config?.find((f) => f.field_key === key)?.state ?? 'visible',
 
-  boardFieldState: (key) => {
+  boardFieldState: (key, task) => {
     const cfg = get().me?.board_config
     if (!cfg || cfg.length === 0) return 'editable'
-    return cfg.find((f) => f.field_key === key)?.state ?? 'visible'
+    const state = cfg.find((f) => f.field_key === key)?.state ?? 'visible'
+    /* ‏0179: במשימה שהלקוח מבצע בעצמו הלוח כולו שלו — אין למשרד
+       מה לשמור שם. ״מוסתר״ אינו נפתח בדרך הזו: העמודה היא של הלוח
+       כולו ולא של השורה, ומה שאינו מצויר אינו נערך. */
+    if (state !== 'hidden' && task && get().performsTask(task)) return 'editable'
+    return state
+  },
+
+  performsTask: (task) => {
+    const me = get().me
+    if (!me || !task) return false
+    if (me.profile.user_kind !== 'customer_user') return false
+    if (!me.customer?.performed_by_enabled) return false
+    if (!task.customer_id || task.customer_id !== me.profile.customer_id) return false
+    return (task.performed_by ?? 'viper') !== 'viper'
   },
 
   // A field disappears for two unrelated reasons: it was configured off the

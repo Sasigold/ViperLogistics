@@ -331,9 +331,14 @@ export default function WorkBoardPage() {
    * הזה. שתיהן חייבות להסכים, כי הראשונה לבדה כבר אינה מה שהשרת יאמר: הטריגר
    * ‏`app.enforce_customer_board_edit` דוחה כתיבה לשדה שאינו `editable` גם
    * כשהמפתח קיים. תא שנראה פתוח ונדחה בשמירה גרוע מתא שנראה נעול.
+   *
+   * ומ-0179 היא שואלת גם על **השורה**: במשימה שהלקוח מבצע בעצמו
+   * הלוח כולו שלו, ובמשימה שוייפר מבצעת הכלל נשאר מה שהוא — אותה
+   * הבחנה שהטריגר עושה בשרת.
    */
   const canEditField = useCallback(
-    (key: string, perm?: string) => canEditCell(perm) && boardFieldState(key) === 'editable',
+    (key: string, perm?: string, task?: WorkBoardRow) =>
+      canEditCell(perm) && boardFieldState(key, task) === 'editable',
     [canEditCell, boardFieldState],
   )
   /**
@@ -2037,8 +2042,11 @@ const TaskColumn = memo(
   }: {
     row: WorkBoardRow
     canEditCell: (perm?: string) => boolean
-    /** `canEditCell` ועוד ההכרעה של מנהל המערכת לשדה הזה אצל הלקוח (0109) */
-    canEditField: (key: string, perm?: string) => boolean
+    /**
+     * ‏`canEditCell` ועוד ההכרעה של מנהל המערכת לשדה הזה אצל הלקוח (0109),
+     * והשורה עצמה — משימה שהלקוח מבצע בעצמו פתוחה לו כולה (0179).
+     */
+    canEditField: (key: string, perm?: string, task?: WorkBoardRow) => boolean
     patch: (row: WorkBoardRow, patch: Record<string, unknown>) => void
     lookups: BoardLookups
     fields: typeof BOARD_FIELDS
@@ -2049,6 +2057,9 @@ const TaskColumn = memo(
     onHover: (key: string | null) => void
     style: React.CSSProperties
   }) {
+    /* פונקציה יציבה של ה-store, ולכן הקריאה הזו אינה מבטלת את ה-memo
+       של העמודה. היא כאן ולא ב-props משום שהתשובה היא על השורה. */
+    const performsTask = useAuth((s) => s.performsTask)
     /* A run of columns used to be bracketed by a dark line on each outer edge.
        It read as a frame around the group and cut the board into boxes, so the
        block is now held together by its fill alone — a heavier wash of the
@@ -2076,7 +2087,16 @@ const TaskColumn = memo(
                 team list — is measured to fit its longest crew, so everyone is
                 on screen at once and the board grows instead of hiding them */}
             <div className="min-w-0 flex-1 text-center">
-              {f.render({ row, canEdit: canEditField(f.key, f.editPerm), can: canEditCell, patch, lookups })}
+              {f.render({
+                row,
+                canEdit: canEditField(f.key, f.editPerm, row),
+                can: canEditCell,
+                patch,
+                lookups,
+                /* ‏0179: שאלה על השורה ולא על המפתח, ולכן היא נוסעת בהקשר
+                   התא ולא ב-`can`. עד היום רק תא הסטטוס שואל אותה. */
+                selfPerformed: performsTask(row),
+              })}
             </div>
           </div>
         ))}
