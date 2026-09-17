@@ -64,7 +64,10 @@ Deno.serve(async (req) => {
     const body = await req.json()
     const action = body.action as Action
     if (!REQUIRED[action]) return json({ error: 'פעולה לא מוכרת' }, 400)
-    if (!has(REQUIRED[action])) return json({ error: 'אין לך הרשאה לבצע פעולה זו' }, 403)
+    // ‏0178: בדיקת המפתח ירדה למטה, לאחר ששורת היעד נפתרת. מנהל אצל
+    // לקוח שמבצע בעצמו אינו מחזיק אף מפתח ממודול המשתמשים, ובכל זאת
+    // פותח כניסה לעובדי הסגל שלו — ולהם בלבד. מי שהמפתח בידו עובר כרגיל,
+    // והשאלה הצרה נשאלת רק כשהוא חסר — ובמסד, לא כאן.
 
     // Never trust a raw user_id from the body: the old code linked a fresh auth
     // user to whatever profile_id it was handed, so anyone who could create a
@@ -79,6 +82,11 @@ Deno.serve(async (req) => {
       : await lookup.eq('user_id', user_id!).maybeSingle()
     if (!target) return json({ error: 'המשתמש לא נמצא' }, 404)
     const t = target as TargetProfile
+
+    if (!has(REQUIRED[action])) {
+      const { data: ownStaff } = await asUser.rpc('can_manage_own_staff_login', { p_target: t.id })
+      if (ownStaff !== true) return json({ error: 'אין לך הרשאה לבצע פעולה זו' }, 403)
+    }
 
     // app.can_manage_profile is the predicate the RLS policies use. It excludes
     // self on purpose — every escalation path starts with editing yourself —

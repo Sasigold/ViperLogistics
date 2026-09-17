@@ -196,6 +196,20 @@ export interface CustomerWorker {
 }
 
 /**
+ * חשבון ההתחברות של עובד בסגל הלקוח (0178).
+ *
+ * ‏`user_id` ריק הוא מצב אמיתי ולא תקלה: שורת פרופיל נולדת ראשונה
+ * והכניסה נפתחת אחריה, וכשלון ביניהן משאיר עובד שהמסך יציע לנסות שוב.
+ */
+export interface CustomerWorkerAccount {
+  id: string
+  customer_worker_id: string
+  email: string | null
+  user_id: string | null
+  is_active: boolean
+}
+
+/**
  * עובד קבלן כפי שהוא משובץ למשימה — התפקיד שהקבלן נתן לו (0121), מאיפה הוא
  * מתחיל, והאם הוא ראש הצוות שגם נוהג (0162).
  */
@@ -225,6 +239,10 @@ export interface AssignableCustomerWorker {
   full_name: string
   phone: string | null
   roles: StaffRole[]
+  /** ‏0178: האם נפתח לעובד חשבון שבו הוא רואה את המשימות שלו. */
+  has_login: boolean
+  /** שורת הפרופיל של אותו חשבון, כשיש (0178). */
+  profile_id: string | null
 }
 
 export interface CustomerExecutionMethodRow {
@@ -894,6 +912,17 @@ export interface WorkBoardRow {
 
 export type PerformedBy = 'viper' | 'arko'
 
+/**
+ * מה שדרוש כדי לשאול "האם המשימה הזו היא שלי לבצע" (0179).
+ *
+ * שתי עמודות ולא שורה שלמה, כדי שאותה שאלה תישאל מכל מקום שבו יושבת
+ * משימה — שורת לו״ז, כרטיס או שורת דף אירוע — ולא רק מהלו״ז.
+ */
+export interface TaskPerformance {
+  customer_id: string | null
+  performed_by: PerformedBy | null
+}
+
 /* ===== תמחור ============================================================== */
 
 /**
@@ -1215,6 +1244,13 @@ export interface MyPermissions {
     is_admin: boolean
     customer_id: string | null
     contractor_id: string | null
+    /**
+     * שורת הסגל שהחשבון הזה הוא (0178).
+     *
+     * מלאה רק לעובד בסגל של לקוח שמבצע בעצמו — זה מה שמבדיל בינו
+     * לבין מנהל אצל אותו לקוח, ששניהם חשבונות `customer_user` שלו.
+     */
+    customer_worker_id: string | null
     phone: string | null
     email: string | null
   }

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { supabase } from './supabase'
+import { invokeFunction, supabase } from './supabase'
 import { useAuth } from '../state/auth'
 import type {
   BoardFieldDef,
@@ -11,6 +11,7 @@ import type {
   CustomerBoardField,
   CustomerExecutionMethodRow,
   CustomerWorker,
+  CustomerWorkerAccount,
   CustomerTruck,
   CustomerIncomeSplit,
   CustomerPricingRule,
@@ -337,6 +338,101 @@ export function useCustomerWorkers(customerId?: string | null) {
         .order('full_name')
       if (error) throw error
       return data as CustomerWorker[]
+    },
+  })
+}
+
+/**
+ * חשבונות ההתחברות של סגל הלקוח (0178).
+ *
+ * שאילתה נפרדת מ-`customer_assignable_workers` במכוון: הרשימה ההיא של
+ * מי שניתן לשבץ — פעילים בלבד — ואילו מסך "הסגל שלי" מנהל גם את מי
+ * שכובה. ״מי מהם מחזיק חשבון״ היא שאלה על הרשומה, לא על השיבוץ.
+ */
+export function useCustomerWorkerAccounts(customerId?: string | null) {
+  return useQuery({
+    queryKey: ['customer_worker_accounts', customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, customer_worker_id, email, user_id, is_active')
+        .eq('customer_id', customerId)
+        .not('customer_worker_id', 'is', null)
+        .is('deleted_at', null)
+      if (error) throw error
+      return data as CustomerWorkerAccount[]
+    },
+  })
+}
+
+/**
+ * פתיחת חשבון לעובד בסגל, וסגירתו (0178).
+ *
+ * שתי קריאות שחייבות ללכת יחד, והסדר ביניהן הוא העיקר: ה-RPC מקים את
+ * שורת הפרופיל ואת התפקיד הצר, ורק אחריה `admin-users` פותחת את
+ * הכניסה עצמה — שהיא היחידה שיכולה לגעת ב-`auth.users`. כישלון בשלב
+ * השני משאיר פרופיל בלי כניסה, והמסך מציג אותו כמה שהוא: חשבון שטרם
+ * נפתחה לו כניסה, עם אותו כפתור שינסה שוב.
+ */
+export function useCustomerStaffAccount() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { workerId: string; email: string; password: string }) => {
+      if (!v.email.trim() || !v.password) throw new Error('חובה להזין אימייל וסיסמה')
+      const { data, error } = await supabase.rpc('customer_staff_account', { p_worker_id: v.workerId })
+      if (error) throw error
+      await invokeFunction('admin-users', {
+        action: 'create_login',
+        email: v.email.trim(),
+        password: v.password,
+        profile_id: data as string,
+      })
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['customer_worker_accounts'] })
+      void qc.invalidateQueries({ queryKey: ['customer_assignable'] })
+    },
+  })
+}
+
+/** איפוס הסיסמה של עובד בסגל (0178). */
+export function useCustomerStaffPassword() {
+  return useMutation({
+    mutationFn: async (v: { profileId: string; password: string }) => {
+      if (!v.password) throw new Error('חובה להזין סיסמה')
+      await invokeFunction('admin-users', {
+        action: 'set_password',
+        profile_id: v.profileId,
+        password: v.password,
+      })
+    },
+  })
+}
+
+/**
+ * ביטול הכניסה של עובד בסגל (0178) — העובד נשאר ברשימה ובשיבוצים.
+ *
+ * חשבון ההתחברות יורד ראשון והפרופיל אחריו, מאותו נימוק של `hard_delete`
+ * (0160): כשלון באמצע משאיר פרופיל בלי כניסה — מצב שהמסך יודע להציג
+ * ולתקן — ולא כניסה חיה שאין לה פרופיל.
+ */
+export function useCustomerStaffAccountRemove() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (v: { workerId: string; profileId: string; hasLogin: boolean }) => {
+      if (v.hasLogin) {
+        await invokeFunction('admin-users', { action: 'delete_login', profile_id: v.profileId })
+      }
+      const { error } = await supabase.rpc('customer_staff_account', {
+        p_worker_id: v.workerId,
+        p_on: false,
+      })
+      if (error) throw error
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['customer_worker_accounts'] })
+      void qc.invalidateQueries({ queryKey: ['customer_assignable'] })
     },
   })
 }

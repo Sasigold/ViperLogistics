@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Avatar,
+  Badge,
   Button,
   Card,
   CardBody,
@@ -10,20 +11,28 @@ import {
   Field,
   IconButton,
   Input,
+  Modal,
   PageHeader,
   Skeleton,
   Switch,
   useConfirm,
   useToast,
 } from '../../components/ui'
-import { ICON, Plus, STROKE, Trash2, User } from '../../components/ui/icons'
+import { ICON, LogIn, Plus, STROKE, Trash2, User } from '../../components/ui/icons'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
-import { useCustomerWorkerRoles, useCustomerWorkers } from '../../lib/queries'
+import {
+  useCustomerStaffAccount,
+  useCustomerStaffAccountRemove,
+  useCustomerStaffPassword,
+  useCustomerWorkerAccounts,
+  useCustomerWorkerRoles,
+  useCustomerWorkers,
+} from '../../lib/queries'
 import { errorMessage } from '../../lib/errors'
-import type { CustomerWorker, StaffRole } from '../../types/domain'
+import type { CustomerWorker, CustomerWorkerAccount, StaffRole } from '../../types/domain'
 
 /**
  * הסגל של לקוח שמבצע בעצמו (0133) — המקבילה של "העובדים שלי" של הקבלן.
@@ -48,7 +57,10 @@ function MyCrew() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="הסגל שלי" subtitle="העובדים, ראשי הצוות והנהגים ששובצו למשימות שאתם מבצעים" />
+      <PageHeader
+        title="הסגל שלי"
+        subtitle="העובדים, ראשי הצוות והנהגים ששובצו למשימות שאתם מבצעים — והכניסה שלהם למערכת"
+      />
       {customerId && enabled ? (
         <CrewCard customerId={customerId} canManage={canManage} />
       ) : (
@@ -72,7 +84,17 @@ function CrewCard({ customerId, canManage }: { customerId: string; canManage: bo
   const { confirm, dialog } = useConfirm()
   const { data: workers = [], isLoading } = useCustomerWorkers(customerId)
   const { data: roleRows = [] } = useCustomerWorkerRoles(customerId)
+  /* ‏0178: חשבון ההתחברות הוא שאלה על העובד ולא על השיבוץ, ולכן הוא
+     נשאל כאן ולא דרך `customer_assignable_workers`. */
+  const { data: accounts = [] } = useCustomerWorkerAccounts(customerId)
   const [form, setForm] = useState({ full_name: '', phone: '', id_number: '' })
+  const [accountFor, setAccountFor] = useState<CustomerWorker | null>(null)
+
+  const accountOf = useMemo(() => {
+    const m = new Map<string, CustomerWorkerAccount>()
+    for (const a of accounts) m.set(a.customer_worker_id, a)
+    return m
+  }, [accounts])
 
   const rolesOf = useMemo(() => {
     const m = new Map<string, Set<StaffRole>>()
@@ -88,6 +110,7 @@ function CrewCard({ customerId, canManage }: { customerId: string; canManage: bo
     void qc.invalidateQueries({ queryKey: ['customer_workers', customerId] })
     void qc.invalidateQueries({ queryKey: ['customer_worker_roles', customerId] })
     void qc.invalidateQueries({ queryKey: ['customer_assignable'] })
+    void qc.invalidateQueries({ queryKey: ['customer_worker_accounts', customerId] })
   }
 
   const add = useMutation({
@@ -228,6 +251,22 @@ function CrewCard({ customerId, canManage }: { customerId: string; canManage: bo
                       onChange={(on) => toggleRole.mutate({ id: w.id, role: 'driver', on })}
                       label="נהג"
                     />
+                    {/* ‏0178: כניסה למערכת — צ׳יפ למי שכבר יש לו, וכפתור למי שאין. */}
+                    {accountOf.has(w.id) ? (
+                      <button
+                        type="button"
+                        onClick={() => setAccountFor(w)}
+                        title={accountOf.get(w.id)?.email ?? 'חשבון משתמש'}
+                      >
+                        <Badge tone={accountOf.get(w.id)?.user_id ? 'success' : 'warning'}>
+                          {accountOf.get(w.id)?.user_id ? 'יש כניסה' : 'טרם נפתחה כניסה'}
+                        </Badge>
+                      </button>
+                    ) : (
+                      <IconButton label={`פתיחת כניסה ל${w.full_name}`} size="sm" bare onClick={() => setAccountFor(w)}>
+                        <LogIn size={ICON.sm} strokeWidth={STROKE} className="text-ink-tertiary" />
+                      </IconButton>
+                    )}
                     <IconButton label={`הסרת ${w.full_name}`} size="sm" bare onClick={() => void remove(w)}>
                       <Trash2 size={ICON.sm} strokeWidth={STROKE} className="text-ink-tertiary" />
                     </IconButton>
@@ -238,6 +277,153 @@ function CrewCard({ customerId, canManage }: { customerId: string; canManage: bo
           </ul>
         )}
       </CardBody>
+      {accountFor && (
+        <StaffAccountModal
+          worker={accountFor}
+          account={accountOf.get(accountFor.id) ?? null}
+          onClose={() => setAccountFor(null)}
+          onDone={invalidate}
+        />
+      )}
     </Card>
+  )
+}
+
+/**
+ * הכניסה של עובד בסגל (0178).
+ *
+ * המקבילה של `ClockAccountModal` של הקבלן, בהבדל אחד שהוא כל העניין:
+ * שם המשרד פותח את החשבון מכרטיס הקבלן, וכאן הלקוח עושה זאת
+ * בעצמו — הסגל הוא שלו, ולכן גם המפתח לדלת.
+ *
+ * מה שהחשבון נותן נאמר במפורש במסך, כדי שלא ייפתח בטעות למי
+ * שאמור לנהל: המשימות שהעובד שובץ אליהן והמשמרות שלו, ולא הלו״ז
+ * של הלקוח כולו.
+ */
+function StaffAccountModal({
+  worker,
+  account,
+  onClose,
+  onDone,
+}: {
+  worker: CustomerWorker
+  account: CustomerWorkerAccount | null
+  onClose: () => void
+  onDone: () => void
+}) {
+  const toast = useToast()
+  const { confirm, dialog } = useConfirm()
+  const [creds, setCreds] = useState({ email: account?.email ?? '', password: '' })
+  const open = useCustomerStaffAccount()
+  const reset = useCustomerStaffPassword()
+  const drop = useCustomerStaffAccountRemove()
+  const hasLogin = !!account?.user_id
+
+  const submit = () => {
+    if (hasLogin) {
+      reset.mutate(
+        { profileId: account!.id, password: creds.password },
+        {
+          onSuccess: () => {
+            toast.success('הסיסמה הוחלפה')
+            onDone()
+            onClose()
+          },
+          onError: (e) => toast.error(errorMessage(e)),
+        },
+      )
+      return
+    }
+    open.mutate(
+      { workerId: worker.id, email: creds.email, password: creds.password },
+      {
+        onSuccess: () => {
+          toast.success('נפתחה כניסה לעובד')
+          onDone()
+          onClose()
+        },
+        onError: (e) => toast.error(errorMessage(e)),
+      },
+    )
+  }
+
+  const removeAccount = async () => {
+    if (!account) return
+    if (!(await confirm(`לבטל את הכניסה של ${worker.full_name}?`, {
+      title: 'ביטול כניסה',
+      confirmLabel: 'ביטול הכניסה',
+    }))) return
+    drop.mutate(
+      { workerId: worker.id, profileId: account.id, hasLogin },
+      {
+        onSuccess: () => {
+          toast.success('הכניסה בוטלה — העובד נשאר בסגל')
+          onDone()
+          onClose()
+        },
+        onError: (e) => toast.error(errorMessage(e)),
+      },
+    )
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="sm"
+      title={`כניסה למערכת ל${worker.full_name}`}
+      footer={
+        <>
+          {account && (
+            <Button variant="danger" onClick={() => void removeAccount()} loading={drop.isPending}>
+              ביטול הכניסה
+            </Button>
+          )}
+          <Button onClick={onClose}>סגירה</Button>
+          <Button
+            variant="primary"
+            loading={open.isPending || reset.isPending}
+            disabled={!creds.password || (!hasLogin && !creds.email.trim())}
+            onClick={submit}
+          >
+            {hasLogin ? 'החלפת סיסמה' : 'פתיחת כניסה'}
+          </Button>
+        </>
+      }
+    >
+      {dialog}
+      <div className="space-y-4">
+        <p className="type-caption text-ink-tertiary">
+          העובד יראה בלו״ז את המשימות ששובץ אליהן ואת המשמרות שלו — ולא את שאר
+          הלו״ז, את המחירים או את שאר הסגל.
+        </p>
+        {account && !hasLogin && (
+          <p className="type-caption text-warning-text">
+            שורת העובד נוצרה, אך הכניסה עצמה לא נפתחה. אפשר לנסות שוב כאן.
+          </p>
+        )}
+        <Field label="אימייל" required={!hasLogin}>
+          <Input
+            data-autofocus={!hasLogin}
+            dir="ltr"
+            type="email"
+            autoComplete="off"
+            disabled={hasLogin}
+            value={creds.email}
+            onChange={(e) => setCreds((c) => ({ ...c, email: e.target.value }))}
+          />
+        </Field>
+        <Field label={hasLogin ? 'סיסמה חדשה' : 'סיסמה'} required>
+          <Input
+            data-autofocus={hasLogin}
+            dir="ltr"
+            type="text"
+            autoComplete="off"
+            value={creds.password}
+            onChange={(e) => setCreds((c) => ({ ...c, password: e.target.value }))}
+          />
+        </Field>
+      </div>
+    </Modal>
   )
 }
