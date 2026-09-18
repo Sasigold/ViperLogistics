@@ -68,6 +68,13 @@ export interface CellContext {
   can: (perm?: string) => boolean
   patch: (row: WorkBoardRow, patch: Record<string, unknown>) => void
   lookups: BoardLookups
+  /**
+   * המשימה הזו היא של הקורא לבצע (0179).
+   *
+   * ‏`canEdit` כבר נושאת את התשובה הזו בתוכה לכל שדה שהלו״ז כותב,
+   * והדגל עצמו נדרש לשאלה השנייה שתא הסטטוס שואל: האם מותר לפרסם.
+   */
+  selfPerformed?: boolean
 }
 
 export interface BoardField {
@@ -599,11 +606,15 @@ function MethodCell({ row, canEdit, patch, lookups }: CellContext) {
   )
 }
 
-function StatusCell({ row, canEdit, can, patch, lookups }: CellContext) {
+function StatusCell({ row, canEdit, can, patch, lookups, selfPerformed }: CellContext) {
   // פרסום ("משובץ") הוא מפתח נפרד מ-tasks.change_status. מי שאינו רשאי לפרסם
   // לא רואה את האפשרות — אך היא נשארת כשזה הסטטוס הנוכחי של השורה. ומאז 0117
   // גם היציאה ממנה שמורה לו, ולכן שורה שכבר פורסמה נעולה בפניו לגמרי.
-  const canPublish = can(PERM.TASKS_PUBLISH)
+  //
+  // ‏0179: ובמשימה שהלקוח מבצע בעצמו הפרסום הוא שלו: אין שם צוות של
+  // וייפר להכריז לו, והסגל שלו מקבל משמרת רק ממשימה שפורסמה. אותה
+  // הכרעה בדיוק יושבת ב-`app.enforce_task_publish`.
+  const canPublish = !!selfPerformed || can(PERM.TASKS_PUBLISH)
   const { locked, options } = statusOptions(lookups.statuses, row.status_id, canPublish)
   return (
     <PickCell

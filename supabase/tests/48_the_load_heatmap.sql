@@ -15,17 +15,19 @@
 --
 --   T1  08:00 ‏+4ש׳  → ‏[08,12)   3 עובדים   ‏TR1        ראש צוות
 --   T2  10:00 ‏+4ש׳  → ‏[10,14)   2 עובדים   ‏TR1,TR2    ראש צוות
---   T3  15:00 ‏+2ש׳  → ‏[15,17)   5 עובדים   ‏TR3        בלי
---   T4  בלי שעה     → אינה על הציר, נספרת ב-untimed
+--   T3  15:00 ‏+2ש׳  → ‏[15,17)   5 עובדים   ‏TR3        (ראש צוות לפי 0181)
+--   T4  בלי שעה     → אינה על הציר, ונספרת בכל זאת בסך היום (0181)
 --
 --   שעה 08–09:  משימה 1, ‏3 עובדים, ‏1 משאית,  ‏1 ראש צוות
 --   שעה 10–11:  משימות 2, ‏5 עובדים, ‏2 משאיות, ‏2 ראשי צוות   ← הפסגה
 --   שעה 12–13:  משימה 1 (‏T2 בלבד), ‏2 עובדים, ‏2 משאיות
 --   שעה 14:     ריקה — ‏T2 נסגרת ב-14:00, והחלון הוא `[)`
---   שעה 15–16:  משימה 1, ‏5 עובדים, ‏1 משאית,  ‏0 ראשי צוות
+--   שעה 15–16:  משימה 1, ‏5 עובדים, ‏1 משאית,  ‏1 ראש צוות (0181: כל משימה
+--               שאינה הובלה בלבד/איסוף עצמי דורשת ראש צוות)
 --
---   סך היום: ‏3 משימות מתוזמנות + ‏1 בלי שעה, ‏10 עובדים נדרשים,
---            שעות-עובד ‏= 3×4 + 2×4 + 5×2 = 30
+--   סך היום: ‏4 משימות — ‏3 מתוזמנות ואחת בלי שעה, והדרישה היא של כולן:
+--            ‏3+2+5+4 = 14 עובדים. שעות-עובד נספרות מהמתוזמנות בלבד,
+--            כי רק להן יש משך: ‏3×4 + 2×4 + 5×2 = 30
 --
 --   התקרה: עובדים 10, משאיות 4, ראשי צוות 2. ביחסים, שעה 10 היא
 --   ‏max(5/10, 2/4, 2/2) = 1.0 ושעה 15 היא max(5/10, 1/4, 0) = 0.5,
@@ -105,6 +107,7 @@ select date_trunc('week', current_date + 700)::date + 6      as d0,
        date_trunc('week', current_date + 700)::date + 8      as d2,
        date_trunc('week', current_date + 700)::date + 9      as d3,
        date_trunc('week', current_date + 700)::date + 10     as d4,
+       date_trunc('week', current_date + 700)::date + 11     as d5,
        date_trunc('week', current_date + 700)::date + 4      as dfrom,
        date_trunc('week', current_date + 700)::date + 12     as dto;
 grant select on t48 to authenticated;
@@ -243,8 +246,12 @@ select t_eq('12:00 — T1 נסגרה, ונשארה T2 בלבד',
   ((select t48hour(d0, 12) from t48) ->> 'tasks')::int, 1);
 select t_eq('14:00 — החלון הוא [) ולכן השעה ריקה',
   ((select t48hour(d0, 14) from t48) ->> 'tasks')::int, 0);
-select t_eq('15:00 — חמישה עובדים, בלי אף ראש צוות',
-  ((select t48hour(d0, 15) from t48) ->> 'leads')::int, 0);
+-- ‏0181: T4 אינה מסומנת `requires_team_lead`, ובכל זאת נדרש לה ראש צוות —
+-- אופן הביצוע שלה אינו הובלה בלבד ואינו איסוף עצמי, וזה הכלל.
+select t_eq('15:00 — חמישה עובדים, ונדרש להם ראש צוות',
+  ((select t48hour(d0, 15) from t48) ->> 'leads')::int, 1);
+select t_eq('ואף אחד לא שובץ בו',
+  ((select t48hour(d0, 15) from t48) ->> 'leads_staffed')::int, 0);
 select t_eq('ואותה שעה כן נושאת את חמשת העובדים',
   ((select t48hour(d0, 15) from t48) ->> 'workers')::int, 5);
 select t_eq('היום כולו: 24 שעות',
@@ -271,18 +278,24 @@ select t_eq('שמונה שעות עסוקות ביום',
 
 \echo '--- 3. סך היום נספר מהמשימות, לא מהשעות ---'
 
-select t_eq('שלוש משימות מתוזמנות',
-  ((select t48day(d0) from t48) ->> 'tasks')::int, 3);
+select t_eq('ארבע משימות ביום — גם זו שאין לה שעה',
+  ((select t48day(d0) from t48) ->> 'tasks')::int, 4);
+select t_eq('שלוש מהן על ציר השעות',
+  ((select t48day(d0) from t48) ->> 'timed')::int, 3);
 select t_eq('ואחת בלי שעה — נספרת בנפרד ולא נעלמת',
   ((select t48day(d0) from t48) ->> 'untimed')::int, 1);
-select t_eq('עשרה עובדים נדרשים',
-  ((select t48day(d0) from t48) ->> 'worker_need')::int, 10);
+select t_eq('ארבעה-עשר עובדים נדרשים — הדרישה של כל ארבע',
+  ((select t48day(d0) from t48) ->> 'worker_need')::int, 14);
 select t_eq('שעות-עובד: 3×4 + 2×4 + 5×2',
   ((select t48day(d0) from t48) ->> 'worker_hours')::numeric, 30::numeric);
 select t_eq('שני משובצים, והאדם שמופיע בשני תפקידים נספר פעם אחת',
   ((select t48day(d0) from t48) ->> 'staffed')::int, 2);
-select t_eq('ולכן פער האיוש הוא 8',
-  ((select t48day(d0) from t48) ->> 'gap')::int, 8);
+select t_eq('ולכן פער האיוש הוא 12',
+  ((select t48day(d0) from t48) ->> 'gap')::int, 12);
+select t_eq('ארבעה ראשי צוות נדרשים — אחד לכל משימה',
+  ((select t48day(d0) from t48) ->> 'lead_need')::int, 4);
+select t_eq('ואף אחד מהם לא שובץ',
+  ((select t48day(d0) from t48) ->> 'lead_staffed')::int, 0);
 select t_eq('משימה אחת הואצלה',
   ((select t48day(d0) from t48) ->> 'delegated')::int, 1);
 
@@ -334,14 +347,22 @@ select t_eq('וגם לא בשעה שלה',
 select t_eq('משימה שנמחקה רכות אינה על המפה',
   (select count(*)::int from jsonb_array_elements((select load_day(d2) from t48) -> 'tasks') x
     where x ->> 'task_id' = '61000000-0000-0000-0000-000000048008'), 0);
-select t_eq('ומשימה בלי שעה אינה ברשימת היום',
+-- ‏0181: היא כן ברשימה, ומסומנת `timed = false` — אין לה מקום על הציר,
+-- אבל היא עבודה של היום ואי אפשר לשתוק עליה.
+select t_eq('ומשימה בלי שעה כן ברשימת היום',
   (select count(*)::int from jsonb_array_elements((select load_day(d0) from t48) -> 'tasks') x
-    where x ->> 'task_id' = '61000000-0000-0000-0000-000000048004'), 0);
+    where x ->> 'task_id' = '61000000-0000-0000-0000-000000048004'), 1);
+select t_eq('ומסומנת שאין לה שעה',
+  (select (x ->> 'timed')::boolean from jsonb_array_elements((select load_day(d0) from t48) -> 'tasks') x
+    where x ->> 'task_id' = '61000000-0000-0000-0000-000000048004'), false);
+select t_eq('ואין לה חלון',
+  (select (x -> 'start') = 'null'::jsonb from jsonb_array_elements((select load_day(d0) from t48) -> 'tasks') x
+    where x ->> 'task_id' = '61000000-0000-0000-0000-000000048004'), true);
 
 \echo '--- 6. רשימת היום אומרת בגלל מה ---'
 
-select t_eq('שלוש משימות ברשימה',
-  jsonb_array_length((select load_day(d0) from t48) -> 'tasks'), 3);
+select t_eq('ארבע משימות ברשימה',
+  jsonb_array_length((select load_day(d0) from t48) -> 'tasks'), 4);
 select t_eq('והראשונה היא המוקדמת ביותר',
   ((select load_day(d0) from t48) -> 'tasks' -> 0 ->> 'label'), 'T1');
 select t_eq('עם הדרישה שלה',
@@ -410,3 +431,71 @@ select t_eq('ו-authenticated כן',
   has_function_privilege('authenticated', 'load_heatmap(date,date)', 'EXECUTE'), true);
 
 select set_config('request.jwt.claim.sub', '', false);
+
+\echo '--- 10. מה שנדרש, ולא מה ששובץ (0181) ---'
+
+reset role;
+
+-- אירוע שלישי, וביום משלו: כאן הדרישה נאמרת במפורש — ‏`truck_count` על
+-- האירוע — ואילו בשטח שובצה משאית אחת בלבד.
+insert into events (id, customer_id, event_date, location_text, truck_count, status_id)
+select '30000000-0000-0000-0000-00000000048c', '10000000-0000-0000-0000-00000000048a',
+       d5, 'סוקולוב 3, הרצליה', 3,
+       (select id from statuses where entity = 'event' and code = 'planned'
+                                  and deleted_at is null)
+from t48;
+delete from tasks where event_id = '30000000-0000-0000-0000-00000000048c';
+
+insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id,
+                   title, onsite_start_time, hours_count, worker_count, truck_ids,
+                   requires_team_lead, execution_method_id)
+select v.id, '30000000-0000-0000-0000-00000000048c',
+       '10000000-0000-0000-0000-00000000048a',
+       (select id from task_types where code = 'setup' limit 1),
+       (select d5 from t48),
+       (select id from statuses where entity = 'task' and code = 'assigned'
+                                  and deleted_at is null),
+       v.title, v.onsite, v.hours, v.workers, v.trucks, v.lead,
+       (select id from execution_methods where btrim(name) = v.method
+                                           and deleted_at is null limit 1)
+from (values
+  -- שתי משימות של אותו אירוע, באותה שעה: הדרישה למשאיות היא של האירוע,
+  -- ונספרת פעם אחת ולא פעמיים.
+  ('62000000-0000-0000-0000-000000048010'::uuid, 'T10', '10:00'::time, 2::numeric, 2,
+   array['12000000-0000-0000-0000-00000000048a']::uuid[], null::boolean, 'סידור'),
+  ('62000000-0000-0000-0000-000000048011', 'T11', '10:00', 2, 2, '{}'::uuid[], null, 'סידור'),
+  -- הובלה בלבד ואיסוף עצמי — שני הפטורים
+  ('62000000-0000-0000-0000-000000048012', 'T12', '14:00', 2, 2, '{}'::uuid[], null, 'הובלה בלבד'),
+  ('62000000-0000-0000-0000-000000048013', 'T13', '14:00', 2, 2, '{}'::uuid[], null, 'איסוף עצמי'),
+  -- ולצדם משימה רגילה, שראש הצוות שלה כבר שובץ
+  ('62000000-0000-0000-0000-000000048014', 'T14', '14:00', 2, 2, '{}'::uuid[], null, 'סידור')
+) as v(id, title, onsite, hours, workers, trucks, lead, method);
+
+insert into task_assignments (task_id, profile_id, role) values
+  ('62000000-0000-0000-0000-000000048014', '20000000-0000-0000-0000-0000000048b1', 'team_lead');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000048a1', false);
+
+select t_eq('10:00 — שלוש משאיות נדרשות, כפי שנאמר על האירוע',
+  ((select t48hour(d5, 10) from t48) ->> 'trucks')::int, 3);
+select t_eq('ורק אחת שובצה בפועל',
+  ((select t48hour(d5, 10) from t48) ->> 'trucks_assigned')::int, 1);
+select t_eq('שתי משימות של אותו אירוע אינן מכפילות את הדרישה',
+  ((select t48hour(d5, 10) from t48) ->> 'tasks')::int, 2);
+
+select t_eq('14:00 — שלוש משימות',
+  ((select t48hour(d5, 14) from t48) ->> 'tasks')::int, 3);
+select t_eq('ורק אחת מהן דורשת ראש צוות: הובלה בלבד ואיסוף עצמי פטורות',
+  ((select t48hour(d5, 14) from t48) ->> 'leads')::int, 1);
+select t_eq('והוא כבר שובץ',
+  ((select t48hour(d5, 14) from t48) ->> 'leads_staffed')::int, 1);
+
+select t_eq('סך היום: שלוש משאיות נדרשות',
+  ((select t48day(d5) from t48) ->> 'truck_need')::int, 3);
+select t_eq('ואחת משובצת',
+  ((select t48day(d5) from t48) ->> 'truck_assigned')::int, 1);
+select t_eq('שלושה ראשי צוות נדרשים ביום',
+  ((select t48day(d5) from t48) ->> 'lead_need')::int, 3);
+select t_eq('ואחד מהם שובץ',
+  ((select t48day(d5) from t48) ->> 'lead_staffed')::int, 1);

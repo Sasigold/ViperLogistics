@@ -508,6 +508,16 @@ OUT="$OUT
 $OUT49"
 
 echo
+echo "== the customer worker has an account suite =="
+# 50 מקימה שני לקוחות, אירוע, עובד בסגל וחמש דמויות משלה ב-current_date + 710,
+# מעבר לכל טווח אחר. היא רצה אחרונה כי היא פותחת חשבון לעובד ומכבה אותו
+# בסופה — כלומר היא משאירה פרופיל מחוק רכות ושיבוץ שאינם מנוקים.
+OUT50=$($PSQL -d vl -f "$HERE/50_the_customer_worker_has_an_account.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT50"
+OUT="$OUT
+$OUT50"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

@@ -28,7 +28,9 @@ const hour = (h: number, over: Partial<LoadHour> = {}): LoadHour => ({
   staffed: 0,
   gap: 0,
   trucks: 0,
+  trucks_assigned: 0,
   leads: 0,
+  leads_staffed: 0,
   customers: 0,
   sites: 0,
   warehouses: 0,
@@ -168,6 +170,36 @@ describe('monthSummary', () => {
 
   it('counts untimed tasks separately rather than dropping them', () => {
     expect(monthSummary(days, cap).untimed).toBe(2)
+  })
+
+  /* ‏0181: העומס נמדד מול הדרישה, אבל "שובץ מתוך נדרש" הוא מה שאומר מה עוד
+     נשאר לעשות — ולכן שני המספרים נסכמים על החודש, לכל ממד בנפרד. */
+  it('sums each dimension as a pair: what is needed, and what was staffed', () => {
+    const s = monthSummary(
+      [
+        day('2026-03-01', {
+          tasks: 2,
+          worker_need: 7,
+          staffed: 3,
+          lead_need: 2,
+          lead_staffed: 1,
+          truck_need: 4,
+          truck_assigned: 1,
+        }),
+        day('2026-03-02', {
+          tasks: 1,
+          worker_need: 3,
+          staffed: 3,
+          lead_need: 1,
+          lead_staffed: 0,
+          truck_need: 2,
+          truck_assigned: 2,
+        }),
+      ],
+      cap,
+    )
+    expect(s.need).toEqual({ workers: 10, leads: 3, trucks: 6 })
+    expect(s.staffed).toEqual({ workers: 6, leads: 1, trucks: 3 })
   })
 
   it('a month with no work at all reports zero, not NaN', () => {

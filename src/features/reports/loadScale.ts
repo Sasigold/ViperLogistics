@@ -70,7 +70,13 @@ export function loadScore(counts: LoadCounts, capacity: LoadCapacity | undefined
   return { pct: Math.round(pct), bottleneck: pct > 0 ? bottleneck : null }
 }
 
-/** הפסגה של יום, בצורה ש-`loadScore` מקבל. */
+/**
+ * הפסגה של יום, בצורה ש-`loadScore` מקבל.
+ *
+ * ‏`peak_trucks` ו-`peak_leads` הם מעכשיו **הדרישה** ולא מה ששובץ (0181):
+ * העומס הוא מה שצריך לסדר, ולא מה שכבר סודר. מה ששובץ נוסע לצדם ומוצג
+ * כ"שובץ מתוך נדרש", אבל אינו נכנס לאחוז.
+ */
 export const dayCounts = (d: LoadDay): LoadCounts => ({
   workers: d.peak_workers,
   trucks: d.peak_trucks,
@@ -181,10 +187,15 @@ export function emptyDay(day: string): LoadDay {
   return {
     day,
     tasks: 0,
+    timed: 0,
     untimed: 0,
     worker_need: 0,
     staffed: 0,
     gap: 0,
+    lead_need: 0,
+    lead_staffed: 0,
+    truck_need: 0,
+    truck_assigned: 0,
     worker_hours: 0,
     delegated: 0,
     customers: 0,
@@ -193,7 +204,9 @@ export function emptyDay(day: string): LoadDay {
     peak_tasks: 0,
     peak_workers: 0,
     peak_trucks: 0,
+    peak_trucks_assigned: 0,
     peak_leads: 0,
+    peak_leads_staffed: 0,
     peak_sites: 0,
     peak_warehouses: 0,
     busy_hours: 0,
@@ -211,8 +224,13 @@ export interface MonthSummary {
   avgPeakPct: number
   /** סך התקנים שעוד לא אוישו בחודש */
   gap: number
+  /** ‏"שובץ מתוך נדרש" על החודש כולו — שלושת הממדים, כל אחד כזוג (0181) */
+  need: { workers: number; leads: number; trucks: number }
+  staffed: { workers: number; leads: number; trucks: number }
   totalTasks: number
-  /** משימות בלי שעה — מה שהמפה אינה יכולה למקם */
+  /** מתוך `totalTasks`, אלה שיש להן שעה */
+  timed: number
+  /** משימות בלי שעה — מה שהמפה אינה יכולה למקם, אבל כן סופרת */
   untimed: number
   delegated: number
   /** הממד שהיה הצוואר ברוב הימים הפעילים */
@@ -249,7 +267,18 @@ export function monthSummary(days: LoadDay[], capacity: LoadCapacity | undefined
     busiest,
     avgPeakPct: activeDays ? Math.round(pctSum / activeDays) : 0,
     gap: days.reduce((s, d) => s + d.gap, 0),
+    need: {
+      workers: days.reduce((s, d) => s + d.worker_need, 0),
+      leads: days.reduce((s, d) => s + d.lead_need, 0),
+      trucks: days.reduce((s, d) => s + d.truck_need, 0),
+    },
+    staffed: {
+      workers: days.reduce((s, d) => s + d.staffed, 0),
+      leads: days.reduce((s, d) => s + d.lead_staffed, 0),
+      trucks: days.reduce((s, d) => s + d.truck_assigned, 0),
+    },
     totalTasks: days.reduce((s, d) => s + d.tasks, 0),
+    timed: days.reduce((s, d) => s + d.timed, 0),
     untimed: days.reduce((s, d) => s + d.untimed, 0),
     delegated: days.reduce((s, d) => s + d.delegated, 0),
     topBottleneck: top,

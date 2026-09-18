@@ -279,7 +279,7 @@ function SummaryTiles({
 
   const gapHint =
     scope === 'contractor'
-      ? `${summary.totalTasks} משימות מתוזמנות לקבלן בחודש`
+      ? `${summary.totalTasks} משימות לקבלן בחודש`
       : summary.untimed > 0
         ? `${summary.delegated} משימות הואצלו · ${summary.untimed} ללא שעה`
         : `${summary.delegated} משימות הואצלו לקבלנים`
@@ -303,7 +303,9 @@ function SummaryTiles({
         icon={<Activity size={ICON.xl} strokeWidth={STROKE} />}
         label="עומס ממוצע ביום פעיל"
         value={`${summary.avgPeakPct}%`}
-        hint={`${summary.activeDays} ימים עם עבודה · ${summary.totalTasks} משימות`}
+        hint={`${summary.activeDays} ימים עם עבודה · ${summary.totalTasks} משימות${
+          summary.untimed > 0 ? ` (${summary.untimed} ללא שעה)` : ''
+        }`}
       />
       <StatCard
         icon={<AlertTriangle size={ICON.xl} strokeWidth={STROKE} />}
@@ -319,6 +321,7 @@ function SummaryTiles({
         tone="#8b5cf6"
         hint={gapHint}
       />
+      <StaffingNote summary={summary} />
       {capacity && (
         <CapacityNote
           capacity={capacity}
@@ -327,6 +330,46 @@ function SummaryTiles({
           onOpenSettings={onOpenSettings}
         />
       )}
+    </div>
+  )
+}
+
+/**
+ * שובץ מתוך נדרש.
+ *
+ * העומס עצמו נמדד מול ה**דרישה** — היא מה שהחודש מחייב, והיא אינה יורדת
+ * כשמישהו משבץ. אבל "‏12 ראשי צוות נדרשים" בלי לומר כמה מהם כבר יש הוא
+ * מספר שאי אפשר לדעת ממנו מה נשאר לעשות, ולכן שני המספרים יושבים יחד —
+ * ומה שחסר נאמר במפורש ולא מושאר לחיסור.
+ */
+function StaffingNote({ summary }: { summary: ReturnType<typeof monthSummary> }) {
+  const rows = [
+    { key: 'workers', label: 'עובדים', icon: Users, need: summary.need.workers, got: summary.staffed.workers },
+    { key: 'leads', label: 'ראשי צוות', icon: Crown, need: summary.need.leads, got: summary.staffed.leads },
+    { key: 'trucks', label: 'משאיות', icon: Truck, need: summary.need.trucks, got: summary.staffed.trucks },
+  ]
+  if (rows.every((r) => r.need === 0)) return null
+
+  return (
+    <div className="sm:col-span-2 lg:col-span-4">
+      <Card padded className="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <span className="type-caption font-semibold text-ink-tertiary">
+          נדרש החודש, ומה ששובץ מתוכו:
+        </span>
+        {rows.map((r) => {
+          const missing = Math.max(r.need - r.got, 0)
+          return (
+            <span key={r.key} className="inline-flex items-center gap-1.5 type-caption text-ink-secondary">
+              <r.icon size={ICON.xs} strokeWidth={STROKE} aria-hidden />
+              {r.label}
+              <span className="font-bold tabular text-ink" dir="ltr">
+                {r.got}/{r.need}
+              </span>
+              {missing > 0 && <Badge tone="warning">חסרים {missing}</Badge>}
+            </span>
+          )
+        })}
+      </Card>
     </div>
   )
 }
@@ -510,7 +553,13 @@ function HeatCell({
                 עומס {score.pct}%{dim && ` — ${dim.bottleneckLabel}`}
               </span>
               <span className="block tabular opacity-80">
-                {day.tasks} משימות · {day.worker_need} עובדים · {day.peak_trucks} משאיות בשיא
+                {day.tasks} משימות{day.untimed > 0 && ` (${day.untimed} ללא שעה)`}
+              </span>
+              {/* בכל שורה: מה ששובץ מתוך מה שנדרש. המכנה הוא הדרישה, והוא
+                  מה שהאחוז נמדד מולו. */}
+              <span className="block tabular opacity-80" dir="ltr">
+                {day.staffed}/{day.worker_need} עובדים · {day.lead_staffed}/{day.lead_need} ראשי צוות ·{' '}
+                {day.truck_assigned}/{day.truck_need} משאיות
               </span>
               {day.peak_hour != null && (
                 <span className="block tabular opacity-80">השיא ב-{hourLabel(day.peak_hour)}</span>
@@ -573,12 +622,15 @@ function HeatCell({
  */
 const AXIS = { tick: { fontSize: 11, fill: 'var(--vl-text-tertiary)' }, axisLine: false, tickLine: false } as const
 
+/* כל המדדים הם **דרישה** ולא איוש (0181), ולכן הכותרות אומרות זאת: עמודה
+   שנקראת "משאיות" ומודדת את מה שנדרש היא בדיוק אי-ההבנה שהמסך הזה נועד
+   לסלק. מה ששובץ נאמר בטולטיפ, לצד הדרישה. */
 const HOUR_MEASURES = [
   { key: 'pct', label: 'עומס %' },
-  { key: 'workers', label: 'עובדים' },
+  { key: 'workers', label: 'עובדים נדרשים' },
   { key: 'tasks', label: 'משימות' },
-  { key: 'trucks', label: 'משאיות' },
-  { key: 'leads', label: 'ראשי צוות' },
+  { key: 'trucks', label: 'משאיות נדרשות' },
+  { key: 'leads', label: 'ראשי צוות נדרשים' },
 ] as const
 
 type HourMeasure = (typeof HOUR_MEASURES)[number]['key']
@@ -749,8 +801,11 @@ function HourTooltip({
             עומס <span className="font-bold text-ink">{score.pct}%</span>
             {dim && <span className="text-ink-tertiary"> · {dim.bottleneckLabel}</span>}
           </p>
-          <p className="type-caption tabular text-ink-secondary">
-            {h.tasks} משימות · {h.workers} עובדים · {h.trucks} משאיות · {h.leads} ראשי צוות
+          <p className="type-caption tabular text-ink-secondary">{h.tasks} משימות במקביל</p>
+          {/* נדרש, ולצדו מה שכבר שובץ — באותו רגע. */}
+          <p className="type-caption tabular text-ink-secondary" dir="ltr">
+            {h.staffed}/{h.workers} עובדים · {h.leads_staffed}/{h.leads} ראשי צוות ·{' '}
+            {h.trucks_assigned}/{h.trucks} משאיות
           </p>
           {h.gap > 0 && <p className="type-caption text-warning-text">{h.gap} תקנים לא מאוישים</p>}
           {h.sites > 1 && (
@@ -795,12 +850,14 @@ function DayTasksCard({
       timeZone: 'Asia/Jerusalem',
     })
 
+  const untimed = tasks.filter((t) => !t.timed).length
+  const tail = untimed > 0 ? ` · ${untimed} ללא שעה` : ''
   const subtitle =
     scope === 'contractor'
-      ? `${tasks.length} משימות עבור ${contractorName || 'הקבלן'} ב-${fmtDate(date)}`
+      ? `${tasks.length} משימות עבור ${contractorName || 'הקבלן'} ב-${fmtDate(date)}${tail}`
       : scope === 'internal'
-        ? `${tasks.length} משימות בצוות הפנימי ב-${fmtDate(date)}`
-        : `${tasks.length} משימות נוגעות ב-${fmtDate(date)}`
+        ? `${tasks.length} משימות בצוות הפנימי ב-${fmtDate(date)}${tail}`
+        : `${tasks.length} משימות נוגעות ב-${fmtDate(date)}${tail}`
 
   return (
     <Card className="h-full">
@@ -828,9 +885,15 @@ function DayTasksCard({
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-1.5">
-                    <span className="shrink-0 type-caption font-bold tabular" dir="ltr">
-                      {time(t.start)}–{time(t.end)}
-                    </span>
+                    {/* משימה בלי שעה אינה על ציר השעות, אבל היא כן עבודה של
+                        היום — ולכן היא ברשימה, ואומרת בפירוש מה חסר לה. */}
+                    {t.timed && t.start && t.end ? (
+                      <span className="shrink-0 type-caption font-bold tabular" dir="ltr">
+                        {time(t.start)}–{time(t.end)}
+                      </span>
+                    ) : (
+                      <Badge tone="neutral">ללא שעה</Badge>
+                    )}
                     <span className="min-w-0 truncate type-body font-medium">{t.label ?? '—'}</span>
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 type-caption text-ink-tertiary">
@@ -840,16 +903,22 @@ function DayTasksCard({
                         {t.staffed}/{t.worker_need}
                       </span>
                     </span>
-                    {t.trucks > 0 && (
+                    {(t.truck_need > 0 || t.trucks > 0) && (
                       <span className="inline-flex items-center gap-1">
                         <Truck size={ICON.xs} strokeWidth={STROKE} aria-hidden />
-                        <span className="tabular">{t.trucks}</span>
+                        <span className="tabular" dir="ltr">
+                          {t.trucks}/{t.truck_need}
+                        </span>
                       </span>
                     )}
                     {t.needs_lead && (
-                      <span className="inline-flex items-center gap-1">
+                      <span
+                        className={`inline-flex items-center gap-1 ${
+                          t.lead_staffed > 0 ? '' : 'text-warning-text'
+                        }`}
+                      >
                         <Crown size={ICON.xs} strokeWidth={STROKE} aria-hidden />
-                        ראש צוות
+                        {t.lead_staffed > 0 ? 'ראש צוות שובץ' : 'חסר ראש צוות'}
                       </span>
                     )}
                     {t.delegated && (

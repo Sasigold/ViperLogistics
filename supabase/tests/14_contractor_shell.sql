@@ -188,6 +188,15 @@ select t_eq('עובד קבלן: ולא את הטלפון',
 -- ‏0129: הקהל כולו מתעד ורואה הערות; מה שנשאר סגור הוא רשומות המערכת.
 select t_eq('עובד קבלן: כותב ביומן האירוע (0129)', app.has('events.activity_note'), true);
 select t_eq('עובד קבלן: אך לא רשומות מערכת',       app.has('events.activity_system_view'), false);
+-- ‏0180: מודול האירועים שלו נראה בדיוק כמו של עובד הצוות — הדלת של הדף,
+-- היומן וההערות והמפרט פתוחים, וכל השאר סגור. עד אז `events.view` לבדה
+-- הדליקה בהיסק גם את הרשימה, את הייצוא ואת אנשי הקשר.
+select t_eq('עובד קבלן: דף האירוע נפתח לו (0148)',  app.has('events.view'), true);
+select t_eq('עובד קבלן: אך לא רשימת האירועים (0180)', app.has('events.list'), false);
+select t_eq('עובד קבלן: ולא ייצוא האירועים',         app.has('events.export'), false);
+select t_eq('עובד קבלן: ולא אנשי הקשר של הלקוח',     app.has('events.view_contacts'), false);
+select t_eq('עובד קבלן: והמפרט כן — הוא נוסע אליו (0102)',
+  app.has('events.specs_view'), true);
 select t_eq('עובד קבלן: ואינו קובע הגדרות לאיש',   app.has('portal.worker_settings'), false);
 select t_eq('עובד קבלן: אין בורר תצוגה בלו״ז',     app.has('board.columns'), false);
 select t_eq('עובד קבלן: ואין שורת סינון',           app.has('board.filter'), false);

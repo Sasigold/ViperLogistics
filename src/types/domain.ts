@@ -176,6 +176,8 @@ export interface ExecutionMethod {
   sort_order: number
   /** משימה באופן ביצוע זה מתומחרת לקבלן לפי מחיר ההובלה, במקום הבסיס (0092). */
   is_transport_only: boolean
+  /** האם משימה באופן ביצוע זה דורשת ראש צוות (0181). ברירת המחדל כן. */
+  requires_team_lead: boolean
   is_active: boolean
   deleted_at: string | null
 }
@@ -193,6 +195,20 @@ export interface CustomerWorker {
   id_number: string | null
   is_active: boolean
   deleted_at: string | null
+}
+
+/**
+ * חשבון ההתחברות של עובד בסגל הלקוח (0178).
+ *
+ * ‏`user_id` ריק הוא מצב אמיתי ולא תקלה: שורת פרופיל נולדת ראשונה
+ * והכניסה נפתחת אחריה, וכשלון ביניהן משאיר עובד שהמסך יציע לנסות שוב.
+ */
+export interface CustomerWorkerAccount {
+  id: string
+  customer_worker_id: string
+  email: string | null
+  user_id: string | null
+  is_active: boolean
 }
 
 /**
@@ -225,6 +241,10 @@ export interface AssignableCustomerWorker {
   full_name: string
   phone: string | null
   roles: StaffRole[]
+  /** ‏0178: האם נפתח לעובד חשבון שבו הוא רואה את המשימות שלו. */
+  has_login: boolean
+  /** שורת הפרופיל של אותו חשבון, כשיש (0178). */
+  profile_id: string | null
 }
 
 export interface CustomerExecutionMethodRow {
@@ -894,6 +914,17 @@ export interface WorkBoardRow {
 
 export type PerformedBy = 'viper' | 'arko'
 
+/**
+ * מה שדרוש כדי לשאול "האם המשימה הזו היא שלי לבצע" (0179).
+ *
+ * שתי עמודות ולא שורה שלמה, כדי שאותה שאלה תישאל מכל מקום שבו יושבת
+ * משימה — שורת לו״ז, כרטיס או שורת דף אירוע — ולא רק מהלו״ז.
+ */
+export interface TaskPerformance {
+  customer_id: string | null
+  performed_by: PerformedBy | null
+}
+
 /* ===== תמחור ============================================================== */
 
 /**
@@ -1215,6 +1246,13 @@ export interface MyPermissions {
     is_admin: boolean
     customer_id: string | null
     contractor_id: string | null
+    /**
+     * שורת הסגל שהחשבון הזה הוא (0178).
+     *
+     * מלאה רק לעובד בסגל של לקוח שמבצע בעצמו — זה מה שמבדיל בינו
+     * לבין מנהל אצל אותו לקוח, ששניהם חשבונות `customer_user` שלו.
+     */
+    customer_worker_id: string | null
     phone: string | null
     email: string | null
   }
@@ -1943,13 +1981,22 @@ export interface OpsCapacityConfig {
  */
 export interface LoadDay {
   day: string
+  /** כל משימות היום — מתוזמנות ולא (0181) */
   tasks: number
+  /** מתוכן, אלה שיושבות על ציר השעות */
+  timed: number
   /** משימות של היום שאין להן שעה, ולכן אינן על ציר השעות */
   untimed: number
   worker_need: number
   staffed: number
   /** ‏`worker_need` פחות `staffed`, לא שלילי — מה שעוד צריך לאייש */
   gap: number
+  /** ראשי צוות שהיום דורש, ומה שכבר שובץ מהם (0181) */
+  lead_need: number
+  lead_staffed: number
+  /** משאיות שהיום דורש — לפי `truck_count` של האירוע — ומה ששובץ (0181) */
+  truck_need: number
+  truck_assigned: number
   worker_hours: number
   delegated: number
   customers: number
@@ -1958,8 +2005,11 @@ export interface LoadDay {
   peak_hour: number | null
   peak_tasks: number
   peak_workers: number
+  /** הפסגה היא של ה**דרישה**; מה ששובץ נוסע לצדה (0181) */
   peak_trucks: number
+  peak_trucks_assigned: number
   peak_leads: number
+  peak_leads_staffed: number
   peak_sites: number
   peak_warehouses: number
   /** כמה שעות ביום יש בהן ולו משימה אחת — חפיפה נספרת פעם אחת */
@@ -1979,8 +2029,12 @@ export interface LoadHour {
   workers: number
   staffed: number
   gap: number
+  /** משאיות **נדרשות** באותה שעה, ומה ששובץ בפועל (0181) */
   trucks: number
+  trucks_assigned: number
+  /** ראשי צוות נדרשים, ומה ששובץ */
   leads: number
+  leads_staffed: number
   customers: number
   sites: number
   /** כמה מחסנים שונים משלחים באותה שעה — תחרות על רציף ההעמסה */
@@ -1996,12 +2050,18 @@ export interface LoadTask {
   task_type: string | null
   customer: string | null
   color: string | null
-  /** קצות החלון כ-ISO, כולל היציאה מהמחסן כשיש כזו */
-  start: string
-  end: string
+  /** האם יש למשימה שעה. ‏false = היא נספרת ביום, לא בשעה (0181) */
+  timed: boolean
+  /** קצות החלון כ-ISO, כולל היציאה מהמחסן כשיש כזו. null למשימה בלי שעה */
+  start: string | null
+  end: string | null
   worker_need: number
   staffed: number
   needs_lead: boolean
+  /** ‏0 או 1 — ראש צוות אחד לכל היותר על משימה */
+  lead_staffed: number
+  /** משאיות נדרשות, ומה ששובץ בפועל */
+  truck_need: number
   trucks: number
   truck_names: { id: string; name: string }[] | null
   site: string | null
