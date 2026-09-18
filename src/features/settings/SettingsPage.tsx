@@ -312,12 +312,23 @@ function MethodsTab() {
     onError: (e) => toast.error(errorMessage(e)),
   })
 
+  /* ‏0181: אופן ביצוע שאינו דורש ראש צוות — הובלה בלבד ואיסוף עצמי — יורד
+     מספירת ראשי הצוות במפת העומסים. ברירת המחדל היא שכן נדרש. */
+  const setNeedsLead = useMutation({
+    mutationFn: async ({ methodId, on }: { methodId: string; on: boolean }) => {
+      const { error } = await supabase.from('execution_methods').update({ requires_team_lead: on }).eq('id', methodId)
+      if (error) throw error
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['execution_methods'] }),
+    onError: (e) => toast.error(errorMessage(e)),
+  })
+
   return (
     <Card>
       {dialog}
       <CardHeader
         title="אופני ביצוע"
-        subtitle="סימון אילו אופני ביצוע זמינים לכל סוג משימה"
+        subtitle="אילו אופני ביצוע זמינים לכל סוג משימה, ומה כל אופן ביצוע מחייב"
         icon={<Boxes size={ICON.md} strokeWidth={STROKE} />}
       />
       <AddRow onSubmit={() => add.mutate()} pending={add.isPending} disabled={!name.trim()}>
@@ -343,6 +354,9 @@ function MethodsTab() {
                   <th className="px-2 py-2 text-center type-table-head">
                     <span className="block max-w-24 truncate">הובלה בלבד</span>
                   </th>
+                  <th className="px-2 py-2 text-center type-table-head">
+                    <span className="block max-w-24 truncate">נדרש ראש צוות</span>
+                  </th>
                   {types.map((t) => (
                     <th key={t.id} className="px-2 py-2 text-center type-table-head">
                       <span className="block max-w-24 truncate">{t.name}</span>
@@ -365,6 +379,14 @@ function MethodsTab() {
                         <Checkbox
                           checked={m.is_transport_only}
                           onChange={(v) => setTransport.mutate({ methodId: m.id, on: v })}
+                        />
+                      </span>
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      <span className="inline-flex">
+                        <Checkbox
+                          checked={m.requires_team_lead}
+                          onChange={(v) => setNeedsLead.mutate({ methodId: m.id, on: v })}
                         />
                       </span>
                     </td>

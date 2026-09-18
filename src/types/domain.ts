@@ -176,6 +176,8 @@ export interface ExecutionMethod {
   sort_order: number
   /** משימה באופן ביצוע זה מתומחרת לקבלן לפי מחיר ההובלה, במקום הבסיס (0092). */
   is_transport_only: boolean
+  /** האם משימה באופן ביצוע זה דורשת ראש צוות (0181). ברירת המחדל כן. */
+  requires_team_lead: boolean
   is_active: boolean
   deleted_at: string | null
 }
@@ -1979,13 +1981,22 @@ export interface OpsCapacityConfig {
  */
 export interface LoadDay {
   day: string
+  /** כל משימות היום — מתוזמנות ולא (0181) */
   tasks: number
+  /** מתוכן, אלה שיושבות על ציר השעות */
+  timed: number
   /** משימות של היום שאין להן שעה, ולכן אינן על ציר השעות */
   untimed: number
   worker_need: number
   staffed: number
   /** ‏`worker_need` פחות `staffed`, לא שלילי — מה שעוד צריך לאייש */
   gap: number
+  /** ראשי צוות שהיום דורש, ומה שכבר שובץ מהם (0181) */
+  lead_need: number
+  lead_staffed: number
+  /** משאיות שהיום דורש — לפי `truck_count` של האירוע — ומה ששובץ (0181) */
+  truck_need: number
+  truck_assigned: number
   worker_hours: number
   delegated: number
   customers: number
@@ -1994,8 +2005,11 @@ export interface LoadDay {
   peak_hour: number | null
   peak_tasks: number
   peak_workers: number
+  /** הפסגה היא של ה**דרישה**; מה ששובץ נוסע לצדה (0181) */
   peak_trucks: number
+  peak_trucks_assigned: number
   peak_leads: number
+  peak_leads_staffed: number
   peak_sites: number
   peak_warehouses: number
   /** כמה שעות ביום יש בהן ולו משימה אחת — חפיפה נספרת פעם אחת */
@@ -2015,8 +2029,12 @@ export interface LoadHour {
   workers: number
   staffed: number
   gap: number
+  /** משאיות **נדרשות** באותה שעה, ומה ששובץ בפועל (0181) */
   trucks: number
+  trucks_assigned: number
+  /** ראשי צוות נדרשים, ומה ששובץ */
   leads: number
+  leads_staffed: number
   customers: number
   sites: number
   /** כמה מחסנים שונים משלחים באותה שעה — תחרות על רציף ההעמסה */
@@ -2032,12 +2050,18 @@ export interface LoadTask {
   task_type: string | null
   customer: string | null
   color: string | null
-  /** קצות החלון כ-ISO, כולל היציאה מהמחסן כשיש כזו */
-  start: string
-  end: string
+  /** האם יש למשימה שעה. ‏false = היא נספרת ביום, לא בשעה (0181) */
+  timed: boolean
+  /** קצות החלון כ-ISO, כולל היציאה מהמחסן כשיש כזו. null למשימה בלי שעה */
+  start: string | null
+  end: string | null
   worker_need: number
   staffed: number
   needs_lead: boolean
+  /** ‏0 או 1 — ראש צוות אחד לכל היותר על משימה */
+  lead_staffed: number
+  /** משאיות נדרשות, ומה ששובץ בפועל */
+  truck_need: number
   trucks: number
   truck_names: { id: string; name: string }[] | null
   site: string | null
