@@ -88,7 +88,10 @@ export default function LoadHeatmapPage() {
 function LoadHeatmapScreen() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
   const [selected, setSelected] = useState<string | null>(() => toISODate(new Date()))
-  const [scope, setScope] = useState<LoadScope>('internal')
+  /* ‏0181: ברירת המחדל היא **הכול**. "צוות פנימי בלבד" מסתירה כל משימה
+     שהואצלה לקבלן, ומי שפתח את המסך כדי לראות את היום שלו ראה שליש
+     ממנו בלי לדעת שהוא מסונן. הבורר עדיין שם למי שרוצה לפצל. */
+  const [scope, setScope] = useState<LoadScope>('all')
   const [selectedContractorId, setSelectedContractorId] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
