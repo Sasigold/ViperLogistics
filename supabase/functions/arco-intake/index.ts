@@ -83,11 +83,20 @@ Deno.serve(async (req) => {
     return json({ error: 'unknown route — use /event or /spec' }, 404)
   }
 
+  // שני קידודים, ובמכוון: מודול ה-HTTP ב-Make שולח `x-www-form-urlencoded`,
+  // שבו Make עצמו מקודד כל ערך — ולכן הערה חופשית שיש בה גרש או שורה חדשה
+  // אינה שוברת את הגוף. גוף JSON נתמך כדי שאפשר יהיה לקרוא לכאן ב-curl
+  // ומכל מי שיבוא אחרי Make.
+  const raw = await req.text()
   let body: unknown
-  try {
-    body = JSON.parse(await req.text())
-  } catch {
-    return json({ error: 'invalid json' }, 400)
+  if ((req.headers.get('Content-Type') ?? '').includes('x-www-form-urlencoded')) {
+    body = Object.fromEntries(new URLSearchParams(raw))
+  } else {
+    try {
+      body = JSON.parse(raw)
+    } catch {
+      return json({ error: 'invalid json' }, 400)
+    }
   }
 
   const admin = createClient(SUPABASE_URL, SERVICE_KEY)

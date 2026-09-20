@@ -58,35 +58,34 @@ grant select on ak51 to authenticated;
 
 \echo '--- 2. ההזמנה נעשית אירוע, ושתי המשימות שלו ---'
 
--- ‏order_date ב-21:00Z ב-1/10 היא חצות של 2/10 בישראל (IDT, ‏UTC+3) — כלומר
--- האירוע הוא ב-2 באוקטובר, ומי שיחתוך את המחרוזת יקבל את היום הלא נכון.
--- ההקמה ב-05:00Z היא 08:00 באותו בוקר; הפירוק ב-21:00Z ב-2/10 הוא חצות של
--- 3/10 — וחצות אינה שעה (0183 §1), ולכן הוא תאריך בלי שעה.
+-- המעטפה כאן היא **בדיוק** בצורה שארקו שולחת: `DD/MM/YYYY` לתאריך,
+-- ‏`DD/MM/YYYY HH:MM` לשעה, ובוליאני כ-`"1"` או כמחרוזת ריקה. הפירוק נשלח
+-- כתאריך בלי שעה — וחצות אינה שעה (0183 §1), ולכן השעה נשארת ריקה.
 \o /dev/null
 select arco_ingest_event(jsonb_build_object(
   'order_number',                     '  #26-000233 ',
   'customer_name',                    'קבוצת אינטלקט',
   'location',                         'ירושלים',
   'location_notes',                   'כניסה מהחניון',
-  'order_date',                       '2026-10-01T21:00:00.000Z',
+  'order_date',                       '02/10/2026',
   'event_status',                     'טרם אושר',
-  'truck_quantity',                   2,
-  'volume',                           15,
-  'parking',                          true,
-  'porterage',                        false,
-  'supplier_collection',              false,
+  'truck_quantity',                   '2',
+  'volume',                           '15',
+  'parking',                          '1',
+  'porterage',                        '',
+  'supplier_collection',              '0',
   'operational_contact_name',         'עינת',
   'operational_contact_phone',        '0528390829',
   'operational_notes',                'לתאם מעלית',
-  'setup_date_and_time',              '2026-10-01T05:00:00.000Z',
+  'setup_date_and_time',              '01/10/2026 08:00',
   'setup_method',                     'הובלה בלבד',
-  'setup_crew_size',                  3,
-  'setup_hours_quantity',             4,
+  'setup_crew_size',                  '3',
+  'setup_hours_quantity',             '4',
   'setup_execution_contractor',       'וייפר',
-  'dismantling_date_and_time',        '2026-10-02T21:00:00.000Z',
+  'dismantling_date_and_time',        '03/10/2026',
   'dismantling_method',               'פירוק בלבד',
-  'dismantling_crew_size',            2,
-  'dismantling_hours_quantity',       3,
+  'dismantling_crew_size',            '2',
+  'dismantling_hours_quantity',       '3',
   'dismantling_execution_contractor', 'ארקו 51'),
   jsonb_build_object('connection_id', (select connection_id from ak51)));
 \o
@@ -177,7 +176,7 @@ select t_eq('והסכום הוא סכום המשימות',
 select t_eq('והמטבע נאמר במפורש', (select snap ->> 'currency' from asnap51), 'ILS');
 
 
-\echo '--- 4. אותה הזמנה שוב אינה אירוע שני ---'
+\echo '--- 4. אותה הזמנה שוב אינה אירוע שני (והפעם בתאריך ISO) ---'
 
 \o /dev/null
 select arco_ingest_event(jsonb_build_object(
@@ -378,6 +377,38 @@ select t_eq('בלי תאריך',
   (select arco_ingest_event(jsonb_build_object('order_number', '26000888'),
      jsonb_build_object('connection_id', (select connection_id from ak51))) ->> 'status'),
   'failed');
+
+
+\echo '--- 9א. שדה מקולקל אינו מפיל הזמנה שלמה ---'
+
+-- ‏"[object Object]" אינו המצאה: כך נראה בדוגמה השמורה ב-Make שדה מספרי
+-- שהצד השני שלח לתוכו אובייקט. ההזמנה נפתחת, והשדה פשוט אינו ידוע.
+\o /dev/null
+select arco_ingest_event(jsonb_build_object(
+  'order_number',   '26000777',
+  'order_date',     '05/10/2026',
+  'truck_quantity', '[object Object]',
+  'volume',         '',
+  'parking',        'אולי'),
+  jsonb_build_object('connection_id', (select connection_id from ak51)));
+\o
+
+select t_eq('ההזמנה נפתחה בכל זאת',
+  (select count(*)::int from events
+    where customer_id = '10000000-0000-0000-0000-000000000051'
+      and event_number = '26000777' and deleted_at is null), 1);
+select t_eq('והשדה המקולקל נשאר ריק',
+  (select truck_count from events
+    where customer_id = '10000000-0000-0000-0000-000000000051'
+      and event_number = '26000777'), null::int);
+select t_eq('ובוליאני שאינו מוכר אינו "כן"',
+  (select no_parking from events
+    where customer_id = '10000000-0000-0000-0000-000000000051'
+      and event_number = '26000777'), false);
+select t_eq('והתאריך נקרא בצורה שארקו שולחת',
+  (select event_date from events
+    where customer_id = '10000000-0000-0000-0000-000000000051'
+      and event_number = '26000777'), '2026-10-05'::date);
 
 
 \echo '--- 10. מי רואה את הצינור ---'

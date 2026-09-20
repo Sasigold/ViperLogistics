@@ -40,15 +40,80 @@
 -- לקרוא. משימה שסומנה `performed_by = 'arko'` שווה 0 (0120), ומחיר שאדם
 -- נעל ידנית מוחזר כפי שהוא ומסומן `is_manual`.
 
--- ===== 1. ארבע פונקציות עזר טהורות =======================================
+-- ===== 1. שש פונקציות עזר טהורות =========================================
+--
+-- **כל מה שנכנס הוא מחרוזת, וכל מחרוזת יכולה להיות זבל.** ה-webhook של ארקו
+-- אינו מוגדר כמבנה נתונים ב-Make, ולכן כל שדה מגיע כטקסט כפי שנשלח: תאריך
+-- כ-`DD/MM/YYYY`, שעה כ-`DD/MM/YYYY HH:MM`, בוליאני כ-`"1"` או כמחרוזת ריקה,
+-- ולעיתים — כשהצד השני שלח אובייקט לשדה שהוא מספר — כ-`"[object Object]"`.
+-- שש הפונקציות שלמטה הן החיץ: מה שאינן מבינות חוזר `null`, כלומר "לא נאמר",
+-- והשדה הקיים נשאר. הזמנה שלמה אינה נופלת בגלל שדה אחד שהגיע מקולקל.
 
--- מה-UTC של Origami לשעון הקיר של ישראל. הנימוק המלא ב-0177 §1.
-create or replace function app.arco_local(p_iso text)
+/**
+ * חותמת זמן, בשעון הקיר של ישראל.
+ *
+ * שתי צורות מוכרות, ובסדר הזה:
+ *   • `DD/MM/YYYY` או `DD/MM/YYYY HH:MM[:SS]` — מה ש-Origami שולח בפועל.
+ *     זו כבר שעת קיר מקומית, והיא נבנית כמות שהיא ואינה עוברת אזור זמן.
+ *   • ‏ISO 8601. אם הוא נושא אזור (Z או היסט) הוא מומר לשעון ישראל, כי
+ *     אספקה ב-2026-10-01T21:00:00Z היא 2 באוקטובר ב-00:00 אצלנו, ומי שיחתוך
+ *     את המחרוזת יקבל את היום הלא נכון וגם את השעה הלא נכונה.
+ */
+create or replace function app.arco_local(p_raw text)
 returns timestamp language plpgsql stable set search_path = public as $$
+declare
+  v text := btrim(coalesce(p_raw, ''));
+  m text[];
 begin
-  if coalesce(btrim(p_iso), '') = '' then return null; end if;
-  return (p_iso::timestamptz) at time zone 'Asia/Jerusalem';
+  if v = '' then return null; end if;
+
+  m := regexp_match(v,
+    '^([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})(?:[ T]([0-9]{1,2}):([0-9]{2})(?::([0-9]{2}))?)?$');
+  if m is not null then
+    return make_timestamp(m[3]::int, m[2]::int, m[1]::int,
+                          coalesce(m[4], '0')::int, coalesce(m[5], '0')::int,
+                          coalesce(m[6], '0')::numeric);
+  end if;
+
+  if v ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' then
+    if v ~ '([Zz]|[+-][0-9]{2}:?[0-9]{2})$' then
+      return (v::timestamptz) at time zone 'Asia/Jerusalem';
+    end if;
+    return v::timestamp;
+  end if;
+
+  return null;
 exception when others then
+  -- שדה פגום אינו מפיל הזמנה שלמה. הוא פשוט אינו ידוע.
+  return null;
+end $$;
+
+/** מספר, או null אם מה שהגיע אינו מספר. */
+create or replace function app.arco_num(p_raw text)
+returns numeric language plpgsql immutable set search_path = public as $$
+declare v text := btrim(coalesce(p_raw, ''));
+begin
+  if v !~ '^-?[0-9]+(\.[0-9]+)?$' then return null; end if;
+  return v::numeric;
+end $$;
+
+/** מספר שלם, בעיגול. `"2.0"` היא שתי משאיות. */
+create or replace function app.arco_int(p_raw text)
+returns int language sql immutable set search_path = public as $$
+  select round(app.arco_num(p_raw))::int
+$$;
+
+/**
+ * בוליאני, בכל הצורות שארקו שולחת: `"1"`, `"0"`, `"true"`, `"false"`,
+ * ‏`"כן"`, `"לא"`. מחרוזת ריקה אינה `false` אלא **"לא נאמר"** — והמשמעות
+ * מעשית: משלוח שלא נשא את שדה הסבלות לא יכבה סבלות שהמשרד סימן.
+ */
+create or replace function app.arco_bool(p_raw text)
+returns boolean language plpgsql immutable set search_path = public as $$
+declare v text := lower(btrim(coalesce(p_raw, '')));
+begin
+  if v in ('1', 'true', 't', 'yes', 'y', 'כן') then return true; end if;
+  if v in ('0', 'false', 'f', 'no', 'n', 'לא') then return false; end if;
   return null;
 end $$;
 
@@ -219,16 +284,16 @@ begin
       nullif(btrim(p_order ->> 'location'), ''),
       nullif(btrim(p_order ->> 'location_provider'), ''),
       nullif(btrim(p_order ->> 'location_place_id'), ''),
-      (nullif(p_order ->> 'location_lat', ''))::double precision,
-      (nullif(p_order ->> 'location_lng', ''))::double precision,
+      app.arco_num(p_order ->> 'location_lat')::double precision,
+      app.arco_num(p_order ->> 'location_lng')::double precision,
       nullif(btrim(p_order ->> 'location_notes'), ''),
-      (nullif(p_order ->> 'volume', ''))::numeric,
-      (nullif(p_order ->> 'truck_quantity', ''))::int,
+      app.arco_num(p_order ->> 'volume'),
+      app.arco_int(p_order ->> 'truck_quantity'),
       nullif(btrim(p_order ->> 'operational_notes'), ''),
       coalesce(v_status, v_default),
-      coalesce((p_order ->> 'parking')::boolean, false),
-      coalesce((p_order ->> 'porterage')::boolean, false),
-      coalesce((p_order ->> 'supplier_collection')::boolean, false),
+      coalesce(app.arco_bool(p_order ->> 'parking'), false),
+      coalesce(app.arco_bool(p_order ->> 'porterage'), false),
+      coalesce(app.arco_bool(p_order ->> 'supplier_collection'), false),
       null)
     returning id into v_event_id;
     v_created := true;
@@ -241,14 +306,14 @@ begin
       location_text     = coalesce(nullif(btrim(p_order ->> 'location'), ''), location_text),
       location_provider = coalesce(nullif(btrim(p_order ->> 'location_provider'), ''), location_provider),
       location_place_id = coalesce(nullif(btrim(p_order ->> 'location_place_id'), ''), location_place_id),
-      location_lat      = coalesce((nullif(p_order ->> 'location_lat', ''))::double precision, location_lat),
-      location_lng      = coalesce((nullif(p_order ->> 'location_lng', ''))::double precision, location_lng),
+      location_lat      = coalesce(app.arco_num(p_order ->> 'location_lat')::double precision, location_lat),
+      location_lng      = coalesce(app.arco_num(p_order ->> 'location_lng')::double precision, location_lng),
       location_notes    = coalesce(nullif(btrim(p_order ->> 'location_notes'), ''), location_notes),
-      volume_m          = coalesce((nullif(p_order ->> 'volume', ''))::numeric, volume_m),
-      truck_count       = coalesce((nullif(p_order ->> 'truck_quantity', ''))::int, truck_count),
-      no_parking        = coalesce((p_order ->> 'parking')::boolean, no_parking),
-      porterage         = coalesce((p_order ->> 'porterage')::boolean, porterage),
-      supplier_pickup   = coalesce((p_order ->> 'supplier_collection')::boolean, supplier_pickup),
+      volume_m          = coalesce(app.arco_num(p_order ->> 'volume'), volume_m),
+      truck_count       = coalesce(app.arco_int(p_order ->> 'truck_quantity'), truck_count),
+      no_parking        = coalesce(app.arco_bool(p_order ->> 'parking'), no_parking),
+      porterage         = coalesce(app.arco_bool(p_order ->> 'porterage'), porterage),
+      supplier_pickup   = coalesce(app.arco_bool(p_order ->> 'supplier_collection'), supplier_pickup),
       status_id         = case
                             when v_status is not null and v_status = v_cancelled then v_status
                             when v_status is not null and status_id = v_default  then v_status
@@ -273,8 +338,8 @@ begin
     v_setup_ts::date,
     -- חצות אינה שעה (§1 בכותרת)
     case when v_setup_ts is not null and v_setup_ts::time <> time '00:00' then v_setup_ts::time end,
-    (nullif(p_order ->> 'setup_hours_quantity', ''))::numeric,
-    (nullif(p_order ->> 'setup_crew_size', ''))::int,
+    app.arco_num(p_order ->> 'setup_hours_quantity'),
+    app.arco_int(p_order ->> 'setup_crew_size'),
     p_order ->> 'setup_method',
     p_order ->> 'setup_execution_contractor',
     (select c.name from customers c where c.id = k.customer_id));
@@ -282,8 +347,8 @@ begin
   perform app.arco_apply_task(v_event_id, 'teardown',
     v_teardown_ts::date,
     case when v_teardown_ts is not null and v_teardown_ts::time <> time '00:00' then v_teardown_ts::time end,
-    (nullif(p_order ->> 'dismantling_hours_quantity', ''))::numeric,
-    (nullif(p_order ->> 'dismantling_crew_size', ''))::int,
+    app.arco_num(p_order ->> 'dismantling_hours_quantity'),
+    app.arco_int(p_order ->> 'dismantling_crew_size'),
     p_order ->> 'dismantling_method',
     p_order ->> 'dismantling_execution_contractor',
     (select c.name from customers c where c.id = k.customer_id));
@@ -561,6 +626,9 @@ grant  execute on function arco_replay(uuid) to authenticated;
 -- לקרוא להן ישירות ולכתוב אירוע בשם המערכת. הדרך היחידה להגיע אליהן היא
 -- ה-RPC-ים שבסעיף 5, שאוכפים `integrations.manage` על כל קורא שיש לו JWT.
 revoke execute on function app.arco_local(text)                 from anon, authenticated, public;
+revoke execute on function app.arco_num(text)                   from anon, authenticated, public;
+revoke execute on function app.arco_int(text)                   from anon, authenticated, public;
+revoke execute on function app.arco_bool(text)                  from anon, authenticated, public;
 revoke execute on function app.arco_order_number(text)          from anon, authenticated, public;
 revoke execute on function app.arco_status_id(text)             from anon, authenticated, public;
 revoke execute on function app.arco_execution_method_id(text)   from anon, authenticated, public;
