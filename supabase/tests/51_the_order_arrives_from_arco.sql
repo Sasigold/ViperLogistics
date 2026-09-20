@@ -411,6 +411,54 @@ select t_eq('והתאריך נקרא בצורה שארקו שולחת',
       and event_number = '26000777'), '2026-10-05'::date);
 
 
+\echo '--- 9ב. הפין נוסע עם האולם (0185) ---'
+
+-- הגיאוקודר אינו מכיר כל אולם, והוא נופל. מה שכן יש לנו: לאותו לקוח כבר
+-- היה אירוע באותו מקום עם פין שרכז סימן — ובלי הפין הזה המחיר היה יוצא
+-- בלי שעות הנסיעה.
+update events set location_lat = 31.78, location_lng = 35.21
+ where customer_id = '10000000-0000-0000-0000-000000000051'
+   and event_number = '26000777';
+update events set location_text = 'חוות רונית'
+ where customer_id = '10000000-0000-0000-0000-000000000051'
+   and event_number = '26000777';
+
+\o /dev/null
+select arco_ingest_event(jsonb_build_object(
+  'order_number', '26000778',
+  'order_date',   '06/10/2026',
+  'location',     'חוות רונית'),
+  jsonb_build_object('connection_id', (select connection_id from ak51)));
+\o
+
+select t_eq('האירוע החדש ירש את הפין',
+  (select location_lat from events
+    where customer_id = '10000000-0000-0000-0000-000000000051'
+      and event_number = '26000778'), 31.78::double precision);
+
+-- ומיקום שלא היינו בו אינו יורש דבר.
+\o /dev/null
+select arco_ingest_event(jsonb_build_object(
+  'order_number', '26000779',
+  'order_date',   '06/10/2026',
+  'location',     'אולם שלא היינו בו'),
+  jsonb_build_object('connection_id', (select connection_id from ak51)));
+\o
+
+select t_eq('ומיקום חדש נשאר בלי פין',
+  (select location_lat from events
+    where customer_id = '10000000-0000-0000-0000-000000000051'
+      and event_number = '26000779'), null::double precision);
+
+-- ולקוח אחר אינו יורש מארקו.
+insert into events (id, customer_id, event_date, event_number, location_text)
+values ('30000000-0000-0000-0000-000000000053',
+        '10000000-0000-0000-0000-000000000052', '2026-10-06', 'X53', 'חוות רונית');
+select t_eq('ולקוח אחר אינו יורש את הפין של ארקו',
+  (select location_lat from events where id = '30000000-0000-0000-0000-000000000053'),
+  null::double precision);
+
+
 \echo '--- 10. מי רואה את הצינור ---'
 
 set role authenticated;
