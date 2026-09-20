@@ -334,11 +334,19 @@ Deno.serve(async (req) => {
   // both someone else's rate limit to burn and our IP that gets blocked for it.
   const authHeader = req.headers.get('Authorization') ?? ''
   if (!authHeader) return json({ error: 'לא מחובר' }, 401)
-  const asUser = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: authHeader } },
-  })
-  const { data: claims, error: authErr } = await asUser.auth.getUser()
-  if (authErr || !claims?.user) return json({ error: 'לא מחובר' }, 401)
+  // ‏`arco-intake` (0183) קורא לכאן בזהות המערכת כדי לתרגם את כתובת האירוע
+  // שארקו שלחה לפין — בלי פין אין אזור, ובלי אזור המחיר שיוצא ללקוח חסר את
+  // שעות הנסיעה. המפתח הזה כבר פותח את כל המסד, ולכן קבלתו כאן אינה פותחת
+  // דבר חדש; מה שהיא מונעת הוא מימוש גיאוקודינג שני שיסטה מזה.
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  const internal = serviceKey !== '' && authHeader === `Bearer ${serviceKey}`
+  if (!internal) {
+    const asUser = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    })
+    const { data: claims, error: authErr } = await asUser.auth.getUser()
+    if (authErr || !claims?.user) return json({ error: 'לא מחובר' }, 401)
+  }
 
   const url = new URL(req.url)
   // ניקוד וסימני טעמים נדבקים להדבקה מטקסט מנוקד ואף ספק לא מתאים איתם

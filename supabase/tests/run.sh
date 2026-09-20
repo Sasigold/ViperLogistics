@@ -518,6 +518,17 @@ OUT="$OUT
 $OUT50"
 
 echo
+echo "== the order arrives from arco suite =="
+# 51 מקימה לקוח, חיבור, מחשבון מחירים ושתי דמויות משלה, על תאריכים קבועים
+# (2026-10-01..03) ולא על current_date — חצי הבדיקה היא על המרת אזור זמן.
+# היא רצה אחרונה כי היא משאירה אחריה אירוע, משימות, מפרט, משלוחים ותור דיווח
+# שאינם מנוקים.
+OUT51=$($PSQL -d vl -f "$HERE/51_the_order_arrives_from_arco.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT51"
+OUT="$OUT
+$OUT51"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
