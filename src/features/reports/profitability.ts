@@ -22,7 +22,12 @@ export interface ProfitRow {
 export interface ProfitSummary {
   revenue: number
   contractor: number
+  /** נטו: מה שהשעון הפיק פחות מה שמחיר הקבלן כבר שילם עליו (0186) */
   payroll: number | null
+  /** ברוטו — כל מה שהשעון הפיק, לפני הניכוי. לצורך יישוב מול דוח הנוכחות */
+  payroll_gross?: number | null
+  /** ההפרש בין השניים: שעות של עובדי קבלנים על משימות שהואצלו להם */
+  contractor_covered?: number | null
   gross: number
   pct: number | null
   unrated_shifts: number | null
@@ -61,6 +66,8 @@ export function buildProfitabilityExport(range: DateRange, result: ProfitResult)
       ['הכנסות', s.revenue],
       ['עלות קבלנים', s.contractor],
       ['עלות שכר', s.payroll ?? ''],
+      ['שכר שהשעון הפיק (ברוטו)', s.payroll_gross ?? ''],
+      ['מזה שולם דרך קבלנים (אינו נספר בעלות)', s.contractor_covered ?? ''],
       ['רווח גולמי', s.gross],
       ['% רווח', s.pct ?? ''],
     ]

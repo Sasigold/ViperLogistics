@@ -239,7 +239,13 @@ function SummaryTiles({ data }: { data: TaskPnlResult }) {
         label="שכר כולל נטל מעביד"
         value={fmtMoney(s.payroll_with_employer)}
         tone="#8b5cf6"
-        hint={`${fmtMoney(s.payroll)} שכר + ${s.employer_pct}% נטל`}
+        hint={
+          s.payroll_contractor_covered > 0
+            ? `${fmtMoney(s.payroll)} שכר + ${s.employer_pct}% נטל · ${fmtMoney(
+                s.payroll_contractor_covered,
+              )} נוספים שולמו דרך הקבלן`
+            : `${fmtMoney(s.payroll)} שכר + ${s.employer_pct}% נטל`
+        }
       />
       <StatCard
         icon={s.pct === null ? <TrendingUp size={ICON.xl} strokeWidth={STROKE} /> : <Percent size={ICON.xl} strokeWidth={STROKE} />}
@@ -339,6 +345,15 @@ function TaskPnlTable({ rows, meta }: { rows: TaskPnlRow[]; meta: TaskPnlMeta })
             render: (r) => (
               <span className="tabular">
                 {fmtMoney(r.payroll_with_employer)}
+                {r.payroll_contractor_covered > 0 && (
+                  <span
+                    className="text-ink-tertiary"
+                    title={`${fmtMoney(r.payroll_contractor_covered)} מההחתמות הם של עובדי הקבלן וכלולים בעלות הקבלן`}
+                  >
+                    {' '}
+                    †
+                  </span>
+                )}
                 {r.unrated_shifts > 0 && (
                   <span className="text-warning-text" title={`${r.unrated_shifts} משמרות ללא תעריף אינן נספרות`}>
                     {' '}
@@ -444,6 +459,12 @@ function TaskPnlDisclosures({ meta }: { meta: TaskPnlMeta }) {
     if (meta.unallocated != null && Number(meta.unallocated) > 0) {
       lines.push(`${fmtMoney(Number(meta.unallocated))} שכר אינו משויך לאף משימה ואינו נספר כאן`)
     }
+  }
+  if (meta.contractor_covered != null && Number(meta.contractor_covered) > 0) {
+    lines.push(
+      `${fmtMoney(Number(meta.contractor_covered))} שהוחתמו ב-${meta.contractor_covered_tasks} משימות שהואצלו ` +
+        'הם של עובדי הקבלנים, כלולים בעלות הקבלן ואינם נספרים שוב כשכר (מסומנות ב-†)',
+    )
   }
   if (meta.unrated_shifts != null && Number(meta.unrated_shifts) > 0) {
     lines.push(`${meta.unrated_shifts} משמרות ללא תעריף אינן נספרות (מסומנות ב-*)`)

@@ -518,6 +518,17 @@ OUT="$OUT
 $OUT50"
 
 echo
+echo "== the contractor hour is paid once suite =="
+# 51 מקימה לקוח, קבלן, אירוע, ארבע משימות וחמש דמויות משלה ב-current_date + 760,
+# מעבר לכל טווח אחר — הסכומים הגלובליים שהיא מודדת (margin_summary, payroll_summary)
+# חייבים להיות של השורות שלה בלבד. היא רצה אחרונה כי היא משאירה אחריה משימות,
+# שיבוצים ומשמרות שאינם מנוקים.
+OUT51=$($PSQL -d vl -f "$HERE/51_the_contractor_hour_is_paid_once.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT51"
+OUT="$OUT
+$OUT51"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
