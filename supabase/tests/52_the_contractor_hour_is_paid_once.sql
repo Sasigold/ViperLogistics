@@ -2,7 +2,7 @@
 \pset format unaligned
 
 -- ===========================================================================
--- 51: שעה של עובד קבלן נספרת פעם אחת (0186).
+-- 52: שעה של עובד קבלן נספרת פעם אחת (0186).
 --
 -- הדיווח: "אם האצלתי לקבלן אתה מחשב פעמיים — פעם התשלום לקבלן, ופעם ההחתמה
 -- של העובד של הקבלן בשעון". ‏0186 מנכה את ההחתמה **רק** כשהיא נופלת על
@@ -34,118 +34,118 @@
 -- ===========================================================================
 
 insert into auth.users (id, email) values
-  ('00000000-0000-0000-0000-0000000051a1', 'c51-reader@vl.test'),
-  ('00000000-0000-0000-0000-0000000051b1', 'c51-ours@vl.test'),
-  ('00000000-0000-0000-0000-0000000051b2', 'c51-cw1@vl.test'),
-  ('00000000-0000-0000-0000-0000000051b3', 'c51-cw2@vl.test'),
-  ('00000000-0000-0000-0000-0000000051b4', 'c51-dual@vl.test');
+  ('00000000-0000-0000-0000-0000000052a1', 'c52-reader@vl.test'),
+  ('00000000-0000-0000-0000-0000000052b1', 'c52-ours@vl.test'),
+  ('00000000-0000-0000-0000-0000000052b2', 'c52-cw1@vl.test'),
+  ('00000000-0000-0000-0000-0000000052b3', 'c52-cw2@vl.test'),
+  ('00000000-0000-0000-0000-0000000052b4', 'c52-dual@vl.test');
 
 insert into customers (id, name) values
-  ('10000000-0000-0000-0000-000000000051', 'לקוח 51');
+  ('10000000-0000-0000-0000-000000000151', 'לקוח 52');
 
 -- בלי `price_per_worker` ובלי `default_task_price`: ‏`app.recompute_contractor_price`
 -- (0091) יוצאת מיד כשאין תעריף-לעובד, ולכן שיבוץ עובד קבלן אינו דורס את
 -- המחירים שנזרעים כאן.
 insert into contractors (id, name) values
-  ('11000000-0000-0000-0000-000000000051', 'קבלן 51');
+  ('11000000-0000-0000-0000-000000000052', 'קבלן 52');
 
 insert into contractor_workers (id, contractor_id, full_name) values
-  ('12000000-0000-0000-0000-00000000051a', '11000000-0000-0000-0000-000000000051', 'סגל 51 א'),
-  ('12000000-0000-0000-0000-00000000051b', '11000000-0000-0000-0000-000000000051', 'סגל 51 ב'),
-  ('12000000-0000-0000-0000-00000000051c', '11000000-0000-0000-0000-000000000051', 'סגל 51 ג');
+  ('12000000-0000-0000-0000-00000000052a', '11000000-0000-0000-0000-000000000052', 'סגל 52 א'),
+  ('12000000-0000-0000-0000-00000000052b', '11000000-0000-0000-0000-000000000052', 'סגל 52 ב'),
+  ('12000000-0000-0000-0000-00000000052c', '11000000-0000-0000-0000-000000000052', 'סגל 52 ג');
 
 insert into profiles (id, user_id, user_kind, is_admin, full_name,
                       contractor_id, contractor_worker_id) values
-  ('20000000-0000-0000-0000-0000000051a1', '00000000-0000-0000-0000-0000000051a1',
-   'staff', false, 'קורא רווחיות 51', null, null),
+  ('20000000-0000-0000-0000-0000000052a1', '00000000-0000-0000-0000-0000000052a1',
+   'staff', false, 'קורא רווחיות 52', null, null),
   -- עובד שלנו לכל דבר
-  ('20000000-0000-0000-0000-0000000051b1', '00000000-0000-0000-0000-0000000051b1',
-   'staff', false, 'עובד וייפר 51', null, null),
+  ('20000000-0000-0000-0000-0000000052b1', '00000000-0000-0000-0000-0000000052b1',
+   'staff', false, 'עובד וייפר 52', null, null),
   -- שני עובדי הקבלן, עם חשבון ועם שורת רוסטר (0150)
-  ('20000000-0000-0000-0000-0000000051b2', '00000000-0000-0000-0000-0000000051b2',
-   'contractor_user', false, 'סגל 51 א', '11000000-0000-0000-0000-000000000051',
-   '12000000-0000-0000-0000-00000000051a'),
-  ('20000000-0000-0000-0000-0000000051b3', '00000000-0000-0000-0000-0000000051b3',
-   'contractor_user', false, 'סגל 51 ב', '11000000-0000-0000-0000-000000000051',
-   '12000000-0000-0000-0000-00000000051b'),
+  ('20000000-0000-0000-0000-0000000052b2', '00000000-0000-0000-0000-0000000052b2',
+   'contractor_user', false, 'סגל 52 א', '11000000-0000-0000-0000-000000000052',
+   '12000000-0000-0000-0000-00000000052a'),
+  ('20000000-0000-0000-0000-0000000052b3', '00000000-0000-0000-0000-0000000052b3',
+   'contractor_user', false, 'סגל 52 ב', '11000000-0000-0000-0000-000000000052',
+   '12000000-0000-0000-0000-00000000052b'),
   -- הדו-כובע של 0075: איש צוות שלנו, שמקושר לאותו קבלן
-  ('20000000-0000-0000-0000-0000000051b4', '00000000-0000-0000-0000-0000000051b4',
-   'staff', false, 'דו-כובע 51', '11000000-0000-0000-0000-000000000051',
-   '12000000-0000-0000-0000-00000000051c');
+  ('20000000-0000-0000-0000-0000000052b4', '00000000-0000-0000-0000-0000000052b4',
+   'staff', false, 'דו-כובע 52', '11000000-0000-0000-0000-000000000052',
+   '12000000-0000-0000-0000-00000000052c');
 
 -- ‏b3 בכוונה בלי תעריף: הוא הדמות של "עובד קבלן שאין לו תעריף אצלנו"
 insert into worker_pay_settings (profile_id, hourly_rate) values
-  ('20000000-0000-0000-0000-0000000051b1', 50),
-  ('20000000-0000-0000-0000-0000000051b2', 60),
-  ('20000000-0000-0000-0000-0000000051b4', 70);
+  ('20000000-0000-0000-0000-0000000052b1', 50),
+  ('20000000-0000-0000-0000-0000000052b2', 60),
+  ('20000000-0000-0000-0000-0000000052b4', 70);
 
 insert into user_permission_grants (profile_id, permission_key, allowed) values
-  ('20000000-0000-0000-0000-0000000051a1', 'reports.view',              true),
-  ('20000000-0000-0000-0000-0000000051a1', 'dashboard.margin',          true),
-  ('20000000-0000-0000-0000-0000000051a1', 'dashboard.payroll',         true),
-  ('20000000-0000-0000-0000-0000000051a1', 'dashboard.contractor_cost', true),
-  ('20000000-0000-0000-0000-0000000051a1', 'pricing.revenue',           true),
-  ('20000000-0000-0000-0000-0000000051a1', 'dashboard.all_workers',     true),
-  ('20000000-0000-0000-0000-0000000051a1', 'customers.view',            true),
-  ('20000000-0000-0000-0000-0000000051a1', 'contractors.view',          true),
-  ('20000000-0000-0000-0000-0000000051a1', 'contractors.view_pricing',  true);
+  ('20000000-0000-0000-0000-0000000052a1', 'reports.view',              true),
+  ('20000000-0000-0000-0000-0000000052a1', 'dashboard.margin',          true),
+  ('20000000-0000-0000-0000-0000000052a1', 'dashboard.payroll',         true),
+  ('20000000-0000-0000-0000-0000000052a1', 'dashboard.contractor_cost', true),
+  ('20000000-0000-0000-0000-0000000052a1', 'pricing.revenue',           true),
+  ('20000000-0000-0000-0000-0000000052a1', 'dashboard.all_workers',     true),
+  ('20000000-0000-0000-0000-0000000052a1', 'customers.view',            true),
+  ('20000000-0000-0000-0000-0000000052a1', 'contractors.view',          true),
+  ('20000000-0000-0000-0000-0000000052a1', 'contractors.view_pricing',  true);
 
-create temp table t51 as
+create temp table t52 as
 select date_trunc('week', current_date + 760)::date      as d0,
        date_trunc('week', current_date + 760)::date + 1  as d1,
        date_trunc('week', current_date + 760)::date - 3  as dfrom,
        date_trunc('week', current_date + 760)::date + 10 as dto;
-grant select on t51 to authenticated;
+grant select on t52 to authenticated;
 
 insert into events (id, customer_id, event_number, event_date, status_id)
-select '30000000-0000-0000-0000-000000000051', '10000000-0000-0000-0000-000000000051',
-       'EV-51', d0,
+select '30000000-0000-0000-0000-000000000151', '10000000-0000-0000-0000-000000000151',
+       'EV-52', d0,
        (select id from statuses where entity = 'event' and code = 'planned'
                                   and deleted_at is null)
-from t51;
+from t52;
 
 -- ‏0009 יוצר משימות הקמה/פירוק אוטומטיות; הן אינן חלק מהאריתמטיקה כאן.
-delete from tasks where event_id = '30000000-0000-0000-0000-000000000051';
+delete from tasks where event_id = '30000000-0000-0000-0000-000000000151';
 
 insert into tasks (id, event_id, customer_id, task_type_id, task_date, status_id,
                    title, hours_count, worker_count)
-select v.id, '30000000-0000-0000-0000-000000000051',
-       '10000000-0000-0000-0000-000000000051',
+select v.id, '30000000-0000-0000-0000-000000000151',
+       '10000000-0000-0000-0000-000000000151',
        (select id from task_types where code = 'setup' limit 1),
-       (select d0 from t51),
+       (select d0 from t52),
        (select id from statuses where entity = 'task' and code = 'assigned'
                                   and deleted_at is null),
        v.title, 4::numeric, 2
 from (values
-  ('31000000-0000-0000-0000-000000510001'::uuid, 'TA הואצלה + עובד שלנו'),
-  ('31000000-0000-0000-0000-000000510002'::uuid, 'TB לא הואצלה'),
-  ('31000000-0000-0000-0000-000000510003'::uuid, 'TC הואצלה + דו-כובע'),
-  ('31000000-0000-0000-0000-000000510004'::uuid, 'TD הואצלה + עובד בלי תעריף')
+  ('31000000-0000-0000-0000-000000520001'::uuid, 'TA הואצלה + עובד שלנו'),
+  ('31000000-0000-0000-0000-000000520002'::uuid, 'TB לא הואצלה'),
+  ('31000000-0000-0000-0000-000000520003'::uuid, 'TC הואצלה + דו-כובע'),
+  ('31000000-0000-0000-0000-000000520004'::uuid, 'TD הואצלה + עובד בלי תעריף')
 ) v(id, title);
 
 -- ‏0096: ההאצלה היא שורה ב-task_contractor_terms, ו-`tasks.contractor_id`
 -- הוא שיקוף שהטריגר מתחזק. הזריעה כותבת את האמת, לא את השיקוף.
 insert into task_contractor_terms (task_id, contractor_id, price) values
-  ('31000000-0000-0000-0000-000000510001', '11000000-0000-0000-0000-000000000051', 1200),
-  ('31000000-0000-0000-0000-000000510003', '11000000-0000-0000-0000-000000000051',  800),
-  ('31000000-0000-0000-0000-000000510004', '11000000-0000-0000-0000-000000000051',  500);
+  ('31000000-0000-0000-0000-000000520001', '11000000-0000-0000-0000-000000000052', 1200),
+  ('31000000-0000-0000-0000-000000520003', '11000000-0000-0000-0000-000000000052',  800),
+  ('31000000-0000-0000-0000-000000520004', '11000000-0000-0000-0000-000000000052',  500);
 
 -- מי משובץ בכובע הקבלני. ‏TC מקבל את סגל א׳ — הקבלן אכן שלח מישהו — והדו-כובע
 -- יושב עליה ב-`task_assignments`, כלומר בכובע שלנו.
 insert into task_contractor_workers (task_id, contractor_worker_id) values
-  ('31000000-0000-0000-0000-000000510001', '12000000-0000-0000-0000-00000000051a'),
-  ('31000000-0000-0000-0000-000000510003', '12000000-0000-0000-0000-00000000051a'),
-  ('31000000-0000-0000-0000-000000510004', '12000000-0000-0000-0000-00000000051b');
+  ('31000000-0000-0000-0000-000000520001', '12000000-0000-0000-0000-00000000052a'),
+  ('31000000-0000-0000-0000-000000520003', '12000000-0000-0000-0000-00000000052a'),
+  ('31000000-0000-0000-0000-000000520004', '12000000-0000-0000-0000-00000000052b');
 
 insert into task_assignments (task_id, profile_id, role) values
-  ('31000000-0000-0000-0000-000000510001', '20000000-0000-0000-0000-0000000051b1', 'worker'),
-  ('31000000-0000-0000-0000-000000510003', '20000000-0000-0000-0000-0000000051b4', 'worker');
+  ('31000000-0000-0000-0000-000000520001', '20000000-0000-0000-0000-0000000052b1', 'worker'),
+  ('31000000-0000-0000-0000-000000520003', '20000000-0000-0000-0000-0000000052b4', 'worker');
 
 insert into task_pricing (task_id, price, is_manual) values
-  ('31000000-0000-0000-0000-000000510001', 3000, true),
-  ('31000000-0000-0000-0000-000000510002', 1000, true),
-  ('31000000-0000-0000-0000-000000510003', 2000, true),
-  ('31000000-0000-0000-0000-000000510004',  900, true);
+  ('31000000-0000-0000-0000-000000520001', 3000, true),
+  ('31000000-0000-0000-0000-000000520002', 1000, true),
+  ('31000000-0000-0000-0000-000000520003', 2000, true),
+  ('31000000-0000-0000-0000-000000520004',  900, true);
 
 -- חמש משמרות של ארבע שעות, בימי חול
 insert into attendance_entries (id, profile_id, work_date, seq, task_ids,
@@ -154,76 +154,76 @@ select v.id, v.profile, v.d, 1, v.tasks,
        v.d + time '08:00', v.d + time '12:00', 'manual'
 from (values
   -- TA: שלנו (200) ושל הקבלן (240)
-  ('70000000-0000-0000-0000-000000510001'::uuid,
-   '20000000-0000-0000-0000-0000000051b1'::uuid, (select d0 from t51),
-   array['31000000-0000-0000-0000-000000510001']::uuid[]),
-  ('70000000-0000-0000-0000-000000510002'::uuid,
-   '20000000-0000-0000-0000-0000000051b2'::uuid, (select d0 from t51),
-   array['31000000-0000-0000-0000-000000510001']::uuid[]),
+  ('70000000-0000-0000-0000-000000520001'::uuid,
+   '20000000-0000-0000-0000-0000000052b1'::uuid, (select d0 from t52),
+   array['31000000-0000-0000-0000-000000520001']::uuid[]),
+  ('70000000-0000-0000-0000-000000520002'::uuid,
+   '20000000-0000-0000-0000-0000000052b2'::uuid, (select d0 from t52),
+   array['31000000-0000-0000-0000-000000520001']::uuid[]),
   -- TB: אותו עובד קבלן, על משימה שלא הואצלה לאיש
-  ('70000000-0000-0000-0000-000000510003'::uuid,
-   '20000000-0000-0000-0000-0000000051b2'::uuid, (select d1 from t51),
-   array['31000000-0000-0000-0000-000000510002']::uuid[]),
+  ('70000000-0000-0000-0000-000000520003'::uuid,
+   '20000000-0000-0000-0000-0000000052b2'::uuid, (select d1 from t52),
+   array['31000000-0000-0000-0000-000000520002']::uuid[]),
   -- TC: הדו-כובע, בכובע שלנו
-  ('70000000-0000-0000-0000-000000510004'::uuid,
-   '20000000-0000-0000-0000-0000000051b4'::uuid, (select d0 from t51),
-   array['31000000-0000-0000-0000-000000510003']::uuid[]),
+  ('70000000-0000-0000-0000-000000520004'::uuid,
+   '20000000-0000-0000-0000-0000000052b4'::uuid, (select d0 from t52),
+   array['31000000-0000-0000-0000-000000520003']::uuid[]),
   -- TD: עובד קבלן בלי תעריף
-  ('70000000-0000-0000-0000-000000510005'::uuid,
-   '20000000-0000-0000-0000-0000000051b3'::uuid, (select d0 from t51),
-   array['31000000-0000-0000-0000-000000510004']::uuid[])
+  ('70000000-0000-0000-0000-000000520005'::uuid,
+   '20000000-0000-0000-0000-0000000052b3'::uuid, (select d0 from t52),
+   array['31000000-0000-0000-0000-000000520004']::uuid[])
 ) v(id, profile, d, tasks);
 
-create or replace function t51row(p_task text) returns jsonb language sql stable as $$
+create or replace function t52row(p_task text) returns jsonb language sql stable as $$
   select r from jsonb_array_elements(
-    (task_pnl((select dfrom from t51), (select dto from t51), null, null, 500)) -> 'rows') r
+    (task_pnl((select dfrom from t52), (select dto from t52), null, null, 500)) -> 'rows') r
    where r ->> 'task_id' = p_task
 $$;
-grant execute on function t51row(text) to authenticated;
+grant execute on function t52row(text) to authenticated;
 
-create or replace function t51all() returns jsonb language sql stable as $$
-  select task_pnl((select dfrom from t51), (select dto from t51), null, null, 500)
+create or replace function t52all() returns jsonb language sql stable as $$
+  select task_pnl((select dfrom from t52), (select dto from t52), null, null, 500)
 $$;
-grant execute on function t51all() to authenticated;
+grant execute on function t52all() to authenticated;
 
 set role authenticated;
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000051a1', false);
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000052a1', false);
 
 \echo '--- TA: הבאג עצמו — העובד של הקבלן אינו נספר פעמיים ---'
 
 select t_eq('עלות הקבלן היא מה שסוכם איתו',
-  (t51row('31000000-0000-0000-0000-000000510001') ->> 'contractor_cost')::numeric,
+  (t52row('31000000-0000-0000-0000-000000520001') ->> 'contractor_cost')::numeric,
   1200::numeric);
 -- ‏240 + 200 = 440 היה המספר לפני 0186
 select t_eq('והשכר הוא של העובד שלנו בלבד',
-  (t51row('31000000-0000-0000-0000-000000510001') ->> 'payroll')::numeric, 200::numeric);
+  (t52row('31000000-0000-0000-0000-000000520001') ->> 'payroll')::numeric, 200::numeric);
 select t_eq('ומה שנוכה מדווח במפורש',
-  (t51row('31000000-0000-0000-0000-000000510001') ->> 'payroll_contractor_covered')::numeric,
+  (t52row('31000000-0000-0000-0000-000000520001') ->> 'payroll_contractor_covered')::numeric,
   240::numeric);
 select t_eq('נטל המעביד יושב על השכר שלנו בלבד',
-  (t51row('31000000-0000-0000-0000-000000510001') ->> 'payroll_with_employer')::numeric,
+  (t52row('31000000-0000-0000-0000-000000520001') ->> 'payroll_with_employer')::numeric,
   260::numeric);
 select t_eq('העלות הכוללת = קבלן + שכר עם נטל',
-  (t51row('31000000-0000-0000-0000-000000510001') ->> 'cost_total')::numeric, 1460::numeric);
+  (t52row('31000000-0000-0000-0000-000000520001') ->> 'cost_total')::numeric, 1460::numeric);
 select t_eq('והרווח = 3000 − 1460',
-  (t51row('31000000-0000-0000-0000-000000510001') ->> 'gross')::numeric, 1540::numeric);
+  (t52row('31000000-0000-0000-0000-000000520001') ->> 'gross')::numeric, 1540::numeric);
 
 -- מה ש*לא* השתנה: העובד של הקבלן אכן עבד, והשורה ממשיכה לומר את זה
 select t_eq('שתי המשמרות עדיין נספרות כמשמרות',
-  (t51row('31000000-0000-0000-0000-000000510001') ->> 'shifts')::int, 2);
+  (t52row('31000000-0000-0000-0000-000000520001') ->> 'shifts')::int, 2);
 select t_eq('ושני העובדים עדיין נספרים כעובדים בפועל',
-  (t51row('31000000-0000-0000-0000-000000510001') ->> 'actual_workers')::int, 2);
+  (t52row('31000000-0000-0000-0000-000000520001') ->> 'actual_workers')::int, 2);
 select t_eq('וכל שמונה השעות שהוחתמו',
-  (t51row('31000000-0000-0000-0000-000000510001') ->> 'actual_hours')::numeric, 8::numeric);
+  (t52row('31000000-0000-0000-0000-000000520001') ->> 'actual_hours')::numeric, 8::numeric);
 
 \echo '--- TB: אותו עובד, משימה שלא הואצלה — אין מה לנכות ---'
 
 select t_eq('אין עלות קבלן',
-  (t51row('31000000-0000-0000-0000-000000510002') ->> 'contractor_cost')::numeric, 0::numeric);
+  (t52row('31000000-0000-0000-0000-000000520002') ->> 'contractor_cost')::numeric, 0::numeric);
 select t_eq('והשכר שלו נספר במלואו',
-  (t51row('31000000-0000-0000-0000-000000510002') ->> 'payroll')::numeric, 240::numeric);
+  (t52row('31000000-0000-0000-0000-000000520002') ->> 'payroll')::numeric, 240::numeric);
 select t_eq('ולא נוכה דבר',
-  (t51row('31000000-0000-0000-0000-000000510002') ->> 'payroll_contractor_covered')::numeric,
+  (t52row('31000000-0000-0000-0000-000000520002') ->> 'payroll_contractor_covered')::numeric,
   0::numeric);
 
 \echo '--- TC: דו-כובע (0075) שעבד בכובע שלנו — אין מה לנכות ---'
@@ -232,116 +232,116 @@ select t_eq('ולא נוכה דבר',
 -- לאותו קבלן שהמשימה הואצלה אליו, ובכל זאת השכר שלו הוא שלנו.
 select t_eq('הוא אכן מקושר לקבלן שהמשימה הואצלה אליו',
   (select count(*)::int from profiles p
-    where p.id = '20000000-0000-0000-0000-0000000051b4'
-      and p.contractor_id = '11000000-0000-0000-0000-000000000051'), 1);
+    where p.id = '20000000-0000-0000-0000-0000000052b4'
+      and p.contractor_id = '11000000-0000-0000-0000-000000000052'), 1);
 select t_eq('ובכל זאת השכר שלו נספר במלואו',
-  (t51row('31000000-0000-0000-0000-000000510003') ->> 'payroll')::numeric, 280::numeric);
+  (t52row('31000000-0000-0000-0000-000000520003') ->> 'payroll')::numeric, 280::numeric);
 select t_eq('ולא נוכה דבר',
-  (t51row('31000000-0000-0000-0000-000000510003') ->> 'payroll_contractor_covered')::numeric,
+  (t52row('31000000-0000-0000-0000-000000520003') ->> 'payroll_contractor_covered')::numeric,
   0::numeric);
 select t_eq('עלות הקבלן נשארת כמובן',
-  (t51row('31000000-0000-0000-0000-000000510003') ->> 'contractor_cost')::numeric, 800::numeric);
+  (t52row('31000000-0000-0000-0000-000000520003') ->> 'contractor_cost')::numeric, 800::numeric);
 select t_eq('והרווח = 2000 − 800 − 364',
-  (t51row('31000000-0000-0000-0000-000000510003') ->> 'gross')::numeric, 836::numeric);
+  (t52row('31000000-0000-0000-0000-000000520003') ->> 'gross')::numeric, 836::numeric);
 
 \echo '--- TD: עובד קבלן בלי תעריף — ובלי אזהרה שאינה שלנו ---'
 
 select t_eq('השכר 0, כמו קודם',
-  (t51row('31000000-0000-0000-0000-000000510004') ->> 'payroll')::numeric, 0::numeric);
+  (t52row('31000000-0000-0000-0000-000000520004') ->> 'payroll')::numeric, 0::numeric);
 select t_eq('והמשמרת נספרת כמשמרת',
-  (t51row('31000000-0000-0000-0000-000000510004') ->> 'shifts')::int, 1);
+  (t52row('31000000-0000-0000-0000-000000520004') ->> 'shifts')::int, 1);
 -- לפני 0186 השורה הזו הייתה מכריזה "משמרת אחת אינה נספרת" ושולחת את המשרד
 -- לחפש תעריף לעובד שאינו שלו. היא נספרת — במחיר הקבלן.
 select t_eq('אבל היא אינה "משמרת ללא תעריף"',
-  (t51row('31000000-0000-0000-0000-000000510004') ->> 'unrated_shifts')::int, 0);
+  (t52row('31000000-0000-0000-0000-000000520004') ->> 'unrated_shifts')::int, 0);
 select t_eq('והרווח = 900 − 500',
-  (t51row('31000000-0000-0000-0000-000000510004') ->> 'gross')::numeric, 400::numeric);
+  (t52row('31000000-0000-0000-0000-000000520004') ->> 'gross')::numeric, 400::numeric);
 
 \echo '--- הסיכום והמונים ---'
 
 select t_eq('ארבע משימות בטווח',
-  (t51all() #>> '{summary,tasks}')::int, 4);
+  (t52all() #>> '{summary,tasks}')::int, 4);
 select t_eq('סך ההכנסות',
-  (t51all() #>> '{summary,revenue}')::numeric, 6900::numeric);
+  (t52all() #>> '{summary,revenue}')::numeric, 6900::numeric);
 select t_eq('סך עלות הקבלנים',
-  (t51all() #>> '{summary,contractor}')::numeric, 2500::numeric);
+  (t52all() #>> '{summary,contractor}')::numeric, 2500::numeric);
 select t_eq('סך השכר — נטו',
-  (t51all() #>> '{summary,payroll}')::numeric, 720::numeric);
+  (t52all() #>> '{summary,payroll}')::numeric, 720::numeric);
 select t_eq('ומה שנוכה, בסכום',
-  (t51all() #>> '{summary,payroll_contractor_covered}')::numeric, 240::numeric);
+  (t52all() #>> '{summary,payroll_contractor_covered}')::numeric, 240::numeric);
 select t_eq('סך הרווח',
-  (t51all() #>> '{summary,gross}')::numeric, 3464::numeric);
+  (t52all() #>> '{summary,gross}')::numeric, 3464::numeric);
 select t_eq('וסכום הרווח של השורות שווה לו',
   (select round(sum((r ->> 'gross')::numeric), 2)
-     from jsonb_array_elements(t51all() -> 'rows') r), 3464::numeric);
+     from jsonb_array_elements(t52all() -> 'rows') r), 3464::numeric);
 select t_eq('ה-meta אומר כמה נוכה',
-  (t51all() #>> '{meta,contractor_covered}')::numeric, 240::numeric);
+  (t52all() #>> '{meta,contractor_covered}')::numeric, 240::numeric);
 select t_eq('ובכמה משימות',
-  (t51all() #>> '{meta,contractor_covered_tasks}')::int, 1);
+  (t52all() #>> '{meta,contractor_covered_tasks}')::int, 1);
 select t_eq('ואין בטווח אף משמרת ללא תעריף שהיא שלנו',
-  (t51all() #>> '{meta,unrated_shifts}')::int, 0);
+  (t52all() #>> '{meta,unrated_shifts}')::int, 0);
 
 \echo '--- השעון עצמו אינו זז ---'
 
 -- ‏0186 מנכה ברווח, ולא בשכר. דוח הנוכחות והדשבורד של השכר ממשיכים לדווח
 -- את מה שההחתמות מייצרות — אחרת אי אפשר היה ליישב אותם זה מול זה.
 select t_eq('סך השכר שהשעון הפיק לא השתנה',
-  (app.payroll_summary((select dfrom from t51), (select dto from t51)) ->> 'total')::numeric,
+  (app.payroll_summary((select dfrom from t52), (select dto from t52)) ->> 'total')::numeric,
   960::numeric);
 select t_eq('וגם המונה של משמרת ללא תעריף נשאר שם',
-  (app.payroll_summary((select dfrom from t51), (select dto from t51)) ->> 'unrated_shifts')::int,
+  (app.payroll_summary((select dfrom from t52), (select dto from t52)) ->> 'unrated_shifts')::int,
   1);
 select t_eq('ההקצאה: משויך + לא משויך = סך השכר',
-  ((app.payroll_task_alloc((select dfrom from t51), (select dto from t51)) ->> 'allocated')::numeric
-   + (app.payroll_task_alloc((select dfrom from t51), (select dto from t51)) ->> 'unallocated')::numeric),
+  ((app.payroll_task_alloc((select dfrom from t52), (select dto from t52)) ->> 'allocated')::numeric
+   + (app.payroll_task_alloc((select dfrom from t52), (select dto from t52)) ->> 'unallocated')::numeric),
   960::numeric);
 select t_eq('וההקצאה נושאת את מה שהקבלן כיסה לצדה',
-  (app.payroll_task_alloc((select dfrom from t51), (select dto from t51))
+  (app.payroll_task_alloc((select dfrom from t52), (select dto from t52))
      ->> 'contractor_covered')::numeric, 240::numeric);
 
 \echo '--- הסכומים הגלובליים מסכימים עם השורות ---'
 
 select t_eq('margin_summary: הכנסה',
-  (app.margin_summary((select dfrom from t51), (select dto from t51)) ->> 'revenue')::numeric,
+  (app.margin_summary((select dfrom from t52), (select dto from t52)) ->> 'revenue')::numeric,
   6900::numeric);
 select t_eq('margin_summary: עלות קבלנים',
-  (app.margin_summary((select dfrom from t51), (select dto from t51)) ->> 'contractor')::numeric,
+  (app.margin_summary((select dfrom from t52), (select dto from t52)) ->> 'contractor')::numeric,
   2500::numeric);
 select t_eq('margin_summary: שכר נטו',
-  (app.margin_summary((select dfrom from t51), (select dto from t51)) ->> 'payroll')::numeric,
+  (app.margin_summary((select dfrom from t52), (select dto from t52)) ->> 'payroll')::numeric,
   720::numeric);
 select t_eq('margin_summary: והברוטו לצדו',
-  (app.margin_summary((select dfrom from t51), (select dto from t51)) ->> 'payroll_gross')::numeric,
+  (app.margin_summary((select dfrom from t52), (select dto from t52)) ->> 'payroll_gross')::numeric,
   960::numeric);
 select t_eq('margin_summary: וההפרש נקוב בשמו',
-  (app.margin_summary((select dfrom from t51), (select dto from t51))
+  (app.margin_summary((select dfrom from t52), (select dto from t52))
      ->> 'contractor_covered')::numeric, 240::numeric);
 -- ‏05_dashboard כבר טוען שהחיסור הזה מתקיים; כאן הוא נטען על המספרים שלנו
 select t_eq('margin_summary: רווח = הכנסה − קבלן − שכר',
-  (app.margin_summary((select dfrom from t51), (select dto from t51)) ->> 'gross')::numeric,
+  (app.margin_summary((select dfrom from t52), (select dto from t52)) ->> 'gross')::numeric,
   3680::numeric);
 
 select t_eq('margin_by_customer: השכר של הלקוח הוא הנטו',
   (select (e ->> 'payroll')::numeric
      from jsonb_array_elements(
-       app.margin_by_customer((select dfrom from t51), (select dto from t51), 50) -> 'rows') e
-    where e ->> 'name' = 'לקוח 51'), 720::numeric);
+       app.margin_by_customer((select dfrom from t52), (select dto from t52), 50) -> 'rows') e
+    where e ->> 'name' = 'לקוח 52'), 720::numeric);
 select t_eq('margin_by_customer: והרווח שלו',
   (select round((e ->> 'revenue')::numeric - (e ->> 'contractor')::numeric
                 - (e ->> 'payroll')::numeric, 2)
      from jsonb_array_elements(
-       app.margin_by_customer((select dfrom from t51), (select dto from t51), 50) -> 'rows') e
-    where e ->> 'name' = 'לקוח 51'), 3680::numeric);
+       app.margin_by_customer((select dfrom from t52), (select dto from t52), 50) -> 'rows') e
+    where e ->> 'name' = 'לקוח 52'), 3680::numeric);
 
 select t_eq('margin_trend: סך השכר בדליים שווה לנטו',
   (select round(sum((e ->> 'payroll')::numeric), 2)
      from jsonb_array_elements(
-       app.margin_trend((select dfrom from t51), (select dto from t51), 'day')) e),
+       app.margin_trend((select dfrom from t52), (select dto from t52), 'day')) e),
   720::numeric);
 select t_eq('margin_trend: ואף דלי אינו יוצא שלילי',
   (select bool_and((e ->> 'payroll')::numeric >= 0)
      from jsonb_array_elements(
-       app.margin_trend((select dfrom from t51), (select dto from t51), 'day')) e), true);
+       app.margin_trend((select dfrom from t52), (select dto from t52), 'day')) e), true);
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);

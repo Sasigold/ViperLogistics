@@ -518,15 +518,26 @@ OUT="$OUT
 $OUT50"
 
 echo
-echo "== the contractor hour is paid once suite =="
-# 51 מקימה לקוח, קבלן, אירוע, ארבע משימות וחמש דמויות משלה ב-current_date + 760,
-# מעבר לכל טווח אחר — הסכומים הגלובליים שהיא מודדת (margin_summary, payroll_summary)
-# חייבים להיות של השורות שלה בלבד. היא רצה אחרונה כי היא משאירה אחריה משימות,
-# שיבוצים ומשמרות שאינם מנוקים.
-OUT51=$($PSQL -d vl -f "$HERE/51_the_contractor_hour_is_paid_once.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "== the order arrives from arco suite =="
+# 51 מקימה לקוח, חיבור, מחשבון מחירים ושתי דמויות משלה, על תאריכים קבועים
+# (2026-10-01..03) ולא על current_date — חצי הבדיקה היא על המרת אזור זמן.
+# היא רצה אחרונה כי היא משאירה אחריה אירוע, משימות, מפרט, משלוחים ותור דיווח
+# שאינם מנוקים.
+OUT51=$($PSQL -d vl -f "$HERE/51_the_order_arrives_from_arco.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
 echo "$OUT51"
 OUT="$OUT
 $OUT51"
+
+echo
+echo "== the contractor hour is paid once suite =="
+# 52 מקימה לקוח, קבלן, אירוע, ארבע משימות וחמש דמויות משלה ב-current_date + 760,
+# מעבר לכל טווח אחר — הסכומים הגלובליים שהיא מודדת (margin_summary, payroll_summary)
+# חייבים להיות של השורות שלה בלבד. היא רצה אחרונה כי היא משאירה אחריה משימות,
+# שיבוצים ומשמרות שאינם מנוקים.
+OUT52=$($PSQL -d vl -f "$HERE/52_the_contractor_hour_is_paid_once.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT52"
+OUT="$OUT
+$OUT52"
 
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
