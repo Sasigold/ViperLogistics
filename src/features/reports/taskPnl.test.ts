@@ -24,6 +24,7 @@ const row = (over: Partial<TaskPnlRow>): TaskPnlRow => ({
   unpriced: false,
   contractor_cost: 0,
   payroll: 150,
+  payroll_contractor_covered: 0,
   payroll_with_employer: 195,
   cost_total: 195,
   gross: 805,
@@ -50,6 +51,7 @@ const result: TaskPnlResult = {
     revenue: 1000,
     contractor: 0,
     payroll: 150,
+    payroll_contractor_covered: 240,
     payroll_with_employer: 195,
     employer_pct: 30,
     cost_total: 245,
@@ -75,7 +77,7 @@ describe('buildTaskPnlExport', () => {
     // 1000 - 195 = 805 happens to hold, but the row is asserted verbatim so a
     // client-side subtraction sneaking in would have to reproduce it exactly
     expect(plan.sheets[1].rows[0]).toEqual([
-      'הקמה אולם', '2026-01-05', 'אקמי', 'הקמה', 1000, 0, 150, 195, 195, 805, 80.5, 12, 3, -9, 2, 1,
+      'הקמה אולם', '2026-01-05', 'אקמי', 'הקמה', 1000, 0, 150, 0, 195, 195, 805, 80.5, 12, 3, -9, 2, 1,
     ])
   })
 
@@ -83,7 +85,21 @@ describe('buildTaskPnlExport', () => {
     const plan = buildTaskPnlExport(range, result)
     const r = plan.sheets[1].rows[1]
     expect(r[2]).toBe('')
-    expect(r[10]).toBe('')
+    expect(r[11]).toBe('')
+  })
+
+  // 0186: the hour a contractor price already paid for is its own column, and
+  // the summary names it — a cost that drops needs a line that says why
+  it('what a contractor price covered rides along, never folded into the wage', () => {
+    const plan = buildTaskPnlExport(range, {
+      ...result,
+      rows: [row({ contractor_cost: 600, payroll_contractor_covered: 414.4 })],
+    })
+    expect(plan.sheets[1].columns[6]).toBe('שכר משויך (משוער)')
+    expect(plan.sheets[1].columns[7]).toBe('מזה שולם דרך הקבלן')
+    expect(plan.sheets[1].rows[0][6]).toBe(150)
+    expect(plan.sheets[1].rows[0][7]).toBe(414.4)
+    expect(plan.sheets[0].rows).toContainEqual(['מזה שולם דרך הקבלן (אינו נספר בעלות)', 240])
   })
 
   it('an untitled task falls back to its type, not to an empty cell', () => {

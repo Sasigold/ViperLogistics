@@ -9,6 +9,10 @@ import type { DateRange } from '../dashboard/dashboardRange'
  *
  * שתי עמודות שקל לפרש לא נכון, ולכן הן נושאות את הבסיס בכותרת: ההכנסה היא
  * המחיר **שהוזמן** (מחושב מהתכנון), והעלות נמדדת מהשעות **שהוחתמו בפועל**.
+ *
+ * ועמודה שלישית שקיימת רק כדי שמספר לא ייראה כאילו נעלם: `contractor_covered`
+ * הוא השכר שהוחתם על משימה שהואצלה, ושמחיר הקבלן כבר שילם עליו (0186). הוא
+ * אינו נספר בעלות, והוא מוצג לצדה.
  */
 
 export interface TaskPnlRow {
@@ -32,6 +36,8 @@ export interface TaskPnlRow {
   unpriced: boolean
   contractor_cost: number
   payroll: number
+  /** ‏0186 — מה שהוחתם על המשימה ושמחיר הקבלן כבר שילם עליו. אינו בעלות */
+  payroll_contractor_covered: number
   payroll_with_employer: number
   cost_total: number
   gross: number
@@ -53,6 +59,7 @@ export interface TaskPnlSummary {
   revenue: number
   contractor: number
   payroll: number
+  payroll_contractor_covered: number
   payroll_with_employer: number
   employer_pct: number
   cost_total: number
@@ -73,6 +80,9 @@ export interface TaskPnlMeta {
   unrated_shifts?: number | null
   tasks_no_attendance?: number | null
   unpriced_tasks?: number | null
+  /** ‏0186 — כמה כסף, ובכמה משימות, כוסה במחיר הקבלן ולא נספר כשכר */
+  contractor_covered?: number | null
+  contractor_covered_tasks?: number | null
   truncated?: boolean
   scope_note?: string | null
   denied?: boolean
@@ -93,6 +103,7 @@ export const TASK_PNL_COLUMNS = [
   'הכנסה (לפי התכנון)',
   'עלות קבלן',
   'שכר משויך (משוער)',
+  'מזה שולם דרך הקבלן',
   'שכר כולל נטל מעביד',
   'עלות כוללת',
   'רווח גולמי',
@@ -123,6 +134,7 @@ export function buildTaskPnlExport(range: DateRange, result: TaskPnlResult): Exp
       ['הכנסה (לפי התכנון)', s.revenue],
       ['עלות קבלנים', s.contractor],
       ['שכר משויך', s.payroll],
+      ['מזה שולם דרך הקבלן (אינו נספר בעלות)', s.payroll_contractor_covered],
       [`שכר כולל נטל מעביד (${s.employer_pct}%)`, s.payroll_with_employer],
       ['עלות כוללת', s.cost_total],
       ['רווח גולמי', s.gross],
@@ -147,6 +159,7 @@ export function buildTaskPnlExport(range: DateRange, result: TaskPnlResult): Exp
     r.revenue,
     r.contractor_cost,
     r.payroll,
+    r.payroll_contractor_covered,
     r.payroll_with_employer,
     r.cost_total,
     r.gross,

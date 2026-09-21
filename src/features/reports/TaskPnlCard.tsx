@@ -16,6 +16,10 @@ import type { TaskPnlResult, TaskPnlRow } from './taskPnl'
  * שני מצבים שבהם הוא **פשוט לא מופיע**, במכוון ולא כשגיאה: קורא בלי צרור
  * הרווח (ה-RPC מחזיר `rows: null`), ומשימה שאין עליה שורה. כרטיס ריק או
  * כרטיס "אין לך הרשאה" הם רעש במגירה שכבר צפופה.
+ *
+ * במשימה שהואצלה, השכר שמוצג הוא של הסגל **שלנו** בלבד: שעה של עובד הקבלן
+ * כבר נקנתה במחיר הקבלן ואינה נספרת שוב (0186). המשפט שמתחת אומר את זה
+ * במפורש, כדי שמי שרואה החתמות במסך הנוכחות ולא מוצא אותן כאן יֵדע למה.
  */
 export function TaskPnlCard({ taskId, taskDate }: { taskId: string; taskDate: string }) {
   const has = useAuth((s) => s.has)
@@ -85,6 +89,13 @@ export function TaskPnlCard({ taskId, taskDate }: { taskId: string; taskDate: st
             </>
           )}
         </p>
+
+        {row.payroll_contractor_covered > 0 && (
+          <p className="type-caption text-ink-secondary">
+            {fmtMoney(row.payroll_contractor_covered)} מההחתמות על המשימה הם של עובדי הקבלן, וכבר
+            כלולים בעלות הקבלן — הם אינם נספרים שוב כשכר
+          </p>
+        )}
 
         {row.unrated_shifts > 0 && (
           <p className="type-caption text-warning-text">

@@ -228,6 +228,11 @@ function SummaryTiles({ data }: { data: ProfitResult }) {
         label="עלות שכר"
         value={s.payroll === null ? '—' : fmtMoney(s.payroll)}
         tone="#8b5cf6"
+        hint={
+          s.contractor_covered != null && Number(s.contractor_covered) > 0
+            ? `${fmtMoney(Number(s.contractor_covered))} נוספים שולמו דרך הקבלנים ונספרים בעלות הקבלנים`
+            : undefined
+        }
       />
       <StatCard
         icon={s.pct === null ? <TrendingUp size={ICON.xl} strokeWidth={STROKE} /> : <Percent size={ICON.xl} strokeWidth={STROKE} />}
