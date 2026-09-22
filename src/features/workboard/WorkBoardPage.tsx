@@ -307,6 +307,9 @@ export default function WorkBoardPage() {
    */
   const canFilter = has(PERM.BOARD_FILTER)
   const canTune = has(PERM.BOARD_COLUMNS)
+  /* ‏0188: מי שרשאי לסמן משימה "לא בלו״ז" הוא גם מי שרשאי לראות את
+     המוסתרות. לכל השאר הלוח פשוט אינו כולל אותן, ואין בורר שיאמר את זה. */
+  const canHideTasks = has(PERM.BOARD_HIDE_TASK)
   /* ‏0108: הכרטיס המלא הוא של מנהל המערכת. `board.open_task` נשאר השער
      השני — מי שאינו אדמין ממשיך ליפול לדף האירוע, כמו קודם. */
   const canOpenTaskCard = useCanOpenTaskCard()
@@ -389,6 +392,10 @@ export default function WorkBoardPage() {
     contractor: '',
     worker: '',
     q: '',
+    /* ‏0188: ריק = הלוח כרגיל, בלי המוסתרות. `only` = המוסתרות בלבד.
+       שני מצבים ולא שלושה: לוח מעורב היה מציג שורה מוסתרת ושורה רגילה זו
+       לצד זו בלי שום דרך להבדיל ביניהן. */
+    hidden: '',
   })
   const [drawer, setDrawer] = useState<{ open: boolean; taskId: string | null }>({
     open: !!params.get('task'),
@@ -454,6 +461,9 @@ export default function WorkBoardPage() {
            schedule is a list of work that will — its tasks are not deleted
            (the event page and the log still have them), only unlisted here */
         .eq('event_is_cancelled', false)
+        /* ‏0188: משימה שסומנה "לא בלו״ז" יורדת ממנו — והבורר הוא הדרך
+           היחידה לראות אותה, ורק למי שמחזיק את המפתח. */
+        .eq('hidden_on_board', filters.hidden === 'only')
         .order('task_date')
         .order('onsite_start_time', { nullsFirst: false })
         .limit(2000)
@@ -1001,7 +1011,8 @@ export default function WorkBoardPage() {
 
   const workingDays = useMemo(() => bands.filter((b) => b.count > 0).length, [bands])
   const activeFilterCount = Object.values(filters).filter(Boolean).length
-  const resetFilters = () => setFilters({ customer: '', status: '', type: '', contractor: '', worker: '', q: '' })
+  const resetFilters = () =>
+    setFilters({ customer: '', status: '', type: '', contractor: '', worker: '', q: '', hidden: '' })
 
   /* ── filter controls ──────────────────────────────────────────────────────
      One definition, two homes: a single toolbar row on desktop, and a dialog
@@ -1090,6 +1101,18 @@ export default function WorkBoardPage() {
           {contractors.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
+        </Select>
+      )}
+      {canHideTasks && (
+        <Select
+          className="w-full lg:w-36"
+          selectSize="sm"
+          value={filters.hidden}
+          onChange={(e) => setFilters((f) => ({ ...f, hidden: e.target.value }))}
+          aria-label="משימות מוסתרות"
+        >
+          <option value="">הלו״ז כרגיל</option>
+          <option value="only">המוסתרות בלבד</option>
         </Select>
       )}
       {/* פילטר עובד ספציפי — מסונן בצד הלקוח מול המשובצים למשימה (0094). */}

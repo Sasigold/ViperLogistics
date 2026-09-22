@@ -56,7 +56,10 @@ import {
   useViperflowStatus,
   useViperflowSync,
 } from './viperflowQueries'
-import type { ViperflowConnectionStatus } from '../../types/domain'
+import type {
+  ViperflowConnectionStatus,
+  ViperflowLogisticsPriceSource,
+} from '../../types/domain'
 
 const STATUS_TONE: Record<string, { label: string; color: string }> = {
   processed: { label: 'הוחל', color: '#16a34a' },
@@ -220,6 +223,24 @@ function ConnectionCard({
     }
   }
 
+  /* ‏0187: מאיזו שורה בהזמנה נגזר מחיר ההקמה והפירוק. שאלה של כסף, ולכן
+     היא נשאלת במסך ואינה קבורה במיגרציה. */
+  async function setLogisticsPrice(next: ViperflowLogisticsPriceSource) {
+    try {
+      await save.mutateAsync({
+        customerId: connection.customer_id,
+        label: connection.label,
+        isActive: connection.is_active,
+        notes: connection.notes,
+        connectionId: connection.id,
+        logisticsPrice: next,
+      })
+      toast.success('מקור מחיר ההקמה והפירוק עודכן')
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
+
   /* "חי" אינו `is_active` לבדו: חיבור דלוק שלא נכנס דרכו דבר יומיים הוא
      בדיוק המצב שמסך כזה קיים כדי להראות. */
   const quiet =
@@ -284,6 +305,23 @@ function ConnectionCard({
             לא נכנס דבר ביומיים האחרונים. ייתכן שפשוט לא נפתחו הזמנות — ואם כן נפתחו, כדאי
             לבדוק במסך המפתחים של ViperFlow שנקודת הקצה לא כובתה, וללחוץ "סנכרון עכשיו".
           </p>
+        )}
+
+        {canManage && (
+          <Field
+            label="מחיר ההקמה והפירוק"
+            hint="הסכום מההזמנה מתחלק בשתיים — מחצית להקמה ומחצית לפירוק. מחיר שנכתב כך נעול מפני מחשבון התמחור, ומתעדכן בכל שינוי בהזמנה"
+          >
+            <Select
+              value={connection.logistics_price_source}
+              onChange={(e) => void setLogisticsPrice(e.target.value as ViperflowLogisticsPriceSource)}
+              disabled={save.isPending}
+            >
+              <option value="truck">משורת ״הובלה״</option>
+              <option value="logistics">משורות ״הובלה״ ו״סידור ואיסוף״</option>
+              <option value="none">אל תסנכרן מחיר</option>
+            </Select>
+          </Field>
         )}
 
         {connection.notes && (

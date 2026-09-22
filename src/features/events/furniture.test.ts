@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  furnitureLines,
-  furnitureSummary,
   furnitureSummaryText,
   logisticsQuantity,
+  specFromItems,
+  specLinesFromItems,
+  specSummary,
 } from './furniture'
 import type { ViperflowOrderItem } from '../../types/domain'
 
@@ -57,54 +58,46 @@ function order(): ViperflowOrderItem[] {
   return [table, cloth, chair, custom, workers, truck]
 }
 
-describe('furnitureLines', () => {
+describe('specLinesFromItems', () => {
   it('משאיר רק ריהוט — עובדים ומשאיות אינם שורות ברשימה', () => {
-    const lines = furnitureLines(order())
-    expect(lines.map((l) => l.name)).toEqual([
+    expect(specLinesFromItems(order()).map((l) => l.name)).toEqual([
       'שולחן עגול 1.8',
       'כיסא נפוליאון',
       'עיצוב פרחים',
     ])
   })
 
-  it('רכיב יושב מתחת לאב שלו ולא כשורה בפני עצמו', () => {
-    const [table] = furnitureLines(order())
-    expect(table.components).toHaveLength(1)
-    expect(table.components[0].name).toBe('מפה לבנה')
-    expect(table.components[0].quantity).toBe(10)
+  /* ‏0187: כמו בתעודת משלוח — רכיב אינו שורה. */
+  it('בן אינו שורה, וגם לא בן שאיבד את האב שלו', () => {
+    const orphan = item({
+      name: 'מפה לבנה',
+      is_component: true,
+      parent_external_item_id: 'ext-לא-קיים',
+    })
+    expect(specLinesFromItems([orphan])).toEqual([])
   })
 
   it('הבחירה של הפריט נקראת כטקסט, עם שם הקבוצה כשיש', () => {
-    const [table] = furnitureLines(order())
+    const [table] = specLinesFromItems(order())
     expect(table.options).toEqual(['מפה: מפה לבנה'])
 
-    const [bare] = furnitureLines([
+    const [bare] = specLinesFromItems([
       item({ name: 'כיסא', options: [{ group: null, value: 'ריפוד שחור' }] }),
     ])
     expect(bare.options).toEqual(['ריפוד שחור'])
   })
 
   it('בחירה בלי ערך אינה מייצרת שורת תווית ריקה', () => {
-    const [line] = furnitureLines([
+    const [line] = specLinesFromItems([
       item({ name: 'כיסא', options: [{ group: 'ריפוד', value: '  ' }] }),
     ])
     expect(line.options).toEqual([])
   })
 
-  it('רכיב שאיבד את האב שלו מוצג כשורה ואינו נעלם', () => {
-    const orphan = item({
-      name: 'מפה לבנה',
-      is_component: true,
-      parent_external_item_id: 'ext-לא-קיים',
-    })
-    const lines = furnitureLines([orphan])
-    expect(lines.map((l) => l.name)).toEqual(['מפה לבנה'])
-  })
-
   it('הסדר הוא הסדר ש-ViperFlow שלח, ולא סדר השורות שחזרו מהמסד', () => {
     const rows = order()
     const shuffled = [rows[3], rows[0], rows[2], rows[1]]
-    expect(furnitureLines(shuffled).map((l) => l.name)).toEqual([
+    expect(specLinesFromItems(shuffled).map((l) => l.name)).toEqual([
       'שולחן עגול 1.8',
       'כיסא נפוליאון',
       'עיצוב פרחים',
@@ -112,9 +105,13 @@ describe('furnitureLines', () => {
   })
 
   it('הכמות לספירה חוזרת מהאב, והספייר נשמר בנפרד', () => {
-    const [table] = furnitureLines(order())
+    const [table] = specLinesFromItems(order())
     expect(table.quantity).toBe(10)
-    expect(table.spareQuantity).toBe(2)
+    expect(table.spare_quantity).toBe(2)
+  })
+
+  it('ולשורה שמורה אין תמונה — היא אינה נשמרת אצלנו', () => {
+    expect(specLinesFromItems(order()).every((l) => l.image_url === null)).toBe(true)
   })
 })
 
@@ -130,14 +127,40 @@ describe('logisticsQuantity', () => {
   })
 })
 
-describe('furnitureSummary', () => {
+describe('specFromItems', () => {
+  it('מרכיב מפרט שלם ממה ששמור', () => {
+    const spec = specFromItems(order(), {
+      order_number: 'ORD-49-0001',
+      last_synced_at: '2026-09-16T08:00:00.000Z',
+    })
+    expect(spec.order_number).toBe('ORD-49-0001')
+    expect(spec.trucks).toBe(2)
+    expect(spec.workers).toBe(4)
+    expect(spec.lines).toHaveLength(3)
+  })
+
+  it('בלי קישור — מפרט בלי מספר הזמנה, ולא נפילה', () => {
+    expect(specFromItems([], null).lines).toEqual([])
+  })
+})
+
+describe('specSummary', () => {
   it('סופר שורות, פריטים ולוגיסטיקה', () => {
-    const summary = furnitureSummary(order())
-    expect(summary).toEqual({ lines: 3, units: 111, workers: 4, trucks: 2 })
+    expect(specSummary(specFromItems(order()))).toEqual({
+      lines: 3,
+      units: 111,
+      workers: 4,
+      trucks: 2,
+    })
   })
 
   it('רשימה ריקה אינה נופלת', () => {
-    expect(furnitureSummary([])).toEqual({ lines: 0, units: 0, workers: null, trucks: null })
+    expect(specSummary(specFromItems([]))).toEqual({
+      lines: 0,
+      units: 0,
+      workers: null,
+      trucks: null,
+    })
   })
 
   it('הטקסט אומר ביחיד כשהמספר אחד', () => {

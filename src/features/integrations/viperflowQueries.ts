@@ -12,7 +12,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { invokeFunction, supabase } from '../../lib/supabase'
-import type { ViperflowConnectionStatus, ViperflowDelivery } from '../../types/domain'
+import type {
+  ViperflowConnectionStatus,
+  ViperflowDelivery,
+  ViperflowLogisticsPriceSource,
+} from '../../types/domain'
 
 export function invalidateViperflow(qc: QueryClient) {
   void qc.invalidateQueries({ queryKey: ['viperflow'] })
@@ -54,6 +58,10 @@ export function useViperflowDeliveries(failedOnly: boolean, limit = 50) {
   })
 }
 
+/**
+ * ‏`logisticsPrice` נשלח רק כשהוא באמת משתנה (0187): ‏null ב-RPC פירושו "אל
+ * תיגע", וכך מתג "פעיל" בכרטיס אינו יכול לאפס בטעות את מקור המחיר.
+ */
 export function useSetViperflowConnection() {
   const qc = useQueryClient()
   return useMutation({
@@ -63,6 +71,7 @@ export function useSetViperflowConnection() {
       isActive: boolean
       notes?: string | null
       connectionId?: string | null
+      logisticsPrice?: ViperflowLogisticsPriceSource | null
     }) => {
       const { data, error } = await supabase.rpc('viperflow_set_connection', {
         p_customer_id: input.customerId,
@@ -70,6 +79,7 @@ export function useSetViperflowConnection() {
         p_is_active: input.isActive,
         p_notes: input.notes ?? null,
         p_connection_id: input.connectionId ?? null,
+        p_logistics_price: input.logisticsPrice ?? null,
       })
       if (error) throw error
       return data as string

@@ -613,6 +613,40 @@ export interface ViperflowOrderItem {
   synced_at: string
 }
 
+export type ViperflowLogisticsPriceSource = 'none' | 'truck' | 'logistics'
+
+/**
+ * שורת מפרט שנמשכה חיה מה-API של ViperFlow (0187, `viperflow-spec`).
+ *
+ * זו אינה `ViperflowOrderItem` עם שדה נוסף אלא טיפוס אחר, כי היא מתארת דבר
+ * אחר: לא "מה נשמר אצלנו" אלא "מה שההזמנה אומרת ברגע זה". אין כאן רכיבים —
+ * הם מקופלים אל תוך האב כמו בתעודת משלוח — ואין כאן מחיר, כמו בכל מקום שבו
+ * רשימת הריהוט מופיעה (0176 §2).
+ */
+export interface ViperflowSpecLine {
+  id: string
+  name: string
+  quantity: number
+  spare_quantity: number
+  notes: string | null
+  is_custom: boolean
+  /** הבחירות כטקסט מוכן לתצוגה: "מפה: מפה לבנה" */
+  options: string[]
+  /** תמונת הפריט מהקטלוג של ViperFlow. אינה נשמרת אצלנו — נקראת בכל פתיחה. */
+  image_url: string | null
+}
+
+export interface ViperflowSpec {
+  order_number: string | null
+  last_synced_at: string | null
+  fetched_at: string
+  /** ההזמנה ארוכה מהתקרה שהפונקציה מחזירה */
+  truncated: boolean
+  workers: number | null
+  trucks: number | null
+  lines: ViperflowSpecLine[]
+}
+
 /** הקישור בין אירוע אצלנו להזמנה ב-ViperFlow (0177 §7). */
 export interface ViperflowEventLink {
   event_id: string
@@ -642,6 +676,12 @@ export interface ViperflowConnectionStatus {
   /** עד מתי הסנכרון היזום כבר סרק. null = טרם רץ. */
   synced_through: string | null
   notes: string | null
+  /**
+   * מאיזו שורה בהזמנה נגזר מחיר ההקמה והפירוק (0187):
+   * ‏`truck` — "הובלה" בלבד, `logistics` — הובלה + סידור ואיסוף, `none` — אין.
+   * הסכום מתחלק בשניים, מחצית לכל משימה.
+   */
+  logistics_price_source: ViperflowLogisticsPriceSource
   linked_events: number
   last_event_at: string | null
   received_24h: number
@@ -741,6 +781,11 @@ export interface TaskRow {
   requires_team_lead: boolean | null
   /** מאיזה מחסן יוצאים. null = לפי המחסן הקרוב ביותר בעת ההחתמה. */
   warehouse_id: string | null
+  /**
+   * המשימה לא תופיע בלו״ז העבודה (0188). ‏`board.hide_task` הוא המפתח,
+   * והיא ממשיכה להופיע בכל מסך אחר — זה מסנן של מסך אחד ולא הסתרה של עבודה.
+   */
+  hidden_on_board: boolean
   updated_at: string
   deleted_at: string | null
 }
@@ -833,6 +878,8 @@ export interface WorkBoardRow {
   truck_list: { id: string; name: string }[] | null
   /** האירוע שהמשימה שייכת לו בוטל — הלוח משמיט אותה */
   event_is_cancelled: boolean
+  /** המשימה סומנה "לא בלו״ז" (0188). הלוח משמיט אותה אלא בפילטר "מוסתרות". */
+  hidden_on_board: boolean
   notes: string | null
   status_id: string
   status_name: string

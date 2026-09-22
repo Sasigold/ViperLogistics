@@ -4,6 +4,9 @@ import {
   connectionIdFromPath,
   hexToBytes,
   redactMoney,
+  specLinesFromOrder,
+  specLogisticsQuantity,
+  specParents,
   timestampAcceptable,
   timingSafeEqual,
   verifySignature,
@@ -148,13 +151,13 @@ describe('ניקוי הכסף', () => {
       totals: { grand_total: 4248, subtotal: 3600 },
       payment: { status: 'unpaid', balance_due: 4248 },
       items: [
-        { name: 'שולחן', quantity: 10, unit_price: 120, line_total: 1200, discount_percent: 0 },
-        { name: 'כיסא', quantity: 100, unit_price: 12, line_total: 1200, discount_percent: 5 },
+        { name: 'שולחן', line_type: 'product', quantity: 10, unit_price: 120, line_total: 1200, discount_percent: 0 },
+        { name: 'כיסא', line_type: 'product', quantity: 100, unit_price: 12, line_total: 1200, discount_percent: 5 },
       ],
     },
   }
 
-  it('לא נשאר בשום מקום שדה כספי', () => {
+  it('לא נשאר שדה כספי על שורת ריהוט ולא ברמת ההזמנה', () => {
     const clean = JSON.stringify(redactMoney(envelope))
     for (const key of MONEY_KEYS) {
       expect(clean).not.toContain(`"${key}"`)
@@ -168,10 +171,48 @@ describe('ניקוי הכסף', () => {
         id: 'order-1',
         order_number: 'ORD-1',
         items: [
-          { name: 'שולחן', quantity: 10 },
-          { name: 'כיסא', quantity: 100 },
+          { name: 'שולחן', line_type: 'product', quantity: 10 },
+          { name: 'כיסא', line_type: 'product', quantity: 100 },
         ],
       },
+    })
+  })
+
+  /* ‏0187: שורת לוגיסטיקה היא מה שאנחנו עושים, והסכום שלה הוא מחיר ההקמה
+     והפירוק. שתי עמודות בלבד עוברות, ורק עליה. */
+  it('שורת הובלה וסידור שומרות את הסכום שלהן', () => {
+    const items = [
+      { name: 'הובלה', line_type: 'truck', quantity: 1, unit_price: 2400, line_total: 2400, discount_percent: 0 },
+      { name: 'סידור ואיסוף', line_type: 'worker', quantity: 2, unit_price: 1500, line_total: 3000 },
+    ]
+    expect(redactMoney(items)).toEqual([
+      { name: 'הובלה', line_type: 'truck', quantity: 1, unit_price: 2400, line_total: 2400 },
+      { name: 'סידור ואיסוף', line_type: 'worker', quantity: 2, unit_price: 1500, line_total: 3000 },
+    ])
+  })
+
+  it('והחריג אינו נדבק: סכום ההזמנה נמחק גם כשההזמנה עצמה נושאת line_type', () => {
+    const order = {
+      line_type: 'truck',
+      line_total: 2400,
+      totals: { grand_total: 4248 },
+      payment: { balance_due: 4248 },
+      grand_total: 4248,
+      currency: 'ILS',
+    }
+    expect(redactMoney(order)).toEqual({ line_type: 'truck', line_total: 2400 })
+  })
+
+  it('ורכיב בתוך שורת לוגיסטיקה אינו יורש את החריג', () => {
+    const line = {
+      line_type: 'truck',
+      line_total: 2400,
+      meta: { unit_price: 99, note: 'x' },
+    }
+    expect(redactMoney(line)).toEqual({
+      line_type: 'truck',
+      line_total: 2400,
+      meta: { note: 'x' },
     })
   })
 
@@ -188,6 +229,82 @@ describe('ניקוי הכסף', () => {
       s: '',
       b: false,
     })
+  })
+})
+
+describe('המפרט שנמשך חי (0187)', () => {
+  /* כפי ש-`dto_order` אצלם מחזיר: אב, הרכיבים שלו מיד אחריו, ואז הלוגיסטיקה. */
+  const items = [
+    {
+      id: 'i1',
+      line_type: 'product',
+      is_component: false,
+      product_id: 'p1',
+      name: 'כיסא ניו דלהי',
+      quantity: 71,
+      spare_quantity: 2,
+      unit_price: 110,
+      line_total: 7810,
+      options: [{ group_name: 'צבע', value: 'ירוק' }],
+    },
+    {
+      id: 'i2',
+      parent_item_id: 'i1',
+      line_type: 'product',
+      is_component: true,
+      product_id: 'p2',
+      name: 'בסיס כיסא ניו דלהי',
+      quantity: 71,
+    },
+    {
+      id: 'i3',
+      line_type: 'product',
+      is_component: false,
+      product_id: null,
+      name: '  ',
+      quantity: 4,
+      is_custom: true,
+      notes: 'לבן בלבד',
+    },
+    { id: 'i4', line_type: 'worker', is_component: false, name: 'סידור ואיסוף', quantity: 2 },
+    { id: 'i5', line_type: 'truck', is_component: false, name: 'הובלה', quantity: 1 },
+  ]
+
+  it('שורות האב בלבד — בלי בנים ובלי לוגיסטיקה', () => {
+    expect(specParents(items).map((i) => i.id)).toEqual(['i1', 'i3'])
+  })
+
+  it('התמונה מגיעה מהקטלוג לפי המוצר, ופריט בלי מוצר נשאר בלעדיה', () => {
+    const lines = specLinesFromOrder(items, new Map([['p1', 'https://cdn/x.webp']]))
+    expect(lines.map((l) => l.image_url)).toEqual(['https://cdn/x.webp', null])
+  })
+
+  it('והשורה נבנית שדה-שדה: כסף אינו מועתק אליה', () => {
+    const [line] = specLinesFromOrder(items, new Map())
+    expect(Object.keys(line).sort()).toEqual([
+      'id',
+      'image_url',
+      'is_custom',
+      'name',
+      'notes',
+      'options',
+      'quantity',
+      'spare_quantity',
+    ])
+    expect(JSON.stringify(line)).not.toContain('7810')
+  })
+
+  it('הבחירה נקראת כטקסט, ושם ריק נופל לברירת מחדל', () => {
+    const lines = specLinesFromOrder(items, new Map())
+    expect(lines[0].options).toEqual(['צבע: ירוק'])
+    expect(lines[1].name).toBe('פריט')
+    expect(lines[1].is_custom).toBe(true)
+  })
+
+  it('הלוגיסטיקה נספרת בנפרד, ואפס אינו הזמנה', () => {
+    expect(specLogisticsQuantity(items, 'truck')).toBe(1)
+    expect(specLogisticsQuantity(items, 'worker')).toBe(2)
+    expect(specLogisticsQuantity([{ line_type: 'truck', quantity: 0 }], 'truck')).toBeNull()
   })
 })
 

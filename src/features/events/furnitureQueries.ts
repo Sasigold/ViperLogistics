@@ -10,8 +10,8 @@
  * כתיבה כלל, והכותב היחיד הוא פונקציית הקצה בזהות service role.
  */
 import { useQuery } from '@tanstack/react-query'
-import { supabase } from '../../lib/supabase'
-import type { ViperflowEventLink, ViperflowOrderItem } from '../../types/domain'
+import { invokeFunction, supabase } from '../../lib/supabase'
+import type { ViperflowEventLink, ViperflowOrderItem, ViperflowSpec } from '../../types/domain'
 
 /**
  * הקישור להזמנה, אם יש. `maybeSingle` ולא `single`: לרוב האירועים במערכת
@@ -51,5 +51,26 @@ export function useViperflowOrderItems(eventId: string | null | undefined, enabl
       if (error) throw error
       return (data ?? []) as ViperflowOrderItem[]
     },
+  })
+}
+
+/**
+ * המפרט כפי שהוא ברגע זה בהזמנה — עם תמונות, ובלי רכיבים (0187).
+ *
+ * זו הקריאה שהכפתור "מפרט" מפעיל, והיא אינה כותבת דבר: התמונות נקראות
+ * מהקטלוג של ViperFlow בכל פתיחה ואינן נשמרות אצלנו. ‏`retry: false` כי
+ * הנפילה הרכה כבר קיימת — המסך מציג את מה ששמור — וניסיון חוזר אוטומטי היה
+ * רק מאריך את ההמתנה לפניה.
+ *
+ * ‏`staleTime` של דקה: מי שסוגר ופותח את המפרט פעמיים ברצף שואל את אותה
+ * שאלה, ולא צריך שתי קריאות ל-API שיש לו מכסה.
+ */
+export function useViperflowSpec(eventId: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['viperflow_spec', eventId],
+    enabled: !!eventId && enabled,
+    retry: false,
+    staleTime: 60_000,
+    queryFn: async () => await invokeFunction<ViperflowSpec>('viperflow-spec', { event_id: eventId }),
   })
 }

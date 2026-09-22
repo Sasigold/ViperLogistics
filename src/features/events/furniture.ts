@@ -1,43 +1,38 @@
 /**
- * רשימת הריהוט של האירוע — הלוגיקה הטהורה. השורות מגיעות מ-`viperflow_order_items` (0176).
+ * רשימת הריהוט של האירוע — הלוגיקה הטהורה.
  *
- * מה שמגיע מ-`viperflow_order_items` הוא שורות ההזמנה של ViperFlow כפי שהן:
- * שורות אב, הרכיבים שלהן מיד אחריהן, ושתי שורות לוגיסטיקה שכל הזמנה נושאת
- * (עובדים ומשאית) גם כשהכמות בהן אפס. מה שצריך להופיע במסך הוא **הריהוט**,
- * ולכן כאן יושבות שלוש ההכרעות שהופכות את האחד לשני:
+ * מאז 0187 יש לרשימה **שני מקורות**, ושניהם נגמרים באותה צורה
+ * (`ViperflowSpec`): ‏`viperflow-spec` מושכת אותה חיה מה-API עם תמונות, וכאן
+ * יושב גם התרגום של מה ששמור אצלנו (`viperflow_order_items`, 0176) — הנפילה
+ * הרכה למקרה שה-API אינו זמין. מסך אחד, שתי דרכים למלא אותו.
+ *
+ * ארבע ההכרעות שמכתיבות איך נראית הרשימה:
  *
  *   1. **הלוגיסטיקה אינה ריהוט.** ‏`worker` ו-`truck` הן כמות עובדים וכמות
- *      משאיות — הן כבר נכנסו למשימות ולשדה "כמות משאיות" של האירוע (0177),
- *      ולחזור עליהן ברשימה היה מבלבל בין מה שמזיזים למה שמזיזים איתו.
- *   2. **רכיב יושב מתחת לאב שלו ואינו שורה בפני עצמו.** ‏"שולחן עגול 1.8"
- *      עם "מפה לבנה" הוא פריט אחד שיש לו בחירה, ולא שני פריטים. השטלוח של
- *      הסדר ש-ViperFlow שולח כבר שומר על זה — אב, ומיד אחריו הרכיבים שלו —
- *      ואנחנו רק מקפלים אותו בחזרה.
- *   3. **אין מחירים.** אין מה לסנן: לטבלה במסד אין עמודת מחיר (0176 §2).
- *      הקובץ הזה אינו מסתיר כסף — פשוט לא הגיע כסף.
+ *      משאיות — הן כבר נכנסו למשימות, לשדה "כמות משאיות" ולמחיר (0177,
+ *      0187) — ולחזור עליהן ברשימה היה מבלבל בין מה שמזיזים למה שמזיזים
+ *      איתו. הן נאמרות פעם אחת, בתחתית.
+ *
+ *   2. **בלי בנים** (0187). שורת רכיב היא בחירה *בתוך* האב — "מפה לבנה"
+ *      מתחת ל"שולחן עגול" — ובתעודת המשלוח של ViperFlow היא אינה שורה. מה
+ *      שנבחר כבר כתוב על האב עצמו (`options`: "צבע: ירוק"), ולכן לא אובד
+ *      דבר: מה שנשאר הוא מה שבאמת עולה על המשאית.
+ *
+ *   3. **אין מחירים.** אין מה לסנן: לטבלה במסד אין עמודת מחיר (0176 §2),
+ *      ופונקציית הקצה בונה את תשובתה שדה-שדה בלי שניים מהם.
+ *
+ *   4. **התמונות אינן נשמרות.** הן כתובות בקטלוג של ViperFlow ונקראות בכל
+ *      פתיחה. מה שאינו נשמר גם אינו מתיישן, ואינו תופס נפח.
  */
-import type { ViperflowOrderItem } from '../../types/domain'
+import type { ViperflowOrderItem, ViperflowSpec, ViperflowSpecLine } from '../../types/domain'
 
 /** שורות שאינן ריהוט אך כן אומרות משהו: כמה עובדים, כמה משאיות. */
 export const LOGISTICS_LINE_TYPES = ['worker', 'truck'] as const
 
-export interface FurnitureLine {
-  id: string
-  name: string
-  quantity: number
-  spareQuantity: number
-  isCustom: boolean
-  notes: string | null
-  /** הבחירות של הפריט עצמו, כטקסט מוכן לתצוגה: "מפה: מפה לבנה" */
-  options: string[]
-  /** הרכיבים שנכנסים איתו — שם וכמות בלבד */
-  components: { id: string; name: string; quantity: number; options: string[] }[]
-}
-
 export interface FurnitureSummary {
-  /** כמה שורות ריהוט (אב בלבד) */
+  /** כמה שורות ריהוט */
   lines: number
-  /** סכום הכמויות של שורות האב — "כמה פריטים יוצאים" */
+  /** סכום הכמויות — "כמה פריטים יוצאים" */
   units: number
   /** כמות עובדים שהוזמנה, אם הוזמנה */
   workers: number | null
@@ -45,10 +40,9 @@ export interface FurnitureSummary {
   trucks: number | null
 }
 
-/** "מפה: מפה לבנה", או רק הערך כשאין שם קבוצה (רכיב אופציונלי). */
-function optionLabels(item: ViperflowOrderItem): string[] {
-  const options = Array.isArray(item.options) ? item.options : []
-  return options
+/** "מפה: מפה לבנה", או רק הערך כשאין שם קבוצה. */
+function optionLabels(options: ViperflowOrderItem['options']): string[] {
+  return (Array.isArray(options) ? options : [])
     .map((o) => {
       const value = (o?.value ?? '').trim()
       if (!value) return ''
@@ -56,65 +50,6 @@ function optionLabels(item: ViperflowOrderItem): string[] {
       return group ? `${group}: ${value}` : value
     })
     .filter((label) => label !== '')
-}
-
-/**
- * מקפל את השורות לרשימה שאפשר לקרוא במחסן.
- *
- * הסדר נשמר לפי `position` — זה הסדר ש-ViperFlow שלח, והוא הסדר שבו ההזמנה
- * נראית גם אצל הלקוח. רכיב שאיבד את האב שלו (הזמנה שנערכה באמצע סנכרון)
- * אינו נזרק אלא מוצג כשורה משל עצמו: פריט שנעלם מהרשימה גרוע מפריט שמופיע
- * בשורה הלא נכונה.
- */
-export function furnitureLines(items: ViperflowOrderItem[]): FurnitureLine[] {
-  const products = [...items]
-    .filter((i) => i.line_type === 'product')
-    .sort((a, b) => a.position - b.position)
-
-  const parents = products.filter((i) => !i.is_component)
-  const byExternalId = new Map<string, FurnitureLine>()
-  const lines: FurnitureLine[] = parents.map((item) => {
-    const line: FurnitureLine = {
-      id: item.id,
-      name: item.name,
-      quantity: Number(item.quantity) || 0,
-      spareQuantity: Number(item.spare_quantity) || 0,
-      isCustom: item.is_custom,
-      notes: item.notes,
-      options: optionLabels(item),
-      components: [],
-    }
-    if (item.external_item_id) byExternalId.set(item.external_item_id, line)
-    return line
-  })
-
-  for (const item of products) {
-    if (!item.is_component) continue
-    const parent = item.parent_external_item_id
-      ? byExternalId.get(item.parent_external_item_id)
-      : undefined
-    if (parent) {
-      parent.components.push({
-        id: item.id,
-        name: item.name,
-        quantity: Number(item.quantity) || 0,
-        options: optionLabels(item),
-      })
-    } else {
-      lines.push({
-        id: item.id,
-        name: item.name,
-        quantity: Number(item.quantity) || 0,
-        spareQuantity: Number(item.spare_quantity) || 0,
-        isCustom: item.is_custom,
-        notes: item.notes,
-        options: optionLabels(item),
-        components: [],
-      })
-    }
-  }
-
-  return lines
 }
 
 /** הכמות שהוזמנה מסוג שורה לוגיסטי, או null כשלא הוזמנה (אפס אינו הזמנה). */
@@ -128,13 +63,51 @@ export function logisticsQuantity(
   return total > 0 ? total : null
 }
 
-export function furnitureSummary(items: ViperflowOrderItem[]): FurnitureSummary {
-  const lines = furnitureLines(items)
+/**
+ * השורות ששמורות אצלנו, באותה צורה שה-API מחזיר.
+ *
+ * הסדר נשמר לפי `position` — זה הסדר ש-ViperFlow שלח, והוא הסדר שבו ההזמנה
+ * נראית גם אצל הלקוח. ‏`image_url` הוא null תמיד: תמונה אינה נשמרת אצלנו,
+ * וזו בדיוק הסיבה שהמסך מעדיף את המקור החי.
+ */
+export function specLinesFromItems(items: ViperflowOrderItem[]): ViperflowSpecLine[] {
+  return [...items]
+    .filter((i) => i.line_type === 'product' && !i.is_component)
+    .sort((a, b) => a.position - b.position)
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      quantity: Number(item.quantity) || 0,
+      spare_quantity: Number(item.spare_quantity) || 0,
+      notes: item.notes,
+      is_custom: item.is_custom,
+      options: optionLabels(item.options),
+      image_url: null,
+    }))
+}
+
+/** המפרט כפי שאפשר להרכיב אותו ממה ששמור — בלי תמונות, ובלי קריאת רשת. */
+export function specFromItems(
+  items: ViperflowOrderItem[],
+  link?: { order_number: string | null; last_synced_at: string | null } | null,
+): ViperflowSpec {
   return {
-    lines: lines.length,
-    units: lines.reduce((sum, l) => sum + l.quantity, 0),
+    order_number: link?.order_number ?? null,
+    last_synced_at: link?.last_synced_at ?? null,
+    fetched_at: link?.last_synced_at ?? '',
+    truncated: false,
     workers: logisticsQuantity(items, 'worker'),
     trucks: logisticsQuantity(items, 'truck'),
+    lines: specLinesFromItems(items),
+  }
+}
+
+export function specSummary(spec: ViperflowSpec): FurnitureSummary {
+  return {
+    lines: spec.lines.length,
+    units: spec.lines.reduce((sum, l) => sum + l.quantity, 0),
+    workers: spec.workers,
+    trucks: spec.trucks,
   }
 }
 
