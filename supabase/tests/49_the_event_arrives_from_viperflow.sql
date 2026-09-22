@@ -291,6 +291,10 @@ update tasks set warehouse_start_time = '05:30'
  where event_id = (select event_id from ev49)
    and task_type_id = (select id from task_types where code = 'setup');
 
+-- וגם את הכתובת המלאה של האולם, שההזמנה אינה יודעת עליה דבר (0189).
+update events set location_text = 'אולם הדקל, החושלים 12 ראשון לציון — שער משאיות'
+ where id = (select event_id from ev49);
+
 -- ‏21:00Z ביום 1/10 הן חצות של 2/10 בישראל: היום והשעה בשטח זזים.
 select t_eq('העדכון הוחל',
   (select viperflow_ingest(
@@ -313,6 +317,15 @@ select t_eq('ושעת ההגעה למחסן שהרכז קבע נשארה כפי 
   (select t.warehouse_start_time from tasks t join task_types tt on tt.id = t.task_type_id
     where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
   '05:30'::time);
+-- ‏0189: המיקום נקבע בלידה, ומכאן הוא של הרכז. ההזמנה ממשיכה לומר
+-- "אולם הדקל, ראשון לציון", וזה נרשם ביומן ואינו נכתב על השדה.
+select t_eq('והמיקום שהרכז השלים לא נדרס',
+  (select location_text from events where id = (select event_id from ev49)),
+  'אולם הדקל, החושלים 12 ראשון לציון — שער משאיות');
+select t_eq('והיומן אומר מה כתוב בהזמנה',
+  (select count(*)::int from event_activity
+    where event_id = (select event_id from ev49) and kind = 'synced'
+      and note like '%המיקום ב-ViperFlow: אולם הדקל, ראשון לציון%'), 1);
 select t_eq('אישור ההזמנה קידם את האירוע',
   (select s.code from events e join statuses s on s.id = e.status_id
     where e.id = (select event_id from ev49)), 'approved');
