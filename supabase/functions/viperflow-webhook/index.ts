@@ -19,15 +19,28 @@
 // the common case. ViperFlow stores the URL as given and requests it verbatim,
 // so the segment survives; it follows no redirects, so the URL must be final.
 //
-// The signature and redaction logic lives in ../_shared/viperflow.ts, which has
-// no Deno imports so that vitest can cover it.
+// Secrets, continued:
+//   VIPERFLOW_API_KEY  optional here, and only for one thing: asking the
+//                      catalogue whether each item is new equipment, so the
+//                      furniture income can be split old/new (0190). Without
+//                      it the envelope carries no `catalog_enriched` flag and
+//                      the translator skips the income — everything else in
+//                      the delivery is applied exactly the same.
+//
+// The signature, the redaction and the catalogue call live in
+// ../_shared/viperflow.ts, which has no Deno imports so that vitest can cover
+// what matters in them.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
+  type CatalogEntry,
+  catalogIds,
   connectionIdFromPath,
+  fetchCatalog,
   redactMoney,
   timestampAcceptable,
   verifySignature,
+  withCatalog,
 } from '../_shared/viperflow.ts'
 
 function json(body: unknown, status = 200): Response {
@@ -35,6 +48,38 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   })
+}
+
+/**
+ * The catalogue for this delivery's items, or null when it cannot be had.
+ *
+ * The base URL lives on the connection row and nowhere else (0176 §4.1), so
+ * it is read the same way the translator resolves the connection: the one in
+ * the path, or the single active one. Anything less certain than that answers
+ * null rather than guessing which ViperFlow account to ask.
+ */
+async function catalogForOrder(
+  admin: ReturnType<typeof createClient>,
+  connectionId: string | null,
+  order: unknown,
+): Promise<Map<string, CatalogEntry> | null> {
+  const apiKey = Deno.env.get('VIPERFLOW_API_KEY') ?? ''
+  if (!apiKey) return null
+
+  const items = (order as { items?: unknown } | null)?.items
+  const ids = catalogIds(items)
+
+  let query = admin
+    .from('viperflow_connections')
+    .select('id, api_base_url')
+    .is('deleted_at', null)
+    .eq('is_active', true)
+  if (connectionId) query = query.eq('id', connectionId)
+
+  const { data, error } = await query
+  if (error || !data || data.length !== 1) return null
+
+  return await fetchCatalog(String(data[0].api_base_url).replace(/\/+$/, ''), apiKey, ids)
 }
 
 Deno.serve(async (req) => {
@@ -80,10 +125,19 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
 
+  const connectionId = connectionIdFromPath(req.url)
+  const clean = redactMoney(envelope) as Record<string, unknown>
+
+  /* ‏0190: which item is new equipment is a question about the catalogue, and
+     the order does not answer it. A failure here costs the income split and
+     nothing else — the delivery is applied either way. */
+  const catalog = await catalogForOrder(admin, connectionId, clean.data)
+  if (!catalog) console.warn('[viperflow-webhook] catalogue unavailable — income not split')
+
   const { data, error } = await admin.rpc('viperflow_ingest', {
-    p_envelope: redactMoney(envelope),
+    p_envelope: { ...clean, data: withCatalog(clean.data, catalog) },
     p_meta: {
-      connection_id: connectionIdFromPath(req.url),
+      connection_id: connectionId,
       delivery_id: req.headers.get('x-viperflow-delivery'),
       attempt: req.headers.get('x-viperflow-attempt'),
       origin: req.headers.get('x-viperflow-origin'),

@@ -49,7 +49,10 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
+  type CatalogEntry,
   type VfOrderItem,
+  catalogIds,
+  fetchCatalog,
   specLinesFromOrder,
   specLogisticsQuantity,
   specParents,
@@ -61,10 +64,6 @@ const cors = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-/** Their list endpoint takes at most 100 ids and returns at most 100 rows. */
-const IDS_PER_CALL = 100
-
-/** Their `ids` filter rejects anything that is not a uuid, with a 400. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** A spec nobody would read on one screen is a spec that is broken anyway. */
@@ -112,42 +111,6 @@ async function vfGet(base: string, path: string, key: string): Promise<unknown> 
   }
 
   return await res.json()
-}
-
-/**
- * The image of every product in one call per 100 ids.
- *
- * The order's own lines do not carry one — their DTO stops at `product_id` —
- * so the picture comes from the catalogue. A line without a product (a free
- * text item somebody typed) has no picture, and that is not an error.
- *
- * A failure here is swallowed: the list without pictures is still the list.
- */
-async function imagesByProduct(
-  base: string,
-  key: string,
-  productIds: string[],
-): Promise<Map<string, string>> {
-  const out = new Map<string, string>()
-  for (let i = 0; i < productIds.length; i += IDS_PER_CALL) {
-    const chunk = productIds.slice(i, i + IDS_PER_CALL)
-    try {
-      const page = (await vfGet(
-        base,
-        `/products?ids=${chunk.join(',')}&limit=${IDS_PER_CALL}`,
-        key,
-      )) as { data?: { id?: string; default_image_url?: string | null }[] }
-      for (const product of page.data ?? []) {
-        if (product?.id && product.default_image_url) {
-          out.set(product.id, String(product.default_image_url))
-        }
-      }
-    } catch (e) {
-      console.warn(`[viperflow-spec] images unavailable: ${(e as Error).message}`)
-      break
-    }
-  }
-  return out
 }
 
 Deno.serve(async (req) => {
@@ -227,13 +190,11 @@ Deno.serve(async (req) => {
   const all = specParents(items)
   const shown = all.slice(0, MAX_LINES)
 
-  const productIds = [
-    ...new Set(shown.map((i) => String(i.product_id ?? '')).filter((id) => UUID.test(id))),
-  ]
-  const images =
-    productIds.length > 0
-      ? await imagesByProduct(base, apiKey, productIds)
-      : new Map<string, string>()
+  /* A catalogue that would not answer costs the pictures and nothing else:
+     the list is still the list (see `fetchCatalog`). */
+  const catalog: Map<string, CatalogEntry> | null =
+    await fetchCatalog(base, apiKey, catalogIds(shown), TIMEOUT_MS)
+  if (!catalog) console.warn('[viperflow-spec] catalogue unavailable — no images')
 
   return json({
     order_number: link.order_number,
@@ -242,6 +203,6 @@ Deno.serve(async (req) => {
     truncated: shown.length < all.length,
     workers: specLogisticsQuantity(items, 'worker'),
     trucks: specLogisticsQuantity(items, 'truck'),
-    lines: specLinesFromOrder(shown, images),
+    lines: specLinesFromOrder(shown, catalog),
   })
 })

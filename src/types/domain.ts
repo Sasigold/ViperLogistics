@@ -41,6 +41,8 @@ export interface IncomeCategory {
   sort_order: number
   is_active: boolean
   deleted_at: string | null
+  /** לאיזה מצב פריט בקטלוג של ViperFlow הקטגוריה מקבלת את הסכום (0190) */
+  viperflow_item_state: 'new' | 'old' | null
 }
 
 /** קיום שורה = הקטגוריה מופעלת ללקוח; חלק הלקוח נגזר (100 פחות) */
