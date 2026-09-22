@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   furnitureSummaryText,
-  logisticsQuantity,
   specFromItems,
   specLinesFromItems,
   specSummary,
@@ -115,28 +114,33 @@ describe('specLinesFromItems', () => {
   })
 })
 
-describe('logisticsQuantity', () => {
-  it('מחזיר את הכמות שהוזמנה', () => {
-    expect(logisticsQuantity(order(), 'truck')).toBe(2)
-    expect(logisticsQuantity(order(), 'worker')).toBe(4)
-  })
-
-  it('אפס אינו הזמנה — כל הזמנה נושאת את שתי השורות גם כשהן ריקות', () => {
-    const rows = [item({ name: 'הובלה', line_type: 'truck', quantity: 0 })]
-    expect(logisticsQuantity(rows, 'truck')).toBeNull()
-  })
-})
-
 describe('specFromItems', () => {
-  it('מרכיב מפרט שלם ממה ששמור', () => {
-    const spec = specFromItems(order(), {
-      order_number: 'ORD-49-0001',
-      last_synced_at: '2026-09-16T08:00:00.000Z',
-    })
+  /* ‏0193: הכמויות מגיעות מה-view ולא נספרות כאן. ה-view סופר לפי רשימת
+     השמות של החיבור — בדיוק כמו המתרגם — ולכן שורת פיקוח ("‏9 עובדים")
+     ושורת "תוספת" שבאותה הזמנה אינן משנות את המספרים האלה. */
+  it('מרכיב מפרט שלם ממה ששמור, והכמויות מהקישור', () => {
+    const spec = specFromItems(
+      [...order(), item({ name: 'פיקוח', line_type: 'worker', quantity: 9 })],
+      {
+        order_number: 'ORD-49-0001',
+        last_synced_at: '2026-09-16T08:00:00.000Z',
+        truck_quantity: 2,
+        worker_quantity: 4,
+      },
+    )
     expect(spec.order_number).toBe('ORD-49-0001')
     expect(spec.trucks).toBe(2)
     expect(spec.workers).toBe(4)
     expect(spec.lines).toHaveLength(3)
+  })
+
+  it('קישור בלי כמויות אינו ממציא אותן', () => {
+    const spec = specFromItems(order(), {
+      order_number: 'ORD-49-0001',
+      last_synced_at: null,
+    })
+    expect(spec.trucks).toBeNull()
+    expect(spec.workers).toBeNull()
   })
 
   it('בלי קישור — מפרט בלי מספר הזמנה, ולא נפילה', () => {
@@ -146,7 +150,16 @@ describe('specFromItems', () => {
 
 describe('specSummary', () => {
   it('סופר שורות, פריטים ולוגיסטיקה', () => {
-    expect(specSummary(specFromItems(order()))).toEqual({
+    expect(
+      specSummary(
+        specFromItems(order(), {
+          order_number: null,
+          last_synced_at: null,
+          truck_quantity: 2,
+          worker_quantity: 4,
+        }),
+      ),
+    ).toEqual({
       lines: 3,
       units: 111,
       workers: 4,

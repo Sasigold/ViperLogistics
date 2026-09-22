@@ -26,9 +26,6 @@
  */
 import type { ViperflowOrderItem, ViperflowSpec, ViperflowSpecLine } from '../../types/domain'
 
-/** שורות שאינן ריהוט אך כן אומרות משהו: כמה עובדים, כמה משאיות. */
-export const LOGISTICS_LINE_TYPES = ['worker', 'truck'] as const
-
 export interface FurnitureSummary {
   /** כמה שורות ריהוט */
   lines: number
@@ -50,17 +47,6 @@ function optionLabels(options: ViperflowOrderItem['options']): string[] {
       return group ? `${group}: ${value}` : value
     })
     .filter((label) => label !== '')
-}
-
-/** הכמות שהוזמנה מסוג שורה לוגיסטי, או null כשלא הוזמנה (אפס אינו הזמנה). */
-export function logisticsQuantity(
-  items: ViperflowOrderItem[],
-  lineType: (typeof LOGISTICS_LINE_TYPES)[number],
-): number | null {
-  const total = items
-    .filter((i) => i.line_type === lineType && !i.is_component)
-    .reduce((sum, i) => sum + (Number(i.quantity) || 0), 0)
-  return total > 0 ? total : null
 }
 
 /**
@@ -89,15 +75,23 @@ export function specLinesFromItems(items: ViperflowOrderItem[]): ViperflowSpecLi
 /** המפרט כפי שאפשר להרכיב אותו ממה ששמור — בלי תמונות, ובלי קריאת רשת. */
 export function specFromItems(
   items: ViperflowOrderItem[],
-  link?: { order_number: string | null; last_synced_at: string | null } | null,
+  link?: {
+    order_number: string | null
+    last_synced_at: string | null
+    truck_quantity?: number | null
+    worker_quantity?: number | null
+  } | null,
 ): ViperflowSpec {
   return {
     order_number: link?.order_number ?? null,
     last_synced_at: link?.last_synced_at ?? null,
     fetched_at: link?.last_synced_at ?? '',
     truncated: false,
-    workers: logisticsQuantity(items, 'worker'),
-    trucks: logisticsQuantity(items, 'truck'),
+    // ‏0193: שתי הכמויות מגיעות מה-view, שסופר בדיוק את השורות שהמתרגם ספר
+    // (רשימת השמות של החיבור). ספירה כאן הייתה סופרת גם פיקוח ו"תוספת",
+    // והכיתוב היה סותר את שדה "כמות משאיות" של אותו אירוע.
+    workers: link?.worker_quantity ?? null,
+    trucks: link?.truck_quantity ?? null,
     lines: specLinesFromItems(items),
   }
 }

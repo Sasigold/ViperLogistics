@@ -296,10 +296,25 @@ export function specOptionLabels(item: VfOrderItem): string[] {
     .filter((label) => label !== '')
 }
 
-/** The quantity ordered of a logistics line type, or null — zero is not an order. */
-export function specLogisticsQuantity(items: VfOrderItem[], lineType: string): number | null {
+/**
+ * The quantity ordered of a logistics line type, or null — zero is not an order.
+ *
+ * `names` is the connection's list for that type (0192/0193). A supervision
+ * line carries `line_type: 'worker'` and is not a worker who gets on the
+ * truck, so the footer under the spec must count exactly what the translator
+ * counted — otherwise one event says two different things about itself.
+ * Omitting `names` counts every line of the type, which is what a caller
+ * with no configuration in hand can honestly do.
+ */
+export function specLogisticsQuantity(
+  items: VfOrderItem[],
+  lineType: string,
+  names?: readonly string[] | null,
+): number | null {
+  const allowed = names && names.length > 0 ? new Set(names.map((n) => n.trim())) : null
   const total = items
     .filter((i) => i.line_type === lineType && i.is_component !== true)
+    .filter((i) => !allowed || allowed.has(String(i.name ?? '').trim()))
     .reduce((sum, i) => sum + (Number(i.quantity) || 0), 0)
   return total > 0 ? total : null
 }

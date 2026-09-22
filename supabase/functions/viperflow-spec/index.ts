@@ -163,7 +163,7 @@ Deno.serve(async (req) => {
   const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
   const { data: connection, error: connErr } = await admin
     .from('viperflow_connections')
-    .select('id, api_base_url, is_active')
+    .select('id, api_base_url, is_active, trucking_line_names, crew_line_names')
     .eq('id', link.connection_id)
     .is('deleted_at', null)
     .maybeSingle()
@@ -201,8 +201,10 @@ Deno.serve(async (req) => {
     last_synced_at: link.last_synced_at,
     fetched_at: new Date().toISOString(),
     truncated: shown.length < all.length,
-    workers: specLogisticsQuantity(items, 'worker'),
-    trucks: specLogisticsQuantity(items, 'truck'),
+    /* ‏0193: אותן שורות שהמתרגם סופר, ולא כל `line_type` — אחרת הכיתוב
+       מתחת למפרט סותר את שדה "כמות משאיות" של אותו אירוע. */
+    workers: specLogisticsQuantity(items, 'worker', connection.crew_line_names as string[]),
+    trucks: specLogisticsQuantity(items, 'truck', connection.trucking_line_names as string[]),
     lines: specLinesFromOrder(shown, catalog),
   })
 })
