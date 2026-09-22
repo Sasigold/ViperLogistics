@@ -48,18 +48,133 @@ export const MONEY_KEYS: ReadonlySet<string> = new Set([
   'currency',
 ])
 
-/** Recursively drops every money key. Arrays keep their order and length. */
+/**
+ * The one exception, added by migration 0187.
+ *
+ * An order's logistics lines — "הובלה" (`truck`) and "סידור ואיסוף"
+ * (`worker`) — are not furniture: they are what WE do, and what we charge the
+ * customer for. Their amount becomes the price of the setup and teardown
+ * tasks, so it has to cross the boundary.
+ *
+ * Scoped as tightly as it can be: only these two keys, and only on a line
+ * whose own `line_type` says it is logistics. A product line is redacted
+ * exactly as before, and so is every order-level total — the promise of
+ * 0176 §2 (no prices in the furniture list) is unchanged, because a
+ * furniture line still carries none.
+ */
+export const LOGISTICS_LINE_TYPES: ReadonlySet<string> = new Set(['truck', 'worker'])
+export const LOGISTICS_MONEY_KEYS: ReadonlySet<string> = new Set(['unit_price', 'line_total'])
+
+/** True for an order line that is logistics rather than furniture. */
+function isLogisticsLine(value: Record<string, unknown>): boolean {
+  return LOGISTICS_LINE_TYPES.has(String(value.line_type ?? ''))
+}
+
+/**
+ * Recursively drops every money key. Arrays keep their order and length.
+ *
+ * The decision is made per object, from that object's own `line_type`: a
+ * nested object inside a logistics line does not inherit the exception, and
+ * an order that happens to carry a `line_type` key of its own would only
+ * expose the two line keys — never `totals`, `payment` or `grand_total`.
+ */
 export function redactMoney(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactMoney)
   if (value && typeof value === 'object') {
+    const row = value as Record<string, unknown>
+    const keepsLogistics = isLogisticsLine(row)
     const out: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (MONEY_KEYS.has(k)) continue
+    for (const [k, v] of Object.entries(row)) {
+      if (MONEY_KEYS.has(k) && !(keepsLogistics && LOGISTICS_MONEY_KEYS.has(k))) continue
       out[k] = redactMoney(v)
     }
     return out
   }
   return value
+}
+
+/**
+ * The shape of the spec, from an order the API answered with (0187).
+ *
+ * Here rather than inside `viperflow-spec/index.ts` for the same reason the
+ * signature is here: this is the part that decides what the warehouse reads,
+ * and it is the part worth a test. The function itself is then only fetching
+ * and authorisation.
+ */
+export interface VfOrderItem {
+  id?: string
+  parent_item_id?: string | null
+  line_type?: string
+  is_component?: boolean
+  product_id?: string | null
+  name?: string
+  quantity?: number
+  spare_quantity?: number
+  notes?: string | null
+  is_custom?: boolean
+  options?: { group_name?: string | null; value?: string | null }[]
+  sort_order?: number
+}
+
+/** One line as the screen draws it. Whitelisted on purpose: no money can ride along. */
+export interface SpecLine {
+  id: string
+  name: string
+  quantity: number
+  spare_quantity: number
+  notes: string | null
+  is_custom: boolean
+  options: string[]
+  image_url: string | null
+}
+
+/** "מפה: מפה לבנה", or just the value when the group has no name. */
+export function specOptionLabels(item: VfOrderItem): string[] {
+  const options = Array.isArray(item.options) ? item.options : []
+  return options
+    .map((o) => {
+      const value = String(o?.value ?? '').trim()
+      if (!value) return ''
+      const group = String(o?.group_name ?? '').trim()
+      return group ? `${group}: ${value}` : value
+    })
+    .filter((label) => label !== '')
+}
+
+/** The quantity ordered of a logistics line type, or null — zero is not an order. */
+export function specLogisticsQuantity(items: VfOrderItem[], lineType: string): number | null {
+  const total = items
+    .filter((i) => i.line_type === lineType && i.is_component !== true)
+    .reduce((sum, i) => sum + (Number(i.quantity) || 0), 0)
+  return total > 0 ? total : null
+}
+
+/** The furniture lines of an order: parents only, no logistics, no money. */
+export function specParents(items: VfOrderItem[]): VfOrderItem[] {
+  return items.filter((i) => i.line_type === 'product' && i.is_component !== true)
+}
+
+/**
+ * The parent lines, with the catalogue image of each one.
+ *
+ * Built field by field: the API answers with `unit_price` and `line_total` on
+ * every product line, and the only way to promise they do not reach the
+ * warehouse screen is for nothing to copy them.
+ */
+export function specLinesFromOrder(
+  items: VfOrderItem[],
+  images: Map<string, string>,
+): SpecLine[] {
+  return specParents(items).map((item, index) => ({
+    id: String(item.id ?? `line-${index}`),
+    name: String(item.name ?? '').trim() || 'פריט',
+    quantity: Number(item.quantity) || 0,
+    spare_quantity: Number(item.spare_quantity) || 0,
+    notes: item.notes ? String(item.notes) : null,
+    is_custom: item.is_custom === true,
+    options: specOptionLabels(item),
+    image_url: images.get(String(item.product_id ?? '')) ?? null,
+  }))
 }
 
 export function hexToBytes(hex: string): Uint8Array | null {

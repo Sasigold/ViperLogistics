@@ -21,6 +21,7 @@ import {
   Card,
   CardBody,
   CardHeader,
+  Checkbox,
   Drawer,
   Field,
   Input,
@@ -167,6 +168,9 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
   /* אי-התייצבות נקבעת ע״י מנהל/משרד (contractors.assign_workers), לא ע״י הקבלן. */
   const canMarkNoShow = has(PERM.CONTRACTORS_ASSIGN_WORKERS)
   const canViewSpecs = has(PERM.EVENTS_SPECS_VIEW)
+  /* ‏0188: אינו עובר ב-`gate` — זה אינו שדה של עריכת משימה אלא החלטה על
+     מה שכל המשרד רואה, ולכן מפתח משלו גם במשימה חדשה. */
+  const canHideFromBoard = has(PERM.BOARD_HIDE_TASK)
 
   const { data: taskTypes = [] } = useTaskTypes()
   const { data: statuses = [] } = useStatuses('task')
@@ -380,6 +384,9 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
            ולכן העמודה אינה בעדכון — כדי לא לדרוס את השיקוף. */
         location_text: form.location_text || null,
         warehouse_id: form.warehouse_id || null,
+        /* ‏0188: נשלח רק כשהמפתח קיים. הטריגר בשרת דוחה אותו ממילא בלעדיו,
+           ושליחה של ערך שלא נגעו בו הייתה הופכת כל שמירה לדחייה. */
+        ...(canHideFromBoard ? { hidden_on_board: form.hidden_on_board ?? false } : {}),
         ...(canEditCustomerPrice
           ? { travel_hours: form.travel_hours ?? null, requires_team_lead: form.requires_team_lead ?? null }
           : {}),
@@ -676,6 +683,18 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
                     />
                   </Field>
                 </>
+              )}
+
+              {/* ‏0188: המשימה קיימת, פשוט לא בתמונה שהמשרד עובד לפיה. היא
+                  נשארת בדף האירוע, בלוח השנה, בנוכחות ובדוחות — ולכן הטקסט
+                  אומר בדיוק מה נסגר ומה לא. */}
+              {canHideFromBoard && (
+                <Checkbox
+                  checked={form.hidden_on_board ?? false}
+                  onChange={(v) => set({ hidden_on_board: v })}
+                  label="לא להציג בלו״ז העבודה"
+                  description="המשימה תרד מהלו״ז ותופיע בו רק בבורר ״המוסתרות בלבד״. בדף האירוע, בלוח השנה ובדוחות היא נשארת כפי שהיא."
+                />
               )}
             </CardBody>
           </Card>

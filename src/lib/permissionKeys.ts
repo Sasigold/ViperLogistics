@@ -39,6 +39,8 @@ export const PERM = {
   BOARD_OPEN_TASK: 'board.open_task',
   BOARD_INLINE_EDIT: 'board.inline_edit',
   BOARD_BULK_EDIT: 'board.bulk_edit',
+  /* ‏0188: לסמן משימה שלא תופיע בלו״ז, ולראות את המוסתרות. */
+  BOARD_HIDE_TASK: 'board.hide_task',
   BOARD_EXPORT: 'board.export',
   BOARD_COLUMNS: 'board.columns',
   CALENDAR_VIEW: 'calendar.view',

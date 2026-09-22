@@ -126,15 +126,19 @@ returns jsonb language sql immutable as $$
       'line_type', 'product', 'is_component', false, 'component_type', null,
       'name', 'כיסא נפוליאון', 'quantity', p_chairs, 'spare_quantity', 0,
       'is_custom', false, 'notes', null, 'sort_order', 2, 'options', '[]'::jsonb),
+    -- שתי שורות הלוגיסטיקה נושאות סכום, וזה הסכום היחיד שאמור לחצות את
+    -- הגבול (0187): הוא הופך למחיר ההקמה והפירוק, וכסף של ריהוט לא.
     jsonb_build_object(
       'id', '11111111-4444-4444-4444-000000000004', 'parent_item_id', null,
       'line_type', 'worker', 'is_component', false, 'name', 'סידור ואיסוף',
       'quantity', 4, 'spare_quantity', 0, 'is_custom', false, 'sort_order', 3,
+      'unit_price', 500, 'line_total', 2000,
       'options', '[]'::jsonb),
     jsonb_build_object(
       'id', '11111111-4444-4444-4444-000000000005', 'parent_item_id', null,
       'line_type', 'truck', 'is_component', false, 'name', 'הובלה',
       'quantity', 2, 'spare_quantity', 0, 'is_custom', false, 'sort_order', 4,
+      'unit_price', 1250, 'line_total', 2500,
       'options', '[]'::jsonb));
 $$;
 
@@ -183,10 +187,11 @@ select t_eq('ובשעה המקומית — 05:00Z הן 08:00 בישראל',
   (select t.onsite_start_time from tasks t join task_types tt on tt.id = t.task_type_id
     where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
   '08:00'::time);
-select t_eq('היציאה מהמחסן היא שלוש שעות החיץ',
+-- ‏0187 §1: החיץ של ההזמנה אינו שעת ההגעה למחסן שלנו, והוא אינו נכתב.
+select t_eq('שעת ההגעה למחסן אינה מגיעה מ-ViperFlow',
   (select t.warehouse_start_time from tasks t join task_types tt on tt.id = t.task_type_id
     where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
-  '05:00'::time);
+  null::time);
 select t_eq('כמות העובדים נגזרה משורת "סידור ואיסוף"',
   (select t.worker_count from tasks t join task_types tt on tt.id = t.task_type_id
     where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
@@ -196,6 +201,30 @@ select t_eq('הפירוק ביום ההחזרה ובשעה שלו',
      from tasks t join task_types tt on tt.id = t.task_type_id
     where t.event_id = (select event_id from ev49) and tt.code = 'teardown'),
   '2026-10-03 10:00:00');
+
+-- ‏0187 §2: שורת "הובלה" עומדת על 2,500, והיא מתחלקת בין שתי המשימות.
+-- הסכום נבחר כך שאינו שווה לשום סכום אחר במעטפה: השולחן עומד על 1,200
+-- ושורת העובדים על 2,000, ולכן 1,250 יכול היה להגיע משורת ההובלה בלבד.
+select t_eq('מחיר ההקמה הוא מחצית מהלוגיסטיקה',
+  (select tp.price from tasks t join task_types tt on tt.id = t.task_type_id
+     join task_pricing tp on tp.task_id = t.id
+    where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
+  1250::numeric);
+select t_eq('והפירוק מקבל את המחצית השנייה',
+  (select tp.price from tasks t join task_types tt on tt.id = t.task_type_id
+     join task_pricing tp on tp.task_id = t.id
+    where t.event_id = (select event_id from ev49) and tt.code = 'teardown'),
+  1250::numeric);
+-- ידני, ולכן `app.recalc_task_price` אינה דורסת אותו בשינוי השעה הבא.
+select t_eq('והוא נעול מפני מנוע התמחור',
+  (select bool_and(tp.is_manual) from tasks t join task_pricing tp on tp.task_id = t.id
+    where t.event_id = (select event_id from ev49)), true);
+-- ההבטחה שלא נשברה: שום סכום אחר מהמעטפה אינו הופך למחיר.
+select t_eq('ושום מחיר אחר לא נכתב על משימות האירוע',
+  (select count(*)::int from task_pricing tp
+     join tasks t on t.id = tp.task_id
+    where t.event_id = (select event_id from ev49)
+      and tp.price <> 1250), 0);
 
 -- הטריגר של 0003 יוצר הקמה ופירוק בלידה, והסנכרון ממלא אותן. שתיים, לא ארבע.
 select t_eq('שתי משימות בלבד — הסנכרון ממלא ואינו מכפיל',
@@ -256,8 +285,13 @@ update tasks set status_id = (select id from statuses
  where event_id = (select event_id from ev49)
    and task_type_id = (select id from task_types where code = 'setup');
 
--- ‏21:00Z ביום 1/10 הן חצות של 2/10 בישראל, והחיץ מוציא מהמחסן ביום הקודם —
--- ולכן שעת היציאה אינה נכתבת, ונשארת מה שהייתה.
+-- והרכז קבע שעת הגעה למחסן. היא שלנו (0187 §1), ולכן עדכון של ההזמנה —
+-- שמזיז את היום ואת השעה בשטח — אינו אמור לגעת בה.
+update tasks set warehouse_start_time = '05:30'
+ where event_id = (select event_id from ev49)
+   and task_type_id = (select id from task_types where code = 'setup');
+
+-- ‏21:00Z ביום 1/10 הן חצות של 2/10 בישראל: היום והשעה בשטח זזים.
 select t_eq('העדכון הוחל',
   (select viperflow_ingest(
      t49_envelope('evt_' || repeat('b', 32), '2026-09-16T09:00:00.000Z',
@@ -275,17 +309,10 @@ select t_eq('ולשעה המקומית שלו',
   (select t.onsite_start_time from tasks t join task_types tt on tt.id = t.task_type_id
     where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
   '00:00'::time);
--- אספקה ב-00:00 וחיץ של שלוש שעות: היציאה מהמחסן היא 21:00 של הערב שלפני,
--- והיא נכתבת כמו שהיא — 0163 הוא שמרכיב ממנה את הרגע הנכון.
-select t_eq('שעת היציאה היא 21:00, גם כשהיא נסוגה לערב שלפני',
+select t_eq('ושעת ההגעה למחסן שהרכז קבע נשארה כפי שהיא',
   (select t.warehouse_start_time from tasks t join task_types tt on tt.id = t.task_type_id
     where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
-  '21:00'::time);
-select t_eq('ו-0163 מרכיב ממנה את הערב שלפני ולא את זה שאחרי',
-  (select app.warehouse_start_at(t.task_date, t.warehouse_start_time, t.onsite_start_time)
-     from tasks t join task_types tt on tt.id = t.task_type_id
-    where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
-  ('2026-10-01 21:00'::timestamp at time zone 'Asia/Jerusalem'));
+  '05:30'::time);
 select t_eq('אישור ההזמנה קידם את האירוע',
   (select s.code from events e join statuses s on s.id = e.status_id
     where e.id = (select event_id from ev49)), 'approved');
@@ -536,6 +563,51 @@ select t_expect_fail('רכז אינו מזרים מעטפות',
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+\echo '--- 13. מאיזו שורה נגזר המחיר — הכרעה של המשרד ---'
+
+-- ברירת המחדל היא "הובלה" בלבד, ו-§3 כבר מדדה אותה. כאן שתי האפשרויות
+-- האחרות, על אותה הזמנה: המעטפות נושאות בדיוק את אותם תאריכים, ולכן הן
+-- משנות מחיר בלבד.
+
+update viperflow_connections set logistics_price_source = 'logistics'
+ where id = (select connection_id from vf49);
+
+select t_eq('הוחל עם "הובלה + סידור"',
+  (select viperflow_ingest(
+     t49_envelope('evt_' || repeat('4', 32), '2026-09-16T14:00:00.000Z',
+                  'order.updated', 'confirmed',
+                  '2026-10-01T21:00:00.000Z', '2026-10-03T07:00:00.000Z',
+                  t49_items(120)),
+     jsonb_build_object('connection_id', (select connection_id from vf49))) ->> 'status'),
+  'processed');
+-- ‏2,500 + 2,000 = 4,500, ומחצית לכל משימה.
+select t_eq('שתי שורות הלוגיסטיקה מתחלקות בשתי המשימות',
+  (select array_agg(distinct tp.price) from tasks t join task_pricing tp on tp.task_id = t.id
+    where t.event_id = (select event_id from ev49)),
+  array[2250]::numeric[]);
+
+update viperflow_connections set logistics_price_source = 'none'
+ where id = (select connection_id from vf49);
+
+select t_eq('והוחל עם סנכרון מחיר כבוי',
+  (select viperflow_ingest(
+     t49_envelope('evt_' || repeat('5', 32), '2026-09-16T15:00:00.000Z',
+                  'order.updated', 'confirmed',
+                  '2026-10-01T21:00:00.000Z', '2026-10-03T07:00:00.000Z',
+                  t49_items(120)),
+     jsonb_build_object('connection_id', (select connection_id from vf49))) ->> 'status'),
+  'processed');
+-- כיבוי אינו מחיקה: מחיר שכבר נכתב הוא מספר שהמשרד עובד לפיו, ושינוי של
+-- הגדרה אינו מוחק אותו. הוא פשוט מפסיק להתעדכן.
+select t_eq('המחיר שכבר נכתב נשאר, ואינו מתאפס',
+  (select array_agg(distinct tp.price) from tasks t join task_pricing tp on tp.task_id = t.id
+    where t.event_id = (select event_id from ev49)),
+  array[2250]::numeric[]);
+
+update viperflow_connections set logistics_price_source = 'truck'
+ where id = (select connection_id from vf49);
+
 
 drop function t49_envelope(text, text, text, text, text, text, jsonb);
 drop function t49_items(int);
