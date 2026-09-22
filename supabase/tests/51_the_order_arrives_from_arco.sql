@@ -58,8 +58,8 @@ grant select on ak51 to authenticated;
 
 \echo '--- 2. ההזמנה נעשית אירוע, ושתי המשימות שלו ---'
 
--- המעטפה כאן היא **בדיוק** בצורה שארקו שולחת: `DD/MM/YYYY` לתאריך,
--- ‏`DD/MM/YYYY HH:MM` לשעה, ובוליאני כ-`"1"` או כמחרוזת ריקה. הפירוק נשלח
+-- המעטפה כאן היא **בדיוק** בצורה שארקו שולחת: `MM/DD/YYYY` לתאריך (0186),
+-- ‏`MM/DD/YYYY HH:MM` לשעה, ובוליאני כ-`"1"` או כמחרוזת ריקה. הפירוק נשלח
 -- כתאריך בלי שעה — וחצות אינה שעה (0183 §1), ולכן השעה נשארת ריקה.
 \o /dev/null
 select arco_ingest_event(jsonb_build_object(
@@ -67,7 +67,7 @@ select arco_ingest_event(jsonb_build_object(
   'customer_name',                    'קבוצת אינטלקט',
   'location',                         'ירושלים',
   'location_notes',                   'כניסה מהחניון',
-  'order_date',                       '02/10/2026',
+  'order_date',                       '10/02/2026',
   'event_status',                     'טרם אושר',
   'truck_quantity',                   '2',
   'volume',                           '15',
@@ -77,12 +77,12 @@ select arco_ingest_event(jsonb_build_object(
   'operational_contact_name',         'עינת',
   'operational_contact_phone',        '0528390829',
   'operational_notes',                'לתאם מעלית',
-  'setup_date_and_time',              '01/10/2026 08:00',
+  'setup_date_and_time',              '10/01/2026 08:00',
   'setup_method',                     'הובלה בלבד',
   'setup_crew_size',                  '3',
   'setup_hours_quantity',             '4',
   'setup_execution_contractor',       'וייפר',
-  'dismantling_date_and_time',        '03/10/2026',
+  'dismantling_date_and_time',        '10/03/2026',
   'dismantling_method',               'פירוק בלבד',
   'dismantling_crew_size',            '2',
   'dismantling_hours_quantity',       '3',
@@ -386,7 +386,7 @@ select t_eq('בלי תאריך',
 \o /dev/null
 select arco_ingest_event(jsonb_build_object(
   'order_number',   '26000777',
-  'order_date',     '05/10/2026',
+  'order_date',     '10/05/2026',
   'truck_quantity', '[object Object]',
   'volume',         '',
   'parking',        'אולי'),
@@ -426,7 +426,7 @@ update events set location_text = 'חוות רונית'
 \o /dev/null
 select arco_ingest_event(jsonb_build_object(
   'order_number', '26000778',
-  'order_date',   '06/10/2026',
+  'order_date',   '10/06/2026',
   'location',     'חוות רונית'),
   jsonb_build_object('connection_id', (select connection_id from ak51)));
 \o
@@ -440,7 +440,7 @@ select t_eq('האירוע החדש ירש את הפין',
 \o /dev/null
 select arco_ingest_event(jsonb_build_object(
   'order_number', '26000779',
-  'order_date',   '06/10/2026',
+  'order_date',   '10/06/2026',
   'location',     'אולם שלא היינו בו'),
   jsonb_build_object('connection_id', (select connection_id from ak51)));
 \o
@@ -457,6 +457,22 @@ values ('30000000-0000-0000-0000-000000000053',
 select t_eq('ולקוח אחר אינו יורש את הפין של ארקו',
   (select location_lat from events where id = '30000000-0000-0000-0000-000000000053'),
   null::double precision);
+
+
+\echo '--- 9ג. התאריך אמריקאי, ומה שאינו יכול להיות חודש אינו חודש (0186) ---'
+
+select t_eq('‏MM/DD — וזו ברירת המחדל',
+  app.arco_local('12/07/2026 18:00'), '2026-12-07 18:00'::timestamp);
+select t_eq('‏28 אינו חודש, ולכן הוא יום',
+  app.arco_local('09/28/2026 00:00'), '2026-09-28 00:00'::timestamp);
+select t_eq('וגם בצורה ההפוכה',
+  app.arco_local('28/09/2026'), '2026-09-28 00:00'::timestamp);
+select t_eq('‏ISO עם אזור עובר דרך אזור הזמן',
+  app.arco_local('2026-10-01T21:00:00.000Z'), '2026-10-02 00:00'::timestamp);
+select t_eq('‏ISO בלי אזור נקרא כמות שהוא',
+  app.arco_local('2026-10-02T08:30:00'), '2026-10-02 08:30'::timestamp);
+select t_eq('ומה שאינו תאריך אינו מפיל דבר',
+  app.arco_local('[object Object]'), null::timestamp);
 
 
 \echo '--- 10. מי רואה את הצינור ---'
