@@ -665,6 +665,10 @@ export interface ViperflowEventLink {
   connection_label: string | null
   /** כמה שורות ריהוט (ללא רכיבים) יש בהזמנה — המונה שעל הכפתור */
   furniture_lines: number
+  /** כמות המשאיות שהוזמנה, לפי רשימת שמות ההובלה של החיבור (0193) */
+  truck_quantity: number | null
+  /** כמות העובדים שהוזמנה, לפי רשימת שמות הצוות של החיבור (0193) */
+  worker_quantity: number | null
 }
 
 /** שורה אחת ממה ש-`viperflow_connection_status()` מחזיר (0176 §6). */

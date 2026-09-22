@@ -756,6 +756,12 @@ select t_eq('ואת מספר ההזמנה דרך ה-view',
   'ORD-49-0001');
 select t_eq('וה-view סופר לו את שורות הריהוט',
   (select furniture_lines from viperflow_event_link where event_id = (select event_id from ev49)), 2::bigint);
+-- ‏0193: אותה ספירה של המתרגם, גם לעובד שאינו רואה את מסך החיבורים.
+-- לפי `line_type` בלבד זה היה 10 משאיות ו-13 עובדים — "תוספת" (8) ושורת
+-- הפיקוח (9) נמצאות בהזמנה, ואינן ברשימת השמות.
+select t_eq('ואת הכמויות לפי רשימת השמות, ולא לפי line_type',
+  (select truck_quantity::int::text || '/' || worker_quantity::int::text
+     from viperflow_event_link where event_id = (select event_id from ev49)), '2/4');
 select t_eq('אך אינו רואה את מסך החיבורים',
   (select count(*)::int from viperflow_connections), 0);
 
