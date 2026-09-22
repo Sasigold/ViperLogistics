@@ -223,8 +223,8 @@ function ConnectionCard({
     }
   }
 
-  /* ‏0187: מאיזו שורה בהזמנה נגזר מחיר ההקמה והפירוק. שאלה של כסף, ולכן
-     היא נשאלת במסך ואינה קבורה במיגרציה. */
+  /* ‏0187: האם מחיר ההקמה והפירוק מסונכרן. שאלה של כסף, ולכן היא נשאלת
+     במסך ואינה קבורה במיגרציה. */
   async function setLogisticsPrice(next: ViperflowLogisticsPriceSource) {
     try {
       await save.mutateAsync({
@@ -235,7 +235,34 @@ function ConnectionCard({
         connectionId: connection.id,
         logisticsPrice: next,
       })
-      toast.success('מקור מחיר ההקמה והפירוק עודכן')
+      toast.success('סנכרון מחיר ההקמה והפירוק עודכן')
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
+
+  /* ‏0192: אילו שורות בהזמנה הן הובלה ואילו הן הצוות. הקטלוג של ViperFlow
+     אינו שלנו ושמות משתנים שם — ולכן זו הגדרה, לא מחרוזת בקוד. */
+  async function setLineNames(which: 'trucking' | 'crew', raw: string) {
+    const names = raw
+      .split(',')
+      .map((n) => n.trim())
+      .filter((n) => n !== '')
+    if (names.length === 0) {
+      toast.error('חובה שם אחד לפחות')
+      return
+    }
+    try {
+      await save.mutateAsync({
+        customerId: connection.customer_id,
+        label: connection.label,
+        isActive: connection.is_active,
+        notes: connection.notes,
+        connectionId: connection.id,
+        truckingNames: which === 'trucking' ? names : null,
+        crewNames: which === 'crew' ? names : null,
+      })
+      toast.success('שמות השורות עודכנו')
     } catch (e) {
       toast.error(errorMessage(e))
     }
@@ -308,20 +335,44 @@ function ConnectionCard({
         )}
 
         {canManage && (
-          <Field
-            label="מחיר ההקמה והפירוק"
-            hint="הסכום מההזמנה מתחלק בשתיים — מחצית להקמה ומחצית לפירוק. מחיר שנכתב כך נעול מפני מחשבון התמחור, ומתעדכן בכל שינוי בהזמנה"
-          >
-            <Select
-              value={connection.logistics_price_source}
-              onChange={(e) => void setLogisticsPrice(e.target.value as ViperflowLogisticsPriceSource)}
-              disabled={save.isPending}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field
+              label="שורות ההובלה"
+              hint="מופרדות בפסיק. מהן נספרת כמות המשאיות, וסכומן נכתב לסעיף ההכנסה ״הובלות״. שורה ששמה אינו ברשימה — כמו ״תוספת״ — אינה נספרת"
             >
-              <option value="truck">משורת ״הובלה״</option>
-              <option value="logistics">משורות ״הובלה״ ו״סידור ואיסוף״</option>
-              <option value="none">אל תסנכרן מחיר</option>
-            </Select>
-          </Field>
+              <Input
+                inputSize="sm"
+                defaultValue={connection.trucking_line_names.join(', ')}
+                onBlur={(e) => void setLineNames('trucking', e.target.value)}
+                disabled={save.isPending}
+              />
+            </Field>
+            <Field
+              label="שורות הצוות"
+              hint="מופרדות בפסיק. מהן נספרת כמות העובדים, וסכומן מתחלק בשתיים — מחצית להקמה ומחצית לפירוק. שורת פיקוח אינה ברשימה"
+            >
+              <Input
+                inputSize="sm"
+                defaultValue={connection.crew_line_names.join(', ')}
+                onBlur={(e) => void setLineNames('crew', e.target.value)}
+                disabled={save.isPending}
+              />
+            </Field>
+            <Field
+              label="מחיר ההקמה והפירוק"
+              hint="מחיר שנכתב מההזמנה נעול מפני מחשבון התמחור, ומתעדכן בכל שינוי בהזמנה"
+              className="sm:col-span-2"
+            >
+              <Select
+                value={connection.logistics_price_source}
+                onChange={(e) => void setLogisticsPrice(e.target.value as ViperflowLogisticsPriceSource)}
+                disabled={save.isPending}
+              >
+                <option value="crew">מסכום שורות הצוות, מחצית לכל משימה</option>
+                <option value="none">אל תסנכרן מחיר</option>
+              </Select>
+            </Field>
+          </div>
         )}
 
         {connection.notes && (

@@ -59,8 +59,9 @@ export function useViperflowDeliveries(failedOnly: boolean, limit = 50) {
 }
 
 /**
- * ‏`logisticsPrice` נשלח רק כשהוא באמת משתנה (0187): ‏null ב-RPC פירושו "אל
- * תיגע", וכך מתג "פעיל" בכרטיס אינו יכול לאפס בטעות את מקור המחיר.
+ * ‏`logisticsPrice` ושתי רשימות השמות נשלחות רק כשהן באמת משתנות (0187,
+ * 0192): ‏null ב-RPC פירושו "אל תיגע", וכך מתג "פעיל" בכרטיס אינו יכול
+ * לאפס בטעות את מקור המחיר או למחוק רשימת שמות.
  */
 export function useSetViperflowConnection() {
   const qc = useQueryClient()
@@ -72,6 +73,8 @@ export function useSetViperflowConnection() {
       notes?: string | null
       connectionId?: string | null
       logisticsPrice?: ViperflowLogisticsPriceSource | null
+      truckingNames?: string[] | null
+      crewNames?: string[] | null
     }) => {
       const { data, error } = await supabase.rpc('viperflow_set_connection', {
         p_customer_id: input.customerId,
@@ -80,6 +83,8 @@ export function useSetViperflowConnection() {
         p_notes: input.notes ?? null,
         p_connection_id: input.connectionId ?? null,
         p_logistics_price: input.logisticsPrice ?? null,
+        p_trucking_names: input.truckingNames ?? null,
+        p_crew_names: input.crewNames ?? null,
       })
       if (error) throw error
       return data as string

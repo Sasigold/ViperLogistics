@@ -28,6 +28,16 @@ const FAMILIES: { key: IncomeFamily; label: string }[] = [
 
 const familyLabel = (f: IncomeFamily) => FAMILIES.find((x) => x.key === f)?.label ?? f
 
+/* ‏0192: מה נוחת בקטגוריה מעצמו כשהזמנה מ-ViperFlow מסונכרנת. */
+const VIPERFLOW_SOURCE_LABEL: Record<
+  NonNullable<IncomeCategory['viperflow_income_source']>,
+  string
+> = {
+  furniture_old: 'ViperFlow · ציוד ישן',
+  furniture_new: 'ViperFlow · ציוד חדש',
+  trucking: 'ViperFlow · שורות ההובלה',
+}
+
 /**
  * לשונית הכספים: אחוז עלות המעביד וקטלוג קטגוריות ההכנסה (0068).
  * קטגוריה שכבר הוזנו עליה סכומים מכובה ולא נמחקת — ההיסטוריה נשארת בדשבורד.
@@ -196,10 +206,8 @@ function IncomeCategoriesCard() {
                 {/* ‏0190: הסכום נכתב לכאן מעצמו כשהזמנה מ-ViperFlow מסונכרנת.
                     תווית ולא מתג: מי מקבל מה נקבע במיגרציה, וקטגוריה שמישהו
                     היה מעביר כאן הייתה משנה לאן כסף נוחת בלי שאיש יראה. */}
-                {c.viperflow_item_state && (
-                  <Badge tone="info">
-                    {c.viperflow_item_state === 'new' ? 'ViperFlow · ציוד חדש' : 'ViperFlow · ציוד ישן'}
-                  </Badge>
+                {c.viperflow_income_source && (
+                  <Badge tone="info">{VIPERFLOW_SOURCE_LABEL[c.viperflow_income_source]}</Badge>
                 )}
                 {!c.is_active && <Badge tone="neutral">כבויה</Badge>}
                 <Switch
