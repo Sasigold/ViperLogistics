@@ -267,3 +267,41 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1
 select t_eq('ואדמין קורא אותו בלי הגדרה נוספת', (select (count(*) > 0) from audit_log), true);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+
+\echo '--- view שרץ בהרשאות הקורא אינו נשען על פונקציית definer (0194) ---'
+
+-- ‏0193 הוסיף ל-`viperflow_event_link` — view עם `security_invoker` — שתי
+-- עמודות שחושבו בפונקציה `security definer` ב-`app`, ושלל ממנה הרשאת
+-- הרצה כמו מכל עוזרת אחרת שם. התוצאה בייצור: כל `select` מה-view ענה
+-- "permission denied for function", ומסך המפרט הפסיק להיפתח.
+--
+-- **הבדיקות לא יכלו לתפוס את זה דרך ההרשאות**: ‏`01_seed.sql:9` מריץ
+-- `grant execute on all functions in schema public, app to authenticated`
+-- כדי לחקות את ברירת המחדל של Supabase, והוא רץ *אחרי* המיגרציות — ולכן
+-- כל `revoke` שנכתב במיגרציה אינו קיים כאן. מה שנראה ירוק היה שבור.
+--
+-- לכן הקביעה הזו אינה על ההרשאה אלא על **המבנה**: ‏view שרץ בהרשאות
+-- הקורא ותלוי בפונקציית `security definer` ב-`app` הוא view שבור בייצור,
+-- בלי קשר למה ש-ACL אומר ברגע זה. הקריאה לפונקציה כזו שייכת ל-RPC, או
+-- שהערך צריך להיות עמודה שנכתבה מראש (וזה מה ש-0194 עשה).
+--
+-- ארבע יוצאות דופן, וכולן מאותו סוג: עוזרות ההרשאות שכל ה-RLS בנוי עליהן.
+-- הן `security definer` בדיוק כדי שכל משתמש מאומת יוכל לקרוא להן, והמענק
+-- שלהן הוא הכרעה מפורשת ולא שכחה. הרשימה קצרה בכוונה — מי שמוסיף אליה
+-- חמישית צריך לעצור ולשאול אם היא באמת אמורה להיות פתוחה לכולם.
+select t_eq('אין view כזה מלבד עוזרות ההרשאות',
+  coalesce((select string_agg(distinct p.proname, ', ' order by p.proname)
+     from pg_class v
+     join pg_rewrite r on r.ev_class = v.oid
+     join pg_depend d on d.objid = r.oid and d.classid = 'pg_rewrite'::regclass
+     join pg_proc p on p.oid = d.refobjid and d.refclassid = 'pg_proc'::regclass
+     join pg_namespace pn on pn.oid = p.pronamespace
+    where v.relkind = 'v'
+      and pn.nspname = 'app'
+      and p.prosecdef
+      and p.proname not in ('has', 'can_view_field', 'contractor_id',
+                            'customer_self_performing')
+      and coalesce((select option_value from pg_options_to_table(v.reloptions)
+                     where option_name = 'security_invoker'), 'false') = 'true'), ''),
+  '');
