@@ -49,21 +49,32 @@ export const MONEY_KEYS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * The one exception, added by migration 0187.
+ * The exception: what a line costs, and nothing else (0187, 0190).
  *
- * An order's logistics lines — "הובלה" (`truck`) and "סידור ואיסוף"
- * (`worker`) — are not furniture: they are what WE do, and what we charge the
- * customer for. Their amount becomes the price of the setup and teardown
- * tasks, so it has to cross the boundary.
+ * Two prices cross the boundary, both of them ours to charge:
  *
- * Scoped as tightly as it can be: only these two keys, and only on a line
- * whose own `line_type` says it is logistics. A product line is redacted
- * exactly as before, and so is every order-level total — the promise of
- * 0176 §2 (no prices in the furniture list) is unchanged, because a
- * furniture line still carries none.
+ *   • the **logistics** lines — "הובלה" (`truck`) and "סידור ואיסוף"
+ *     (`worker`) — whose amount becomes the price of the setup and teardown
+ *     tasks (0187);
+ *   • every **line total**, because the furniture sum, split by whether the
+ *     item is new or old, is the event's income per category (0190).
+ *
+ * Scoped as tightly as it can be. `line_total` passes only on an object that
+ * is itself an order line (it carries a `line_type`), `unit_price` only on a
+ * logistics line, and **every order-level total is redacted exactly as
+ * before**: `totals`, `payment`, `grand_total`, `vat_amount`, the lot.
+ *
+ * The promise of 0176 §2 is unchanged where it counts: `viperflow_order_items`
+ * still has no column that can hold a price, and `viperflow-spec` builds the
+ * warehouse's list field by field without one. Money reaches the translator
+ * and the pricing tables — never the spec screen.
  */
 export const LOGISTICS_LINE_TYPES: ReadonlySet<string> = new Set(['truck', 'worker'])
-export const LOGISTICS_MONEY_KEYS: ReadonlySet<string> = new Set(['unit_price', 'line_total'])
+
+/** True for an object that is an order line at all. */
+function isOrderLine(value: Record<string, unknown>): boolean {
+  return typeof value.line_type === 'string' && value.line_type !== ''
+}
 
 /** True for an order line that is logistics rather than furniture. */
 function isLogisticsLine(value: Record<string, unknown>): boolean {
@@ -74,23 +85,138 @@ function isLogisticsLine(value: Record<string, unknown>): boolean {
  * Recursively drops every money key. Arrays keep their order and length.
  *
  * The decision is made per object, from that object's own `line_type`: a
- * nested object inside a logistics line does not inherit the exception, and
- * an order that happens to carry a `line_type` key of its own would only
- * expose the two line keys — never `totals`, `payment` or `grand_total`.
+ * nested object inside a line does not inherit the exception, and an order
+ * that happens to carry a `line_type` key of its own would expose its line
+ * keys only — never `totals`, `payment` or `grand_total`.
  */
 export function redactMoney(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactMoney)
   if (value && typeof value === 'object') {
     const row = value as Record<string, unknown>
-    const keepsLogistics = isLogisticsLine(row)
+    const line = isOrderLine(row)
+    const logistics = line && isLogisticsLine(row)
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(row)) {
-      if (MONEY_KEYS.has(k) && !(keepsLogistics && LOGISTICS_MONEY_KEYS.has(k))) continue
+      const kept = (k === 'line_total' && line) || (k === 'unit_price' && logistics)
+      if (MONEY_KEYS.has(k) && !kept) continue
       out[k] = redactMoney(v)
     }
     return out
   }
   return value
+}
+
+/**
+ * The catalogue, for the two things an order line does not carry (0187, 0190).
+ *
+ * `dto_order` stops at `product_id`: it says nothing about whether the item is
+ * new equipment, and nothing about its picture. Both live on the product, and
+ * both are read from `/v1/products` — which is why the API key needs
+ * `products:read` on top of `orders:read`.
+ */
+export interface CatalogEntry {
+  is_new: boolean
+  image_url: string | null
+}
+
+/** Their list endpoint takes at most 100 ids and returns at most 100 rows. */
+export const IDS_PER_CALL = 100
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** The distinct products of an order's furniture lines, ready for `?ids=`. */
+export function catalogIds(items: unknown): string[] {
+  if (!Array.isArray(items)) return []
+  const out = new Set<string>()
+  for (const raw of items) {
+    const item = (raw ?? {}) as Record<string, unknown>
+    if (item.line_type !== 'product' || item.is_component === true) continue
+    const id = String(item.product_id ?? '')
+    if (UUID_RE.test(id)) out.add(id)
+  }
+  return [...out]
+}
+
+/**
+ * The order, with every furniture line told whether its item is new.
+ *
+ * **`catalog_enriched` is the whole point of the flag.** Without it the
+ * translator cannot tell "every item is old" from "we never asked", and the
+ * difference is an event's income written wrong. No catalogue, no flag, no
+ * income — the rest of the sync carries on.
+ *
+ * An item with no product (free text somebody typed) is not in the catalogue
+ * and is therefore not new — which is the rule as stated: whatever is not
+ * marked new equipment is old.
+ */
+export function withCatalog(order: unknown, catalog: Map<string, CatalogEntry> | null): unknown {
+  if (!catalog || !order || typeof order !== 'object') return order
+  const row = order as Record<string, unknown>
+  const items = Array.isArray(row.items) ? row.items : null
+  if (!items) return order
+
+  return {
+    ...row,
+    catalog_enriched: true,
+    items: items.map((raw) => {
+      const item = (raw ?? {}) as Record<string, unknown>
+      if (item.line_type !== 'product') return item
+      return { ...item, is_new: catalog.get(String(item.product_id ?? ''))?.is_new === true }
+    }),
+  }
+}
+
+/**
+ * Asks the catalogue about a list of products, in one call per hundred ids.
+ *
+ * **Null is "we do not know", and it is never guessed.** A key without
+ * `products:read` answers 403, a network hiccup answers nothing — and in both
+ * cases the caller must not pretend the catalogue said "old" or "no picture".
+ * Whoever gets null skips the part that needed it and carries on.
+ *
+ * `fetch` and `AbortSignal` are web standards, so this stays importable by
+ * vitest like the rest of the module.
+ */
+export async function fetchCatalog(
+  base: string,
+  key: string,
+  ids: readonly string[],
+  timeoutMs = 15_000,
+): Promise<Map<string, CatalogEntry> | null> {
+  const out = new Map<string, CatalogEntry>()
+  if (ids.length === 0) return out
+
+  for (let i = 0; i < ids.length; i += IDS_PER_CALL) {
+    const chunk = ids.slice(i, i + IDS_PER_CALL)
+    const res = await fetch(
+      `${base}/products?ids=${chunk.join(',')}&limit=${IDS_PER_CALL}`,
+      {
+        headers: {
+          Authorization: `Bearer ${key}`,
+          // The API runs next to its database; without this every call pays a
+          // cross-region round trip.
+          'x-region': 'ap-northeast-1',
+          'User-Agent': 'ViperLogistics/1.0',
+        },
+        signal: AbortSignal.timeout(timeoutMs),
+      },
+    ).catch(() => null)
+    if (!res || !res.ok) return null
+
+    const page = (await res.json().catch(() => null)) as
+      | { data?: { id?: string; is_new?: boolean; default_image_url?: string | null }[] }
+      | null
+    if (!page) return null
+
+    for (const product of page.data ?? []) {
+      if (!product?.id) continue
+      out.set(String(product.id), {
+        is_new: product.is_new === true,
+        image_url: product.default_image_url ? String(product.default_image_url) : null,
+      })
+    }
+  }
+  return out
 }
 
 /**
@@ -163,7 +289,7 @@ export function specParents(items: VfOrderItem[]): VfOrderItem[] {
  */
 export function specLinesFromOrder(
   items: VfOrderItem[],
-  images: Map<string, string>,
+  catalog: Map<string, CatalogEntry> | null,
 ): SpecLine[] {
   return specParents(items).map((item, index) => ({
     id: String(item.id ?? `line-${index}`),
@@ -173,7 +299,7 @@ export function specLinesFromOrder(
     notes: item.notes ? String(item.notes) : null,
     is_custom: item.is_custom === true,
     options: specOptionLabels(item),
-    image_url: images.get(String(item.product_id ?? '')) ?? null,
+    image_url: catalog?.get(String(item.product_id ?? ''))?.image_url ?? null,
   }))
 }
 

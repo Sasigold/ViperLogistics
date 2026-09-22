@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   MONEY_KEYS,
+  catalogIds,
   connectionIdFromPath,
   hexToBytes,
   redactMoney,
@@ -10,6 +11,7 @@ import {
   timestampAcceptable,
   timingSafeEqual,
   verifySignature,
+  withCatalog,
 } from './viperflow'
 
 /**
@@ -157,9 +159,11 @@ describe('ניקוי הכסף', () => {
     },
   }
 
-  it('לא נשאר שדה כספי על שורת ריהוט ולא ברמת ההזמנה', () => {
+  it('לא נשאר סכום ברמת ההזמנה, ולא מחיר יחידה על שורת ריהוט', () => {
     const clean = JSON.stringify(redactMoney(envelope))
     for (const key of MONEY_KEYS) {
+      // ‏0190: `line_total` הוא החריג — הוא מה שמפצל את הכנסת הריהוט.
+      if (key === 'line_total') continue
       expect(clean).not.toContain(`"${key}"`)
     }
   })
@@ -171,11 +175,22 @@ describe('ניקוי הכסף', () => {
         id: 'order-1',
         order_number: 'ORD-1',
         items: [
-          { name: 'שולחן', line_type: 'product', quantity: 10 },
-          { name: 'כיסא', line_type: 'product', quantity: 100 },
+          { name: 'שולחן', line_type: 'product', quantity: 10, line_total: 1200 },
+          { name: 'כיסא', line_type: 'product', quantity: 100, line_total: 1200 },
         ],
       },
     })
+  })
+
+  /* ‏0190: סכום השורה עובר על כל שורה — הוא ההכנסה — ומחיר היחידה רק על
+     לוגיסטיקה. אובייקט שאינו שורה אינו מקבל כלום. */
+  it('סכום שורה עובר גם על ריהוט, ומחיר יחידה לא', () => {
+    const line = { line_type: 'product', quantity: 3, unit_price: 120, line_total: 360, discount_percent: 5 }
+    expect(redactMoney(line)).toEqual({ line_type: 'product', quantity: 3, line_total: 360 })
+  })
+
+  it('ואובייקט בלי line_type אינו שורה, ואינו שומר דבר', () => {
+    expect(redactMoney({ name: 'x', line_total: 999, unit_price: 5 })).toEqual({ name: 'x' })
   })
 
   /* ‏0187: שורת לוגיסטיקה היא מה שאנחנו עושים, והסכום שלה הוא מחיר ההקמה
@@ -232,6 +247,42 @@ describe('ניקוי הכסף', () => {
   })
 })
 
+describe('הקטלוג: חדש או ישן (0190)', () => {
+  const items = [
+    { line_type: 'product', is_component: false, product_id: 'aaaaaaaa-1111-2222-3333-444444444444', name: 'כיסא' },
+    { line_type: 'product', is_component: true, product_id: 'bbbbbbbb-1111-2222-3333-444444444444', name: 'רכיב' },
+    { line_type: 'product', is_component: false, product_id: null, name: 'פריט חופשי' },
+    { line_type: 'truck', is_component: false, name: 'הובלה' },
+  ]
+
+  it('נשאלים רק מוצרי אב, פעם אחת לכל מוצר', () => {
+    expect(catalogIds([...items, items[0]])).toEqual(['aaaaaaaa-1111-2222-3333-444444444444'])
+  })
+
+  it('מזהה שאינו uuid אינו נשאל — הצד השני עונה עליו 400', () => {
+    expect(catalogIds([{ line_type: 'product', product_id: 'לא-uuid' }])).toEqual([])
+  })
+
+  it('כל שורת ריהוט מסומנת, ומה שאינו חדש הוא ישן', () => {
+    const catalog = new Map([
+      ['aaaaaaaa-1111-2222-3333-444444444444', { is_new: true, image_url: null }],
+    ])
+    const out = withCatalog({ items }, catalog) as { catalog_enriched: boolean; items: { is_new?: boolean }[] }
+    expect(out.catalog_enriched).toBe(true)
+    expect(out.items.map((i) => i.is_new)).toEqual([true, false, false, undefined])
+  })
+
+  it('ובלי קטלוג — אין דגל, ואין סימון', () => {
+    const out = withCatalog({ items }, null) as { catalog_enriched?: boolean }
+    expect(out.catalog_enriched).toBeUndefined()
+    expect(out).toEqual({ items })
+  })
+
+  it('הזמנה בלי שורות אינה נופלת', () => {
+    expect(withCatalog({ id: 'x' }, new Map())).toEqual({ id: 'x' })
+  })
+})
+
 describe('המפרט שנמשך חי (0187)', () => {
   /* כפי ש-`dto_order` אצלם מחזיר: אב, הרכיבים שלו מיד אחריו, ואז הלוגיסטיקה. */
   const items = [
@@ -275,8 +326,15 @@ describe('המפרט שנמשך חי (0187)', () => {
   })
 
   it('התמונה מגיעה מהקטלוג לפי המוצר, ופריט בלי מוצר נשאר בלעדיה', () => {
-    const lines = specLinesFromOrder(items, new Map([['p1', 'https://cdn/x.webp']]))
+    const lines = specLinesFromOrder(
+      items,
+      new Map([['p1', { is_new: false, image_url: 'https://cdn/x.webp' }]]),
+    )
     expect(lines.map((l) => l.image_url)).toEqual(['https://cdn/x.webp', null])
+  })
+
+  it('ובלי קטלוג — רשימה בלי תמונות, ולא נפילה', () => {
+    expect(specLinesFromOrder(items, null).every((l) => l.image_url === null)).toBe(true)
   })
 
   it('והשורה נבנית שדה-שדה: כסף אינו מועתק אליה', () => {

@@ -31,10 +31,18 @@ select t_eq('וערוץ ה-push דלוק מאז 0113/0167',
 -- event_status_changed, contractor_task — כבויים אך נשארים בקטלוג, כי שורות
 -- היסטוריות עדיין מצביעות עליהם) ועוד אחד-עשר חדשים. ‏0136 הוסיפה עשרים:
 -- `task_performed_by_changed`, ו-0165 עשרים-ואחת:
--- `attendance_correction_requested`. הספירה נשארת מדויקת ולא הופכת ל-`>= 9`:
+-- `attendance_correction_requested`, ו-0190 עשרים-ושתיים:
+-- `viperflow_order_changed`. הספירה נשארת מדויקת ולא הופכת ל-`>= 9`:
 -- קטלוג שגדל בלי שאיש שם לב הוא בדיוק מה שהבדיקה הזו נועדה לתפוס.
-select t_eq('הקטלוג מכיר את עשרים-ואחת הסוגים הפעילים',
-  (select count(*)::int from notification_types where is_active), 21);
+select t_eq('הקטלוג מכיר את עשרים-ושתיים הסוגים הפעילים',
+  (select count(*)::int from notification_types where is_active), 22);
+
+-- ‏0190: שינוי בהזמנה של ViperFlow הוא עניין של מי שמזיז אירועים, ולכן
+-- הסוג פונה למנהלי מערכת בלבד — ובתוך המערכת הוא מאולץ: התראה שאפשר
+-- לכבות על שדה שהפסקנו לכתוב היא שדה שאיש לא יידע שהשתנה.
+select t_eq('ושינוי בהזמנה מ-ViperFlow מאולץ בתוך המערכת (0190)',
+  (select default_mode_inapp || '/' || array_to_string(audiences, ',')
+     from notification_types where key = 'viperflow_order_changed'), 'forced/admin');
 
 -- ‏0165: בקשת תיקון שעות מגיעה רק למי שמאשר דיווחי נוכחות, בדיוק כמו הדיווח
 -- הידני עצמו — אחרת המטריצה הייתה מציעה את המתג לכל עובד.

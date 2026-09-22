@@ -193,6 +193,14 @@ function IncomeCategoriesCard() {
                   <span className="block truncate type-body font-medium">{c.name}</span>
                   <span className="type-caption text-ink-tertiary">{familyLabel(c.family)}</span>
                 </span>
+                {/* ‏0190: הסכום נכתב לכאן מעצמו כשהזמנה מ-ViperFlow מסונכרנת.
+                    תווית ולא מתג: מי מקבל מה נקבע במיגרציה, וקטגוריה שמישהו
+                    היה מעביר כאן הייתה משנה לאן כסף נוחת בלי שאיש יראה. */}
+                {c.viperflow_item_state && (
+                  <Badge tone="info">
+                    {c.viperflow_item_state === 'new' ? 'ViperFlow · ציוד חדש' : 'ViperFlow · ציוד ישן'}
+                  </Badge>
+                )}
                 {!c.is_active && <Badge tone="neutral">כבויה</Badge>}
                 <Switch
                   checked={c.is_active}
