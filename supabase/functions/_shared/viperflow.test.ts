@@ -150,7 +150,7 @@ describe('ניקוי הכסף', () => {
       id: 'order-1',
       order_number: 'ORD-1',
       currency: 'ILS',
-      totals: { grand_total: 4248, subtotal: 3600 },
+      totals: { grand_total: 4248, subtotal: 3600, order_discount_percent: 10 },
       payment: { status: 'unpaid', balance_due: 4248 },
       items: [
         { name: 'שולחן', line_type: 'product', quantity: 10, unit_price: 120, line_total: 1200, discount_percent: 0 },
@@ -163,17 +163,22 @@ describe('ניקוי הכסף', () => {
     const clean = JSON.stringify(redactMoney(envelope))
     for (const key of MONEY_KEYS) {
       // ‏0190: `line_total` הוא החריג — הוא מה שמפצל את הכנסת הריהוט.
-      if (key === 'line_total') continue
+      // ‏0192: ‏`order_discount_percent` הוא השני, ו-`totals` שורד כמעטפת
+      // שלו בלבד — מה שנשאר בתוכו נבדק בשורה שאחרי הלולאה.
+      if (key === 'line_total' || key === 'order_discount_percent' || key === 'totals') continue
       expect(clean).not.toContain(`"${key}"`)
     }
+    expect((redactMoney(envelope) as { data: { totals: unknown } }).data.totals)
+      .toEqual({ order_discount_percent: 10 })
   })
 
-  it('ומה שאינו כסף נשאר כפי שהוא', () => {
+  it('ומה שאינו כסף נשאר כפי שהוא, ועמו אחוז ההנחה בלבד', () => {
     expect(redactMoney(envelope)).toEqual({
       id: 'evt_x',
       data: {
         id: 'order-1',
         order_number: 'ORD-1',
+        totals: { order_discount_percent: 10 },
         items: [
           { name: 'שולחן', line_type: 'product', quantity: 10, line_total: 1200 },
           { name: 'כיסא', line_type: 'product', quantity: 100, line_total: 1200 },
@@ -229,6 +234,33 @@ describe('ניקוי הכסף', () => {
       line_total: 2400,
       meta: { note: 'x' },
     })
+  })
+
+  /* ‏0192: ‏`totals` אינו נמחק אלא מצטמצם. הנימוק הוא כסף אמיתי: בלי אחוז
+     ההנחה של ההזמנה, ההכנסה שנכתבת היא המחירון ולא מה שהלקוח משלם. */
+  it('אחוז ההנחה של ההזמנה שורד, ושורת התחתית של ההזמנה לא', () => {
+    const order = {
+      id: 'o1',
+      totals: {
+        subtotal: 3600,
+        total_discount: 400,
+        taxable_amount: 3200,
+        vat_amount: 544,
+        grand_total: 3744,
+        order_discount_percent: 12.5,
+      },
+    }
+    expect(redactMoney(order)).toEqual({ id: 'o1', totals: { order_discount_percent: 12.5 } })
+  })
+
+  it('ו-totals בלי הנחה נעלם כולו, כמו לפני 0192', () => {
+    expect(redactMoney({ id: 'o1', totals: { grand_total: 10 } })).toEqual({ id: 'o1' })
+    expect(redactMoney({ id: 'o1', totals: {} })).toEqual({ id: 'o1' })
+  })
+
+  it('והחריג אינו חל על שורה שנושאת totals משלה', () => {
+    const line = { line_type: 'product', line_total: 100, totals: { grand_total: 9 } }
+    expect(redactMoney(line)).toEqual({ line_type: 'product', line_total: 100 })
   })
 
   it('מערך שומר על האורך ועל הסדר — המיקום הוא חוזה', () => {

@@ -41,8 +41,8 @@ export interface IncomeCategory {
   sort_order: number
   is_active: boolean
   deleted_at: string | null
-  /** לאיזה מצב פריט בקטלוג של ViperFlow הקטגוריה מקבלת את הסכום (0190) */
-  viperflow_item_state: 'new' | 'old' | null
+  /** מה הקטגוריה מקבלת מסנכרון ViperFlow (0190, 0192) */
+  viperflow_income_source: 'furniture_old' | 'furniture_new' | 'trucking' | null
 }
 
 /** קיום שורה = הקטגוריה מופעלת ללקוח; חלק הלקוח נגזר (100 פחות) */
@@ -615,7 +615,7 @@ export interface ViperflowOrderItem {
   synced_at: string
 }
 
-export type ViperflowLogisticsPriceSource = 'none' | 'truck' | 'logistics'
+export type ViperflowLogisticsPriceSource = 'none' | 'crew'
 
 /**
  * שורת מפרט שנמשכה חיה מה-API של ViperFlow (0187, `viperflow-spec`).
@@ -679,11 +679,14 @@ export interface ViperflowConnectionStatus {
   synced_through: string | null
   notes: string | null
   /**
-   * מאיזו שורה בהזמנה נגזר מחיר ההקמה והפירוק (0187):
-   * ‏`truck` — "הובלה" בלבד, `logistics` — הובלה + סידור ואיסוף, `none` — אין.
-   * הסכום מתחלק בשניים, מחצית לכל משימה.
+   * האם מחיר ההקמה והפירוק מסונכרן (0187, 0192): ‏`crew` — מסכום שורות
+   * הצוות, מחצית לכל משימה; `none` — אינו מסונכרן.
    */
   logistics_price_source: ViperflowLogisticsPriceSource
+  /** שמות שורות ההובלה — כמות המשאיות וסעיף "הובלות" (0192) */
+  trucking_line_names: string[]
+  /** שמות שורות הצוות — כמות העובדים ומחיר ההקמה והפירוק (0192) */
+  crew_line_names: string[]
   linked_events: number
   last_event_at: string | null
   received_24h: number

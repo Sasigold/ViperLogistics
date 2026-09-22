@@ -71,6 +71,22 @@ export const MONEY_KEYS: ReadonlySet<string> = new Set([
  */
 export const LOGISTICS_LINE_TYPES: ReadonlySet<string> = new Set(['truck', 'worker'])
 
+/**
+ * The second exception: the order's discount percent (0192).
+ *
+ * `line_total` already carries the LINE discount — verified against their
+ * data: `line_total = quantity × unit_price × (1 − line_discount_percent/100)`.
+ * What it does not carry is the discount on the order as a whole, which lives
+ * inside `totals` and applies to the furniture lines only. Without it the
+ * income we write is the list price, not what the customer pays.
+ *
+ * So `totals` is not dropped but *reduced*: this one key survives, and
+ * `subtotal`, `taxable_amount`, `vat_amount`, `grand_total` and
+ * `total_discount` are removed exactly as before. The order's bottom line
+ * still never crosses the boundary.
+ */
+export const TOTALS_KEPT_KEYS: ReadonlySet<string> = new Set(['order_discount_percent'])
+
 /** True for an object that is an order line at all. */
 function isOrderLine(value: Record<string, unknown>): boolean {
   return typeof value.line_type === 'string' && value.line_type !== ''
@@ -97,8 +113,21 @@ export function redactMoney(value: unknown): unknown {
     const logistics = line && isLogisticsLine(row)
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(row)) {
-      const kept = (k === 'line_total' && line) || (k === 'unit_price' && logistics)
-      if (MONEY_KEYS.has(k) && !kept) continue
+      // `totals` is reduced rather than dropped, so the order's discount
+      // percent survives and nothing else does (0192).
+      if (k === 'totals' && v && typeof v === 'object' && !Array.isArray(v)) {
+        const kept: Record<string, unknown> = {}
+        for (const [tk, tv] of Object.entries(v as Record<string, unknown>)) {
+          if (TOTALS_KEPT_KEYS.has(tk)) kept[tk] = tv
+        }
+        // Nothing worth keeping means the key goes, exactly as before 0192 —
+        // an empty `totals` in the envelope would only invite a reader to
+        // wonder what used to be in it.
+        if (Object.keys(kept).length > 0) out[k] = kept
+        continue
+      }
+      const keep = (k === 'line_total' && line) || (k === 'unit_price' && logistics)
+      if (MONEY_KEYS.has(k) && !keep) continue
       out[k] = redactMoney(v)
     }
     return out
