@@ -934,5 +934,27 @@ select t_eq('וגם הסכום',
   7620::numeric);
 
 
+
+\echo '--- 13ד. ה-Webhook בכתובת הרגילה: בלי מזהה חיבור (0197) ---'
+
+-- זה המסלול של ViperFlow עצמו: הכתובת אינה נושאת מזהה, ולכן `p_meta` ריק
+-- והחיבור נבחר כ"הפעיל היחיד". עד 0197 כל קריאה כזו נפלה על min(uuid) —
+-- וכל הבדיקות למעלה העבירו `connection_id`, ולכן אף אחת לא הגיעה לשם.
+select t_eq('אירוע בדיקה בלי מזהה חיבור נקלט',
+  (select viperflow_ingest(jsonb_build_object(
+     'id', 'evt_' || repeat('0197', 8), 'type', 'webhook.test',
+     'created_at', '2026-09-16T17:00:00.000Z', 'data', '{}'::jsonb)) ->> 'status'),
+  'ignored');
+select t_eq('והחיבור היחיד נרשם עליו',
+  (select connection_id from viperflow_deliveries where event_id = 'evt_' || repeat('0197', 8)),
+  (select connection_id from vf49));
+select t_eq('הזמנה בלי מזהה חיבור מוחלת',
+  (select viperflow_ingest(
+     t49_envelope('evt_' || repeat('197e', 8), '2026-09-16T18:00:00.000Z',
+                  'order.updated', 'confirmed',
+                  '2026-10-01T21:00:00.000Z', '2026-10-03T07:00:00.000Z',
+                  t49_items(120), 25)) ->> 'status'),
+  'processed');
+
 drop function t49_envelope(text, text, text, text, text, text, jsonb, numeric);
 drop function t49_items(int, int, int);
