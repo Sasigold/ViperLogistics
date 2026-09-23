@@ -44,6 +44,7 @@ const CustomerProfitabilityPage = lazyPage(() => import('../features/reports/Cus
 const TaskPnlPage = lazyPage(() => import('../features/reports/TaskPnlPage'))
 const LoadHeatmapPage = lazyPage(() => import('../features/reports/LoadHeatmapPage'))
 const ShiftBoardPage = lazyPage(() => import('../features/attendance/ShiftBoardPage'))
+const EmbedEventPage = lazyPage(() => import('../features/embed/EmbedEventPage'))
 const NotificationPreferencesPage = lazyPage(() => import('../features/notifications/NotificationPreferencesPage'))
 
 /** Shaped like a real screen so the chunk swap doesn't flash an empty page. */
@@ -102,6 +103,10 @@ export const router = createBrowserRouter([
       { path: '/client/calendar', element: <Navigate to="/calendar" replace /> },
       { path: '/client/tasks', element: <Navigate to="/board" replace /> },
       { path: '/client/users', element: <Navigate to="/users" replace /> },
+
+      /* פופאפ עריכת האירוע לבדו, להטמעה ב-iframe אצל הלקוח — מחוץ ל-AppLayout
+         כי במסגרת אין מקום לתפריט. ההרשאה נבדקת בדף עצמו. */
+      { path: '/embed/event', element: page(<EmbedEventPage />) },
 
       {
         element: <AppLayout />,

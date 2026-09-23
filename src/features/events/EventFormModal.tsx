@@ -128,12 +128,15 @@ const STEPS: StepDef[] = [
 export function EventFormModal({
   open,
   onClose,
+  onSaved,
   event,
   contact,
   supplierIds,
 }: {
   open: boolean
   onClose: () => void
+  /** אחרי שמירה מוצלחת, לפני `onClose` — למי שצריך להבדיל בין השתיים */
+  onSaved?: (eventId: string) => void
   /** when set — edit mode */
   event?: EventRow | null
   contact?: { contact_name: string | null; contact_phone: string | null } | null
@@ -542,7 +545,7 @@ export function EventFormModal({
       }
       return { id, specError: null as string | null }
     },
-    onSuccess: ({ specError }) => {
+    onSuccess: ({ id, specError }) => {
       if (specError) {
         toast.warning('האירוע נוצר, אך המפרט לא הועלה', {
           description: `${specError} — אפשר להעלות אותו מכרטיס האירוע`,
@@ -559,6 +562,7 @@ export function EventFormModal({
       void qc.invalidateQueries({ queryKey: ['workboard'] })
       void qc.invalidateQueries({ queryKey: ['dashboard'] })
       void qc.invalidateQueries({ queryKey: ['event_income'] })
+      onSaved?.(id)
       onClose()
     },
     onError: (e) => toast.error(errorMessage(e)),

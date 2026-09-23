@@ -66,8 +66,8 @@ import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { BOARD_FIELDS, SupplierPickupChip } from './boardFields'
 import type { BoardLookups } from './boardFields'
-import { COLOR_BY_OPTIONS, buildTones, byTaskTime, clusterDay } from './grouping'
-import type { Cluster, ColorBy, GroupTone } from './grouping'
+import { COLOR_BY_OPTIONS, buildTones, byTaskTime, clusterDay, performerLabel } from './grouping'
+import type { Cluster, ColorBy, GroupTone, SelfPerformer } from './grouping'
 import type { CustomerTruck, Truck, WorkBoardRow } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
@@ -296,6 +296,9 @@ export default function WorkBoardPage() {
    */
   const contractorScheduleOnly =
     isContractor && !has(PERM.TASKS_CREATE) && !has(PERM.TASKS_EDIT)
+  /* לקוח שמבצע בעצמו קורא בראש העמודה מי מבצע, ולא את שמו שלו */
+  const selfPerformer: SelfPerformer =
+    me?.profile.user_kind === 'customer_user' ? (me.customer ?? null) : null
   const canInline = has(PERM.BOARD_INLINE_EDIT)
   const canOpenEvent = has(PERM.EVENTS_VIEW)
   /**
@@ -1397,6 +1400,7 @@ export default function WorkBoardPage() {
               canOpenStaffing={canOpenStaffing}
               canOpenDelegation={canOpenDelegation}
               onToggleDay={toggleDay}
+              selfPerformer={selfPerformer}
             />
           ) : (
             <div
@@ -1538,6 +1542,7 @@ export default function WorkBoardPage() {
                             <TaskHeader
                               row={col.row}
                               groupKey={col.groupKey}
+                              performer={performerLabel(col.row, selfPerformer)}
                               canOpenEvent={canOpenEvent}
                               canOpenTask={canOpenTask}
                               onOpen={openTask}
@@ -1653,7 +1658,10 @@ function MobileBoard({
   canOpenStaffing,
   canOpenDelegation,
   onToggleDay,
+  selfPerformer,
 }: {
+  /** הלקוח הקורא, כשהוא מבצע בעצמו — ל-`performerLabel` */
+  selfPerformer: SelfPerformer
   /** so "go to today" can find a day's section without a global id */
   containerRef: React.Ref<HTMLDivElement>
   days: DayLayout[]
@@ -1770,6 +1778,7 @@ function MobileBoard({
                       <li key={row.id}>
                         <MobileTaskCard
                           row={row}
+                          performer={performerLabel(row, selfPerformer)}
                           tone={cluster.tone}
                           onOpen={onOpen}
                           onPanel={onPanel}
@@ -1790,6 +1799,7 @@ function MobileBoard({
 
 const MobileTaskCard = memo(function MobileTaskCard({
   row,
+  performer,
   tone,
   onOpen,
   onPanel,
@@ -1797,6 +1807,7 @@ const MobileTaskCard = memo(function MobileTaskCard({
   canOpenDelegation,
 }: {
   row: WorkBoardRow
+  performer: string | null
   tone: GroupTone | null
   onOpen: (row: WorkBoardRow) => void
   onPanel: (taskId: string, kind: 'staffing' | 'contractor') => void
@@ -1850,7 +1861,9 @@ const MobileTaskCard = memo(function MobileTaskCard({
 
         <span className="flex flex-wrap items-center gap-x-1.5 type-caption text-ink-tertiary">
           <span className="truncate">{row.task_type_name}</span>
-          {row.customer_name && <span className="truncate">· {row.customer_name}</span>}
+          {(performer ?? row.customer_name) && (
+            <span className="truncate">· {performer ?? row.customer_name}</span>
+          )}
           {row.contractor_name && <span className="truncate">· {row.contractor_name}</span>}
         </span>
 
@@ -1935,9 +1948,12 @@ const TaskHeader = memo(function TaskHeader({
   onOpen,
   onOpenEvent,
   onHover,
+  performer,
 }: {
   row: WorkBoardRow
   groupKey: string
+  /** ‏"ארקו" או "וייפר" ללקוח שמבצע בעצמו — גובר על שם הלקוח */
+  performer: string | null
   canOpenEvent: boolean
   /** בלי המפתח אין לחיצה כפולה, וההמתנה שמאפשרת אותה נחסכת */
   canOpenTask: boolean
@@ -1949,7 +1965,7 @@ const TaskHeader = memo(function TaskHeader({
      לו `customers.view`, והכותרת נפלה לשם לקוח האירוע שממילא מוצג בשורה
      שמתחתיה. עכשיו הוא מגיע עם השורה עצמה לכל מי שרואה את המשימה, ולכן
      הנפילה נשארת רק למשימה שאין לה לקוח כלל. */
-  const label = row.customer_name ?? row.end_client_name ?? row.title ?? row.task_type_name
+  const label = performer ?? row.customer_name ?? row.end_client_name ?? row.title ?? row.task_type_name
   /* The fill is the customer's own colour, straight from settings, so a
      regular can find their customer's columns without reading a word. The
      label flips between near-black and white by the fill's luminance —
