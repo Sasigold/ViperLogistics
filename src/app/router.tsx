@@ -7,7 +7,7 @@ import LoginPage from '../features/auth/LoginPage'
 import ResetPasswordPage from '../features/auth/ResetPasswordPage'
 import { RequireAuth } from '../features/auth/guards'
 import { PERM } from '../lib/permissions'
-import { forContractors, forEmployees, forSelfPerformingCustomers } from './nav'
+import { forContractors, forEmployees, forSelfPerformingCustomers, forWarehouseSchedule } from './nav'
 import { lazyPage } from '../lib/lazyPage'
 import { ErrorBoundary, Skeleton } from '../components/ui'
 
@@ -21,6 +21,7 @@ import { ErrorBoundary, Skeleton } from '../components/ui'
  */
 const CalendarPage = lazyPage(() => import('../features/calendar/CalendarPage'))
 const WorkBoardPage = lazyPage(() => import('../features/workboard/WorkBoardPage'))
+const WarehouseSchedulePage = lazyPage(() => import('../features/warehouse/WarehouseSchedulePage'))
 const EventsPage = lazyPage(() => import('../features/events/EventsPage'))
 const EventDetailPage = lazyPage(() => import('../features/events/EventDetailPage'))
 const CustomersPage = lazyPage(() => import('../features/customers/CustomersPage'))
@@ -139,6 +140,13 @@ export const router = createBrowserRouter([
           },
           { path: '/calendar', handle: { perm: PERM.CALENDAR_VIEW }, element: page(<CalendarPage />) },
           { path: '/board', handle: { perm: PERM.BOARD_VIEW }, element: page(<WorkBoardPage />) },
+          /* ‏0196: המפתח ניתן לתפקידים שלמים, והדגל פר-לקוח הוא הגדר — אותה
+             הכרעה של `/my/crew`. */
+          {
+            path: '/warehouse',
+            handle: { perm: PERM.WAREHOUSE_VIEW, audience: forWarehouseSchedule },
+            element: page(<WarehouseSchedulePage />),
+          },
           { path: '/reports', handle: { perm: PERM.REPORTS_VIEW }, element: page(<ReportsPage />) },
           {
             path: '/reports/profitability',

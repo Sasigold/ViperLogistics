@@ -26,6 +26,8 @@ export interface Customer {
   commission_min_event: number
   /** האם דף האירוע מציע הפקת הצעת מחיר ללקוח הקצה (0170) */
   quote_enabled: boolean
+  /** האם מודול "לו״ז מחסן" פתוח ללקוח (0196) */
+  warehouse_schedule_enabled: boolean
   is_active: boolean
   deleted_at: string | null
 }
@@ -1323,6 +1325,8 @@ export interface MyPermissions {
     can_create_events: boolean
     /** הלקוח מבצע בעצמו: בורר "בוצע ע״י" ורשומת סגל משלו (0120/0133). */
     performed_by_enabled: boolean
+    /** לו״ז המחסן פתוח ללקוח הזה (0196). */
+    warehouse_schedule_enabled?: boolean
   } | null
   /** legacy nested shape, kept so `can(resource, action)` call sites still work */
   permissions: Record<string, Partial<Record<PermissionAction, boolean>>>
@@ -2131,4 +2135,33 @@ export interface LoadDayResult {
   hours: LoadHour[] | null
   tasks: LoadTask[] | null
   meta: { date?: string; capacity?: LoadCapacity; scope?: LoadScope; contractor_id?: string | null; denied: boolean }
+}
+
+/** הכנה (לפני האירוע) או החזרה (אחריו) — שתי העמודות של כל אירוע בלו״ז המחסן (0196). */
+export type WarehouseTaskKind = 'prep' | 'return'
+
+/**
+ * שורה של `warehouse_schedule` (0196). קיימת לכל אירוע גם כשעוד לא נערכה —
+ * ואז כל ערך הוא ברירת המחדל שלו, והתאריך נגזר מההקמה/הפירוק.
+ */
+export interface WarehouseScheduleRow {
+  event_id: string
+  kind: WarehouseTaskKind
+  customer_id: string
+  customer_name: string
+  customer_color: string
+  event_number: string | null
+  end_client_name: string | null
+  event_date: string
+  /** התאריך האפקטיבי: מה שהמחסן קבע, או יום ההקמה/הפירוק, או יום האירוע */
+  task_date: string
+  /** האם התאריך נקבע ביד (ולא נגזר) */
+  date_is_manual: boolean
+  start_time: string | null
+  duration_hours: number
+  notes: string | null
+  final_approved: boolean
+  event_ready: boolean
+  checked: boolean
+  updated_at: string | null
 }

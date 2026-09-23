@@ -540,6 +540,16 @@ OUT="$OUT
 $OUT52"
 
 echo
+echo "== the warehouse has a schedule suite =="
+# 53 מקימה שני לקוחות, שני אירועים וחמש דמויות משלה ב-current_date + 810,
+# מעבר לכל טווח אחר. היא רצה אחרונה כי היא משאירה אחריה שורות לו״ז מחסן
+# שאינן מנוקות.
+OUT53=$($PSQL -d vl -f "$HERE/53_the_warehouse_has_a_schedule.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT53"
+OUT="$OUT
+$OUT53"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

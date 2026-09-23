@@ -113,6 +113,7 @@ const adminAudience = (isEmployee: boolean): NavAudience => ({
   isEmployee,
   isContractor: false,
   isSelfPerformingCustomer: false,
+  hasWarehouseSchedule: true,
 })
 
 function adminSees(isEmployee: boolean): string[] {
@@ -278,6 +279,7 @@ describe('מנהל מערכת', () => {
         isEmployee: true,
         isContractor: true,
         isSelfPerformingCustomer: false,
+        hasWarehouseSchedule: true,
       }).flatMap((s) => s.items.map((i) => i.to)),
     ).toContain('/my/staff')
   })
@@ -292,8 +294,30 @@ describe('מנהל מערכת', () => {
         isEmployee: true,
         isContractor: false,
         isSelfPerformingCustomer: true,
+        hasWarehouseSchedule: true,
       }).flatMap((s) => s.items.map((i) => i.to)),
     ).toContain('/my/crew')
+  })
+
+  // ‏0196: לו״ז המחסן — המפתח ניתן לתפקידים שלמים, והדגל פר-לקוח מכריע.
+  it('"לו״ז מחסן" מוצג רק כשהמודול פתוח ללקוח של הקורא', () => {
+    expect(adminSees(false)).toContain('/warehouse')
+    const customer = (hasWarehouseSchedule: boolean) =>
+      visibleNavSections(hasFrom([PERM.WAREHOUSE_VIEW, PERM.EVENTS_LIST]), {
+        isAdmin: false,
+        isEmployee: false,
+        isContractor: false,
+        isSelfPerformingCustomer: false,
+        hasWarehouseSchedule,
+      }).flatMap((s) => s.items.map((i) => i.to))
+    expect(customer(true)).toContain('/warehouse')
+    expect(customer(false)).not.toContain('/warehouse')
+  })
+
+  it('ויוזר "מחסן" רואה אותו ורק אותו, גם בבר התחתון', () => {
+    const sections = visibleNavSections(hasFrom([PERM.WAREHOUSE_VIEW, PERM.WAREHOUSE_EDIT]))
+    expect(sections.flatMap((s) => s.items.map((i) => i.to))).toEqual(['/warehouse'])
+    expect(bottomNavItems(sections).map((i) => i.to)).toEqual(['/warehouse'])
   })
 
   it('ורשומה אחת בלבד מובילה אל /attendance', () => {
