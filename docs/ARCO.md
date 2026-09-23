@@ -184,6 +184,43 @@ curl -X POST "https://<project-ref>.supabase.co/functions/v1/arco-dispatch" \
 ‏`origin: "arco"` מסמן הד: ‏ארקו שלחה עדכון, אנחנו החלנו אותו, והשינוי חוזר
 אליה. התרחיש בצד השני מחליט אם הוא מסנן אותו.
 
+### בכל עדכון שנעשה אצלנו — הצורה השטוחה (0195)
+
+מאז 0195 **המסד שולח בעצמו**, דרך `pg_net`, ברגע ה-commit של השמירה — בלי
+‏`arco-dispatch` ובלי סודות של פונקציות קצה. הכתובת יושבת בטבלה הפרטית
+‏`app.arco_webhook_targets` (אינה בריפו, ואינה קריאה ל-authenticated):
+
+```sql
+insert into app.arco_webhook_targets (connection_id, url)
+values ('<arco_connections.id>', 'https://…')
+on conflict (connection_id) do update set url = excluded.url, updated_at = now();
+```
+
+הגוף הוא אובייקט שטוח אחד, כל ערך מחרוזת (מספר חסר יוצא `null`, טקסט חסר `""`):
+
+```jsonc
+{
+  "customer_name": "שלומי אילני", "order_number": "200062",
+  "location": "חוות רונית", "location_notes": "מקום גדול",
+  "date": "23/02/2026", "event_status": "טרם אושר",
+  "trucks_count": "1", "volume": "3.5",
+  "supplier_pickup": "false", "parking": "true", "porters": "false",
+  "contact_name": "רעות", "phone": "054-6600280", "operational_notes": "…",
+  "setup_datetime": "23/02/2026 10:00", "setup_method": "סידור",
+  "setup_workers": "2", "setup_hours": "3.0",
+  "setup_contractor": "וייפר", "setup_price": "1600.0",
+  "teardown_datetime": "23/02/2026 20:00", "teardown_method": "איסוף",
+  "teardown_workers": "2", "teardown_hours": "3.0",
+  "teardown_contractor": "וייפר", "teardown_price": "1800.0"
+}
+```
+
+‏`*_contractor` הוא "וייפר", או שם הלקוח כשהמשימה מבוצעת ע״י ארקו (ואז המחיר
+‏0). `parking` הוא `no_parking` שלנו — אותו מסלול של הקליטה. **הד של ארקו
+(`origin = 'arco'`) אינו נשלח** ונרשם בתור כ-`skipped`. מצב כל שליחה:
+‏`queued` → `sending` → `sent`/`failed`; ‏`select arco_outbound_retry();`
+שולח מחדש את כל מה שב-`queued`/`failed`.
+
 ## כשמשהו נתקע
 
 | תסמין | איפה מסתכלים |
