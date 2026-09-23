@@ -479,3 +479,65 @@ select t_eq('ומצב החיבור נקרא לו',
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+
+\echo '--- 11. מחיר בלי זמן נסיעה מסומן (0197) ---'
+
+insert into events (id, customer_id, event_date, event_number, location_text,
+                    location_lat, location_lng, location_provider) values
+  -- בלי פין
+  ('30000000-0000-0000-0000-000000005411', '10000000-0000-0000-0000-000000000051',
+   '2026-11-01', 'G1', 'מקום שאין לו פין', null, null, null),
+  -- פין ידני
+  ('30000000-0000-0000-0000-000000005412', '10000000-0000-0000-0000-000000000051',
+   '2026-11-01', 'G2', 'מתחם ליד השער', 31.7683, 35.2137, null),
+  -- פין מהגיאוקודר, מחוץ לכל אזור
+  ('30000000-0000-0000-0000-000000005413', '10000000-0000-0000-0000-000000000051',
+   '2026-11-01', 'G3', 'אילת', 29.5577, 34.9519, 'photon'),
+  -- פין מהגיאוקודר בתוך אזור עם זמן נסיעה
+  ('30000000-0000-0000-0000-000000005414', '10000000-0000-0000-0000-000000000051',
+   '2026-11-01', 'G4', 'תל אביב', 32.0853, 34.7818, 'photon');
+
+insert into pricing_zones (customer_id, name, shape, center_lat, center_lng, radius_km, travel_hours)
+values ('10000000-0000-0000-0000-000000000051', 'מרכז 54', 'circle', 32.0853, 34.7818, 10, 1);
+
+insert into tasks (id, customer_id, event_id, task_type_id, task_date, status_id,
+                   worker_count, hours_count)
+select ('40000000-0000-0000-0000-0000000054' || x.n)::uuid, '10000000-0000-0000-0000-000000000051',
+       ('30000000-0000-0000-0000-0000000054' || x.n)::uuid,
+       (select id from task_types where code = 'setup'), '2026-11-01',
+       (select id from statuses where entity = 'task' and code = 'assigned' and deleted_at is null),
+       2, 3
+  from (values ('11'), ('12'), ('13'), ('14')) x(n);
+
+-- בעל המערכת מ-01_seed
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+
+create temporary table gaps54 as
+  select * from event_travel_gaps(array[
+    '30000000-0000-0000-0000-000000005411', '30000000-0000-0000-0000-000000005412',
+    '30000000-0000-0000-0000-000000005413', '30000000-0000-0000-0000-000000005414']::uuid[]);
+
+select t_eq('בלי פין ⇒ no_pin',
+  (select reason from gaps54 where event_id = '30000000-0000-0000-0000-000000005411'), 'no_pin');
+select t_eq('פין ידני ⇒ manual',
+  (select reason from gaps54 where event_id = '30000000-0000-0000-0000-000000005412'), 'manual');
+select t_eq('מחוץ לאזורים ⇒ no_zone',
+  (select reason from gaps54 where event_id = '30000000-0000-0000-0000-000000005413'), 'no_zone');
+select t_eq('בתוך אזור ⇒ אין סימון',
+  (select count(*)::int from gaps54 where event_id = '30000000-0000-0000-0000-000000005414'), 0);
+
+reset role;
+-- זמן נסיעה שנקבע על המשימות עצמן כבר נמצא במחיר (כולל המשימות שנפתחו אוטומטית)
+update tasks set travel_hours = 2 where event_id = '30000000-0000-0000-0000-000000005411';
+set role authenticated;
+select t_eq('דריסת זמן נסיעה על המשימה מבטלת את הסימון',
+  (select count(*)::int from event_travel_gaps(array['30000000-0000-0000-0000-000000005411']::uuid[])), 0);
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000051a2', false);
+select t_eq('מי שאינו רואה תמחור אינו מקבל סימון',
+  (select count(*)::int from event_travel_gaps(array['30000000-0000-0000-0000-000000005413']::uuid[])), 0);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);

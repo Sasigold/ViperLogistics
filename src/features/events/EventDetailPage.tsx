@@ -58,6 +58,8 @@ import { EventFormModal } from './EventFormModal'
 import { formatCustomValue } from './CustomFieldInput'
 import { TaskDrawer, useCanOpenTaskCard } from '../tasks/TaskDrawer'
 import { EventActivityLog } from './EventActivityLog'
+import { lacksTravel, useEventTravelGaps } from '../pricing/travelGap'
+import { TravelGapNote } from '../pricing/TravelGapNote'
 import { EventQuoteModal } from './EventQuoteModal'
 import { EventSpecsModal } from './EventSpecsModal'
 import { CustomerSignatureModal } from './CustomerSignatureModal'
@@ -174,6 +176,12 @@ export default function EventDetailPage() {
    */
   const { data: priceAddons = [] } = useEventPriceAddons(id ?? null, !!id && has(PERM.PRICING_VIEW))
 
+  /* מחיר שחושב בלי זמן נסיעה (0197): אין פין, הפין מחוץ לאזורי התמחור, או
+     מיקום ידני. השרת מחזיר שורה רק כשיש משימה שהמחיר שלה באמת תלוי בזה. */
+  const travelGapIds = useMemo(() => (id ? [id] : []), [id])
+  const { data: travelGaps } = useEventTravelGaps(travelGapIds, has(PERM.PRICING_VIEW))
+  const travelGap = id ? travelGaps?.get(id) : undefined
+
   const pricing = useMemo(() => {
     const priced = tasks.filter((t) => t.customer_price != null)
     if (!priced.length && !priceAddons.length) return null
@@ -184,6 +192,7 @@ export default function EventDetailPage() {
         label: t.title || t.task_type_name,
         price: Number(t.customer_price),
         isManual: !!t.price_is_manual,
+        noTravel: lacksTravel(travelGap, t),
         /* התוספות של אותה משימה יושבות מתחתיה, ולא בגוש נפרד: "המתנה בשער"
            היא משפט על ההקמה, ומי שקורא את השורה שלה צריך לראות אותו שם. */
         addons: priceAddons.filter((a) => a.task_id === t.id),
@@ -194,7 +203,7 @@ export default function EventDetailPage() {
       total: base + sumAddons(priceAddons),
       unpriced: tasks.length - priced.length,
     }
-  }, [tasks, priceAddons])
+  }, [tasks, priceAddons, travelGap])
 
   /* מנהל הקבלן רואה כמה הוא מקבל על האירוע: סכום התשלום על משימותיו, מתוך
      `contractor_price` שה-view כבר הגביל לתמחור שהוא רשאי לראות ולמשימות
@@ -452,15 +461,18 @@ export default function EventDetailPage() {
                 t.customer_price == null ? (
                   <span className="text-ink-tertiary">—</span>
                 ) : (
-                  <span dir="ltr" className="tabular font-medium">
-                    {fmtMoney(t.customer_price)}
+                  <span className="inline-flex items-center gap-1">
+                    {lacksTravel(travelGap, t) && travelGap && <TravelGapNote reason={travelGap} compact />}
+                    <span dir="ltr" className={cx('tabular font-medium', lacksTravel(travelGap, t) && 'text-error-text')}>
+                      {fmtMoney(t.customer_price)}
+                    </span>
                   </span>
                 ),
             },
           ] as Column<WorkBoardRow>[])
         : []),
     ],
-    [pricing, showStaffing, crewShows, performedByEnabled, canSetPerformedBy, setPerformedBy],
+    [pricing, travelGap, showStaffing, crewShows, performedByEnabled, canSetPerformedBy, setPerformedBy],
   )
 
   if (isLoading || !data) {
@@ -812,6 +824,9 @@ export default function EventDetailPage() {
                           <dt className="min-w-0 shrink type-caption text-ink-tertiary">
                             {r.label}
                             {r.isManual && <span className="ms-1.5 text-warning-text">ידני</span>}
+                            {r.noTravel && travelGap && (
+                              <TravelGapNote reason={travelGap} compact className="ms-1.5 align-middle" />
+                            )}
                           </dt>
                           <dd dir="ltr" className="shrink-0 tabular-nums type-body font-medium">
                             {fmtMoney(r.price)}
@@ -839,6 +854,9 @@ export default function EventDetailPage() {
                       </dd>
                     </div>
                   </dl>
+                  {travelGap && pricing.rows.some((r) => r.noTravel) && (
+                    <TravelGapNote reason={travelGap} className="mt-3" />
+                  )}
                   {pricing.unpriced > 0 && (
                     <p className="mt-2 type-caption text-ink-tertiary">
                       {pricing.unpriced} משימות ללא מחיר עדיין

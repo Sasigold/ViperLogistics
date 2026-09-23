@@ -15,6 +15,7 @@ import {
   StatusPill,
   Switch,
   Tooltip,
+  cx,
 } from '../../components/ui'
 import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
@@ -23,6 +24,8 @@ import { useCustomFormFields, useCustomers, useStatuses } from '../../lib/querie
 import { fmtDate, fmtMoney } from '../../lib/dates'
 import { shortAddress } from '../../lib/address'
 import { EventFormModal } from './EventFormModal'
+import { useEventTravelGaps } from '../pricing/travelGap'
+import { TravelGapNote } from '../pricing/TravelGapNote'
 import { formatCustomValue } from './CustomFieldInput'
 import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
@@ -117,6 +120,9 @@ export default function EventsPage() {
       return new Map(rows.map((r) => [r.event_id, r.price_total == null ? null : Number(r.price_total)]))
     },
   })
+
+  // אירועים שהמחיר שלהם חושב בלי זמן נסיעה (0197) — סימון אדום ליד הסכום
+  const { data: travelGaps } = useEventTravelGaps(priceIds, canSeePricing)
 
   /* Two rules shape the table, and they are the same two that shape the form:
      a field the reader's company configured off should not reappear as a
@@ -239,13 +245,17 @@ export default function EventsPage() {
               sortValue: (e) => totals?.get(e.id) ?? undefined,
               render: (e) => {
                 const total = totals?.get(e.id)
+                const gap = travelGaps?.get(e.id)
                 /* מקף ולא "0 ₪": אירוע שאיש עוד לא תמחר אינו אירוע ששווה
                    אפס, וההבדל בין השניים הוא בדיוק מה שהמשרד מחפש כאן. */
                 return total == null ? (
                   <span className="text-ink-tertiary">—</span>
                 ) : (
-                  <span dir="ltr" className="tabular font-medium">
-                    {fmtMoney(total)}
+                  <span className="inline-flex items-center gap-1">
+                    {gap && <TravelGapNote reason={gap} compact />}
+                    <span dir="ltr" className={cx('tabular font-medium', gap && 'text-error-text')}>
+                      {fmtMoney(total)}
+                    </span>
                   </span>
                 )
               },
@@ -273,7 +283,7 @@ export default function EventsPage() {
         })),
     ]
     return all.filter((c) => !hidden.has(c.key))
-  }, [showCustomer, showNumber, showLocation, showVolume, showTrucks, canSeePricing, totals, customFields, showsEventField])
+  }, [showCustomer, showNumber, showLocation, showVolume, showTrucks, canSeePricing, totals, travelGaps, customFields, showsEventField])
 
   const filtered = !!q || !!customer || showCancelled
 
