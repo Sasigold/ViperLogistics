@@ -189,6 +189,7 @@ curl -X POST "https://<project-ref>.supabase.co/functions/v1/arco-dispatch" \
 | תסמין | איפה מסתכלים |
 |---|---|
 | ‏Make מקבל 401 | `ARCO_INTAKE_SECRET` והכותרת `x-arco-secret` אינם זהים |
+| ‏Make מקבל 503 `intake secret not configured` | הסוד `ARCO_INTAKE_SECRET` לא הוגדר בסודות של פונקציות הקצה (Dashboard → Edge Functions → Secrets). שימו לב: מודול ה-HTTP ב-Make מסמן את הריצה כהצלחה גם על 503, ולכן זה נראה ירוק ב-Make וריק אצלנו — `arco_connections.last_seen_at` ריק הוא הסימן |
 | ‏Make מקבל 200 אבל אין אירוע | `select * from arco_deliveries order by received_at desc` — העמודה `reason` אומרת למה |
 | ההזמנה נקלטה, המחיר נמוך מדי | `location_resolved: false` ⇒ אין פין ⇒ אין שעות נסיעה. מסמנים מיקום במסך האירוע, והמחיר מחושב מחדש מעצמו — **ומאותו רגע כל אירוע עתידי באותו אולם יורש את הפין הזה** (0185) |
 | אין דיווחים יוצאים | `select * from arco_outbound where status <> 'sent'` — ואז סעיף 4 (‏GUC-ים) וסעיף 1 (`ARCO_EVENT_WEBHOOK_URL`) |
