@@ -178,6 +178,11 @@ export const PERM = {
   /* הגדרות שכר ושעון לסגל של הקבלן (0103). מפתח נפרד מהמשרדי
      `attendance.manage_pay`, שמתיר לכתוב את ההגדרות של כל אדם במערכת. */
   PORTAL_WORKER_SETTINGS: 'portal.worker_settings',
+  /* ‏0196: לו״ז מחסן — הכנה והחזרה לכל אירוע. השער בפועל הוא גם הדגל
+     `customers.warehouse_schedule_enabled`, ולכן המפתח לבדו אינו פותח מסך
+     ללקוח שהמודול סגור לו. */
+  WAREHOUSE_VIEW: 'warehouse.view',
+  WAREHOUSE_EDIT: 'warehouse.edit',
   NOTIFICATIONS_PREFERENCES: 'notifications.preferences',
   NOTIFICATIONS_MANAGE: 'notifications.manage',
   /* ‏0176: מודול משלו ולא מפתח תחת `settings` — מסך ההגדרות עונה על "מה

@@ -19,6 +19,7 @@ import {
   TrendingUp,
   Truck,
   Users,
+  Warehouse,
 } from '../components/ui/icons'
 import type { ComponentType } from 'react'
 import { PERM } from '../lib/permissions'
@@ -42,6 +43,11 @@ export interface NavAudience {
   isContractor: boolean
   /** לקוח שמבצע את המשימות שלו בעצמו, ולכן מנהל סגל משלו (0133) */
   isSelfPerformingCustomer: boolean
+  /**
+   * לו״ז המחסן רלוונטי לו (0196): איש צוות או אדמין — תמיד; משתמש לקוח —
+   * רק כשהמודול פתוח ללקוח שלו; קבלן — לעולם לא.
+   */
+  hasWarehouseSchedule: boolean
 }
 
 /** בלי הקשר — הכול פתוח. ברירת המחדל של בדיקות ושל קריאות ישנות. */
@@ -50,16 +56,27 @@ export const ANY_AUDIENCE: NavAudience = {
   isEmployee: true,
   isContractor: true,
   isSelfPerformingCustomer: true,
+  hasWarehouseSchedule: true,
 }
 
 export function navAudience(me: MyPermissions | null): NavAudience {
   if (!me)
-    return { isAdmin: false, isEmployee: false, isContractor: false, isSelfPerformingCustomer: false }
+    return {
+      isAdmin: false,
+      isEmployee: false,
+      isContractor: false,
+      isSelfPerformingCustomer: false,
+      hasWarehouseSchedule: false,
+    }
   return {
     isAdmin: me.profile.is_admin,
     isEmployee: (me.roles ?? []).length > 0,
     isContractor: !!me.profile.contractor_id || me.profile.user_kind === 'contractor_user',
     isSelfPerformingCustomer: !!me.customer?.performed_by_enabled,
+    hasWarehouseSchedule:
+      me.profile.is_admin ||
+      me.profile.user_kind === 'staff' ||
+      (me.profile.user_kind === 'customer_user' && !!me.customer?.warehouse_schedule_enabled),
   }
 }
 
@@ -83,6 +100,13 @@ export const forContractors = (a: NavAudience) => a.isContractor
  * רשומת סגל שתמיד תישאר ריקה.
  */
 export const forSelfPerformingCustomers = (a: NavAudience) => a.isSelfPerformingCustomer
+
+/**
+ * לו״ז המחסן (0196) — אותו נימוק של `forSelfPerformingCustomers`: המפתח ניתן
+ * לתפקיד `customer_manager` כולו, והדגל פר-לקוח הוא השער. בלעדיו כל מנהל
+ * אצל לקוח היה רואה לו״ז שתמיד יישאר ריק.
+ */
+export const forWarehouseSchedule = (a: NavAudience) => a.hasWarehouseSchedule
 
 export interface NavItem {
   to: string
@@ -134,6 +158,17 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/portal', label: 'כספים ותשלומים', shortLabel: 'כספים', icon: Banknote, perm: PERM.PORTAL_VIEW, primary: true },
       { to: '/calendar', label: 'לוח שנה', icon: Calendar, perm: PERM.CALENDAR_VIEW, primary: true },
       { to: '/board', label: 'לו״ז עבודה', shortLabel: 'לו״ז', icon: ClipboardList, perm: PERM.BOARD_VIEW, primary: true },
+      /* ‏0196: הכנה והחזרה במחסן לכל אירוע. בלי `primary`, כדי שלא ידחוק את
+         "אירועים" מהבר התחתון של מנהל הלקוח; ליוזר "מחסן", שזה המסך היחיד
+         שלו, הבר ממלא את עצמו ממה שנשאר גלוי ממילא. */
+      {
+        to: '/warehouse',
+        label: 'לו״ז מחסן',
+        shortLabel: 'מחסן',
+        icon: Warehouse,
+        perm: PERM.WAREHOUSE_VIEW,
+        audience: forWarehouseSchedule,
+      },
     ],
   },
   {
@@ -284,6 +319,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/': 'דשבורד',
   '/calendar': 'לוח שנה',
   '/board': 'לו״ז עבודה',
+  '/warehouse': 'לו״ז מחסן',
   '/events': 'אירועים',
   '/customers': 'לקוחות',
   '/users': 'עובדים',

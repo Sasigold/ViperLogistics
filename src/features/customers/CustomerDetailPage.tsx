@@ -178,7 +178,7 @@ function DetailsTab({ customer }: { customer: Customer }) {
 
   const dirty = useMemo(
     () =>
-      (['name', 'color', 'can_create_events', 'contact_name', 'contact_phone', 'contact_email', 'notes', 'is_active', 'warehouse_id'] as const).some(
+      (['name', 'color', 'can_create_events', 'contact_name', 'contact_phone', 'contact_email', 'notes', 'is_active', 'warehouse_id', 'warehouse_schedule_enabled'] as const).some(
         (k) => form[k] !== customer[k],
       ),
     [form, customer],
@@ -199,6 +199,7 @@ function DetailsTab({ customer }: { customer: Customer }) {
           notes: form.notes,
           is_active: form.is_active,
           warehouse_id: form.warehouse_id,
+          warehouse_schedule_enabled: form.warehouse_schedule_enabled,
         })
         .eq('id', customer.id)
       if (error) throw error
@@ -337,6 +338,15 @@ function DetailsTab({ customer }: { customer: Customer }) {
               disabled={!canEdit}
               label="לקוח פעיל"
               description="לקוח לא פעיל לא יופיע ברשימות בחירה"
+            />
+            {/* ‏0196: השער של "לו״ז מחסן" — המפתחות ניתנים לתפקידים שלמים,
+                והדגל הזה הוא מה שמכריע אם יש ללקוח לו״ז מחסן בכלל. */}
+            <Switch
+              checked={form.warehouse_schedule_enabled}
+              onChange={(v) => setForm((f) => ({ ...f, warehouse_schedule_enabled: v }))}
+              disabled={!canEdit}
+              label="לו״ז מחסן"
+              description="משימת הכנה ומשימת החזרה לכל אירוע, ויוזר ״מחסן״ שרואה רק אותן"
             />
           </div>
         </CardBody>
