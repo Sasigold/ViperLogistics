@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -15,7 +15,7 @@ import {
   cx,
   useToast,
 } from '../../components/ui'
-import { Check, ICON, STROKE } from '../../components/ui/icons'
+import { CalendarCheck, Check, ICON, STROKE } from '../../components/ui/icons'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
@@ -220,18 +220,62 @@ function WarehouseSchedule() {
   const columnCount = days.reduce((n, d) => n + d.rows.length, 0)
   const tableWidth = LEGEND_W + columnCount * COL_W + (days.length - 1) * DAY_GAP
 
+  /* ── מעבר להיום ─────────────────────────────────────────────────────────
+     הלו״ז מדלג על ימים שאין בהם כלום, ולכן "היום" הוא היום עצמו אם יש בו
+     עמודה, ואחרת היום הקרוב אחריו שיש בו — מחסן שפותח את המסך בבוקר ריק
+     רוצה לראות מה מחכה לו, ולא הודעה שאין כלום. החישוב במדידה ולא בקיזוז
+     מחושב, כדי שיהיה נכון בשני הכיוונים: המקרא דביק *מעל* הטבלה, ולכן
+     היעד הוא הקצה שלו ולא קצה המסגרת. */
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const scrollToToday = useCallback(
+    (behavior: ScrollBehavior) => {
+      const el = scrollRef.current
+      const target = days.find((d) => d.date >= today) ?? days[days.length - 1]
+      const head = target && el?.querySelector<HTMLElement>(`[data-day="${target.date}"]`)
+      if (!el || !head) return
+      const rtl = getComputedStyle(el).direction === 'rtl'
+      const box = el.getBoundingClientRect()
+      const cell = head.getBoundingClientRect()
+      const delta = rtl ? cell.right - (box.right - LEGEND_W) : cell.left - (box.left + LEGEND_W)
+      el.scrollBy({ left: delta, behavior })
+      if (target.date !== today && behavior === 'smooth')
+        toast.info('אין הכנות או החזרות היום', { description: `מוצג היום הקרוב: ${fmtWeekday(target.date)} ${fmtDate(target.date)}` })
+    },
+    [days, today, toast],
+  )
+
+  /* החודש צריך לחזור מהשרת לפני שיש עמודה לגלול אליה. הכניסה למסך היא
+     בקשה כזו בלי אנימציה; הכפתור — עם. */
+  const [jump, setJump] = useState<ScrollBehavior | null>('auto')
+  useEffect(() => {
+    if (!jump || isLoading) return
+    scrollToToday(jump)
+    setJump(null)
+  }, [jump, isLoading, scrollToToday])
+
+  const goToToday = () => {
+    if (!isSameMonth(month, new Date())) setMonth(startOfMonth(new Date()))
+    setJump('smooth')
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader
         title="לו״ז מחסן"
         subtitle="הכנה לפני כל אירוע, והחזרה אחריו"
         actions={
-          <MonthStepper
-            month={month}
-            onStep={(d) => setMonth((m) => addMonths(m, d))}
-            onToday={() => setMonth(startOfMonth(new Date()))}
-            atToday={isSameMonth(month, new Date())}
-          />
+          <>
+            <Button size="sm" onClick={goToToday} title="מעבר לעמודה של היום">
+              <CalendarCheck size={ICON.sm} strokeWidth={STROKE} aria-hidden />
+              היום
+            </Button>
+            <MonthStepper
+              month={month}
+              onStep={(d) => setMonth((m) => addMonths(m, d))}
+              onToday={goToToday}
+              atToday={isSameMonth(month, new Date())}
+            />
+          </>
         }
       />
 
@@ -244,7 +288,7 @@ function WarehouseSchedule() {
           <EmptyState title="אין הכנות או החזרות בחודש הזה" description="אירוע חדש יופיע כאן עם משימת הכנה ומשימת החזרה." />
         </Card>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+        <div ref={scrollRef} className="overflow-x-auto rounded-xl border border-line bg-surface">
           <table className="border-separate border-spacing-0 text-[0.8125rem]" style={{ tableLayout: 'fixed', width: tableWidth }}>
             <colgroup>
               <col style={{ width: LEGEND_W }} />
@@ -269,6 +313,7 @@ function WarehouseSchedule() {
                   <Fragment key={d.date}>
                     {i > 0 && <DayGap />}
                     <th
+                      data-day={d.date}
                       colSpan={d.rows.length}
                       className={cx(
                         'overflow-hidden text-ellipsis whitespace-nowrap border-b border-e border-line px-2 text-center type-caption font-semibold',
