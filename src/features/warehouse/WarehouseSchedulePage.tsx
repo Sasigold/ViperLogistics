@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -52,6 +52,8 @@ export default function WarehouseSchedulePage() {
 
 const COL_W = 148
 const LEGEND_W = 116
+/** רווח בין יום ליום — אותו אוויר שמפריד בין הימים בלו״ז העבודה */
+const DAY_GAP = 12
 const ROW_H = 38
 const NOTES_H = 88
 
@@ -216,7 +218,7 @@ function WarehouseSchedule() {
      מפורש; בלעדיו הדפדפן חוזר לפריסה האוטומטית, ושם לקוח ארוך או כותרת
      של יום בן עמודה אחת מותחים את העמודה שלהם. כל עמודה — אותו רוחב. */
   const columnCount = days.reduce((n, d) => n + d.rows.length, 0)
-  const tableWidth = LEGEND_W + columnCount * COL_W
+  const tableWidth = LEGEND_W + columnCount * COL_W + (days.length - 1) * DAY_GAP
 
   return (
     <div className="space-y-4">
@@ -246,7 +248,14 @@ function WarehouseSchedule() {
           <table className="border-separate border-spacing-0 text-[0.8125rem]" style={{ tableLayout: 'fixed', width: tableWidth }}>
             <colgroup>
               <col style={{ width: LEGEND_W }} />
-              {days.flatMap((d) => d.rows.map((r) => <col key={rowKey(r)} style={{ width: COL_W }} />))}
+              {days.map((d, i) => (
+                <Fragment key={d.date}>
+                  {i > 0 && <col style={{ width: DAY_GAP }} />}
+                  {d.rows.map((r) => (
+                    <col key={rowKey(r)} style={{ width: COL_W }} />
+                  ))}
+                </Fragment>
+              ))}
             </colgroup>
             <thead>
               <tr>
@@ -256,19 +265,21 @@ function WarehouseSchedule() {
                 >
                   יום
                 </th>
-                {days.map((d) => (
-                  <th
-                    key={d.date}
-                    colSpan={d.rows.length}
-                    className={cx(
-                      'overflow-hidden text-ellipsis whitespace-nowrap border-b border-e border-line px-2 text-center type-caption font-semibold',
-                      d.date === today ? 'bg-[var(--vl-board-today)] text-ink' : 'bg-[var(--vl-board-band)] text-ink',
-                    )}
-                  >
-                    <span title={`${fmtWeekday(d.date)} · ${fmtDate(d.date)}`}>
-                      {fmtWeekday(d.date)} · {fmtDate(d.date)}
-                    </span>
-                  </th>
+                {days.map((d, i) => (
+                  <Fragment key={d.date}>
+                    {i > 0 && <DayGap />}
+                    <th
+                      colSpan={d.rows.length}
+                      className={cx(
+                        'overflow-hidden text-ellipsis whitespace-nowrap border-b border-e border-line px-2 text-center type-caption font-semibold',
+                        d.date === today ? 'bg-[var(--vl-board-today)] text-ink' : 'bg-[var(--vl-board-band)] text-ink',
+                      )}
+                    >
+                      <span title={`${fmtWeekday(d.date)} · ${fmtDate(d.date)}`}>
+                        {fmtWeekday(d.date)} · {fmtDate(d.date)}
+                      </span>
+                    </th>
+                  </Fragment>
                 ))}
               </tr>
               <tr>
@@ -278,13 +289,16 @@ function WarehouseSchedule() {
                 >
                   הכנה / החזרה
                 </th>
-                {days.flatMap((d) =>
-                  d.rows.map((r) => (
-                    <th key={rowKey(r)} className="overflow-hidden border-b border-e border-line p-0" style={{ background: KIND_COLOR[r.kind] }}>
-                      <KindHeader row={r} canEdit={ctx.canEdit} save={ctx.save} />
-                    </th>
-                  )),
-                )}
+                {days.map((d, i) => (
+                  <Fragment key={d.date}>
+                    {i > 0 && <DayGap />}
+                    {d.rows.map((r) => (
+                      <th key={rowKey(r)} className="overflow-hidden border-b border-e border-line p-0" style={{ background: KIND_COLOR[r.kind] }}>
+                        <KindHeader row={r} canEdit={ctx.canEdit} save={ctx.save} />
+                      </th>
+                    ))}
+                  </Fragment>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -297,17 +311,20 @@ function WarehouseSchedule() {
                   >
                     {f.label}
                   </th>
-                  {days.flatMap((d) =>
-                    d.rows.map((r) => (
-                      <td
-                        key={rowKey(r)}
-                        className="overflow-hidden border-b border-e border-line px-1.5 text-center align-middle text-ink"
-                        style={{ background: tones.get(r.event_id), height: f.height ?? ROW_H }}
-                      >
-                        {f.render(r, ctx)}
-                      </td>
-                    )),
-                  )}
+                  {days.map((d, i) => (
+                    <Fragment key={d.date}>
+                      {i > 0 && <DayGap />}
+                      {d.rows.map((r) => (
+                        <td
+                          key={rowKey(r)}
+                          className="overflow-hidden border-b border-e border-line px-1.5 text-center align-middle text-ink"
+                          style={{ background: tones.get(r.event_id), height: f.height ?? ROW_H }}
+                        >
+                          {f.render(r, ctx)}
+                        </td>
+                      ))}
+                    </Fragment>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -316,6 +333,14 @@ function WarehouseSchedule() {
       )}
     </div>
   )
+}
+
+/**
+ * הרווח בין יום ליום: תא ריק בצבע הרקע של העמוד, בלי קו תחתון, כך שכל יום
+ * נקרא כגוש משלו. הקו בצד שלו הוא הגבול של היום שאחריו.
+ */
+function DayGap() {
+  return <td aria-hidden className="border-e border-line bg-canvas p-0" />
 }
 
 /**
