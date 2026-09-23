@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate } from 'react-router'
+import { Navigate, useLocation } from 'react-router'
 import { AlertCircle, ICON, STROKE } from '../../components/ui/icons'
 import { Button, Field, Input } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
@@ -15,7 +15,12 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [sendingReset, setSendingReset] = useState(false)
 
-  if (booted && session) return <Navigate to="/" replace />
+  const location = useLocation()
+  /* רק נתיב פנימי — `//host` היה יציאה מהאתר */
+  const from = (location.state as { from?: unknown } | null)?.from
+  const back = typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '/'
+
+  if (booted && session) return <Navigate to={back} replace />
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()

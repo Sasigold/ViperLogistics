@@ -259,3 +259,41 @@ on conflict (connection_id) do update set url = excluded.url, updated_at = now()
    שמסמנים אותו ביד.
 3. **כתובות ה-webhook** — `ARCO_EVENT_WEBHOOK_URL` לעדכונים, ומודול HTTP
    נוסף בסוף תרחיש ההזמנה לכתובת המחירים.
+
+## הטמעת פופאפ עריכת האירוע (iframe)
+
+אותו טופס "עריכת אירוע" של דף האירוע, לבדו — בלי תפריט ובלי כותרת —
+כדי שארקו תפתח אותו מתוך המערכת שלה:
+
+```html
+<iframe
+  src="https://<הדומיין של המערכת>/embed/event?order=26000233"
+  style="width:100%;height:760px;border:0"></iframe>
+```
+
+| פרמטר | |
+|---|---|
+| `order` | מספר האירוע — אותו `order_number` שארקו כבר מחזיקה |
+| `id` | לחלופין, מזהה האירוע אצלנו (`event_id` מהתשובה של `arco-intake`) |
+
+**הכניסה היא הכניסה הרגילה.** בפעם הראשונה המסגרת מציגה את מסך ההתחברות;
+אחרי הכניסה היא חוזרת לאותה כתובת. מה שמשתמש של ארקו רואה ורשאי לשנות
+בטופס הוא בדיוק מה שהוא רואה ורשאי לשנות במערכת עצמה — השדות, ה-RLS
+והמפתח `events.edit`. מספר של אירוע שאינו שלה פשוט "לא נמצא".
+
+**הדף המארח שומע מה קרה** דרך `postMessage`:
+
+```js
+window.addEventListener('message', (e) => {
+  if (e.data?.source !== 'viper') return
+  // e.data.type: 'viper:event-saved' | 'viper:event-closed'
+  // e.data.event_id, e.data.order_number
+})
+```
+
+‏`viper:event-saved` נשלח אחרי שמירה (ואחריו אין `closed`), ו-`viper:event-closed`
+כשהטופס נסגר בלי שמירה. השמירה עצמה יוצאת לארקו גם ב-webhook הרגיל, כמו
+כל שינוי אחר באירוע.
+
+**דפדפנים שחוסמים אחסון בצד שלישי** (Safari, מצב פרטי) עלולים לבקש כניסה
+מחדש בכל פתיחה של המסגרת. זה מחיר של iframe, לא של הטופס.

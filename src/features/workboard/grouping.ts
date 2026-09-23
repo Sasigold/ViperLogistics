@@ -179,3 +179,21 @@ export function clusterDay(
   }
   return runs
 }
+
+/**
+ * מי שמבצע את המשימה, כפי שלקוח שמבצע בעצמו קורא את הלו״ז שלו.
+ *
+ * לקוח כזה (ארקו) רואה בלו״ז רק משימות שלו, ולכן שמו בראש כל עמודה אינו
+ * אומר לו דבר. מה שהוא צריך לדעת הוא מי מגיע: הוא עצמו או וייפר — לפי
+ * `performed_by` של השורה, ובשם הלקוח כפי שהוא במערכת ולא בשם מוקשח.
+ * ‏null לכל קורא אחר, או למשימה של לקוח אחר, והכותרת נשארת כפי שהייתה.
+ */
+export type SelfPerformer = { id: string; name: string; performed_by_enabled: boolean } | null
+
+export function performerLabel(
+  row: Pick<WorkBoardRow, 'customer_id' | 'customer_name' | 'performed_by'>,
+  reader: SelfPerformer,
+): string | null {
+  if (!reader?.performed_by_enabled || row.customer_id !== reader.id) return null
+  return row.performed_by === 'arko' ? row.customer_name ?? reader.name : 'וייפר'
+}

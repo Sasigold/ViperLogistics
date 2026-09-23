@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Navigate, Outlet, useMatches } from 'react-router'
+import { Navigate, Outlet, useLocation, useMatches } from 'react-router'
 import { Truck } from '../../components/ui/icons'
 import { Button, Card, EmptyState, Spinner } from '../../components/ui'
 import { useAuth } from '../../state/auth'
@@ -50,9 +50,12 @@ function BootFailed({ error, onRetry }: { error: unknown; onRetry: () => void })
 
 export function RequireAuth() {
   const { session, booted, me, meError, refreshMe } = useAuth()
+  const location = useLocation()
 
   if (!booted) return <Booting />
-  if (!session) return <Navigate to="/login" replace />
+  /* הדרך חוזרת אחרי הכניסה — בלעדיה iframe של `/embed/event` היה נוחת,
+     אחרי ההתחברות, על הדשבורד המלא בתוך המסגרת של הלקוח */
+  if (!session) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
   if (!me) {
     return meError ? <BootFailed error={meError} onRetry={() => void refreshMe()} /> : <Booting />
   }
