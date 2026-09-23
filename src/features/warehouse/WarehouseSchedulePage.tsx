@@ -212,6 +212,11 @@ function WarehouseSchedule() {
   const days = useMemo(() => groupByDay(rows), [rows])
   const tones = useMemo(() => eventTones(rows), [rows])
   const today = toISODate(new Date())
+  /* ‏`table-layout: fixed` מכבד את רוחב העמודות רק כשלטבלה עצמה יש רוחב
+     מפורש; בלעדיו הדפדפן חוזר לפריסה האוטומטית, ושם לקוח ארוך או כותרת
+     של יום בן עמודה אחת מותחים את העמודה שלהם. כל עמודה — אותו רוחב. */
+  const columnCount = days.reduce((n, d) => n + d.rows.length, 0)
+  const tableWidth = LEGEND_W + columnCount * COL_W
 
   return (
     <div className="space-y-4">
@@ -238,7 +243,7 @@ function WarehouseSchedule() {
         </Card>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-line bg-surface">
-          <table className="border-separate border-spacing-0 text-[0.8125rem]" style={{ tableLayout: 'fixed' }}>
+          <table className="border-separate border-spacing-0 text-[0.8125rem]" style={{ tableLayout: 'fixed', width: tableWidth }}>
             <colgroup>
               <col style={{ width: LEGEND_W }} />
               {days.flatMap((d) => d.rows.map((r) => <col key={rowKey(r)} style={{ width: COL_W }} />))}
@@ -256,11 +261,13 @@ function WarehouseSchedule() {
                     key={d.date}
                     colSpan={d.rows.length}
                     className={cx(
-                      'border-b border-e border-line px-2 text-center type-caption font-semibold',
+                      'overflow-hidden text-ellipsis whitespace-nowrap border-b border-e border-line px-2 text-center type-caption font-semibold',
                       d.date === today ? 'bg-[var(--vl-board-today)] text-ink' : 'bg-[var(--vl-board-band)] text-ink',
                     )}
                   >
-                    {fmtWeekday(d.date)} · {fmtDate(d.date)}
+                    <span title={`${fmtWeekday(d.date)} · ${fmtDate(d.date)}`}>
+                      {fmtWeekday(d.date)} · {fmtDate(d.date)}
+                    </span>
                   </th>
                 ))}
               </tr>
@@ -273,7 +280,7 @@ function WarehouseSchedule() {
                 </th>
                 {days.flatMap((d) =>
                   d.rows.map((r) => (
-                    <th key={rowKey(r)} className="border-b border-e border-line p-0" style={{ background: KIND_COLOR[r.kind] }}>
+                    <th key={rowKey(r)} className="overflow-hidden border-b border-e border-line p-0" style={{ background: KIND_COLOR[r.kind] }}>
                       <KindHeader row={r} canEdit={ctx.canEdit} save={ctx.save} />
                     </th>
                   )),
@@ -294,7 +301,7 @@ function WarehouseSchedule() {
                     d.rows.map((r) => (
                       <td
                         key={rowKey(r)}
-                        className="border-b border-e border-line px-1.5 text-center align-middle text-ink"
+                        className="overflow-hidden border-b border-e border-line px-1.5 text-center align-middle text-ink"
                         style={{ background: tones.get(r.event_id), height: f.height ?? ROW_H }}
                       >
                         {f.render(r, ctx)}
