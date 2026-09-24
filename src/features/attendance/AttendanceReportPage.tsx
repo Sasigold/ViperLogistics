@@ -384,6 +384,8 @@ export function AttendanceReport({
 
   const rows = data?.rows ?? []
   const totals = data?.totals
+  /* השרת מכריע, והמסך רק מציג: אמת גם לעובד שהדוח כולו שלו (0198) — הוא
+     רואה את השכר שלו, ולא רק את השעות. */
   const showMoney = !!data?.can_see_pay
 
   /**
@@ -998,6 +1000,12 @@ export function AttendanceReport({
                 <>
                   <span className="text-ink-tertiary" aria-hidden>|</span>
                   <span className="tabular text-warning-text">{fmtDurationHHMM(overageHours)} שעות חריגה</span>
+                </>
+              )}
+              {showMoney && (
+                <>
+                  <span className="text-ink-tertiary" aria-hidden>|</span>
+                  <span className="tabular font-semibold text-ink">{fmtMoney(totals?.total ?? 0)} לתשלום</span>
                 </>
               )}
             </p>

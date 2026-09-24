@@ -1855,6 +1855,10 @@ export interface AttendanceReportRow {
 
 export interface AttendanceReport {
   rows: AttendanceReportRow[]
+  /**
+   * האם להציג סכומים: מי שרואה את הכסף של כולם, או מי שכל הדוח הוא שלו
+   * ומחזיק `attendance.view_own_pay` — העובד רואה את השכר שלו (0198).
+   */
   can_see_pay: boolean
   /** הסיכומים סופרים שורות מאושרות בלבד; מה שממתין נספר בנפרד */
   totals: {
