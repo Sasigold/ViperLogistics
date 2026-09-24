@@ -260,7 +260,7 @@ on conflict (connection_id) do update set url = excluded.url, updated_at = now()
 | רכיב | מצב |
 |---|---|
 | מיגרציות 0182–0185 | הוחלו על פרויקט `ViperLogistics` |
-| מיגרציה 0199 (התראה) | **טרם הוחלה** — `supabase db push` |
+| מיגרציה 0199 (התראה) | הוחלה על פרויקט `ViperLogistics` |
 | `arco-intake`, `arco-dispatch` | נפרסו עם `verify_jwt=false` |
 | החיבור | נפתח אוטומטית על הלקוח "ארקו" — פעיל, ומדווח |
 | שני המודולים ב-Make | נוספו לשני התרחישים, אחרי המודולים הקיימים |
