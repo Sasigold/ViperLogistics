@@ -541,3 +541,119 @@ select t_eq('מי שאינו רואה תמחור אינו מקבל סימון',
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+
+\echo '--- 10. הזמנה שארקו דוחפת מגיעה גם כהתראה (0199) ---'
+
+create temporary table na51 as
+  select count(*)::int as admins from profiles
+   where is_admin and is_active and deleted_at is null;
+
+create or replace function t51_notes(p_title text)
+returns int language sql as $$
+  select count(*)::int from notifications
+   where type = 'arco_order_received' and title = p_title
+     and body like '%26000555%'
+$$;
+
+\o /dev/null
+select arco_ingest_event(jsonb_build_object(
+  'order_number',   '26000555',
+  'customer_name',  'חתונת כהן',
+  'location',       'חיפה',
+  'order_date',     '12/10/2026',
+  'truck_quantity', '1',
+  'setup_date_and_time', '12/10/2026 09:00',
+  'setup_crew_size', '2',
+  'setup_hours_quantity', '3'),
+  jsonb_build_object('connection_id', (select connection_id from ak51)));
+\o
+
+create temporary table ne51 as
+  select id as event_id from events
+   where customer_id = '10000000-0000-0000-0000-000000000051'
+     and event_number = '26000555' and deleted_at is null;
+
+select t_eq('אירוע חדש מארקו מגיע לכל מנהל מערכת',
+  t51_notes('אירוע חדש מארקו'), (select admins from na51));
+select t_eq('ולא לפי מקרה: יש מנהלים לשלוח אליהם', (select admins > 0 from na51), true);
+select t_eq('וההתראה מובילה לאירוע עצמו',
+  (select count(*)::int from notifications
+    where type = 'arco_order_received' and entity_type = 'event'
+      and entity_id = (select event_id from ne51)), (select admins from na51));
+select t_eq('והגוף אומר מי הלקוח הסופי',
+  (select count(*)::int from notifications
+    where type = 'arco_order_received' and title = 'אירוע חדש מארקו'
+      and body like '%חתונת כהן%' and body like '%12/10/2026%'), (select admins from na51));
+select t_eq('ומי שאינו מנהל מערכת אינו מקבל אותה',
+  (select count(*)::int from notifications
+    where type = 'arco_order_received'
+      and recipient_id = '20000000-0000-0000-0000-0000000051a1'), 0);
+
+-- ‏Make שולח את אותה הזמנה שוב ושוב; משלוח שלא שינה דבר אינו חדשות.
+\o /dev/null
+select arco_ingest_event(jsonb_build_object(
+  'order_number',   '26000555',
+  'customer_name',  'חתונת כהן',
+  'location',       'חיפה',
+  'order_date',     '12/10/2026',
+  'truck_quantity', '1',
+  'setup_date_and_time', '12/10/2026 09:00',
+  'setup_crew_size', '2',
+  'setup_hours_quantity', '3'),
+  jsonb_build_object('connection_id', (select connection_id from ak51)));
+\o
+
+select t_eq('משלוח חוזר בלי שינוי אינו מוציא התראה',
+  (select count(*)::int from notifications
+    where type = 'arco_order_received' and entity_id = (select event_id from ne51)),
+  (select admins from na51));
+
+\o /dev/null
+select arco_ingest_event(jsonb_build_object(
+  'order_number',   '26000555',
+  'order_date',     '12/10/2026',
+  'truck_quantity', '3'),
+  jsonb_build_object('connection_id', (select connection_id from ak51)));
+\o
+
+select t_eq('עדכון ששינה משהו — מוציא',
+  t51_notes('ארקו עדכנה הזמנה'), (select admins from na51));
+select t_eq('והגוף מפרט מה השתנה, מאיזה ערך לאיזה',
+  (select count(*)::int from notifications
+    where type = 'arco_order_received' and title = 'ארקו עדכנה הזמנה'
+      and body like '%26000555%' and body like '%3 (היה 1)%'), (select admins from na51));
+
+\o /dev/null
+select arco_ingest_spec(jsonb_build_object(
+  'order_number', '26000555',
+  'file',         'https://live-public.origamicloud.ms/file/?f=ccc'),
+  jsonb_build_object('connection_id', (select connection_id from ak51)));
+\o
+
+select t_eq('מפרט חדש מארקו — מוציא',
+  t51_notes('מפרט חדש מארקו'), (select admins from na51));
+
+\o /dev/null
+select arco_ingest_event(jsonb_build_object('order_number', '26000555x'),
+  jsonb_build_object('connection_id', (select connection_id from ak51)));
+\o
+
+select t_eq('הזמנה שלא נקלטה — מוציאה, עם הסיבה',
+  (select count(*)::int from notifications
+    where type = 'arco_order_received' and title = 'הזמנה מארקו לא נקלטה'
+      and body like '%26000555%' and body like '%תאריך האירוע חסר%'
+      and entity_id is null), (select admins from na51));
+
+-- ומה שהמנהל צמצם — מצומצם: לקוח שאינו ברשימה אינו מבשר.
+insert into notification_scope_modes (type, entity_kind, mode)
+values ('arco_order_received', 'customer', 'selected');
+\o /dev/null
+select arco_ingest_event(jsonb_build_object(
+  'order_number', '26000556', 'order_date', '13/10/2026'),
+  jsonb_build_object('connection_id', (select connection_id from ak51)));
+\o
+select t_eq('לקוח מחוץ לתחולה אינו מוציא התראה',
+  (select count(*)::int from notifications
+    where type = 'arco_order_received' and body like '%26000556%'), 0);
+delete from notification_scope_modes where type = 'arco_order_received';
