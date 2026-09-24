@@ -560,6 +560,15 @@ OUT="$OUT
 $OUT54"
 
 echo
+echo "== the worker sees their pay suite =="
+# 55 מקימה שלוש דמויות משלה, והמשמרות שלהן ב-current_date + 860, מעבר לכל
+# טווח אחר. היא רצה אחרונה כי היא משאירה אחריה רשומות נוכחות שאינן מנוקות.
+OUT55=$($PSQL -d vl -f "$HERE/55_the_worker_sees_their_pay.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT55"
+OUT="$OUT
+$OUT55"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
