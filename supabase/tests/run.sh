@@ -550,6 +550,16 @@ OUT="$OUT
 $OUT53"
 
 echo
+echo "== the cancelled event sends its crew home suite =="
+# 54 מקימה לקוח, קבלן, שישה אירועים ושבע דמויות משלה ב-current_date + 820,
+# מעבר לכל טווח אחר — ואירוע אחד לפני היום, כי משימה שעברה היא מה שנבדק בו.
+# היא רצה אחרונה כי היא מבטלת ומוחקת אירועים ומשאירה אחריה משמרת פתוחה.
+OUT54=$($PSQL -d vl -f "$HERE/54_the_cancelled_event_sends_its_crew_home.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT54"
+OUT="$OUT
+$OUT54"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
