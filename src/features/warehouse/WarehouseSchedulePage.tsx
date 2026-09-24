@@ -11,6 +11,7 @@ import {
   Input,
   PageHeader,
   Popover,
+  SegmentedControl,
   SkeletonTable,
   cx,
   useToast,
@@ -21,6 +22,7 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { fmtDate, fmtTime, fmtWeekday, toISODate } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
+import { useDragScroll } from '../../lib/useDragScroll'
 import { RequirePermission } from '../auth/guards'
 import { MonthStepper } from '../dashboard/MonthStepper'
 import type { WarehouseScheduleRow, WarehouseTaskKind } from '../../types/domain'
@@ -50,17 +52,46 @@ export default function WarehouseSchedulePage() {
   )
 }
 
-const COL_W = 148
-const LEGEND_W = 116
 /** רווח בין יום ליום — אותו אוויר שמפריד בין הימים בלו״ז העבודה */
 const DAY_GAP = 12
-const ROW_H = 38
-const NOTES_H = 88
+
+/**
+ * גודל התצוגה. הכול גדל ומתכווץ יחד — עמודות, שורות, מקרא וגופן — כי עמודה
+ * צרה מתחת לכותרת רחבה רק מזיזה את הצפיפות ממקום למקום. `normal` הוא הגודל
+ * שהיה עד עכשיו.
+ */
+const SIZES = {
+  large: { col: 184, legend: 132, row: 44, notes: 104, fs: '0.9375rem' },
+  normal: { col: 148, legend: 116, row: 38, notes: 88, fs: '0.8125rem' },
+  compact: { col: 118, legend: 100, row: 32, notes: 72, fs: '0.75rem' },
+  small: { col: 92, legend: 88, row: 30, notes: 60, fs: '0.6875rem' },
+} as const
+type Size = keyof typeof SIZES
+
+const SIZE_OPTIONS: { key: Size; label: string }[] = [
+  { key: 'small', label: 'זעיר' },
+  { key: 'compact', label: 'קטן' },
+  { key: 'normal', label: 'רגיל' },
+  { key: 'large', label: 'גדול' },
+]
+
+const SIZE_KEY = 'vl-warehouse-size'
+
+/* הבחירה נשמרת בדפדפן — מסך מחסן שמכוון פעם אחת לא צריך כיוון בכל כניסה */
+function readSize(): Size {
+  try {
+    const v = localStorage.getItem(SIZE_KEY)
+    if (v && v in SIZES) return v as Size
+  } catch {
+    /* העדפת תצוגה אינה שווה כישלון */
+  }
+  return 'normal'
+}
 
 type Field = {
   key: string
   label: string
-  height?: number
+  tall?: boolean
   render: (row: WarehouseScheduleRow, ctx: CellCtx) => ReactNode
 }
 
@@ -128,7 +159,7 @@ const FIELDS: Field[] = [
   {
     key: 'notes',
     label: 'הערות',
-    height: NOTES_H,
+    tall: true,
     render: (row, { canEdit, save }) =>
       canEdit ? (
         <DraftInput
@@ -165,6 +196,15 @@ function WarehouseSchedule() {
   const qc = useQueryClient()
   const toast = useToast()
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
+  const [size, setSize] = useState<Size>(readSize)
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIZE_KEY, size)
+    } catch {
+      /* העדפת תצוגה אינה שווה כישלון */
+    }
+  }, [size])
+  const { col: COL_W, legend: LEGEND_W, row: ROW_H, notes: NOTES_H, fs } = SIZES[size]
   const from = toISODate(startOfMonth(month))
   const to = toISODate(endOfMonth(month))
   const queryKey = useMemo(() => ['warehouse_schedule', from, to] as const, [from, to])
@@ -241,12 +281,15 @@ function WarehouseSchedule() {
       if (target.date !== today && behavior === 'smooth')
         toast.info('אין הכנות או החזרות היום', { description: `מוצג היום הקרוב: ${fmtWeekday(target.date)} ${fmtDate(target.date)}` })
     },
-    [days, today, toast],
+    [days, today, toast, LEGEND_W],
   )
 
   /* החודש צריך לחזור מהשרת לפני שיש עמודה לגלול אליה. הכניסה למסך היא
      בקשה כזו בלי אנימציה; הכפתור — עם. */
   const [jump, setJump] = useState<ScrollBehavior | null>('auto')
+
+  /* בעכבר — לתפוס את הלוח ולמשוך אותו לצדדים, כמו שהאצבע עושה במגע */
+  useDragScroll(scrollRef, !isLoading && !error && days.length > 0)
   useEffect(() => {
     if (!jump || isLoading) return
     scrollToToday(jump)
@@ -265,6 +308,7 @@ function WarehouseSchedule() {
         subtitle="הכנה לפני כל אירוע, והחזרה אחריו"
         actions={
           <>
+            <SegmentedControl items={SIZE_OPTIONS} value={size} onChange={setSize} />
             <Button size="sm" onClick={goToToday} title="מעבר לעמודה של היום">
               <CalendarCheck size={ICON.sm} strokeWidth={STROKE} aria-hidden />
               היום
@@ -289,7 +333,7 @@ function WarehouseSchedule() {
         </Card>
       ) : (
         <div ref={scrollRef} className="overflow-x-auto rounded-xl border border-line bg-surface">
-          <table className="border-separate border-spacing-0 text-[0.8125rem]" style={{ tableLayout: 'fixed', width: tableWidth }}>
+          <table className="border-separate border-spacing-0" style={{ tableLayout: 'fixed', width: tableWidth, fontSize: fs }}>
             <colgroup>
               <col style={{ width: LEGEND_W }} />
               {days.map((d, i) => (
@@ -352,7 +396,7 @@ function WarehouseSchedule() {
                   <th
                     scope="row"
                     className="sticky start-0 z-10 border-b border-e border-line bg-surface px-2 text-start font-medium text-ink"
-                    style={{ height: f.height ?? ROW_H }}
+                    style={{ height: f.tall ? NOTES_H : ROW_H }}
                   >
                     {f.label}
                   </th>
@@ -363,7 +407,7 @@ function WarehouseSchedule() {
                         <td
                           key={rowKey(r)}
                           className="overflow-hidden border-b border-e border-line px-1.5 text-center align-middle text-ink"
-                          style={{ background: tones.get(r.event_id), height: f.height ?? ROW_H }}
+                          style={{ background: tones.get(r.event_id), height: f.tall ? NOTES_H : ROW_H }}
                         >
                           {f.render(r, ctx)}
                         </td>
@@ -402,7 +446,7 @@ function KindHeader({
   save: CellCtx['save']
 }) {
   const label = (
-    <span className="flex items-center justify-center gap-1 text-base font-semibold text-white">
+    <span className="flex items-center justify-center gap-1 text-[1.2em] font-semibold text-white">
       {KIND_LABEL[row.kind]}
       {row.date_is_manual && (
         <span className="text-[0.625rem] font-normal opacity-80" title="התאריך נקבע ביד">
@@ -562,7 +606,7 @@ function CheckCell({
       aria-checked={on}
       aria-label={label}
       onClick={() => save(row, { [field]: !on })}
-      className="flex h-8 w-full items-center justify-center rounded-md text-ink hover:bg-black/5 focus-visible:outline-none focus-visible:focus-ring dark:hover:bg-white/10"
+      className="flex h-7 w-full items-center justify-center rounded-md text-ink hover:bg-black/5 focus-visible:outline-none focus-visible:focus-ring dark:hover:bg-white/10"
     >
       {mark}
     </button>
