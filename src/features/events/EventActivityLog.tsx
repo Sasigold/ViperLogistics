@@ -334,9 +334,11 @@ export function EventActivityLog({
                     </Tooltip>
                   </div>
 
-                  {/* גם הערה חופשית וגם משימה שנוספה או ירדה הן משפט אחד */}
+                  {/* גם הערה חופשית וגם משימה שנוספה או ירדה הן משפט אחד.
+                      ‏`wrap-anywhere`: רשומת מפרט נושאת קישור ארוך בלי רווחים,
+                      ו-pre-wrap לבדו לא שובר אותו — השורה מותחת את כל הדף במובייל */}
                   {e.note && (
-                    <p className="mt-2 whitespace-pre-wrap type-body text-ink-primary bg-subtle/30 p-2.5 rounded border border-line-subtle/50">{e.note}</p>
+                    <p className="mt-2 whitespace-pre-wrap wrap-anywhere type-body text-ink-primary bg-subtle/30 p-2.5 rounded border border-line-subtle/50">{e.note}</p>
                   )}
 
                   {e.changes.length > 0 && (
@@ -347,7 +349,7 @@ export function EventActivityLog({
                           // בשמירה אחת חולקות field_key
                           <tr key={`${c.key}-${i}`} className="border-t border-line-subtle first:border-0">
                             <td className="py-1 pe-2 align-top type-caption text-ink-tertiary">{c.label}</td>
-                            <td className="py-1 type-caption">
+                            <td className="py-1 type-caption wrap-anywhere">
                               <span className="text-error-text line-through decoration-error/40">
                                 <ChangeValue field={c.key} value={c.from} />
                               </span>

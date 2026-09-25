@@ -753,9 +753,11 @@ export default function EventDetailPage() {
       />
 
       {/* Main 2-column grid layout: Right side = Content & Tasks; Left side = Activity Log full-height sidebar */}
-      <div className="grid gap-6 lg:grid-cols-12 items-start">
+      {/* ‏`grid-cols-1` ו-`min-w-0` על העמודות: בלעדיהם תוכן רחב אחד (קישור ארוך
+          ביומן, למשל) מרחיב את עמודת הגריד, ובמובייל כל הדף נמתח מעבר למסך */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 items-start">
         {/* Right Main Column (in RTL, lg:col-span-7 xl:col-span-8) */}
-        <div className="space-y-6 lg:col-span-7 xl:col-span-8">
+        <div className="min-w-0 space-y-6 lg:col-span-7 xl:col-span-8">
           {/* Top Cards Grid: Event Info + Pricing */}
           <div className={`grid gap-4 ${pricing ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
             <Card>
@@ -1232,7 +1234,7 @@ export default function EventDetailPage() {
 
         {/* Left Sidebar Column - Full Height Activity Log (in RTL, lg:col-span-5 xl:col-span-4) */}
         {canSeeLog && (
-          <div className="lg:col-span-5 xl:col-span-4 lg:sticky lg:top-4 h-[calc(100vh-2rem)] flex flex-col">
+          <div className="min-w-0 lg:col-span-5 xl:col-span-4 lg:sticky lg:top-4 h-[calc(100vh-2rem)] flex flex-col">
             <EventActivityLog eventId={event.id} canNote={isEventLead} className="h-full shadow-xs" />
           </div>
         )}
