@@ -569,6 +569,16 @@ OUT="$OUT
 $OUT55"
 
 echo
+echo "== the crew is people and all of them suite =="
+# 56 מקימה לקוח, קבלן, שלוש דמויות ומשימה משלה ב-current_date + 870, מעבר
+# לכל טווח אחר. היא רצה אחרונה כי היא משאירה אחריה משימה ושיבוצים שאינם
+# מנוקים.
+OUT56=$($PSQL -d vl -f "$HERE/56_the_crew_is_people_and_all_of_them.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT56"
+OUT="$OUT
+$OUT56"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

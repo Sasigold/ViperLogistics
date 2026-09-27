@@ -65,6 +65,9 @@ const truckNames = (t: Pick<ShiftTaskRow, 'truck_list' | 'truck_name'>): string 
 const roleLabel = (roles: StaffRole[] | null | undefined): string | null =>
   roles && roles.length > 0 ? roles.map((r) => ASSIGNMENT_ROLE_LABELS[r]).join(' + ') : null
 
+/** מאיפה הגיע מי שעובד לצידך במשימה, כשזה לא הצוות הפנימי (0201). */
+const CREW_KIND_LABELS = { contractor: 'קבלן', customer: 'לקוח' } as const
+
 export function ShiftDetailDrawer({
   shift,
   employeeName,
@@ -432,7 +435,7 @@ function TaskCard({ task: t, onOpen }: { task: ShiftTaskRow; onOpen: () => void 
 
       {t.team && t.team.length > 0 && (
         <div className="mt-1 truncate type-caption text-ink-tertiary">
-          עם: {t.team.map((m) => m.name).join(', ')}
+          עם: {t.team.map((m) => (m.kind && m.kind !== 'staff' ? `${m.name} (${CREW_KIND_LABELS[m.kind]})` : m.name)).join(', ')}
         </div>
       )}
 
@@ -544,9 +547,9 @@ function TaskDetails({
         <div className="space-y-1.5">
           <div className="type-overline">הצוות במשימה</div>
           <div className="flex flex-wrap gap-1.5">
-            {t.team.map((m) => (
+            {t.team.map((m, i) => (
               <span
-                key={m.name}
+                key={m.key ?? `${m.name}:${i}`}
                 className={cx(
                   'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 type-caption',
                   m.work_site === 'warehouse'
@@ -556,6 +559,7 @@ function TaskDetails({
               >
                 {m.work_site === 'warehouse' && <Package size={ICON.xs} strokeWidth={STROKE} />}
                 {m.name}
+                {m.kind && m.kind !== 'staff' && <span className="opacity-70">· {CREW_KIND_LABELS[m.kind]}</span>}
                 <span className="opacity-70">{WORK_SITE_LABELS[m.work_site]}</span>
               </span>
             ))}

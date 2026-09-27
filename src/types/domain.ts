@@ -1603,6 +1603,15 @@ export interface ShiftRosterEntry {
   is_active: boolean
 }
 
+/** אדם אחד בצוות של משימה במשמרת (0201). */
+export interface ShiftTeamMember {
+  /** מזהה יציב לרינדור — ‏`s:` צוות, ‏`c:` עובד קבלן, ‏`o:` סגל הלקוח */
+  key?: string
+  kind?: 'staff' | 'contractor' | 'customer'
+  name: string
+  work_site: WorkSite
+}
+
 /** משימה אחת בתוך משמרת, מ-shift_task_breakdown. */
 export interface ShiftTaskRow {
   task_id: string
@@ -1650,9 +1659,14 @@ export interface ShiftTaskRow {
    *  null/ריק לעובד קבלן, שאין לו שורת task_assignments ולכן אין לו תפקיד. */
   my_role: StaffRole[] | null
   worker_count: number | null
+  /** אנשים ולא שורות — מי שעובד וגם נוהג נספר פעם אחת (0201) */
   assigned_count: number
-  /** null למי שאין לו board.view_staffing. מאז 0083 גם נקודת ההתחלה של כל אחד */
-  team: { name: string; work_site: WorkSite }[] | null
+  /**
+   * null למי שאין לו board.view_staffing. מאז 0083 גם נקודת ההתחלה של כל אחד,
+   * ומאז 0201 אדם אחד לרשומה — כולל עובדי הקבלן וסגל הלקוח. ‏`key` ו-`kind`
+   * אופציונליים כי החזית עולה לאוויר בלי קשר למיגרציה.
+   */
+  team: ShiftTeamMember[] | null
   /** איש הקשר של הלקוח — למי שהשדה פתוח לו, או לראש הצוות של האירוע (0083) */
   contact_name: string | null
   contact_phone: string | null
