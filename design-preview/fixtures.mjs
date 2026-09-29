@@ -42,6 +42,7 @@ export const methods = [
 export const trucks = [
   { id: id('k1', 1), name: 'איווקו 12 טון', plate_number: '12-345-67', notes: null, is_active: true, deleted_at: null },
   { id: id('k1', 2), name: 'מרצדס ספרינטר', plate_number: '98-765-43', notes: null, is_active: true, deleted_at: null },
+  { id: id('k1', 3), name: 'איסוזו 7.5 טון', plate_number: '55-221-09', notes: null, is_active: true, deleted_at: null },
 ]
 export const contractors = [
   { id: id('r1', 1), name: 'הובלות דרום', contact_name: 'משה', phone: '050-1112233', email: null, notes: null, is_active: true, deleted_at: null },
@@ -78,33 +79,36 @@ for (let i = 0; i < 46; i++) {
   })
 }
 // כמה אירועים בימים צפופים, כדי שהלוח ייראה אמיתי
-;[[9, 29], [9, 29], [9, 29], [9, 30], [9, 30], [10, 1]].forEach(([m, d], k) => {
+;[[9, 29], [9, 29], [9, 29], [9, 29], [9, 29], [9, 30], [9, 30], [10, 1]].forEach(([m, d], k) => {
   const e = events[k]; e.event_date = `2026-${pad(m)}-${pad(d)}`
 })
 
 const times = [['06:00', '08:00', '16:00'], ['07:30', '09:30', '13:00'], ['12:00', '14:00', '22:00'], ['05:30', '07:00', '11:30']]
+const times2 = [['17:00', '18:30', '23:30'], ['15:00', '16:00', '21:00'], ['20:00', '21:00', '23:45']]
 export const workBoard = []
 events.forEach((e, i) => {
   if (e.statuses.code === 'cancelled') return
   ;[0, 1].forEach((k) => {
     const tt = taskTypes[k]
-    const [w, a, b] = times[(i + k) % times.length]
+    const [w, a, b] = k === 0 ? times[i % times.length] : times2[i % times2.length]
     const stt = [S.assignedtask, S.plannedtask, S.drafttask][(i + k) % 3]
     const lead = staff[(i + k) % 3 === 0 ? 1 : 4]
-    const assigned = stt.code === 'assigned'
+    const assigned = (i + k) % 3 !== 1
+    const wn = 3 + (i % 3)
+    const crew = [staff[2], staff[3], staff[5], staff[6], staff[4]].slice(0, Math.max(0, wn - 2 - ((i + k) % 4 === 0 ? 1 : 0)))
     workBoard.push({
       id: id('w1', i * 2 + k + 1), event_id: e.id, customer_id: e.customer_id, customer_name: e.customers.name, customer_color: e.customers.color,
       end_client_name: e.end_client_name, event_number: e.event_number, location_text: e.location_text, volume_m: e.volume_m, event_truck_count: e.truck_count,
       task_type_id: tt.id, task_type_name: tt.name, task_type_code: tt.code, title: null,
       task_date: k === 0 ? e.event_date : e.event_date, warehouse_start_time: w, onsite_start_time: a, onsite_end_time: b,
-      hours_count: 6 + (i % 4), worker_count: 3 + (i % 3), execution_method_id: methods[0].id, execution_method_name: methods[0].name,
-      truck_id: trucks[i % 2].id, truck_name: trucks[i % 2].name, truck_free_text: null, truck_ids: [trucks[i % 2].id], truck_list: [{ id: trucks[i % 2].id, name: trucks[i % 2].name }],
+      hours_count: 6 + (i % 4), worker_count: wn, execution_method_id: methods[0].id, execution_method_name: methods[0].name,
+      truck_id: (i + k) % 7 === 3 ? null : trucks[(i + k) % 3].id, truck_name: (i + k) % 7 === 3 ? null : trucks[(i + k) % 3].name, truck_free_text: null, truck_ids: (i + k) % 7 === 3 ? [] : [trucks[(i + k) % 3].id], truck_list: (i + k) % 7 === 3 ? [] : [{ id: trucks[(i + k) % 3].id, name: trucks[(i + k) % 3].name }],
       event_is_cancelled: false, hidden_on_board: false, notes: i % 3 === 0 ? 'להביא ציוד הגנה לרצפה' : null,
       status_id: stt.id, status_name: stt.name, status_color: stt.color, status_is_terminal: false, status_code: stt.code,
       contractor_id: i % 5 === 0 ? contractors[0].id : null, contractor_name: i % 5 === 0 ? contractors[0].name : null, updated_at: '2026-09-20T10:00:00Z',
       team_lead_id: assigned ? lead.id : null, team_lead_name: assigned ? lead.full_name : null, team_lead_kind: assigned ? 'staff' : null,
       team_lead_work_site: assigned ? 'warehouse' : null, team_lead_drives: assigned ? false : null, team_lead_truck_name: null,
-      workers: assigned ? [staff[2], staff[3], staff[5]].map((p) => ({ profile_id: p.id, name: p.full_name, work_site: 'field' })) : [],
+      workers: assigned ? crew.map((p) => ({ profile_id: p.id, name: p.full_name, work_site: 'field' })) : [],
       drivers: assigned ? [{ profile_id: staff[0].id, name: staff[0].full_name, truck_id: trucks[0].id, truck_name: trucks[0].name, work_site: 'warehouse' }] : [],
       contractor_worker_list: [], customer_worker_list: [], customer_self_performing: false,
       customer_price: 1800 + i * 40, price_is_manual: false, price_breakdown: null, contractor_price: i % 5 === 0 ? 1200 : null,

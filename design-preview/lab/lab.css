@@ -1,0 +1,13 @@
+@font-face{font-family:'Heebo';src:url('/fonts/heebo-400.ttf');font-weight:100 550}
+@font-face{font-family:'Heebo';src:url('/fonts/heebo-700.ttf');font-weight:551 900}
+body { font-family: 'Heebo', system-ui, sans-serif; }
+.lab-scroll { scrollbar-width: thin; scrollbar-color: var(--vl-border-strong) transparent; }
+.lab-card { background: var(--vl-surface); border-radius: 20px; box-shadow: 0 0 0 1px var(--vl-border-subtle), var(--vl-shadow-sm); }
+.lab-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600; line-height: 20px; }
+.lab-eyebrow { font-size: 11px; letter-spacing: .08em; font-weight: 700; color: var(--vl-text-tertiary); }
+.lab-hoverable { transition: transform .15s, box-shadow .15s, background .15s; }
+.lab-hoverable:hover { transform: translateY(-1px); box-shadow: var(--vl-shadow-md), 0 0 0 1px var(--vl-border); }
+.lab-sel { box-shadow: 0 0 0 2px var(--nova-a), var(--vl-shadow-md) !important; }
+.lab-dot { width: 8px; height: 8px; border-radius: 99px; display: inline-block; }
+@keyframes lab-now { 50% { opacity: .4 } }
+.lab-now { animation: lab-now 2s ease-in-out infinite; }
