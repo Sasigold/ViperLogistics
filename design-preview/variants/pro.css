@@ -1,0 +1,61 @@
+/* ===== וריאנט B — "מקצועי וחד" ======================================
+   סרגל צד כהה, פינות חדות יותר, כותרות טבלה מודגשות, צפיפות גבוהה. עיצוב בלבד. */
+
+:root:not([data-theme='dark']) {
+  --radius-md: 6px; --radius-lg: 8px; --radius-xl: 10px; --radius-2xl: 12px;
+  --vl-canvas: #eef1f6;
+  --vl-border: #d9dfea; --vl-border-subtle: #e6eaf1; --vl-border-strong: #bcc6d8;
+  --vl-text: #0b1530; --vl-text-secondary: #3f4c68; --vl-text-tertiary: #76839f;
+  --vl-primary: #1f4fd8; --vl-primary-hover: #163fb3; --vl-primary-text: #163fb3;
+  --vl-shadow-sm: 0 1px 2px rgb(11 21 48 / 0.06);
+  --vl-tone-tint: 18%; --vl-tone-tint-strong: 28%; --vl-tone-border: 50%;
+  --pro-ink: #0e1a3a;
+}
+[data-theme='dark'] {
+  --vl-canvas: #080b12; --vl-surface: #10151f; --vl-raised: #151b27; --vl-subtle: #1a2130;
+  --vl-primary: #5b86fb;
+}
+body { background: var(--vl-canvas); }
+
+/* סרגל צד כהה — משנים רק את הטוקנים בתוכו */
+aside {
+  --vl-surface: var(--pro-ink); --vl-text: #eef2fb; --vl-text-secondary: #b5c0d8; --vl-text-tertiary: #7f8db0;
+  --vl-border: rgb(255 255 255 / 0.09); --vl-border-subtle: rgb(255 255 255 / 0.06);
+  --vl-hover: rgb(255 255 255 / 0.07); --vl-primary-subtle: rgb(91 134 251 / 0.22); --vl-primary-text: #ffffff;
+  --vl-selected: rgb(91 134 251 / 0.22);
+  background: var(--pro-ink) !important; border-color: transparent !important;
+}
+aside img { filter: none; }
+header { background: var(--vl-surface) !important; border-bottom: 1px solid var(--vl-border) !important; }
+main h1 { font-weight: 800; letter-spacing: -0.02em; }
+
+/* כפתורים */
+button, a[class*='rounded'] { }
+.bg-primary { box-shadow: none; }
+
+/* כרטיסים: שטוחים, כותרת עם רקע */
+.surface, .surface-raised { box-shadow: none; border-color: var(--vl-border); }
+main .surface > div:first-child { background: color-mix(in srgb, var(--vl-subtle) 70%, var(--vl-surface)); }
+
+/* לוח שנה: כותרת ימים כהה, רשת ברורה, צ'יפים מלאים אך קומפקטיים */
+.fc { --fc-border-color: var(--vl-border); }
+.fc .fc-col-header-cell { background: var(--pro-ink); padding: 8px 0; border-color: rgb(255 255 255 / 0.08); }
+.fc .fc-col-header-cell-cushion { color: #dfe6f6; font-weight: 700; font-size: 0.75rem; }
+.fc .fc-scrollgrid { border-radius: 10px; overflow: hidden; border-color: var(--vl-border); }
+.fc .fc-daygrid-day-number { font-size: 0.75rem; padding: 4px 8px; color: var(--vl-text); }
+.fc .fc-day-sat, .fc .fc-day-fri { background: color-mix(in srgb, var(--vl-subtle) 60%, transparent); }
+.fc .fc-day-today { background: color-mix(in srgb, var(--vl-primary) 10%, var(--vl-surface)) !important; }
+.fc .fc-day-today .fc-daygrid-day-top { border-top: 3px solid var(--vl-primary); margin-top: -1px; }
+.fc .fc-toolbar-title { font-size: 1.25rem; font-weight: 800; }
+.vl-cal-chip { border-radius: 4px !important; box-shadow: none !important; }
+.vl-cal-chip > .absolute { display: none; }
+.vl-cal-chip .type-caption { font-weight: 600; }
+.fc .fc-daygrid-event-harness { margin-top: 2px; }
+
+/* לו״ז עבודה: עמודות מובחנות יותר */
+[role='dialog'] { border-radius: 12px !important; }
+[role='dialog'] > div:first-child { background: var(--pro-ink); color: #fff; }
+[role='dialog'] > div:first-child * { color: inherit; }
+aside { color: var(--vl-text); }
+.fc .fc-col-header-cell.fc-day-sat, .fc .fc-col-header-cell.fc-day-fri { background: var(--pro-ink); }
+:root{--radius-md:6px;--radius-lg:8px;--radius-xl:10px;--radius-2xl:12px}

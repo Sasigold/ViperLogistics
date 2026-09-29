@@ -1,0 +1,68 @@
+/* ===== וריאנט A — "רך ומאוורר" =====================================
+   עיצוב בלבד: טוקנים, רדיוסים, צללים, ריווח וצבעי צ'יפים. אפס לוגיקה. */
+
+:root:not([data-theme='dark']) {
+  --radius-md: 10px; --radius-lg: 12px; --radius-xl: 18px; --radius-2xl: 22px;
+  --vl-canvas: #f3f5fa;
+  --vl-border: #e6eaf2; --vl-border-subtle: #eff2f7; --vl-border-strong: #d3dae7;
+  --vl-text: #0f1a33; --vl-text-secondary: #526079; --vl-text-tertiary: #8b96ab;
+  --vl-primary: #3b5bdb; --vl-primary-hover: #2f4bc0; --vl-primary-text: #2f4bc0;
+  --vl-primary-subtle: rgb(59 91 219 / 0.08);
+  --vl-shadow-xs: 0 1px 2px rgb(15 26 51 / 0.04);
+  --vl-shadow-sm: 0 1px 2px rgb(15 26 51 / 0.04), 0 4px 14px -6px rgb(15 26 51 / 0.08);
+  --vl-shadow-md: 0 8px 22px -8px rgb(15 26 51 / 0.14);
+  --vl-tone-tint: 14%; --vl-tone-tint-strong: 22%; --vl-tone-border: 40%;
+}
+[data-theme='dark'] {
+  --vl-canvas: #0a0d14; --vl-surface: #12161f; --vl-raised: #171c27; --vl-subtle: #1b212e;
+  --vl-primary: #6d8bff; --vl-primary-hover: #839dff; --vl-primary-text: #a7b9ff;
+  --vl-tone-tint: 20%; --vl-tone-tint-strong: 28%; --vl-tone-border: 45%;
+}
+body { background: var(--vl-canvas); }
+
+/* ── מעטפת ── */
+aside { border-inline-end-color: transparent !important; box-shadow: 1px 0 0 var(--vl-border-subtle); }
+aside nav a, aside nav button { border-radius: 12px; }
+aside nav a[aria-current='page'] { background: var(--vl-primary-subtle) !important; font-weight: 700; }
+header { border-bottom-color: var(--vl-border-subtle) !important; backdrop-filter: saturate(1.4) blur(8px); }
+
+/* ── כפתורים ושדות ── */
+button.bg-primary, a.bg-primary { border-radius: 12px; box-shadow: 0 6px 14px -6px var(--vl-primary); }
+input, select, textarea, [role='combobox'] { border-radius: 12px !important; }
+.surface, .surface-raised { box-shadow: var(--vl-shadow-sm); border-color: var(--vl-border-subtle); }
+
+/* ── לוח שנה ── */
+.vl-calendar .surface, .vl-calendar.surface { padding: 8px 6px 4px; }
+.fc { --fc-border-color: var(--vl-border-subtle); }
+.fc .fc-toolbar-title { font-size: 1.375rem; letter-spacing: -0.02em; }
+.fc .fc-scrollgrid { border: 0; }
+.fc .fc-scrollgrid td:last-of-type, .fc .fc-scrollgrid th:last-of-type { border-inline-end: 0; }
+.fc .fc-col-header-cell { background: transparent; border-inline: 0; border-bottom: 1px solid var(--vl-border); padding: 10px 0; }
+.fc .fc-col-header-cell-cushion { color: var(--vl-text-tertiary); font-size: 0.75rem; font-weight: 600; }
+.fc .fc-daygrid-day-number { color: var(--vl-text-secondary); font-weight: 600; font-size: 0.8125rem; padding: 8px 10px; }
+.fc .fc-daygrid-day-frame { padding: 2px 3px 4px; min-height: 96px; }
+.fc .fc-day-sat, .fc .fc-day-fri { background: color-mix(in srgb, var(--vl-subtle) 45%, transparent); }
+.fc .fc-day-today { background: var(--vl-primary-subtle) !important; box-shadow: inset 0 0 0 1.5px var(--vl-primary-border); }
+.fc .fc-day-today .vl-day-num { box-shadow: 0 4px 10px -3px var(--vl-primary); }
+.fc .fc-day-other { background: transparent; }
+.fc .fc-button-group { background: var(--vl-subtle); border-radius: 14px; }
+.fc .fc-button { border-radius: 11px !important; }
+
+/* צ'יפים: מילוי פסטלי, פס צבע בצד, טקסט כהה — צבע הסטטוס נשמר כפס */
+.vl-cal-chip { color: var(--vl-text) !important; border-radius: 8px !important; box-shadow: none !important; padding-inline: 8px !important; }
+.vl-cal-chip::before { content: ''; position: absolute; inset: 0; background: var(--vl-surface); opacity: 0.84; pointer-events: none; }
+.vl-cal-chip > span:not(.absolute) { position: relative; z-index: 1; }
+.vl-cal-chip > .absolute { z-index: 1; width: 4px !important; }
+.vl-cal-chip:hover { box-shadow: var(--vl-shadow-md) !important; filter: none !important; }
+.fc .fc-daygrid-event-harness { margin-top: 3px; }
+
+/* ── דף אירוע ── */
+main h1 { letter-spacing: -0.025em; }
+main .surface { border-radius: 18px; }
+main .surface > div:first-child { border-bottom-color: var(--vl-border-subtle); }
+
+/* ── חלונות ופאנלים ── */
+[role='dialog'] { border-radius: 22px !important; box-shadow: 0 30px 70px -20px rgb(15 26 51 / 0.35) !important; border-color: transparent !important; }
+[role='dialog'] > div:last-child { background: transparent; border-top: 1px solid var(--vl-border-subtle); padding-top: 14px; }
+.vl-cal-chip svg { color: var(--vl-success-text); }
+:root{--radius-md:10px;--radius-lg:12px;--radius-xl:18px;--radius-2xl:22px}
