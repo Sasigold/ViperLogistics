@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Button,
@@ -8,6 +8,7 @@ import {
   MenuItem,
   PageHeader,
   Popover,
+  Select,
   Skeleton,
   StatCard,
   StatusPill,
@@ -50,8 +51,8 @@ import type { TaskPnlMeta, TaskPnlResult, TaskPnlRow } from './taskPnl'
  * לכן כל שורה נושאת גם מתוכנן-מול-בפועל בשעות, ולא רק כסף — זה מה שמסביר
  * למה השוליים זזו, בלי להמציא מחיר שמעולם לא הוצג ללקוח.
  *
- * הרווח הגרוע ביותר מגיע ראשון מהשרת, וזו ברירת המחדל של המיון: השאלה
- * ששאלו היא "איפה הפסדתי", לא "מי הכי גדול".
+ * ברירת המחדל היא סדר הביצוע (תאריך המשימה, מהמוקדמת למאוחרת). "איפה הפסדתי"
+ * נענה בשורת ההפסדים שמעל הטבלה, בסינון, ובמיון לפי עמודת הרווח.
  */
 
 export default function TaskPnlPage() {
@@ -67,7 +68,7 @@ function TaskPnlScreen() {
   const toast = useToast()
   const canExport = has(PERM.REPORTS_EXPORT)
   const [range, setRange] = useState<DateRange>(defaultRange)
-  const [onlyLosing, setOnlyLosing] = useState(false)
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['task_pnl', range.from, range.to],
@@ -121,17 +122,16 @@ function TaskPnlScreen() {
       return <EmptyState art="box" title="אין משימות בטווח שנבחר" />
     }
     const losing = data.rows.filter((r) => r.gross < 0)
-    const shown = onlyLosing ? losing : data.rows
     return (
       <>
         <SummaryTiles data={data} />
         <LossBanner
           total={data.rows.length}
           losing={losing}
-          active={onlyLosing}
-          onToggle={() => setOnlyLosing((v) => !v)}
+          active={filters.losing}
+          onToggle={() => setFilters((f) => ({ ...f, losing: !f.losing }))}
         />
-        <TaskPnlTable rows={shown} meta={data.meta} />
+        <FilteredTasks rows={data.rows} meta={data.meta} filters={filters} onChange={setFilters} />
       </>
     )
   }
@@ -222,6 +222,120 @@ function TaskPnlScreen() {
       </div>
 
       {body()}
+    </div>
+  )
+}
+
+interface Filters {
+  q: string
+  customer: string
+  status: string
+  type: string
+  losing: boolean
+}
+
+const NO_FILTERS: Filters = { q: '', customer: '', status: '', type: '', losing: false }
+
+function matches(r: TaskPnlRow, f: Filters): boolean {
+  if (f.losing && r.gross >= 0) return false
+  if (f.customer && (r.customer_name ?? '') !== f.customer) return false
+  if (f.status && (r.status_name ?? '') !== f.status) return false
+  if (f.type && (r.task_type_name ?? '') !== f.type) return false
+  const q = f.q.trim().toLowerCase()
+  if (q) {
+    const hay = [taskPnlLabel(r), r.customer_name, r.event_number, r.end_client_name, r.contractor_name]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    if (!hay.includes(q)) return false
+  }
+  return true
+}
+
+const distinct = (vals: (string | null)[]) =>
+  [...new Set(vals.filter((v): v is string => !!v))].sort((a, b) => a.localeCompare(b, 'he'))
+
+/** סינון + סיכום השורות המסוננות, כדי שהכרטיסים שלמעלה (כל הטווח) לא יטעו */
+function FilteredTasks({
+  rows,
+  meta,
+  filters,
+  onChange,
+}: {
+  rows: TaskPnlRow[]
+  meta: TaskPnlMeta
+  filters: Filters
+  onChange: (f: Filters) => void
+}) {
+  const customers = useMemo(() => distinct(rows.map((r) => r.customer_name)), [rows])
+  const statuses = useMemo(() => distinct(rows.map((r) => r.status_name)), [rows])
+  const types = useMemo(() => distinct(rows.map((r) => r.task_type_name)), [rows])
+  const shown = useMemo(() => rows.filter((r) => matches(r, filters)), [rows, filters])
+  const active = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS)
+  const set = (patch: Partial<Filters>) => onChange({ ...filters, ...patch })
+
+  const sum = (pick: (r: TaskPnlRow) => number) => Math.round(shown.reduce((a, r) => a + pick(r), 0))
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 print:hidden">
+        <Input
+          type="search"
+          aria-label="חיפוש משימה"
+          placeholder="חיפוש: משימה, לקוח, אירוע…"
+          value={filters.q}
+          onChange={(e) => set({ q: e.target.value })}
+          className="w-56"
+        />
+        {customers.length > 0 && (
+          <Select aria-label="לקוח" className="w-40" value={filters.customer} onChange={(e) => set({ customer: e.target.value })}>
+            <option value="">כל הלקוחות</option>
+            {customers.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </Select>
+        )}
+        <Select aria-label="סטטוס" className="w-36" value={filters.status} onChange={(e) => set({ status: e.target.value })}>
+          <option value="">כל הסטטוסים</option>
+          {statuses.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </Select>
+        <Select aria-label="סוג משימה" className="w-36" value={filters.type} onChange={(e) => set({ type: e.target.value })}>
+          <option value="">כל הסוגים</option>
+          {types.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </Select>
+        {active && (
+          <Button size="sm" variant="ghost" onClick={() => onChange(NO_FILTERS)}>
+            נקה סינון
+          </Button>
+        )}
+      </div>
+
+      {active && shown.length > 0 && (
+        <p className="type-caption text-ink-secondary print:hidden">
+          מסוננות <span className="tabular font-semibold">{shown.length}</span> מתוך {rows.length} משימות · הכנסה{' '}
+          <span className="tabular">{fmtMoney(sum((r) => r.revenue))}</span> · עלות{' '}
+          <span className="tabular">{fmtMoney(sum((r) => r.cost_total))}</span> · רווח גולמי{' '}
+          <span className={`tabular font-semibold ${sum((r) => r.gross) >= 0 ? 'text-success-text' : 'text-error-text'}`}>
+            {fmtMoney(sum((r) => r.gross))}
+          </span>
+        </p>
+      )}
+
+      {shown.length === 0 ? (
+        <EmptyState art="box" title="אין משימות שתואמות את הסינון" />
+      ) : (
+        <TaskPnlTable rows={shown} meta={meta} />
+      )}
     </div>
   )
 }
@@ -336,7 +450,7 @@ function TaskPnlTable({ rows, meta }: { rows: TaskPnlRow[]; meta: TaskPnlMeta })
         pageSize={25}
         zebra
         storageKey="task-pnl"
-        defaultSort={{ key: 'gross', dir: 'asc' }}
+        defaultSort={{ key: 'task_date', dir: 'asc' }}
         columns={[
           {
             key: 'task',
