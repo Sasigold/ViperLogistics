@@ -23,7 +23,7 @@ const SCREENS = [
   { name: '05-event-edit', path: `/events/${ev}`, act: async (p) => { await p.getByRole('button', { name: /עריכ/ }).first().click() } },
   { name: '07-attendance-report', path: '/attendance' },
   { name: '08-time-clock', path: '/my/attendance', employee: true, full: true },
-  { name: '06-board-edit-panel', path: '/board', act: async (p) => { const c = p.getByText('לא שובץ').first(); await c.click(); await p.waitForTimeout(500); await c.click() } },
+  { name: '06-board-edit-panel', path: '/board', act: async (p) => { const c = p.getByText('לא שובץ').first(); await c.waitFor(); await p.waitForTimeout(800); await c.dblclick() } },
 ]
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' })
@@ -31,7 +31,7 @@ for (const theme of ['light', 'dark']) {
   const ctxs = {}
   const getPage = async (employee) => {
     if (ctxs[employee]) return ctxs[employee]
-    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: process.env.CLIP ? 2 : 1, locale: 'he-IL', timezoneId: 'Asia/Jerusalem' })
+    const ctx = await browser.newContext({ viewport: process.env.MOBILE ? { width: 390, height: 844 } : { width: 1440, height: 900 }, isMobile: !!process.env.MOBILE, hasTouch: !!process.env.MOBILE, deviceScaleFactor: process.env.CLIP ? 2 : 1, locale: 'he-IL', timezoneId: 'Asia/Jerusalem' })
     await ctx.addInitScript((t) => localStorage.setItem('vl-theme', t), theme)
     await installMock(ctx, { employee })
     const pg = await ctx.newPage()
@@ -47,7 +47,7 @@ for (const theme of ['light', 'dark']) {
     await page.evaluate(() => document.fonts.ready)
     if (s.act) { try { await s.act(page); await page.waitForTimeout(900) } catch (e) { console.log('act failed', s.name, e.message.split('\n')[0]) } }
     const clip = process.env.CLIP ? Object.fromEntries(process.env.CLIP.split(',').map((v, i) => [['x', 'y', 'width', 'height'][i], +v])) : undefined
-    await page.screenshot({ path: clip ? `/tmp/clip-${s.name}-${theme}.png` : `${out}${s.name}-${theme}.png`, fullPage: !clip && !!s.full, clip })
+    await page.screenshot({ path: clip ? `/tmp/clip-${s.name}-${theme}.png` : `${out}${s.name}${process.env.MOBILE ? '-m' : ''}-${theme}.png`, fullPage: !clip && !!s.full, clip })
     console.log('shot', variant, s.name, theme)
   }
   for (const pg of Object.values(ctxs)) await pg.context().close()

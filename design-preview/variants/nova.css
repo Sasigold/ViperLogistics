@@ -146,3 +146,44 @@ main [class*='rounded-'][class*='border']:not(.rounded-full) { border-color: var
 .surface.min-h-0.flex-1 { border-radius: 18px; }
 .sticky.top-0.z-20 { backdrop-filter: blur(12px); background: color-mix(in srgb, var(--vl-surface) 88%, transparent) !important; }
 .border-b.border-line-subtle { border-bottom-color: color-mix(in srgb, var(--vl-border-subtle) 70%, transparent); }
+
+/* ══════════ סבב 2 — העמקה ══════════ */
+
+/* סרגל צד: דהייה בתחתית הגלילה במקום חיתוך גס */
+aside nav { -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 28px), transparent); }
+
+/* ── לו״ז עבודה: כותרות לקוח כפסים פסטליים עם פס צבע תחתון ── */
+.sticky.top-0.z-20 .group.relative.flex.h-full { color: var(--vl-text) !important; border-bottom: 0 !important; overflow: hidden; }
+.sticky.top-0.z-20 .group.relative.flex.h-full::before { content: ''; position: absolute; inset: 0; background: var(--vl-surface); opacity: 0.86; pointer-events: none; }
+.sticky.top-0.z-20 .group.relative.flex.h-full::after { content: ''; position: absolute; inset-inline: 0; bottom: 0; height: 3px; background: inherit; }
+.sticky.top-0.z-20 .group.relative.flex.h-full > * { position: relative; z-index: 1; }
+.sticky.top-0.z-20 .group.relative.flex.h-full button { font-size: 0.75rem; font-weight: 800; letter-spacing: -0.01em; }
+/* כותרת יום */
+.sticky.top-0.z-20 .absolute.top-0.flex.flex-col { background: color-mix(in srgb, var(--vl-subtle) 80%, var(--vl-surface)) !important; border-color: var(--vl-border-subtle) !important; }
+.sticky.top-0.z-20 .absolute.top-0.flex.flex-col span { font-size: 0.75rem; }
+/* עמודת התוויות */
+.surface.min-h-0.flex-1 .h-full.overflow-auto > .relative > .relative.flex > .sticky:first-child,
+.surface.min-h-0.flex-1 [class*='sticky'][class*='end-0'], .surface.min-h-0.flex-1 [class*='sticky'][class*='start-0'] { background: var(--vl-surface); }
+/* שורת הכלים */
+main .surface.flex.flex-wrap { background: transparent; box-shadow: none; border: 0; padding: 4px 6px; }
+main h1.type-title { font-size: 1.5rem; letter-spacing: -0.035em; font-weight: 800; }
+/* שורות: הפרדה עדינה, ריחוף מודגש */
+.h-full.overflow-auto .border-b.border-line-subtle:hover { background: color-mix(in srgb, var(--nova-a) 7%, transparent); }
+.h-full.overflow-auto .border-b.border-line-subtle { border-bottom-style: solid; border-bottom-color: color-mix(in srgb, var(--vl-border-subtle) 60%, transparent); }
+/* עמודות של יום: מפריד רך בין ימים */
+.h-full.overflow-auto .absolute.top-0.bg-surface { box-shadow: inset 1px 0 0 var(--vl-border-subtle); }
+.sticky.top-0.z-20 .group.relative.flex.h-full, .sticky.top-0.z-20 .group.relative.flex.h-full * { color: var(--vl-text) !important; }
+.sticky.top-0.z-20 .group.relative.flex.h-full::before { opacity: 0.78; }
+
+/* ── מגירות (פאנל שיבוץ וכו'): כרטיס צף עם מרווח ── */
+[role='dialog'].absolute.inset-y-0 { inset-block: 12px !important; inset-inline-start: 12px !important; height: auto; border-radius: 24px !important;
+  box-shadow: 0 0 0 1px var(--vl-border), 0 40px 80px -20px rgb(16 20 46 / 0.45) !important; overflow: hidden; }
+[role='dialog'].absolute.inset-y-0 > div:first-child { padding: 22px 22px 14px; border-bottom: 1px solid var(--vl-border-subtle) !important; background: linear-gradient(180deg, color-mix(in srgb, var(--nova-a) 6%, transparent), transparent); }
+[role='dialog'].absolute.inset-y-0 > div:first-child h2 { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.03em; }
+[role='dialog'].absolute.inset-y-0 .surface { border-radius: 16px; }
+
+@media (max-width: 1023px) {
+  aside + div, #root div.min-w-0.flex-1 { margin: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+  header { border-radius: 0; }
+}
+.sticky.top-0.z-20 .group.relative.flex.h-full button { position: relative; z-index: 1; }

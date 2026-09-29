@@ -7,5 +7,7 @@
     node design-preview/shoot.mjs baseline   # המצב הנוכחי
     node design-preview/shoot.mjs soft       # וריאנט A
     node design-preview/shoot.mjs pro        # וריאנט B
+    node design-preview/shoot.mjs nova       # וריאנט C (NOVA) — הנבחר
+    MOBILE=1 node design-preview/shoot.mjs nova   # מובייל
 
 צילומים ב-`shots/<variant>/`. וריאנטים ב-`variants/*.css`.
