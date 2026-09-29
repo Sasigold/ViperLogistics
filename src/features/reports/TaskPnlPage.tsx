@@ -67,6 +67,7 @@ function TaskPnlScreen() {
   const toast = useToast()
   const canExport = has(PERM.REPORTS_EXPORT)
   const [range, setRange] = useState<DateRange>(defaultRange)
+  const [onlyLosing, setOnlyLosing] = useState(false)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['task_pnl', range.from, range.to],
@@ -119,10 +120,18 @@ function TaskPnlScreen() {
     if (data.rows.length === 0) {
       return <EmptyState art="box" title="אין משימות בטווח שנבחר" />
     }
+    const losing = data.rows.filter((r) => r.gross < 0)
+    const shown = onlyLosing ? losing : data.rows
     return (
       <>
         <SummaryTiles data={data} />
-        <TaskPnlTable rows={data.rows} meta={data.meta} />
+        <LossBanner
+          total={data.rows.length}
+          losing={losing}
+          active={onlyLosing}
+          onToggle={() => setOnlyLosing((v) => !v)}
+        />
+        <TaskPnlTable rows={shown} meta={data.meta} />
       </>
     )
   }
@@ -217,6 +226,48 @@ function TaskPnlScreen() {
   )
 }
 
+/** התשובה לשאלה "איפה הפסדתי" במשפט אחד, עם קיצור דרך לרשימה המסוננת */
+function LossBanner({
+  total,
+  losing,
+  active,
+  onToggle,
+}: {
+  total: number
+  losing: TaskPnlRow[]
+  active: boolean
+  onToggle: () => void
+}) {
+  const loss = Math.round(losing.reduce((sum, r) => sum + r.gross, 0))
+  const ok = losing.length === 0
+  return (
+    <div
+      className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border px-4 py-3 print:hidden ${
+        ok ? 'border-line-subtle bg-subtle/40' : 'border-error-text/30 bg-error-text/5'
+      }`}
+    >
+      <p className="type-body">
+        {ok ? (
+          <>כל {total} המשימות ברווח גולמי חיובי</>
+        ) : (
+          <>
+            <span className="font-semibold text-error-text tabular">
+              {losing.length} מתוך {total}
+            </span>{' '}
+            משימות הפסידו, בסך{' '}
+            <span className="font-semibold text-error-text tabular">{fmtMoney(Math.abs(loss))}</span>
+          </>
+        )}
+      </p>
+      {!ok && (
+        <Button size="sm" variant={active ? 'primary' : 'ghost'} className="ms-auto" onClick={onToggle}>
+          {active ? 'הצג את כל המשימות' : 'הצג רק משימות מפסידות'}
+        </Button>
+      )}
+    </div>
+  )
+}
+
 function SummaryTiles({ data }: { data: TaskPnlResult }) {
   const s = data.summary
   if (!s) return null
@@ -230,13 +281,13 @@ function SummaryTiles({ data }: { data: TaskPnlResult }) {
       />
       <StatCard
         icon={<HardHat size={ICON.xl} strokeWidth={STROKE} />}
-        label="עלות קבלנים"
+        label="פחות: עלות קבלנים"
         value={fmtMoney(s.contractor)}
         tone="#f59e0b"
       />
       <StatCard
         icon={<Wallet size={ICON.xl} strokeWidth={STROKE} />}
-        label="שכר כולל נטל מעביד"
+        label="פחות: שכר כולל נטל מעביד"
         value={fmtMoney(s.payroll_with_employer)}
         tone="#8b5cf6"
         hint={
@@ -249,7 +300,7 @@ function SummaryTiles({ data }: { data: TaskPnlResult }) {
       />
       <StatCard
         icon={s.pct === null ? <TrendingUp size={ICON.xl} strokeWidth={STROKE} /> : <Percent size={ICON.xl} strokeWidth={STROKE} />}
-        label="רווח גולמי"
+        label="שווה: רווח גולמי"
         value={fmtMoney(s.gross)}
         tone={s.gross >= 0 ? '#1fa189' : '#ef4444'}
         hint={s.pct === null ? 'ללא תקורה' : `${s.pct}% מההכנסה · ללא תקורה`}
@@ -376,27 +427,21 @@ function TaskPnlTable({ rows, meta }: { rows: TaskPnlRow[]; meta: TaskPnlMeta })
             header: 'רווח גולמי',
             align: 'end',
             render: (r) => (
-              <span className={`tabular font-semibold ${r.gross >= 0 ? 'text-success-text' : 'text-error-text'}`}>
-                {fmtMoney(r.gross)}
+              <span className="block">
+                <span className={`block tabular font-semibold ${r.gross >= 0 ? 'text-success-text' : 'text-error-text'}`}>
+                  {r.gross < 0 && '▼ '}
+                  {fmtMoney(r.gross)}
+                </span>
+                <span className={`block tabular type-caption ${r.gross >= 0 ? 'text-ink-tertiary' : 'text-error-text'}`}>
+                  {r.pct === null ? 'ללא הכנסה' : `${r.pct}% מההכנסה`}
+                </span>
               </span>
             ),
             sortValue: (r) => r.gross,
           },
           {
-            key: 'pct',
-            header: '% רווח',
-            align: 'end',
-            render: (r) =>
-              r.pct === null ? (
-                <span className="text-ink-tertiary">—</span>
-              ) : (
-                <span className={`tabular ${r.pct >= 0 ? 'text-success-text' : 'text-error-text'}`}>{r.pct}%</span>
-              ),
-            sortValue: (r) => r.pct,
-          },
-          {
             key: 'hours',
-            header: 'שעות: תוכנן → בפועל',
+            header: 'שעות-עובד: תוכנן → בפועל',
             align: 'end',
             render: (r) => <HoursCell r={r} />,
             sortValue: (r) => r.hours_delta,
@@ -453,7 +498,6 @@ function TaskPnlTable({ rows, meta }: { rows: TaskPnlRow[]; meta: TaskPnlMeta })
  */
 function TaskPnlDisclosures({ meta }: { meta: TaskPnlMeta }) {
   const lines: string[] = []
-  lines.push('ההכנסה היא המחיר שהוזמן, מחושב מהתכנון; העלות נמדדת מהשעות שהוחתמו בפועל')
   if (meta.estimated) {
     lines.push('שיוך השכר למשימה משוער — עלות המשמרת מחולקת בין משימותיה לפי שעות המשימה')
     if (meta.unallocated != null && Number(meta.unallocated) > 0) {
@@ -477,5 +521,19 @@ function TaskPnlDisclosures({ meta }: { meta: TaskPnlMeta }) {
   }
   if (meta.truncated) lines.push('מוצגות השורות המובילות בלבד')
   if (meta.excludes_overhead) lines.push('אינו כולל תקורה')
-  return <p className="border-t border-line-subtle px-4 py-2.5 type-caption text-ink-tertiary">{lines.join(' · ')}</p>
+  return (
+    <div className="space-y-2 border-t border-line-subtle px-4 py-3 type-caption text-ink-tertiary">
+      <p className="text-ink-secondary">
+        <span className="font-semibold">איך לקרוא:</span> רווח גולמי = הכנסה − עלות קבלן − שכר כולל נטל. ההכנסה היא
+        המחיר שהוזמן (מהתכנון), והעלות נמדדת מהשעות שהוחתמו בפועל — עמודת השעות מסבירה את הפער.
+      </p>
+      {lines.length > 0 && (
+        <ul className="list-disc space-y-0.5 ps-5">
+          {lines.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
