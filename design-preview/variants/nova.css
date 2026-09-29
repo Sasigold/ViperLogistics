@@ -1,0 +1,148 @@
+/* ===== וריאנט C — "NOVA": שפת SaaS עולמית (Linear / Stripe / Vercel) =====
+   עיצוב + UX ויזואלי בלבד: מעטפת צפה, סרגל צד על הקנבס, גרדיאנט מותג,
+   כפתורים עם עומק, צ'יפים עם נקודת סטטוס, מיקרו-אינטראקציות. אפס לוגיקה. */
+
+:root { --radius-md: 10px; --radius-lg: 12px; --radius-xl: 16px; --radius-2xl: 20px; --radius-3xl: 26px;
+  --nova-a: #5b5bf0; --nova-b: #8b5cf6; --nova-grad: linear-gradient(135deg, var(--nova-a), var(--nova-b)); }
+:root:not([data-theme='dark']) {
+  --vl-canvas: #eceff7; --vl-surface: #ffffff; --vl-raised: #ffffff; --vl-subtle: #f5f6fb; --vl-inset: #eef0f7;
+  --vl-border: #e3e6f0; --vl-border-subtle: #eef0f6; --vl-border-strong: #cfd4e4;
+  --vl-text: #0b1020; --vl-text-secondary: #4b5470; --vl-text-tertiary: #8790aa;
+  --vl-primary: #5b5bf0; --vl-primary-hover: #4a4ae0; --vl-primary-text: #4646d6;
+  --vl-primary-subtle: rgb(91 91 240 / 0.08); --vl-primary-border: rgb(91 91 240 / 0.3);
+  --vl-selected: rgb(91 91 240 / 0.09);
+  --vl-shadow-xs: 0 1px 2px rgb(16 20 46 / 0.05);
+  --vl-shadow-sm: 0 1px 2px rgb(16 20 46 / 0.04), 0 2px 8px -2px rgb(16 20 46 / 0.06);
+  --vl-shadow-md: 0 2px 4px rgb(16 20 46 / 0.04), 0 12px 24px -8px rgb(16 20 46 / 0.12);
+  --vl-tone-tint: 12%; --vl-tone-tint-strong: 20%; --vl-tone-border: 38%;
+}
+[data-theme='dark'] {
+  --vl-canvas: #06070b; --vl-surface: #0d0f16; --vl-raised: #131620; --vl-subtle: #171a25; --vl-inset: #0a0c12;
+  --vl-border: rgb(255 255 255 / 0.08); --vl-border-subtle: rgb(255 255 255 / 0.05); --vl-border-strong: rgb(255 255 255 / 0.15);
+  --vl-text: #f1f3fa; --vl-text-secondary: #a6aec6; --vl-text-tertiary: #6d768f;
+  --vl-primary: #7c7cff; --vl-primary-hover: #9191ff; --vl-primary-text: #b4b4ff;
+  --vl-primary-subtle: rgb(124 124 255 / 0.14); --vl-primary-border: rgb(124 124 255 / 0.4); --vl-selected: rgb(124 124 255 / 0.16);
+  --vl-tone-tint: 18%; --vl-tone-tint-strong: 26%; --vl-tone-border: 45%;
+  --nova-a: #6d6dff; --nova-b: #a37bff;
+}
+html, body { background: var(--vl-canvas); font-feature-settings: 'tnum' 0, 'kern' 1; -webkit-font-smoothing: antialiased; }
+:root:not([data-theme='dark']) body { background:
+  radial-gradient(60% 40% at 100% 0%, rgb(139 92 246 / 0.10), transparent 60%),
+  radial-gradient(50% 40% at 0% 100%, rgb(91 91 240 / 0.08), transparent 60%), var(--vl-canvas); }
+[data-theme='dark'] body { background:
+  radial-gradient(60% 40% at 100% 0%, rgb(139 92 246 / 0.16), transparent 60%),
+  radial-gradient(50% 40% at 0% 100%, rgb(91 91 240 / 0.12), transparent 60%), var(--vl-canvas); }
+#root > div, #root > div > div.flex.h-full { background: transparent !important; }
+.bg-canvas { background: transparent !important; }
+
+/* ── מעטפת: סרגל צד על הקנבס + גיליון תוכן צף ── */
+aside { background: transparent !important; border: 0 !important; box-shadow: none !important; padding: 8px 0 8px 4px; }
+aside > div:first-child { height: 64px; }
+aside .type-title { font-weight: 800; letter-spacing: -0.03em; font-size: 1.125rem; }
+aside img { border-radius: 10px; box-shadow: 0 4px 14px -4px var(--nova-a); }
+aside .type-overline { font-size: 0.625rem; letter-spacing: 0.12em; opacity: 0.8; padding-top: 6px; }
+aside nav { padding-inline: 12px; }
+aside nav a { border-radius: 10px; padding: 7px 12px; font-weight: 500; font-size: 0.8125rem; color: var(--vl-text-secondary); gap: 10px; }
+aside nav a:hover { background: var(--vl-hover); color: var(--vl-text); }
+aside nav a[aria-current='page'] { background: var(--vl-surface); color: var(--vl-text); font-weight: 700; box-shadow: var(--vl-shadow-sm), 0 0 0 1px var(--vl-border-subtle); }
+aside nav a[aria-current='page'] svg { color: var(--nova-a); filter: drop-shadow(0 2px 6px var(--nova-a)); }
+aside nav a > span[aria-hidden] { display: none; }
+aside > div:last-child, aside .border-t { border: 0 !important; }
+
+aside + div { margin: 8px 0 8px 8px; border-radius: 22px; background: var(--vl-surface); overflow: hidden;
+  box-shadow: 0 0 0 1px var(--vl-border), 0 30px 60px -30px rgb(16 20 46 / 0.25); }
+header { background: transparent !important; border-bottom: 1px solid var(--vl-border-subtle) !important; height: 60px; }
+header input, header button[class*='border'] { border-radius: 999px !important; background: var(--vl-subtle); border-color: transparent !important; }
+header kbd { border-radius: 6px; background: var(--vl-surface); box-shadow: var(--vl-shadow-xs); }
+main { background: transparent !important; }
+main h1 { font-size: 1.75rem; letter-spacing: -0.035em; font-weight: 800; }
+
+/* ── כפתורים ושדות ── */
+.bg-primary:not(.rounded-full):not([class*='size-']) { background-image: var(--nova-grad) !important; background-color: var(--nova-a) !important; color: #fff;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.28) inset, 0 8px 18px -8px var(--nova-a), 0 0 0 1px rgb(0 0 0 / 0.08) !important; border-radius: 12px; transition: transform 0.15s, box-shadow 0.15s; }
+.bg-primary:hover { transform: translateY(-1px); }
+button:not(.bg-primary):not([class*='bg-error']):not([role='tab']):not(.fc-button)[class*='border'] { border-radius: 12px; box-shadow: var(--vl-shadow-xs); }
+input:not([type='checkbox']):not([type='radio']), select, textarea { border-radius: 12px !important; background: var(--vl-subtle) !important; border-color: transparent !important; box-shadow: inset 0 0 0 1px var(--vl-border); transition: box-shadow 0.15s, background 0.15s; }
+input:focus, select:focus, textarea:focus { background: var(--vl-surface) !important; box-shadow: 0 0 0 2px var(--vl-surface), 0 0 0 4px var(--nova-a) !important; outline: none; }
+.surface, .surface-raised { border-color: var(--vl-border-subtle); box-shadow: var(--vl-shadow-sm); border-radius: 18px; }
+
+/* ══ לוח שנה ══ */
+.fc { --fc-border-color: var(--vl-border-subtle); }
+.vl-calendar { padding: 6px 10px 2px; }
+.fc .fc-toolbar { padding: 6px 4px 14px; }
+.fc .fc-toolbar-title { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.035em; background: var(--nova-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.fc .fc-button-group { background: var(--vl-subtle); border-radius: 12px; padding: 3px; box-shadow: inset 0 0 0 1px var(--vl-border-subtle); }
+.fc .fc-button { border-radius: 9px !important; font-weight: 600; }
+.fc .fc-button-group .fc-button-active { box-shadow: var(--vl-shadow-sm) !important; }
+.fc .fc-scrollgrid, .fc .fc-scrollgrid td, .fc .fc-scrollgrid th { border-color: var(--vl-border-subtle); }
+.fc .fc-scrollgrid { border: 0; }
+.fc .fc-scrollgrid-section > td, .fc .fc-scrollgrid-section > th { border-inline: 0; }
+.fc .fc-daygrid-day, .fc th.fc-col-header-cell { border-inline-width: 0 !important; }
+.fc .fc-col-header-cell { background: transparent; border: 0 !important; padding: 6px 0 10px; }
+.fc .fc-col-header-cell-cushion { font-size: 0.6875rem; letter-spacing: 0.1em; font-weight: 700; color: var(--vl-text-tertiary); text-transform: uppercase; }
+.fc .fc-daygrid-day-frame { padding: 3px; min-height: 100px; border-radius: 14px; transition: background 0.15s; margin: 2px; }
+.fc .fc-daygrid-day:hover .fc-daygrid-day-frame { background: var(--vl-subtle); }
+.fc .fc-daygrid-day:hover { background: transparent; }
+.fc .fc-daygrid-day-number { font-size: 0.8125rem; font-weight: 600; color: var(--vl-text-secondary); padding: 6px 8px; }
+.fc .fc-day-sat .fc-daygrid-day-number, .fc .fc-day-fri .fc-daygrid-day-number { color: var(--vl-text-tertiary); }
+.fc .fc-day-other .fc-daygrid-day-frame { opacity: 0.5; }
+.fc td.fc-day-today { background: transparent !important; }
+.fc .fc-day-today .fc-daygrid-day-frame { background: linear-gradient(180deg, color-mix(in srgb, var(--nova-a) 12%, transparent), color-mix(in srgb, var(--nova-a) 3%, transparent)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--nova-a) 45%, transparent); }
+.fc .fc-day-today .vl-day-num { background: var(--nova-grad); color: #fff; box-shadow: 0 6px 14px -4px var(--nova-a); }
+.fc .fc-day-fri:not(.fc-day-today) .fc-daygrid-day-frame, .fc .fc-day-sat:not(.fc-day-today) .fc-daygrid-day-frame { background: color-mix(in srgb, var(--vl-subtle) 55%, transparent); }
+/* חגים: מסומנים ברכות */
+.fc .vl-holiday-day-off .fc-daygrid-day-frame { background: color-mix(in srgb, var(--vl-warning) 9%, transparent) !important; }
+
+/* צ'יפ אירוע: כרטיס קטן עם פס סטטוס, רקע מוכתם בצבע הסטטוס */
+.vl-cal-chip { color: var(--vl-text) !important; border-radius: 9px !important; box-shadow: 0 0 0 1px color-mix(in srgb, var(--vl-text) 7%, transparent) !important; padding: 3px 9px !important; transition: transform 0.15s, box-shadow 0.15s !important; }
+.vl-cal-chip::before { content: ''; position: absolute; inset: 0; background: var(--vl-surface); opacity: 0.88; pointer-events: none; }
+.vl-cal-chip > span:not(.absolute) { position: relative; z-index: 1; }
+.vl-cal-chip > .absolute { z-index: 1; width: 3px !important; inset-block: 5px !important; border-radius: 99px !important; inset-inline-start: 4px !important; }
+.vl-cal-chip:hover { transform: translateY(-1px); box-shadow: var(--vl-shadow-md), 0 0 0 1px var(--vl-border-strong) !important; filter: none !important; }
+.vl-cal-chip svg { color: var(--vl-success-text); }
+.fc .fc-daygrid-event-harness { margin-top: 3px; }
+.fc .fc-more-link { font-weight: 700; color: var(--nova-a); }
+/* מקרא */
+.vl-calendar ~ div button, .vl-calendar ~ div span { font-size: 0.75rem; }
+
+/* ══ לו״ז עבודה ══ */
+[class*='sticky'][class*='top-0'] { backdrop-filter: blur(10px); }
+
+/* ══ חלונות ופאנלים ══ */
+[role='dialog'] { border-radius: 26px !important; border: 0 !important; background: var(--vl-surface) !important; box-shadow: 0 0 0 1px var(--vl-border), 0 50px 100px -30px rgb(16 20 46 / 0.5) !important; }
+[role='dialog'] > div:first-child { border-bottom: 0 !important; padding-bottom: 4px; }
+[role='dialog'] > div:first-child h2 { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.03em; }
+[role='dialog'] > div:last-child { background: var(--vl-subtle) !important; border-top: 0 !important; }
+[role='dialog'] [aria-current='step'], [role='dialog'] [data-active='true'] { background: var(--vl-primary-subtle); }
+
+/* ══ שעון נוכחות ══ */
+.max-w-md.mx-auto { max-width: 26rem; }
+.max-w-md .rounded-3xl { border-radius: 26px; border: 0; box-shadow: 0 0 0 1px var(--vl-border-subtle), 0 20px 40px -24px rgb(16 20 46 / 0.25); background: linear-gradient(180deg, var(--vl-surface), var(--vl-subtle)); }
+.max-w-md .rounded-full.w-72 { border: 0; background: radial-gradient(closest-side, transparent 78%, color-mix(in srgb, currentColor 14%, transparent) 79%, transparent 100%); animation: nova-pulse 3.2s ease-in-out infinite; }
+.max-w-md .rounded-full.w-64 { border: 1.5px solid color-mix(in srgb, currentColor 22%, transparent); background: transparent; }
+.max-w-md .rounded-full.w-56 { background-image: radial-gradient(120% 120% at 30% 15%, rgb(255 255 255 / 0.35), transparent 50%), linear-gradient(160deg, transparent, rgb(0 0 0 / 0.22)); box-shadow: 0 30px 60px -18px currentColor, inset 0 2px 0 rgb(255 255 255 / 0.35), inset 0 -12px 24px rgb(0 0 0 / 0.18) !important; }
+@keyframes nova-pulse { 50% { transform: scale(1.035); opacity: 0.7; } }
+.max-w-md h1 { font-size: 1.75rem; letter-spacing: -0.035em; font-weight: 800; }
+
+/* ══ דוח נוכחות: KPI כמו ב-Stripe ══ */
+main .grid > [class*='rounded'][class*='border'], main .grid > .surface { border: 0; border-radius: 18px; background: linear-gradient(180deg, var(--vl-surface), var(--vl-subtle)); box-shadow: 0 0 0 1px var(--vl-border-subtle), var(--vl-shadow-sm); position: relative; overflow: hidden; }
+main .grid > [class*='rounded'][class*='border']::after { content: ''; position: absolute; inset-inline: 0; top: 0; height: 3px; background: var(--nova-grad); opacity: 0.85; }
+main [class*='rounded-'][class*='border']:not(.rounded-full) { border-color: var(--vl-border-subtle); }
+
+/* ── תיקונים אחרי סבב 1 ── */
+.fc .fc-daygrid-day-frame { min-height: 0; margin: 1px; }
+.fc .fc-col-header-cell { padding: 0 0 6px; }
+.fc .fc-toolbar { padding-bottom: 8px; }
+.fc .fc-day.vl-holiday-day-off, .fc td.vl-holiday-day-off { background: transparent !important; }
+.fc .vl-holiday-day-off .fc-daygrid-day-frame { background: color-mix(in srgb, var(--vl-warning) 8%, transparent) !important; }
+.vl-cal-chip > .absolute { inset-inline-start: auto !important; left: auto !important; right: 4px !important; width: 3px !important; }
+.vl-cal-chip { padding-inline: 12px 8px !important; }
+.vl-cal-chip svg { stroke: var(--vl-success-text) !important; color: var(--vl-success-text) !important; }
+
+/* ── לו״ז עבודה ── */
+:root:not([data-theme='dark']) { --vl-tone-tint: 8%; --vl-tone-tint-strong: 14%; }
+[data-theme='dark'] { --vl-tone-tint: 9%; }
+.surface.overflow-hidden > .h-full.overflow-auto { background: var(--vl-surface); }
+.surface.min-h-0.flex-1 { border-radius: 18px; }
+.sticky.top-0.z-20 { backdrop-filter: blur(12px); background: color-mix(in srgb, var(--vl-surface) 88%, transparent) !important; }
+.border-b.border-line-subtle { border-bottom-color: color-mix(in srgb, var(--vl-border-subtle) 70%, transparent); }
