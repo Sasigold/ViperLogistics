@@ -1,124 +1,123 @@
-import { BadgeCheck, CalendarDays, Check, CircleDashed, FileText, MapPin, MessageSquare, Navigation, PackageCheck, Phone, Truck, UserRound, Users, Wallet } from 'lucide-react'
-import { hm, money, parse, taskHealth, useEvent, useTasks, HE_DAYS } from './data'
-import { Stepper } from './CalendarLab'
-import { Avatar, AvatarStack, Chip, Ring, Rng, cx, tint } from './ui'
-import type { WorkBoardRow } from '../../src/types/domain'
+// דף אירוע — אותם רכיבים כמו היום: כותרת ופעולות, פרטי האירוע, תמחור, ארבעת הסיכומים, משימות, יומן פעילות. בסדר אחר: המשימות במרכז.
+import { Calendar, Check, Clock, FileText, HardHat, Briefcase, MapPin, Paperclip, Pencil, PencilLine, Trash2, Users } from 'lucide-react'
+import { fmtDM, hm, money, parse, useContact, useEvent, useTasks } from './data'
+import { crewLead, crewPeople, crewSize } from '../../src/features/tasks/crew'
+import { Chip, Rng, cx, tint } from './ui'
+
+const H0 = 4, H1 = 24
+const mn = (t: string | null) => (t ? +t.slice(0, 2) * 60 + +t.slice(3, 5) : null)
+const pct = (m: number) => Math.max(0, Math.min(100, ((m - H0 * 60) / ((H1 - H0) * 60)) * 100))
 
 export function EventLab({ id }: { id: string }) {
   const { data: e } = useEvent(id || 'e1-0000-4000-8000-000000000001')
+  const { data: contact } = useContact(e?.id ?? '')
   const d = e?.event_date ?? '2026-09-29'
   const { data: all = [] } = useTasks(d, d)
   if (!e) return <div className="p-10 text-ink-tertiary">טוען…</div>
-  const tasks: WorkBoardRow[] = all.filter((t) => t.event_id === e.id).sort((a, b) => (a.warehouse_start_time ?? a.onsite_start_time ?? '').localeCompare(b.warehouse_start_time ?? b.onsite_start_time ?? ''))
+  const tasks = all.filter((t) => t.event_id === e.id).sort((a, b) => (a.onsite_start_time ?? '').localeCompare(b.onsite_start_time ?? ''))
   const color = e.customers?.color ?? '#64748b'
-  const hs = tasks.map(taskHealth)
-  const price = tasks.reduce((a, t) => a + (t.customer_price ?? 0), 0)
-  const cost = tasks.reduce((a, t) => a + (t.contractor_price ?? 0), 0) + tasks.reduce((a, t) => a + t.worker_count * 3 * 46, 0)
-  const checks = [
-    { ok: !!e.approved_at, label: 'האירוע אושר לביצוע', hint: e.approved_at ? 'אושר על ידי מנהל' : 'ממתין לאישור' },
-    { ok: tasks.length > 0 && tasks.every((t) => t.truck_id), label: 'משאיות שובצו', hint: `${tasks.filter((t) => t.truck_id).length}/${tasks.length} משימות` },
-    { ok: tasks.every((t) => !t.requires_team_lead || t.team_lead_id), label: 'ראש צוות לכל משימה', hint: tasks.filter((t) => t.team_lead_id).length + '/' + tasks.length },
-    { ok: hs.every((h) => h.have >= h.need), label: 'הצוות מלא', hint: `${hs.reduce((a, h) => a + Math.min(h.have, h.need), 0)}/${hs.reduce((a, h) => a + h.need, 0)} עובדים` },
-    { ok: price > 0, label: 'מחיר נקבע', hint: money(price) },
+  const setup = tasks.filter((t) => t.task_type_code === 'setup').length, teardown = tasks.filter((t) => t.task_type_code === 'teardown').length
+  const workers = tasks.reduce((a, t) => a + crewSize(t), 0)
+  const total = tasks.reduce((a, t) => a + (t.customer_price ?? 0), 0)
+  const addons = [e.no_parking && 'אין חניה', e.porterage && 'סבלות', e.supplier_pickup && 'איסוף מספקים'].filter(Boolean) as string[]
+  const details: [string, React.ReactNode][] = [
+    ['לקוח במערכת', <span key="c" className="inline-flex items-center gap-1.5"><span className="lab-dot" style={{ background: color }} />{e.customers?.name}</span>],
+    ['שם לקוח האירוע', e.end_client_name], ['מספר אירוע', e.event_number], ['מיקום', e.location_text], ['הערות למיקום', e.location_notes],
+    ['נפח במטר', e.volume_m], ['כמות משאיות', e.truck_count], ['איש קשר', contact?.contact_name],
+    ['טלפון איש קשר', contact?.contact_phone ? <a key="p" dir="ltr" href={`tel:${contact.contact_phone}`} className="text-[var(--vl-primary-text)]">{contact.contact_phone}</a> : null],
+    ['הערות', e.notes],
   ]
-  const score = checks.filter((c) => c.ok).length
-  const dt = parse(d)
-  // ציר זמן מאוחד של היום: כל צעד של כל משימה בסדר כרונולוגי
-  const steps = tasks.flatMap((t) => [
-    t.warehouse_start_time && { time: t.warehouse_start_time, title: `יציאה מהמחסן · ${t.task_type_name}`, sub: t.truck_name ?? 'ללא משאית', icon: Truck, t },
-    t.onsite_start_time && { time: t.onsite_start_time, title: `תחילת ${t.task_type_name} בשטח`, sub: `${t.worker_count} עובדים`, icon: Users, t },
-    t.onsite_end_time && { time: t.onsite_end_time, title: `סיום ${t.task_type_name}`, sub: t.hours_count ? `${t.hours_count} שעות עבודה` : '', icon: BadgeCheck, t },
-  ]).filter(Boolean).sort((a, b) => a!.time.localeCompare(b!.time)) as { time: string; title: string; sub: string; icon: typeof Truck; t: WorkBoardRow }[]
 
   return (
     <div className="mx-auto flex max-w-[1500px] flex-col gap-5 p-5">
-      {/* Hero */}
-      <div className="lab-card relative overflow-hidden p-0">
-        <div className="absolute inset-0 opacity-90" style={{ background: `radial-gradient(70% 140% at 100% 0%, ${tint(color, 26)}, transparent 60%), radial-gradient(60% 120% at 0% 100%, color-mix(in srgb, var(--nova-b) 12%, transparent), transparent 60%)` }} />
-        <div className="relative flex flex-wrap items-start gap-6 p-6">
+      {/* כותרת: שם, סטטוס, מאושר, לקוח, תאריך, מספר, מיקום — ופעולות */}
+      <div className="lab-card relative overflow-hidden p-6" style={{ background: `radial-gradient(70% 160% at 100% 0%, ${tint(color, 22)}, var(--vl-surface) 65%)` }}>
+        <div className="flex flex-wrap items-start gap-6">
           <div className="flex size-[76px] shrink-0 flex-col items-center justify-center rounded-3xl bg-[var(--vl-surface)] shadow-[0_0_0_1px_var(--vl-border-subtle),var(--vl-shadow-md)]">
-            <span className="text-[11px] font-bold text-ink-tertiary">{HE_DAYS[dt.getDay()]}</span>
-            <span className="text-[30px] font-extrabold leading-none tracking-tight">{dt.getDate()}</span>
-            <span className="text-[11px] font-semibold text-ink-tertiary">{dt.toLocaleDateString('he-IL', { month: 'short' })}</span>
+            <span className="text-[11px] font-bold text-ink-tertiary">{parse(d).toLocaleDateString('he-IL', { weekday: 'short' })}</span>
+            <span className="text-[30px] font-extrabold leading-none tracking-tight">{parse(d).getDate()}</span>
+            <span className="text-[11px] font-semibold text-ink-tertiary">{parse(d).toLocaleDateString('he-IL', { month: 'short' })}</span>
           </div>
           <div className="min-w-[280px] flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="lab-chip" style={{ background: tint(color, 16), color: 'var(--vl-text)' }}><span className="lab-dot" style={{ background: color }} />{e.customers?.name}</span>
-              <span className="text-[12.5px] text-ink-tertiary">אירוע #{e.event_number}</span>
-              {e.approved_at && <Chip tone="good"><Check size={12} />מאושר לביצוע</Chip>}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-[32px] font-extrabold leading-tight tracking-tight">{e.end_client_name}</h1>
+              <span className="lab-chip" style={{ background: tint(e.statuses?.color ?? '#888', 16), color: 'var(--vl-text)' }}><span className="lab-dot" style={{ background: e.statuses?.color }} />{e.statuses?.name}</span>
+              {e.approved_at && <Chip tone="good"><Check size={12} strokeWidth={3} />מאושר לביצוע</Chip>}
             </div>
-            <h1 className="mt-1.5 text-[34px] font-extrabold leading-[1.1] tracking-tight">{e.end_client_name}</h1>
-            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13.5px] text-ink-secondary">
-              <span className="inline-flex items-center gap-1.5"><MapPin size={15} />{e.location_text}</span>
-              <span className="inline-flex items-center gap-1.5"><CalendarDays size={15} />{dt.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-              {e.volume_m != null && <span className="inline-flex items-center gap-1.5"><PackageCheck size={15} />{e.volume_m} מ״ק</span>}
-              {e.truck_count != null && <span className="inline-flex items-center gap-1.5"><Truck size={15} />{e.truck_count} משאיות</span>}
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13.5px] text-ink-secondary">
+              <span className="inline-flex items-center gap-1.5 font-semibold"><span className="lab-dot" style={{ background: color }} />{e.customers?.name}</span>
+              <span className="inline-flex items-center gap-1.5"><Calendar size={14} />{parse(d).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+              {e.event_number && <span className="tabular-nums">אירוע #{e.event_number}</span>}
+              {e.location_text && <span className="inline-flex items-center gap-1.5"><MapPin size={14} />{e.location_text}</span>}
             </div>
-            <div className="mt-5 max-w-[560px]"><Stepper code={e.statuses?.code ?? 'new'} /></div>
+            {addons.length > 0 && <div className="mt-3 flex gap-1.5">{addons.map((a) => <Chip key={a} tone="brand">{a}</Chip>)}</div>}
           </div>
-          <div className="flex items-center gap-2">
-            <button className="rounded-xl bg-[var(--vl-surface)] px-4 py-2.5 text-[13px] font-semibold shadow-[0_0_0_1px_var(--vl-border)]"><FileText size={14} className="me-1.5 inline" />הצעת מחיר</button>
-            <button className="bg-primary rounded-xl px-5 py-2.5 text-[13px] font-bold text-white">עריכת אירוע</button>
+          <div className="flex flex-wrap items-center gap-2">
+            {[[Paperclip, 'מפרט'], [FileText, 'הצעת מחיר'], [PencilLine, 'החתמת לקוח']].map(([I, l]) => { const Ic = I as typeof Paperclip; return <button key={l as string} className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--vl-surface)] px-3.5 py-2 text-[13px] font-semibold shadow-[0_0_0_1px_var(--vl-border)]"><Ic size={14} />{l as string}</button> })}
+            <button className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--vl-surface)] px-3.5 py-2 text-[13px] font-semibold shadow-[0_0_0_1px_var(--vl-border)]"><Check size={14} />{e.approved_at ? 'ביטול אישור לביצוע' : 'אישור לביצוע'}</button>
+            <button className="bg-primary inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-bold text-white"><Pencil size={14} />עריכה</button>
+            <button className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--vl-error-subtle)] px-3.5 py-2 text-[13px] font-semibold text-[var(--vl-error-text)]"><Trash2 size={14} />מחיקה</button>
           </div>
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="flex min-w-0 flex-col gap-5">
-          {/* Readiness */}
-          <div className="lab-card p-5">
-            <div className="mb-4 flex items-center gap-4">
-              <Ring value={score} max={checks.length} size={64} stroke={7} color={score === checks.length ? 'var(--vl-success)' : 'var(--nova-a)'}>{score}/{checks.length}</Ring>
-              <div><div className="text-[17px] font-extrabold">מוכנות לביצוע</div><div className="text-[13px] text-ink-tertiary">{score === checks.length ? 'הכול מוכן — אפשר לצאת לדרך' : `${checks.length - score} דברים עדיין פתוחים`}</div></div>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-              {checks.map((c) => (
-                <div key={c.label} className={cx('rounded-2xl p-3', c.ok ? 'bg-[var(--vl-success-subtle)]' : 'bg-[var(--vl-warning-subtle)]')}>
-                  <span className={cx('mb-2 flex size-6 items-center justify-center rounded-full', c.ok ? 'bg-[var(--vl-success)] text-white' : 'border-2 border-dashed border-[var(--vl-warning)] text-[var(--vl-warning-text)]')}>{c.ok ? <Check size={14} strokeWidth={3} /> : <CircleDashed size={13} />}</span>
-                  <div className="text-[13px] font-bold leading-tight">{c.label}</div>
-                  <div className="mt-0.5 text-[11.5px] text-ink-secondary">{c.hint}</div>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* ארבעת הסיכומים — כמו היום */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          ['סך משימות', <b key="a" className="text-[26px] leading-none">{tasks.length}</b>],
+          ['חלוקת משימות', <span key="b" className="flex flex-wrap gap-1.5"><Chip tone="brand">הקמה {setup}</Chip><Chip tone="warn">פירוק {teardown}</Chip></span>],
+          ['צוות משובץ', <span key="c" className="flex items-center gap-1.5"><Users size={16} className="text-ink-tertiary" /><b className="text-[26px] leading-none">{workers}</b><span className="text-[12px] text-ink-tertiary">עובדים</span></span>],
+          ['סך תמחור', <b key="d" dir="ltr" className="text-[26px] leading-none text-[var(--vl-success-text)]">{money(total)}</b>],
+        ].map(([k, v]) => (
+          <div key={k as string} className="lab-card flex min-h-[86px] flex-col justify-between p-4"><span className="text-[12px] font-semibold text-ink-tertiary">{k}</span>{v}</div>
+        ))}
+      </div>
 
-          {/* Run of show */}
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        {/* משימות האירוע — במרכז הדף */}
+        <div className="flex min-w-0 flex-col gap-4">
           <div className="lab-card p-5">
-            <div className="mb-4 flex items-center justify-between"><div className="text-[17px] font-extrabold">מהלך היום</div><span className="text-[12px] text-ink-tertiary">כל הצעדים בסדר כרונולוגי</span></div>
-            <ol className="relative ps-1">
-              {steps.map((s, i) => (
-                <li key={i} className="relative flex gap-4 pb-5 last:pb-0">
-                  {i < steps.length - 1 && <span className="absolute start-[54px] top-9 bottom-0 w-px bg-[var(--vl-border)]" />}
-                  <span className="w-[48px] shrink-0 pt-1.5 text-end text-[14px] font-extrabold tabular-nums">{hm(s.time)}</span>
-                  <span className="z-10 flex size-9 shrink-0 items-center justify-center rounded-xl" style={{ background: tint(s.t.customer_color ?? '#5b5bf0', 16), color: 'var(--vl-primary-text)' }}><s.icon size={16} /></span>
-                  <div className="min-w-0 flex-1 pt-0.5"><div className="text-[14px] font-bold">{s.title}</div><div className="text-[12.5px] text-ink-tertiary">{s.sub}</div></div>
-                </li>
+            <div className="mb-1 text-[15px] font-extrabold">פרטי האירוע</div>
+            <dl className="grid gap-x-8 md:grid-cols-2">
+              {details.filter(([, v]) => v != null && v !== '').map(([k, v]) => (
+                <div key={k} className="flex items-start justify-between gap-4 border-b border-[var(--vl-border-subtle)] py-2.5 text-[13px]"><dt className="shrink-0 text-ink-tertiary">{k}</dt><dd className="text-end font-semibold">{v}</dd></div>
               ))}
-              {steps.length === 0 && <div className="text-[13px] text-ink-tertiary">אין עדיין משימות לאירוע</div>}
-            </ol>
+            </dl>
           </div>
-
-          {/* Tasks as cards */}
+          <div className="flex items-center gap-3"><h2 className="text-[19px] font-extrabold">משימות האירוע</h2><Chip>{tasks.length}</Chip></div>
           <div className="grid gap-4 md:grid-cols-2">
-            {tasks.map((t, i) => {
-              const h = hs[i]
-              const people = [t.team_lead_name, ...(t.workers ?? []).map((w) => w.name), ...(t.drivers ?? []).map((w) => w.name)].filter(Boolean) as string[]
+            {tasks.map((t) => {
+              const lead = crewLead(t), people = crewPeople(t)
+              const w = mn(t.warehouse_start_time), a = mn(t.onsite_start_time), b = mn(t.onsite_end_time)
               return (
-                <div key={t.id} className="lab-card p-5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div><div className="text-[17px] font-extrabold">{t.task_type_name}</div><div className="text-[12.5px] text-ink-tertiary"><Rng a={hm(t.onsite_start_time)} b={hm(t.onsite_end_time)} /> · {t.hours_count} שעות</div></div>
-                    <span className="lab-chip" style={{ background: tint(t.status_color, 16), color: 'var(--vl-text)' }}><span className="lab-dot" style={{ background: t.status_color }} />{t.status_name}</span>
+                <div key={t.id} className="lab-card lab-hoverable p-5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2"><Chip tone={t.task_type_code === 'teardown' ? 'warn' : 'brand'}>{t.task_type_code === 'teardown' ? 'פירוק' : t.task_type_code === 'setup' ? 'הקמה' : 'משימה'}</Chip>
+                      <span className="lab-chip" style={{ background: tint(t.status_color, 16), color: 'var(--vl-text)' }}><span className="lab-dot" style={{ background: t.status_color }} />{t.status_name}</span></div>
+                    {t.customer_price != null && <b dir="ltr" className="text-[15px] text-[var(--vl-success-text)]">{money(t.customer_price)}</b>}
                   </div>
-                  <div className="mt-4 flex items-center gap-3">
-                    <Ring value={h.have} max={h.need} size={56} stroke={6} color={h.ready ? 'var(--vl-success)' : 'var(--vl-error)'}>{h.have}/{h.need}</Ring>
-                    <div className="min-w-0 flex-1">{people.length ? <AvatarStack names={people} max={5} size={30} /> : <span className="text-[13px] text-ink-tertiary">עדיין לא שובצו אנשים</span>}
-                      {t.team_lead_name && <div className="mt-1.5 flex items-center gap-1.5 text-[12.5px]"><UserRound size={13} className="text-ink-tertiary" />ראש צוות: <b>{t.team_lead_name}</b></div>}</div>
+                  <h3 className="mt-3 text-[19px] font-extrabold tracking-tight">{t.title || t.task_type_name}</h3>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] text-ink-secondary">
+                    <span className="inline-flex items-center gap-1 rounded-md bg-[var(--vl-subtle)] px-2 py-1"><Calendar size={12} />{fmtDM(t.task_date)}</span>
+                    <span className="inline-flex items-center gap-1 rounded-md bg-[var(--vl-subtle)] px-2 py-1"><Clock size={12} /><Rng a={hm(t.onsite_start_time)} b={hm(t.onsite_end_time)} /></span>
+                    {t.hours_count != null && <span className="text-ink-tertiary">({t.hours_count} שעות)</span>}
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-1.5">
-                    <Chip tone={t.truck_name ? 'neutral' : 'warn'}><Truck size={12} />{t.truck_name ?? 'ללא משאית'}</Chip>
-                    {t.execution_method_name && <Chip>{t.execution_method_name}</Chip>}
-                    {t.contractor_name && <Chip tone="brand">קבלן: {t.contractor_name}</Chip>}
-                    {h.flags.map((f) => <Chip key={f.key} tone={f.tone === 'bad' ? 'bad' : 'warn'}>{f.label}</Chip>)}
+                  {a != null && b != null && (
+                    <div className="relative mt-3 h-1.5 rounded-full bg-[var(--vl-subtle)]">
+                      {w != null && w < a && <span className="absolute inset-y-0 rounded-full bg-[var(--vl-border-strong)]" style={{ insetInlineStart: `${pct(w)}%`, width: `${pct(a) - pct(w)}%` }} />}
+                      <span className="absolute inset-y-0 rounded-full" style={{ background: color, insetInlineStart: `${pct(a)}%`, width: `${pct(b) - pct(a)}%` }} />
+                    </div>
+                  )}
+                  {(lead || t.contractor_name || t.execution_method_name) && (
+                    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--vl-border-subtle)] pt-3 text-[12.5px] text-ink-secondary">
+                      {lead && <span className="inline-flex items-center gap-1"><HardHat size={13} className="text-[var(--vl-warning-text)]" />ר״צ: {lead.name}</span>}
+                      {t.contractor_name && <span className="inline-flex items-center gap-1"><Briefcase size={13} className="text-[var(--vl-info-text)]" />{t.contractor_name}</span>}
+                      {t.execution_method_name && !t.contractor_name && <span className="text-ink-tertiary">({t.execution_method_name})</span>}
+                    </div>
+                  )}
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-[var(--vl-border-subtle)] pt-3">
+                    {people.length ? people.map((p) => <span key={p.key} className="rounded bg-[var(--vl-subtle)] px-1.5 py-px text-[12px] text-ink-secondary">{p.name}</span>) : <span className="text-[12px] text-ink-tertiary">לא שובצו עובדים</span>}
+                    <span className="ms-auto text-[12px] tabular-nums text-ink-tertiary">{crewSize(t)}/{t.worker_count || '—'} עובדים</span>
                   </div>
                 </div>
               )
@@ -126,42 +125,26 @@ export function EventLab({ id }: { id: string }) {
           </div>
         </div>
 
-        {/* עמודת צד: מקום, כסף, אנשי קשר, יומן */}
+        {/* עמודת צד: פרטי האירוע, תמחור, יומן פעילות */}
         <div className="flex flex-col gap-5">
-          <div className="lab-card overflow-hidden">
-            <div className="relative h-[150px]" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--nova-a) 14%, var(--vl-subtle)), var(--vl-subtle))' }}>
-              <svg className="absolute inset-0 size-full opacity-60" viewBox="0 0 300 150" preserveAspectRatio="none"><g stroke="var(--vl-border-strong)" strokeWidth="1" fill="none"><path d="M0 100 C60 80 90 120 150 90 S250 60 300 80" /><path d="M40 0 C60 50 30 90 70 150" /><path d="M170 0 C150 60 200 90 190 150" /><path d="M0 40 L300 55" /></g></svg>
-              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[70%]"><MapPin size={38} className="text-[var(--nova-a)] drop-shadow-lg" fill="var(--vl-surface)" /></span>
-            </div>
-            <div className="p-4"><div className="text-[14.5px] font-extrabold">{e.location_text}</div>{e.location_notes && <div className="mt-1 text-[12.5px] text-ink-secondary">{e.location_notes}</div>}
-              <button className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-[var(--vl-subtle)] px-3 py-1.5 text-[12.5px] font-semibold"><Navigation size={13} />נווט ב-Waze</button></div>
-          </div>
-
           <div className="lab-card p-5">
-            <div className="mb-3 flex items-center gap-2 text-[15px] font-extrabold"><Wallet size={17} />כסף</div>
-            <div className="flex items-end justify-between"><span className="text-[12.5px] text-ink-tertiary">חיוב ללקוח</span><span className="text-[26px] font-extrabold leading-none tracking-tight">{money(price)}</span></div>
-            <div className="my-3 h-2 overflow-hidden rounded-full bg-[var(--vl-subtle)]"><div className="h-full rounded-full" style={{ width: `${Math.min(100, (cost / (price || 1)) * 100)}%`, background: 'var(--nova-grad)' }} /></div>
-            <div className="flex justify-between text-[12.5px]"><span className="text-ink-tertiary">עלות משוערת</span><b>{money(cost)}</b></div>
-            <div className="mt-1 flex justify-between text-[12.5px]"><span className="text-ink-tertiary">רווח משוער</span><b className="text-[var(--vl-success-text)]">{money(price - cost)}</b></div>
+            <div className="text-[15px] font-extrabold">תמחור</div>
+            <div className="mb-2 text-[12px] text-ink-tertiary">המחיר שהלקוח משלם</div>
+            <dl className="flex flex-col divide-y divide-[var(--vl-border-subtle)]">
+              {tasks.map((t) => <div key={t.id} className="flex justify-between py-2.5 text-[13px]"><dt className="text-ink-secondary">{t.title || t.task_type_name}</dt><dd dir="ltr" className="font-semibold tabular-nums">{money(t.customer_price)}</dd></div>)}
+              <div className="flex items-baseline justify-between pt-3"><dt className="text-[13px] font-bold">סך הכול</dt><dd dir="ltr" className="text-[22px] font-extrabold tracking-tight text-[var(--vl-success-text)]">{money(total)}</dd></div>
+            </dl>
           </div>
-
           <div className="lab-card p-5">
-            <div className="mb-3 text-[15px] font-extrabold">איש קשר</div>
-            <div className="flex items-center gap-3"><Avatar name="אבי כהן" size={40} /><div className="flex-1"><div className="text-[14px] font-bold">אבי כהן</div><div className="text-[12.5px] text-ink-tertiary" dir="ltr">050-1234567</div></div>
-              <span className="flex size-9 items-center justify-center rounded-xl bg-[var(--vl-success-subtle)] text-[var(--vl-success-text)]"><Phone size={16} /></span></div>
-            {e.notes && <div className="mt-4 rounded-xl bg-[var(--vl-warning-subtle)] px-3 py-2.5 text-[12.5px] text-[var(--vl-warning-text)]"><MessageSquare size={12} className="me-1 inline" />{e.notes}</div>}
-          </div>
-
-          <div className="lab-card p-5">
-            <div className="mb-3 text-[15px] font-extrabold">יומן פעילות</div>
-            <ul className="flex flex-col gap-3 text-[12.5px]">
-              {[['מנהל מערכת', 'אישר את האירוע לביצוע', 'לפני 3 ימים'], ['דניאל כהן', 'שובץ כראש צוות בהקמה', 'לפני יומיים'], ['מערכת', 'נוצרו משימות הקמה ופירוק', 'לפני שבוע']].map(([w, a, when]) => (
-                <li key={a} className="flex gap-2.5"><Avatar name={w} size={24} /><div><b>{w}</b> {a}<div className="text-[11px] text-ink-tertiary">{when}</div></div></li>
-              ))}
-            </ul>
+            <div className="text-[15px] font-extrabold">יומן פעילות</div>
+            <div className="mb-3 text-[12px] text-ink-tertiary">כל שינוי באירוע יירשם כאן אוטומטית, ואפשר גם לרשום תיעוד חופשי</div>
+            <div className="rounded-xl bg-[var(--vl-subtle)] p-3 text-[13px] text-ink-tertiary">מה קרה? למשל: הלקוח ביקש משאית נוספת בטלפון</div>
+            <button className="bg-primary mt-2 rounded-xl px-4 py-2 text-[13px] font-bold text-white opacity-60">הוספה ליומן</button>
+            <div className="mt-5 text-center"><div className="text-[14px] font-bold">היומן ריק</div></div>
           </div>
         </div>
       </div>
     </div>
   )
 }
+export { cx }

@@ -84,3 +84,16 @@ export const dayLabel = (d: string) => `${HE_DAYS[parse(d).getDay()]} ${parse(d)
 export const TODAY = iso(new Date())
 export const money = (n: number | null | undefined) => (n == null ? '—' : `₪${Math.round(n).toLocaleString('he-IL')}`)
 export const initials = (n: string) => n.split(' ').map((p) => p[0]).slice(0, 2).join('')
+
+export const useContact = (id: string) =>
+  useQuery({
+    queryKey: ['lab', 'contact', id],
+    queryFn: async () => {
+      const { data } = await supabase.from('event_contacts').select('*').eq('event_id', id).maybeSingle()
+      return data as { contact_name: string | null; contact_phone: string | null } | null
+    },
+  })
+export const fmtDM = (d: string) => `${parse(d).getDate()}.${parse(d).getMonth() + 1}`
+export const monthStart = (d: string) => d.slice(0, 8) + '01'
+export const monthEnd = (d: string) => iso(new Date(+d.slice(0, 4), +d.slice(5, 7), 0, 12))
+export const addMonths = (d: string, n: number) => iso(new Date(+d.slice(0, 4), +d.slice(5, 7) - 1 + n, 1, 12))

@@ -15,8 +15,8 @@ const params = new URLSearchParams(location.search)
 document.documentElement.dataset.theme = params.get('theme') ?? localStorage.getItem('vl-theme') ?? 'light'
 
 const PAGES = [
-  { k: 'calendar', label: 'לוח אירועים', icon: CalendarDays },
-  { k: 'dispatch', label: 'לוח שיבוץ יומי', icon: ClipboardList },
+  { k: 'calendar', label: 'לוח שנה', icon: CalendarDays },
+  { k: 'dispatch', label: 'לו״ז עבודה', icon: ClipboardList },
   { k: 'event', label: 'דף אירוע', icon: PartyPopper },
 ] as const
 

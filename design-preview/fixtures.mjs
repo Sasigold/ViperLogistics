@@ -126,7 +126,7 @@ export const me = {
 
 export const TABLES = {
   customers, statuses, task_types: taskTypes, execution_methods: methods, trucks, contractors, profiles: staff, events,
-  work_board_view: workBoard, event_contacts: [{ event_id: events[0].id, name: 'אבי כהן', phone: '050-1234567', email: null }],
+  work_board_view: workBoard, event_contacts: [{ event_id: events[0].id, contact_name: 'אבי כהן', contact_phone: '050-1234567' }],
   event_suppliers: [], saved_filters: [],
   tasks: workBoard.map((w) => ({ id: w.id, event_id: w.event_id, task_date: w.task_date, onsite_start_time: w.onsite_start_time, hours_count: w.hours_count, worker_count: w.worker_count, execution_method_id: w.execution_method_id, performed_by: 'viper', task_types: { code: w.task_type_code }, task_pricing: [{ price: w.customer_price, is_manual: false }], deleted_at: null })),
 }
