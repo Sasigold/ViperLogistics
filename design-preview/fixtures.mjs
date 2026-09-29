@@ -127,3 +127,52 @@ export const TABLES = {
   tasks: workBoard.map((w) => ({ id: w.id, event_id: w.event_id, task_date: w.task_date, onsite_start_time: w.onsite_start_time, hours_count: w.hours_count, worker_count: w.worker_count, execution_method_id: w.execution_method_id, performed_by: 'viper', task_types: { code: w.task_type_code }, task_pricing: [{ price: w.customer_price, is_manual: false }], deleted_at: null })),
 }
 export { TODAY }
+
+// ── נוכחות ──
+const iso = (d, hm) => `${d}T${hm}:00+03:00`
+const entry = (n, pid, date, inT, outT, o = {}) => ({
+  id: id('a1', n), profile_id: pid, work_date: date, seq: 1, shift_start: iso(date, '06:00'), shift_end: iso(date, '15:00'), planned_hours: 9,
+  work_site: 'warehouse', task_ids: [], clock_in_at: iso(date, inT), clock_out_at: outT ? iso(date, outT) : null,
+  clock_in_lat: null, clock_in_lng: null, clock_in_distance_m: 40, clock_out_distance_m: outT ? 55 : null,
+  raw_clock_in_at: null, raw_clock_out_at: null, actual_hours: outT ? +(((+outT.slice(0, 2) * 60 + +outT.slice(3)) - (+inT.slice(0, 2) * 60 + +inT.slice(3))) / 60).toFixed(2) : null,
+  source: 'clock', status: 'approved', reviewed_by: null, reviewed_at: null, flags: [], employee_note: null, manager_note: null,
+  clock_in_place: 'מחסן מרכזי, פתח תקווה', clock_out_place: outT ? 'מחסן מרכזי, פתח תקווה' : null, edited_at: null,
+  req_clock_in_at: null, req_clock_out_at: null, req_note: null, req_at: null, ...o,
+})
+const T = '2026-09-29'
+const clockRules = { version: 1, merge_gap_minutes: 30, clock_enabled: true, requires_location: false, location_radius_m: 150, allow_early_clock_in: true, early_grace_minutes: 30, allow_clock_without_shift: false, max_accuracy_m: 100, auto_close_after_hours: 16, self_entry: { enabled: true, max_backdate_days: 7, max_hours: 16 } }
+const openEntry = entry(1, staff[0].id, T, '06:04', null)
+export const RPCS = {
+  attendance_my_status: {
+    open_entry: openEntry,
+    shift: { profile_id: staff[0].id, work_date: T, seq: 1, shift_start: iso(T, '06:00'), shift_end: iso(T, '15:00'), planned_hours: 9, work_site: 'warehouse', task_ids: [], first_task_id: null, last_task_id: null, start_lat: null, start_lng: null, end_lat: null, end_lng: null, travel_hours: 1, label: 'חתונת כהן־לוי', customer_id: customers[0].id, customer_color: customers[0].color, warehouse_id: null, warehouse_name: 'מחסן מרכזי' },
+    rules: clockRules, location_required: false, can_clock_in: false, clock_in_block: null, can_submit: true, can_request_correction: true,
+    today: [openEntry],
+    reports: [entry(2, staff[0].id, '2026-09-27', '07:00', '16:10', { source: 'manual', status: 'pending', employee_note: 'שכחתי להחתים בכניסה' })],
+    corrections: [entry(3, staff[0].id, '2026-09-25', '06:20', '15:05', { req_clock_in_at: iso('2026-09-25', '06:00'), req_clock_out_at: iso('2026-09-25', '15:00'), req_note: 'הטלפון היה כבוי', req_at: iso('2026-09-25', '16:00') })],
+  },
+}
+const pay = (h, o = {}) => ({ version: 1, paid_hours: h, worked_hours: h, base_hours: Math.min(h, 8), overtime_hours: Math.max(0, h - 8), topup_hours: 0, is_rest_day: false, hourly_rate: 42, total: Math.round(h * 42 + Math.max(0, h - 8) * 21), bonus: 0, lines: [], ...o })
+const rrows = []
+let rn = 10
+staff.slice(0, 6).forEach((p, pi) => {
+  ;['2026-09-27', '2026-09-28', '2026-09-29'].forEach((d, di) => {
+    const inT = ['06:00', '06:12', '07:30', '05:55'][(pi + di) % 4]
+    const outT = ['15:05', '16:40', '14:20', '17:30'][(pi * 2 + di) % 4]
+    const e = entry(rn++, p.id, d, inT, outT)
+    const st = (pi + di) % 5 === 0 ? 'pending' : (pi + di) % 7 === 0 ? 'rejected' : 'approved'
+    const flags = (pi + di) % 4 === 1 ? ['late'] : (pi + di) % 6 === 2 ? ['far_from_site'] : []
+    rrows.push({
+      ...e, full_name: p.full_name, contractor_id: null, in_distance_m: e.clock_in_distance_m, out_distance_m: e.clock_out_distance_m,
+      in_lat: null, in_lng: null, out_lat: null, out_lng: null, status: st, flags, work_place: 'מחסן מרכזי', end_work_site: 'field', end_work_place: 'גני התערוכה',
+      overtime_enabled: true, bonus_note: null, correction: null, pay: pay(e.actual_hours),
+    })
+  })
+})
+const sum = (f) => rrows.reduce((a, r) => a + f(r), 0)
+RPCS.attendance_report = {
+  rows: rrows, can_see_pay: true,
+  totals: { entries: rrows.length, pending: rrows.filter((r) => r.status === 'pending').length, pending_hours: 21.5, actual_hours: +sum((r) => r.actual_hours).toFixed(1), paid_hours: +sum((r) => r.pay.paid_hours).toFixed(1), overtime_hours: +sum((r) => r.pay.overtime_hours).toFixed(1), corrections: 1, bonus: 300, total: sum((r) => r.pay.total) },
+}
+TABLES.warehouses = [{ id: 'w', name: 'מחסן מרכזי', address: 'פתח תקווה', lat: 32.09, lng: 34.88, radius_m: 150, color: '#3563f0', notes: null, is_active: true, sort_order: 1, deleted_at: null }]
+TABLES.worker_pay_settings = []

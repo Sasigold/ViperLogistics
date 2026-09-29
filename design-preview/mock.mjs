@@ -1,4 +1,4 @@
-import { TABLES, me } from './fixtures.mjs'
+import { TABLES, RPCS, me } from './fixtures.mjs'
 
 const REF = 'demo'
 const SUPA = 'https://demo.supabase.co'
@@ -24,7 +24,7 @@ function applyFilters(rows, params) {
   })
 }
 
-export async function installMock(context) {
+export async function installMock(context, opts = {}) {
   await context.addInitScript(
     ([ref, session]) => {
       localStorage.setItem(`sb-${ref}-auth-token`, JSON.stringify(session))
@@ -44,7 +44,8 @@ export async function installMock(context) {
     if (url.pathname.startsWith('/auth/v1')) return json({})
     if (url.pathname.startsWith('/rest/v1/rpc/')) {
       const fn = url.pathname.split('/').pop()
-      if (fn === 'get_my_permissions') return json(me)
+      if (fn === 'get_my_permissions') return json(opts.employee ? { ...me, roles: ['worker'] } : me)
+      if (RPCS[fn]) return json(RPCS[fn])
       return json(req.method() === 'POST' ? [] : null)
     }
     if (url.pathname.startsWith('/rest/v1/')) {

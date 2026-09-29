@@ -21,19 +21,26 @@ const SCREENS = [
   { name: '03-board', path: '/board' },
   { name: '04-event-detail', path: `/events/${ev}`, full: true },
   { name: '05-event-edit', path: `/events/${ev}`, act: async (p) => { await p.getByRole('button', { name: /עריכ/ }).first().click() } },
+  { name: '07-attendance-report', path: '/attendance' },
+  { name: '08-time-clock', path: '/my/attendance', employee: true, full: true },
   { name: '06-board-edit-panel', path: '/board', act: async (p) => { const c = p.getByText('לא שובץ').first(); await c.click(); await p.waitForTimeout(500); await c.click() } },
 ]
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' })
 for (const theme of ['light', 'dark']) {
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: process.env.CLIP ? 2 : 1, locale: 'he-IL', timezoneId: 'Asia/Jerusalem' })
-  await ctx.addInitScript((t) => localStorage.setItem('vl-theme', t), theme)
-  await installMock(ctx)
-  await ctx.clock?.setFixedTime?.(new Date('2026-09-29T09:00:00+03:00'))
-  const page = await ctx.newPage()
-  page.on('pageerror', (e) => console.log('PAGEERROR', e.message))
+  const ctxs = {}
+  const getPage = async (employee) => {
+    if (ctxs[employee]) return ctxs[employee]
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: process.env.CLIP ? 2 : 1, locale: 'he-IL', timezoneId: 'Asia/Jerusalem' })
+    await ctx.addInitScript((t) => localStorage.setItem('vl-theme', t), theme)
+    await installMock(ctx, { employee })
+    const pg = await ctx.newPage()
+    pg.on('pageerror', (e) => console.log('PAGEERROR', e.message))
+    return (ctxs[employee] = pg)
+  }
   for (const s of SCREENS) {
     if (only.length && !only.some((o) => s.name.includes(o))) continue
+    const page = await getPage(!!s.employee)
     await page.goto(BASE + s.path, { waitUntil: 'networkidle' }).catch(() => {})
     await page.waitForTimeout(1200)
     await page.addStyleTag({ content: css })
@@ -43,6 +50,6 @@ for (const theme of ['light', 'dark']) {
     await page.screenshot({ path: clip ? `/tmp/clip-${s.name}-${theme}.png` : `${out}${s.name}-${theme}.png`, fullPage: !clip && !!s.full, clip })
     console.log('shot', variant, s.name, theme)
   }
-  await ctx.close()
+  for (const pg of Object.values(ctxs)) await pg.context().close()
 }
 await browser.close()

@@ -59,3 +59,11 @@ main .surface > div:first-child { background: color-mix(in srgb, var(--vl-subtle
 aside { color: var(--vl-text); }
 .fc .fc-col-header-cell.fc-day-sat, .fc .fc-col-header-cell.fc-day-fri { background: var(--pro-ink); }
 :root{--radius-md:6px;--radius-lg:8px;--radius-xl:10px;--radius-2xl:12px}
+
+/* ── שעון נוכחות ודוח נוכחות ── */
+.max-w-md .rounded-3xl { border-radius: 10px; border-color: var(--vl-border); box-shadow: none; border-top: 3px solid var(--vl-primary); }
+.max-w-md .rounded-full.w-56 { box-shadow: none !important; outline: 6px solid color-mix(in srgb, currentColor 16%, transparent); }
+.max-w-md .rounded-full.w-72, .max-w-md .rounded-full.w-64 { border-color: var(--vl-border-strong); }
+.max-w-md h1 { font-weight: 800; }
+main .grid > .surface, main .grid > [class*='rounded'][class*='border'] { border-radius: 8px; border-top: 3px solid var(--vl-primary); box-shadow: none; }
+main [class*='rounded-'][class*='border']:not(.rounded-full) { border-radius: 8px; }

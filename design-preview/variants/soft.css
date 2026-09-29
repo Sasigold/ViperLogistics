@@ -66,3 +66,13 @@ main .surface > div:first-child { border-bottom-color: var(--vl-border-subtle); 
 [role='dialog'] > div:last-child { background: transparent; border-top: 1px solid var(--vl-border-subtle); padding-top: 14px; }
 .vl-cal-chip svg { color: var(--vl-success-text); }
 :root{--radius-md:10px;--radius-lg:12px;--radius-xl:18px;--radius-2xl:22px}
+
+/* ── שעון נוכחות ודוח נוכחות ── */
+main:has(.max-w-md.mx-auto) { background: radial-gradient(90% 50% at 50% 0%, color-mix(in srgb, var(--vl-primary) 9%, transparent), transparent 70%); }
+.max-w-md .rounded-3xl { border-color: transparent; box-shadow: 0 10px 30px -14px rgb(15 26 51 / 0.18), 0 1px 2px rgb(15 26 51 / 0.05); }
+.max-w-md .rounded-full.w-56 { background-image: linear-gradient(160deg, rgb(255 255 255 / 0.22), transparent 55%); box-shadow: 0 22px 44px -14px currentColor, inset 0 -8px 18px rgb(0 0 0 / 0.14) !important; }
+.max-w-md .rounded-full.w-72 { border-style: dashed; opacity: 0.85; }
+main .max-w-md h1 { font-weight: 800; }
+/* דוח: כרטיסי KPI ושורות */
+main .rounded-2xl.border, main [class*='rounded-xl'].border { border-color: var(--vl-border-subtle); }
+main .grid > .surface, main .grid > [class*='rounded'][class*='border'] { box-shadow: var(--vl-shadow-sm); background-image: linear-gradient(180deg, color-mix(in srgb, var(--vl-primary) 4%, var(--vl-surface)), var(--vl-surface) 60%); }
