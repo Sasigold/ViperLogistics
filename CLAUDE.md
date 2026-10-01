@@ -88,7 +88,7 @@ After a change: `npm run lint && npm run typecheck && npm run test:unit` (and `t
 
 ## 4. Frontend map (`src/`)
 
-**Boot** `main.tsx`: QueryClient (staleTime 30s, retry 1), global `reportError` for query/mutation errors (`lib/reportError.ts`, `setErrorSink` for Sentry), `useAuth.boot()`, tree `ErrorBoundary > QueryClientProvider > ToastProvider > RouterProvider`.
+**Boot** `main.tsx`: QueryClient (staleTime 30s, retry 1), global `reportError` for query/mutation errors (`lib/reportError.ts`, `setErrorSink` for Sentry), `useAuth.boot()` → `dismissSplash` (`app/splash.ts`; the animated logo splash is inline SVG+CSS in `index.html`, skipped in iframes/`/embed/`), tree `ErrorBoundary > QueryClientProvider > ToastProvider > RouterProvider`.
 **`sw.ts`**: Workbox precache + NavigationRoute (denylist `/functions/ /rest/ /auth/ /storage/ /employee-guide/`), NetworkFirst for Supabase GET, push handlers. No background sync by design (clock uses server `now()`). `vite.config.ts` explains injectManifest traps.
 
 **`app/`**: `router.tsx` (routes, lazyPage, `handle` gates; `/client/*` legacy redirects keep until ≥2027) · `nav.ts` (`NAV_SECTIONS`, audience predicates `forEmployees/forContractors/forSelfPerformingCustomers/forWarehouseSchedule`, `hiddenBy`, `ROUTE_LABELS`) · `AppLayout.tsx` (sidebar, bottom nav, Ctrl+K palette, mounts push + realtime sync) · `HomeRoute.tsx` (`/` → Dashboard / CustomerDashboard / first reachable nav) · `breadcrumbs.tsx`.
