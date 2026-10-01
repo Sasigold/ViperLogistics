@@ -186,6 +186,19 @@ export function usePermissionScopes(profileId?: string | null, roleId?: string |
   })
 }
 
+/** Scope rows of several roles at once — what a user inherits (see `inheritedScopes`). */
+export function useRoleScopes(roleIds: string[]) {
+  return useQuery({
+    queryKey: ['permission_scopes', 'roles', ...[...roleIds].sort()],
+    enabled: roleIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('permission_scopes').select('*').in('role_id', roleIds)
+      if (error) throw error
+      return data as PermissionScope[]
+    },
+  })
+}
+
 export function useFieldPermissionRows(profileId?: string | null, roleId?: string | null) {
   return useQuery({
     queryKey: ['field_permissions', profileId ?? null, roleId ?? null],
