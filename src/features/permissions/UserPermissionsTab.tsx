@@ -83,7 +83,7 @@ export function UserPermissionsTab({ profile }: { profile: Profile }) {
           {profile.customer_id && <UserFormFieldsCard profile={profile} />}
         </div>
       )}
-      {tab === 'scopes' && <ScopeEditor subject={{ kind: 'user', profileId: profile.id }} />}
+      {tab === 'scopes' && <ScopeEditor subject={{ kind: 'user', profileId: profile.id, userKind: profile.user_kind }} />}
     </div>
   )
 }

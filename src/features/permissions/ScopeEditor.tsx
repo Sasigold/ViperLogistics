@@ -8,6 +8,10 @@
  *
  * These are enforced in the SELECT policies, not here — this screen only
  * writes the rules.
+ *
+ * On a user, any row of their own for a module replaces the role rows for that
+ * module (app.scope_rows), so the user view also lists what still comes from
+ * their roles, and offers "ללא הגבלה" — a row whose only job is that override.
  */
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -28,12 +32,21 @@ import {
   useToast,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
-import { SCOPE_LABELS, SCOPE_RESOURCES, usePermissionScopes, refreshOwnCapabilities } from '../../lib/permissions'
+import {
+  SCOPE_LABELS,
+  SCOPE_RESOURCES,
+  usePermissionRoles,
+  usePermissionScopes,
+  useProfileRoles,
+  useRoleScopes,
+  refreshOwnCapabilities,
+} from '../../lib/permissions'
+import { applicableRoleIds, inheritedScopes } from '../../lib/effectiveScopes'
 import { useContractors, useCustomers, useStatuses, useTaskTypes, useTrucks, useExecutionMethods } from '../../lib/queries'
-import type { PermissionScope, ScopeType } from '../../types/domain'
+import type { PermissionScope, ScopeType, UserKind } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
-export type ScopeSubject = { kind: 'user'; profileId: string } | { kind: 'role'; roleId: string }
+export type ScopeSubject = { kind: 'user'; profileId: string; userKind: UserKind } | { kind: 'role'; roleId: string }
 
 export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
   const toast = useToast()
@@ -42,6 +55,14 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
   const roleId = subject.kind === 'role' ? subject.roleId : null
 
   const { data: scopes = [], isLoading } = usePermissionScopes(profileId, roleId)
+  const { data: allRoles = [] } = usePermissionRoles()
+  const { data: assignedRoles = [] } = useProfileRoles(profileId)
+  const myRoleIds =
+    subject.kind === 'user' ? applicableRoleIds(allRoles, assignedRoles, subject.userKind) : []
+  const { data: roleScopes = [] } = useRoleScopes(myRoleIds)
+  const inherited = inheritedScopes(roleScopes, myRoleIds, scopes)
+  const roleName = new Map(allRoles.map((r) => [r.id, r.name_he]))
+  const roleRestricted = new Set(roleScopes.map((s) => s.resource))
   const [resource, setResource] = useState('tasks')
   const [scopeType, setScopeType] = useState<ScopeType>('customers')
 
@@ -121,7 +142,12 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
 
   if (isLoading) return <Skeleton className="h-64 w-full" />
 
-  const allowedTypes = SCOPE_RESOURCES.find((r) => r.key === resource)?.types ?? []
+  const typesFor = (key: string): string[] => {
+    const types = SCOPE_RESOURCES.find((r) => r.key === key)?.types ?? []
+    // on a role "all" restricts nothing and overrides nothing — it only means something on a user
+    return subject.kind === 'user' ? [...types, 'all'] : types
+  }
+  const allowedTypes = typesFor(resource)
 
   return (
     <div className="space-y-4">
@@ -139,7 +165,7 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
                 onChange={(e) => {
                   const next = e.target.value
                   setResource(next)
-                  const types = SCOPE_RESOURCES.find((r) => r.key === next)?.types ?? []
+                  const types = typesFor(next)
                   if (!types.includes(scopeType)) setScopeType((types[0] as ScopeType) ?? 'customers')
                 }}
               >
@@ -165,7 +191,7 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
             </Button>
           </div>
 
-          {scopes.length === 0 ? (
+          {scopes.length === 0 && inherited.length === 0 ? (
             <EmptyState
               art="check"
               title="ללא הגבלת נתונים"
@@ -180,6 +206,9 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
                       {SCOPE_RESOURCES.find((r) => r.key === s.resource)?.label ?? s.resource}
                     </Badge>
                     <span className="type-body font-semibold">{SCOPE_LABELS[s.scope_type]}</span>
+                    {subject.kind === 'user' && roleRestricted.has(s.resource) && (
+                      <span className="type-caption text-ink-tertiary">במקום ההגבלה שמגיעה מהתפקיד</span>
+                    )}
                     <IconButton
                       className="ms-auto"
                       label="הסרת ההגבלה"
@@ -244,6 +273,20 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
                       )}
                     </>
                   )}
+                </li>
+              ))}
+              {inherited.map((s) => (
+                <li key={s.id} className="rounded-lg border border-dashed border-line-subtle p-3">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <Badge tone="primary">
+                      {SCOPE_RESOURCES.find((r) => r.key === s.resource)?.label ?? s.resource}
+                    </Badge>
+                    <span className="type-body font-semibold">{SCOPE_LABELS[s.scope_type]}</span>
+                    <Badge>מהתפקיד {roleName.get(s.role_id ?? '') ?? ''}</Badge>
+                  </div>
+                  <p className="type-caption text-ink-tertiary">
+                    כדי לבטל אותה למשתמש הזה בלבד — הוסיפו לאותו מודול הגבלה מסוג ״{SCOPE_LABELS.all}״
+                  </p>
                 </li>
               ))}
             </ul>
