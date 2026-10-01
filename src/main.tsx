@@ -5,6 +5,7 @@ import { RouterProvider } from 'react-router/dom'
 import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import { router } from './app/router'
+import { dismissSplash } from './app/splash'
 import { ErrorBoundary, ToastProvider } from './components/ui'
 import { reportError } from './lib/reportError'
 import { useAuth } from './state/auth'
@@ -33,7 +34,7 @@ const queryClient = new QueryClient({
   }),
 })
 
-void useAuth.getState().boot()
+void useAuth.getState().boot().finally(dismissSplash)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
