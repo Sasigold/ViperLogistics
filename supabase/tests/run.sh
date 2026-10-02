@@ -608,6 +608,19 @@ OUT="$OUT
 $OUT57"
 
 echo
+echo "== the wall names its crews suite =="
+# 58 מקימה שני לקוחות, קבלן, שלושה אירועים, ארבע-עשרה משימות ואנשי צוות משלה
+# ב-current_date + 900, מעבר לכל טווח אחר (57 יושבת ביולי ארבע שנים קדימה,
+# והשאר עד +870) — כל משימה בתמונה של אותו יום היא שלה, ולכן אפשר לבדוק את
+# crew_names מול assigned על התמונה כולה. היא רצה אחרונה כי היא משאירה אחריה
+# משימות, שיבוצים ואנשי צוות שאינם מנוקים; בדיקת הדלת בשעון האמיתי נעשית
+# בתוך טרנזקציה שמתבטלת, ואינה משאירה דבר.
+OUT58=$($PSQL -d vl -f "$HERE/58_wall_crew_names.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT58"
+OUT="$OUT
+$OUT58"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

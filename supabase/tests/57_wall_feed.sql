@@ -235,24 +235,26 @@ select t_eq('anon ו-authenticated אינם מריצים אף אחת מהפונ�
   (select count(*)::int from t_pre_seed.function_acl
     where (schema, name) in (('public', 'wall_snapshot'), ('app', 'wall_snapshot_at'),
                              ('app', 'wall_feed_check'), ('app', 'wall_task_rows'),
-                             ('app', 'margin_summary_core'), ('app', 'payroll_summary_core'))
+                             ('app', 'margin_summary_core'), ('app', 'payroll_summary_core'),
+                             ('app', 'wall_task_crew'))
       and (anon or authenticated)), 0);
 
-select t_eq('ושש הפונקציות האלה אכן נמצאו בתמונה',
+select t_eq('ושבע הפונקציות האלה אכן נמצאו בתמונה (העוזר של שמות הצוות — 0203)',
   (select count(*)::int from t_pre_seed.function_acl
     where (schema, name) in (('public', 'wall_snapshot'), ('app', 'wall_snapshot_at'),
                              ('app', 'wall_feed_check'), ('app', 'wall_task_rows'),
-                             ('app', 'margin_summary_core'), ('app', 'payroll_summary_core'))), 6);
+                             ('app', 'margin_summary_core'), ('app', 'payroll_summary_core'),
+                             ('app', 'wall_task_crew'))), 7);
 
 select t_eq('service_role מריץ את הדלת',
   (select service_role from t_pre_seed.function_acl
     where schema = 'public' and name = 'wall_snapshot' and args = 'p_secret text, p_days integer'), true);
 
-select t_eq('ורק אותה — לא את הלוגיקה ולא את הליבות',
+select t_eq('ורק אותה — לא את הלוגיקה, לא את הליבות ולא את העוזר',
   (select count(*)::int from t_pre_seed.function_acl
     where (schema, name) in (('app', 'wall_snapshot_at'), ('app', 'wall_feed_check'),
                              ('app', 'wall_task_rows'), ('app', 'margin_summary_core'),
-                             ('app', 'payroll_summary_core'))
+                             ('app', 'payroll_summary_core'), ('app', 'wall_task_crew'))
       and service_role), 0);
 
 select t_eq('העטיפה של הרווח שומרת את ההענקה ל-authenticated (0044)',
