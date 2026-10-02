@@ -12,19 +12,21 @@
  * וב-`app.wall_snapshot_at` — מקום אחד שנבדק בחבילת ה-SQL (57_wall_feed).
  * החוזה מול הקיר: docs/FEEDS.md §1 ב-ViperGroup.
  *
- * ‏**הסוד אינו כאן ואינו בסודות של הפונקציה.** ב-Vault יושב רק ה-sha256 שלו
- * (`wall_feed_secret`), והמסד משווה. כך החלפת סוד היא שורת SQL אחת, בלי
- * פריסה:
+ * ‏**הסוד אינו כאן ואינו בסודות של הפונקציה.** ב-Vault יושב רק ה-sha256 שלו,
+ * והמסד משווה. אפשר כמה סודות במקביל — כל שורה ששמה מתחיל ב-
+ * `wall_feed_secret` (‏`wall_feed_secret` ל-Vercel, `wall_feed_secret_minipc`
+ * ל-Mini PC) והסוד מתקבל אם הוא שווה לאחת מהן. כך החלפת סוד היא שורת SQL
+ * אחת, בלי פריסה, והקירות האחרים אינם מושפעים:
  *
  *   select vault.update_secret(
- *     (select id from vault.secrets where name = 'wall_feed_secret'),
+ *     (select id from vault.secrets where name = 'wall_feed_secret_minipc'),
  *     encode(sha256(convert_to('<סוד חדש, 32+ תווים>', 'UTF8')), 'hex'));
  *
  * בקשה: ‏GET או POST, כותרת `x-wall-secret`, ואופציונלית `?days=1..14`
  * (ברירת מחדל 3; המסד חותך בעצמו). תשובות:
  *   200 — התמונה (`Cache-Control: no-store` — היא של הרגע הזה)
  *   401 — אין סוד, או שהוא שגוי או קצר (‏SQLSTATE 28P01)
- *   503 — אין hash תקין ב-Vault (‏55000)
+ *   503 — אין אף hash תקין ב-Vault (‏55000)
  *   500 — כל השאר. ההודעה של המסד נרשמת ביומן הפונקציה ואינה יוצאת החוצה.
  * אין CORS: הקורא הוא שרת (ה-route של ViperGroup), לא דפדפן.
  *

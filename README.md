@@ -2803,21 +2803,34 @@ HTTP שכולן מנקזות ממילא את אותו תור.
 פונה ל-`wall-feed` עם הכותרת `x-wall-secret`, הפונקציה קוראת ל-
 `public.wall_snapshot` עם מפתח ה-service role, והמסד משווה את הסוד ל-hash
 ששמור ב-Vault. **ב-Vault יושב ה-sha256 של הסוד, לא הסוד עצמו**, ולא
-ב-`app_settings` (היא קריאה לכל משתמש מאומת):
+ב-`app_settings` (היא קריאה לכל משתמש מאומת).
+
+**אפשר כמה סודות במקביל — סוד לכל קיר.** הפונקציה קוראת את **כל** השורות ב-Vault
+ששמן מתחיל ב-`wall_feed_secret` (התאמת קידומת, לא `LIKE`: הקו התחתון ב-`LIKE`
+הוא תו-כללי), והסוד מתקבל אם ה-sha256 שלו שווה לאחת מהן. השמות:
+`wall_feed_secret` — פריסת Vercel; `wall_feed_secret_minipc` — ה-Mini PC. כל שם
+אחר שמתחיל ב-`wall_feed_secret` עובד גם הוא; סוד אחר ב-Vault (`other_secret`)
+אינו נספר, גם אם ה-hash שלו זהה. שורה שערכה אינו 64 תווי hex מתעלמים ממנה
+(אינה מפילה את השורות התקינות); אם לא נשארה אף שורה תקינה — 503.
 
 ```sql
--- פעם אחת. הסוד: 32 תווים לפחות, אקראי; הוא עצמו נשמר רק אצל הקיר.
+-- פעם אחת לכל קיר. הסוד: 32 תווים לפחות, אקראי; הוא עצמו נשמר רק אצל הקיר.
 select vault.create_secret(encode(sha256(convert_to('<סוד>','UTF8')),'hex'),
-                           'wall_feed_secret', 'sha256 of the ViperGroup wall secret');
--- החלפה — בלי פריסה:
-select vault.update_secret((select id from vault.secrets where name = 'wall_feed_secret'),
+                           'wall_feed_secret', 'sha256 of the ViperGroup wall secret (Vercel)');
+select vault.create_secret(encode(sha256(convert_to('<סוד אחר>','UTF8')),'hex'),
+                           'wall_feed_secret_minipc', 'sha256 of the Mini PC wall secret');
+-- החלפה של אחד — בלי פריסה, והאחרים ממשיכים לעבוד:
+select vault.update_secret((select id from vault.secrets where name = 'wall_feed_secret_minipc'),
                            encode(sha256(convert_to('<סוד חדש>','UTF8')),'hex'));
+-- ביטול קיר: מוחקים את השורה שלו
+delete from vault.secrets where name = 'wall_feed_secret_minipc';
 ```
 
 פריסה: `supabase functions deploy wall-feed --no-verify-jwt`. בקשה: `GET` או
 `POST` ל-`https://<ref>.supabase.co/functions/v1/wall-feed?days=3` (‏1..14) עם
-הכותרת. ‏401 — סוד חסר, שגוי או קצר מ-32 תווים; ‏503 — אין hash תקין ב-Vault
-(למשל הודבק הסוד עצמו); ‏500 — כל השאר, בלי הודעת המסד. התשובה `no-store`.
+הכותרת. ‏401 — סוד חסר, שגוי (אינו שווה לאף אחת מהשורות) או קצר מ-32 תווים;
+‏503 — אין אף hash תקין ב-Vault (למשל הודבק הסוד עצמו); ‏500 — כל השאר, בלי
+הודעת המסד. התשובה `no-store`.
 
 הכסף שבפיד עובר רק דרך `app.margin_summary_core` — הגוף של `app.margin_summary`
 (0186) בלי השער, כי בלי משתמש השער זורק. `app.margin_summary` ו-

@@ -48,6 +48,17 @@ exception when others then
   return sqlstate;
 end $$;
 
+-- ה-sha256 (hex) של סוד — מה שהוראות התפעול שמות ב-Vault
+create or replace function t57_hash(p_secret text) returns text language sql immutable as $$
+  select encode(sha256(convert_to(p_secret, 'UTF8')), 'hex')
+$$;
+
+-- מה שהדלת אומרת למי שמציג את הסוד — 'ok', או ה-SQLSTATE. רץ בזהות הקורא.
+create or replace function t57_door(p_secret text) returns text language plpgsql as $$
+begin
+  return t57_state(format('select public.wall_snapshot(%L, 1)', p_secret));
+end $$;
+
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000057b1', 'w57-worker@vl.test');
 
@@ -319,6 +330,155 @@ select t_eq('ימים מחוץ לטווח נחתכים: 0 → 1, 99 → 14',
   (select (public.wall_snapshot('wall-57-' || repeat('k', 40), 0) ->> 'days') || '/'
        || (public.wall_snapshot('wall-57-' || repeat('k', 40), 99) ->> 'days')), '1/14');
 reset role;
+
+-- ===== 1ב. כמה סודות: כל שורה ב-Vault ששמה מתחיל ב-wall_feed_secret ===========
+--
+-- ‏`wall_feed_secret` הוא של Vercel (והוא כבר ב-Vault, עם wall-57-kkk…),
+-- ‏`wall_feed_secret_minipc` הוא של ה-Mini PC. ההחלפה והביטול של אחד אינם נוגעים
+-- באחר. הבדיקות רצות כ-service_role דרך הדלת; הכתיבה ל-Vault — כבעלים.
+
+\echo '--- כמה סודות: Vercel ו-Mini PC ---'
+do $$ begin
+  perform vault.create_secret(t57_hash('mini-57-' || repeat('m', 40)),
+                              'wall_feed_secret_minipc', 'sha256 of the Mini PC wall secret');
+end $$;
+
+set role service_role;
+select t_eq('הסוד של Vercel עובר',
+  t57_door('wall-57-' || repeat('k', 40)), 'ok');
+select t_eq('והסוד של ה-Mini PC עובר גם הוא',
+  t57_door('mini-57-' || repeat('m', 40)), 'ok');
+select t_eq('סוד שאינו באף שורה — 28P01',
+  t57_door('nope-57-' || repeat('n', 40)), '28P01');
+select t_eq('סוד שמתחיל כמו אחד מהם אבל שונה — 28P01',
+  t57_door('mini-57-' || repeat('m', 39)), '28P01');
+select t_eq('סוד ריק — 28P01, גם עם שתי שורות', t57_door(null), '28P01');
+select t_eq('ומחרוזת ריקה — 28P01', t57_door(''), '28P01');
+reset role;
+
+-- סוד קצר נדחה גם כשה-hash של שורה אחרת (לא רק הראשונה) תואם אותו
+do $$ begin
+  perform vault.update_secret((select id from vault.secrets where name = 'wall_feed_secret_minipc'),
+                              t57_hash('short-57'));
+end $$;
+set role service_role;
+select t_eq('סוד קצר מ-32 נדחה גם כשה-hash של שורת ה-Mini PC תואם',
+  t57_door('short-57'), '28P01');
+select t_eq('ושורת Vercel ממשיכה לעבוד',
+  t57_door('wall-57-' || repeat('k', 40)), 'ok');
+reset role;
+
+\echo '--- החלפת סוד באחת השורות אינה נוגעת באחרת ---'
+-- ה-Mini PC מקבל סוד חדש כמו בהוראות התפעול; Vercel לא זז
+do $$ begin
+  perform vault.update_secret((select id from vault.secrets where name = 'wall_feed_secret_minipc'),
+                              t57_hash('mini2-57-' || repeat('m', 40)));
+end $$;
+set role service_role;
+select t_eq('הסוד החדש של ה-Mini PC עובר',
+  t57_door('mini2-57-' || repeat('m', 40)), 'ok');
+select t_eq('הישן של ה-Mini PC נדחה',
+  t57_door('mini-57-' || repeat('m', 40)), '28P01');
+select t_eq('ו-Vercel ממשיך לעבוד',
+  t57_door('wall-57-' || repeat('k', 40)), 'ok');
+reset role;
+
+-- ועכשיו להפך: Vercel מוחלף, וה-Mini PC לא זז
+do $$ begin
+  perform vault.update_secret((select id from vault.secrets where name = 'wall_feed_secret'),
+                              t57_hash('wall2-57-' || repeat('k', 40)));
+end $$;
+set role service_role;
+select t_eq('הסוד החדש של Vercel עובר',
+  t57_door('wall2-57-' || repeat('k', 40)), 'ok');
+select t_eq('הישן של Vercel נדחה',
+  t57_door('wall-57-' || repeat('k', 40)), '28P01');
+select t_eq('וה-Mini PC (בסוד החדש שלו) ממשיך לעבוד',
+  t57_door('mini2-57-' || repeat('m', 40)), 'ok');
+reset role;
+
+\echo '--- סוד אחר ב-Vault אינו נספר ---'
+-- שמות שאינם מתחילים ב-wall_feed_secret, אבל ה-hash של כל אחד הוא של הסוד שיוצג.
+-- ‏`wallXfeedXsecret` תופס את ה-LIKE הלא-מוברח (הקו התחתון הוא תו-כללי).
+do $$ begin
+  perform vault.create_secret(t57_hash('other-57-' || repeat('o', 40)), 'other_secret', 'unrelated');
+  perform vault.create_secret(t57_hash('old-57-' || repeat('d', 40)), 'old_wall_feed_secret',
+                              'the prefix is in the middle of the name');
+  perform vault.create_secret(t57_hash('wild-57-' || repeat('w', 40)), 'wallXfeedXsecret',
+                              'underscore is a LIKE wildcard');
+  perform vault.create_secret(t57_hash('wall-57-' || repeat('u', 40)), 'WALL_FEED_SECRET_UPPER',
+                              'a different name, not a prefix match');
+end $$;
+set role service_role;
+select t_eq('other_secret שה-hash שלו הוא של הסוד המוצג — 28P01',
+  t57_door('other-57-' || repeat('o', 40)), '28P01');
+select t_eq('שם שהקידומת בו באמצע — 28P01',
+  t57_door('old-57-' || repeat('d', 40)), '28P01');
+select t_eq('שם שנתפס רק אם הקו התחתון הוא תו-כללי — 28P01',
+  t57_door('wild-57-' || repeat('w', 40)), '28P01');
+select t_eq('ושם באותיות גדולות אינו הקידומת — 28P01',
+  t57_door('wall-57-' || repeat('u', 40)), '28P01');
+select t_eq('והשורות האמיתיות ממשיכות לעבוד',
+  t57_door('wall2-57-' || repeat('k', 40)) || '/' || t57_door('mini2-57-' || repeat('m', 40)), 'ok/ok');
+reset role;
+delete from vault.secrets
+ where name in ('other_secret', 'old_wall_feed_secret', 'wallXfeedXsecret', 'WALL_FEED_SECRET_UPPER');
+
+\echo '--- שורה שאינה hash מתעלמים ממנה ---'
+-- ה-Mini PC הדביק את הסוד עצמו במקום ה-hash, ועוד שתי שורות פגומות:
+-- 63 תווי hex, ו-64 תווים שאינם hex. שורה שלישית תקינה אבל באותיות גדולות
+-- ועם רווחים מסביב (btrim) — לא נפגמת.
+do $$ begin
+  perform vault.update_secret((select id from vault.secrets where name = 'wall_feed_secret_minipc'),
+                              'mini2-57-' || repeat('m', 40));
+  perform vault.create_secret(repeat('a', 63), 'wall_feed_secret_short', 'one hex char short');
+  perform vault.create_secret(repeat('g', 64), 'wall_feed_secret_nothex', 'right length, not hex');
+  perform vault.create_secret(' ' || upper(t57_hash('upper-57-' || repeat('h', 40))) || ' ',
+                              'wall_feed_secret_upper', 'valid after lower(btrim)');
+end $$;
+set role service_role;
+select t_eq('השורה התקינה של Vercel עובדת לצד הפגומות',
+  t57_door('wall2-57-' || repeat('k', 40)), 'ok');
+select t_eq('הסוד שהודבק כמות שהוא אינו מתקבל — 28P01, לא 55000',
+  t57_door('mini2-57-' || repeat('m', 40)), '28P01');
+select t_eq('hex באותיות גדולות ועם רווחים מסביב — תקין',
+  t57_door('upper-57-' || repeat('h', 40)), 'ok');
+reset role;
+delete from vault.secrets
+ where name in ('wall_feed_secret_short', 'wall_feed_secret_nothex', 'wall_feed_secret_upper');
+
+\echo '--- אין אף שורה תקינה — 55000 ---'
+-- שורת ה-Mini PC עדיין פגומה (הסוד הודבק במקום ה-hash). מוחקים את Vercel, ואז
+-- נשארת רק היא — ו-other_secret, שערכו hash תקין אבל שמו אינו wall_feed_secret*.
+do $$ begin
+  delete from vault.secrets where name = 'wall_feed_secret';
+  perform vault.create_secret(t57_hash('wall2-57-' || repeat('k', 40)), 'other_secret', 'unrelated');
+end $$;
+set role service_role;
+select t_eq('רק שורה פגומה אחת ו-other_secret — 55000 גם לסוד שהיה נכון',
+  t57_door('wall2-57-' || repeat('k', 40)), '55000');
+select t_eq('ו-55000 גם לסוד ריק: הגדרה לפני סוד',
+  t57_door(null), '55000');
+reset role;
+
+delete from vault.secrets where name = 'wall_feed_secret_minipc';
+set role service_role;
+select t_eq('אין אף שורה wall_feed_secret* — 55000',
+  t57_door('wall2-57-' || repeat('k', 40)), '55000');
+reset role;
+
+-- חוזרים לשורה אחת, ומי שחזר לעבוד הוא הסוד של Vercel
+do $$ begin
+  delete from vault.secrets where name = 'other_secret';
+  perform vault.create_secret(t57_hash('wall-57-' || repeat('k', 40)),
+                              'wall_feed_secret', 'sha256 of the ViperGroup wall secret');
+end $$;
+set role service_role;
+select t_eq('שורה תקינה אחת חזרה — והסוד המקורי של Vercel עובר שוב',
+  t57_door('wall-57-' || repeat('k', 40)), 'ok');
+reset role;
+select t_eq('וב-Vault לא נשאר דבר מלבדה',
+  (select string_agg(name, ',' order by name) from vault.secrets), 'wall_feed_secret');
 
 -- ===== 2. המשימות של היום ===================================================
 

@@ -16,14 +16,19 @@
 --   * ‏**פונקציית הקצה `wall-feed`** (‏`--no-verify-jwt`) מעבירה את הכותרת
 --     `x-wall-secret` אל `public.wall_snapshot`, עם מפתח ה-service role
 --     שהפלטפורמה מזריקה לה. הקיר אינו רואה את המפתח לעולם.
---   * ‏**ב-Vault יושב רק ה-sha256 של הסוד** (`wall_feed_secret`), לא הסוד
---     עצמו, ולא ב-`app_settings` (כלל 9 — היא קריאה לכל משתמש מאומת). הוא
---     נקבע ומוחלף ב-SQL ולא במיגרציה:
+--   * ‏**ב-Vault יושב רק ה-sha256 של הסוד**, לא הסוד עצמו, ולא ב-
+--     `app_settings` (כלל 9 — היא קריאה לכל משתמש מאומת). הוא נקבע ומוחלף
+--     ב-SQL ולא במיגרציה. **אפשר כמה סודות במקביל**: כל שורה ב-Vault ששמה
+--     מתחיל ב-`wall_feed_secret` נחשבת, והסוד מתקבל אם ה-sha256 שלו שווה לאחת
+--     מהן — `wall_feed_secret` לפריסת Vercel, `wall_feed_secret_minipc` ל-Mini
+--     PC, וכן הלאה. כל קיר מחזיק סוד משלו, ואפשר להחליף או לבטל אחד בלי
+--     לגעת באחרים:
 --       select vault.create_secret(encode(sha256(convert_to('<סוד>','UTF8')),'hex'),
---                                  'wall_feed_secret', 'sha256 of the ViperGroup wall secret');
+--                                  'wall_feed_secret_minipc', 'sha256 of the Mini PC wall secret');
 --   * ‏**שתי שגיאות בלבד, ואף אחת מהן אינה 42501** — כלל 4 שומר את 42501
---     להרשאות. סוד שגוי או קצר → ‏`28P01` (‏401 בפונקציית הקצה); אין סוד
---     ב-Vault, או שמה שיושב שם אינו hash → ‏`55000` (‏503).
+--     להרשאות. סוד שגוי או קצר → ‏`28P01` (‏401 בפונקציית הקצה); אין ב-Vault
+--     אף שורה תקינה (‏`wall_feed_secret%` שערכה 64 תווי hex) → ‏`55000` (‏503).
+--     שורה שערכה אינו hash מתעלמים ממנה, ואינה מפילה את השורות התקינות.
 --   * ‏**הלוגיקה ב-`app.wall_snapshot_at(p_now, p_days)`**, שמקבלת את "עכשיו"
 --     כפרמטר, כדי שחבילת הבדיקות תוכל לנעוץ את הזמן — חצות של ישראל,
 --     איחור של 90 דקות — במקום לקוות לשעון. היא נשללת מכולם.
@@ -184,32 +189,43 @@ grant  execute on function app.margin_summary(date, date) to authenticated;
 -- ואין `search_path` שצריך למצוא אותה. ההשוואה היא בין שני hash-ים, ולכן
 -- היא אינה מדליפה דבר על הסוד עצמו גם כשהיא אינה בזמן קבוע.
 --
+-- **כמה סודות.** נקראות כל שורות `vault.decrypted_secrets` ששמן מתחיל ב-
+-- `wall_feed_secret`, והסוד מתקבל אם ה-sha256 שלו שווה לאחת מהן. ההתאמה היא
+-- `starts_with`, לא `LIKE 'wall_feed_secret%'`: ב-LIKE הקו התחתון הוא תו-כללי,
+-- והשם `wallXfeedXsecret` היה נכנס. סוד אחר ב-Vault (`other_secret`, או שם
+-- שהקידומת שלו באמצע) אינו נספר — גם אם ה-hash שלו שווה לזה של הסוד המוצג.
+--
 -- סוד קצר מ-32 תווים נדחה גם כשה-hash שלו נכון: סוד כזה ניתן לניחוש, ומי
 -- שקבע אותו טעה. ערך ב-Vault שאינו 64 תווי hex אינו hash — כנראה הסוד
--- עצמו הודבק במקום ה-hash — וזה "לא מוגדר" (‏55000) ולא "סוד שגוי": כך מי
--- שמגדיר רואה 503 ומבין שהבעיה אצלו, במקום 401 שנראה כמו סוד שגוי בקיר.
+-- עצמו הודבק במקום ה-hash — ושורה כזו מתעלמים ממנה. אם לא נשארה אף שורה
+-- תקינה זה "לא מוגדר" (‏55000) ולא "סוד שגוי": כך מי שמגדיר רואה 503 ומבין
+-- שהבעיה אצלו, במקום 401 שנראה כמו סוד שגוי בקיר.
 
 create or replace function app.wall_feed_check(p_secret text)
 returns void language plpgsql stable security definer set search_path = public as $$
-declare v_hash text;
+declare v_hashes text[];
 begin
-  select lower(btrim(s.decrypted_secret)) into v_hash
-    from vault.decrypted_secrets s
-   where s.name = 'wall_feed_secret';
+  select array_agg(x.h) into v_hashes
+    from (select lower(btrim(s.decrypted_secret)) as h
+            from vault.decrypted_secrets s
+           where starts_with(s.name, 'wall_feed_secret')) x
+   where x.h ~ '^[0-9a-f]{64}$';
 
-  if v_hash is null or v_hash !~ '^[0-9a-f]{64}$' then
+  if v_hashes is null then
     raise exception 'פיד הקיר אינו מוגדר' using errcode = '55000';
   end if;
 
   if p_secret is null or length(p_secret) < 32
-     or encode(sha256(convert_to(p_secret, 'UTF8')), 'hex') <> v_hash then
+     or encode(sha256(convert_to(p_secret, 'UTF8')), 'hex') <> all (v_hashes) then
     raise exception 'סוד הקיר שגוי' using errcode = '28P01';
   end if;
 end $$;
 
 comment on function app.wall_feed_check(text) is
-  'בודקת את סוד הקיר מול ה-sha256 שב-Vault (wall_feed_secret). 28P01 לסוד '
-  'שגוי או קצר מ-32, ו-55000 כשאין hash תקין ב-Vault (0202).';
+  'בודקת את סוד הקיר מול ה-sha256 שב-Vault: כל שורה ששמה מתחיל ב-'
+  'wall_feed_secret (למשל wall_feed_secret ל-Vercel ו-wall_feed_secret_minipc '
+  'ל-Mini PC), והסוד מתקבל אם הוא שווה לאחת מהן. שורה שאינה 64 תווי hex '
+  'מתעלמים ממנה. 28P01 לסוד שגוי או קצר מ-32, ו-55000 כשאין hash תקין (0202).';
 
 -- ===== 3. המשימות, שורה אחת לכל משימה חיה ===================================
 --
