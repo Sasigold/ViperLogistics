@@ -41,6 +41,23 @@ for f in "$ROOT"/supabase/migrations/*.sql; do
 done
 echo "all $(ls "$ROOT"/supabase/migrations/*.sql | wc -l) migrations applied"
 
+# ההרשאות כפי שהמיגרציות השאירו אותן, *לפני* ש-01_seed מעניק ל-authenticated
+# הרצה על כל פונקציה ב-public וב-app (כדי לחקות את ברירת המחדל של Supabase).
+# הזריעה רצה אחרי המיגרציות ולכן מוחקת בחבילה כל revoke מ-authenticated
+# (ראו 0194 ו-49 §12); התמונה הזו היא מה שמאפשר לחבילה לקבוע מה המיגרציה
+# עצמה סגרה. 57 קוראת ממנה.
+$PSQL -v ON_ERROR_STOP=1 -d vl >/dev/null <<'SQL'
+create schema t_pre_seed;
+create table t_pre_seed.function_acl as
+select n.nspname as schema, p.proname as name,
+       pg_get_function_identity_arguments(p.oid) as args,
+       has_function_privilege('anon', p.oid, 'execute')          as anon,
+       has_function_privilege('authenticated', p.oid, 'execute') as authenticated,
+       has_function_privilege('service_role', p.oid, 'execute')  as service_role
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname in ('public', 'app');
+SQL
+
 $PSQL -v ON_ERROR_STOP=1 -d vl -f "$HERE/01_seed.sql" >/dev/null
 
 echo
@@ -577,6 +594,18 @@ OUT56=$($PSQL -d vl -f "$HERE/56_the_crew_is_people_and_all_of_them.sql" 2>&1 | 
 echo "$OUT56"
 OUT="$OUT
 $OUT56"
+
+echo
+echo "== the wall feed suite =="
+# 57 מקימה שני לקוחות, קבלן, שלושה אירועים, שבע דמויות, רכבים ומשלוחי
+# אינטגרציה משלה ביום רביעי של אמצע יולי, ארבע שנים קדימה — מעבר לכל טווח
+# אחר, ובשעון קיץ, כדי שחצות של ישראל תיפול בשעה ידועה. "עכשיו" ננעץ בתוך
+# אותו יום. היא רצה אחרונה כי היא כותבת סוד ל-Vault ומשאירה אחריה משימות,
+# שיבוצים ומשמרות שאינם מנוקים.
+OUT57=$($PSQL -d vl -f "$HERE/57_wall_feed.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT57"
+OUT="$OUT
+$OUT57"
 
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
