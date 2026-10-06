@@ -9,8 +9,8 @@
 --
 --   1. **הסיכום מסונן בשרת.** פס הסיכום של המסך נשאל מ-`event_payments_dashboard`
 --      ולא נספר בדפדפן (0205 §9, CLAUDE.md §2.1), ולכן גם הסינון שלו יושב
---      כאן: פרמטר אופציונלי `p_customer_id`. בלעדיו — בדיוק מה שהיה, כך
---      שכרטיסי הדשבורד, שאינם מעבירים אותו, אינם משתנים. השורות של הטבלה
+--      כאן: פרמטר `p_customer_id`. בלעדיו — בדיוק מה שהיה, כך שכרטיסי
+--      הדשבורד, שאינם מעבירים אותו, אינם משתנים. השורות של הטבלה
 --      כבר נושאות `customer_id` (‏`event_payments_list`), והסינון שלהן הוא
 --      בחירת שורות ולא חישוב — הוא נשאר בדפדפן ואינו מחייב שאילתה חדשה.
 --
@@ -20,16 +20,17 @@
 --      להופיע ולהיעלם כשמדפדפים בין חודשים. ‏`customers` (השמות שמהם הדשבורד
 --      בונה את הכותרת) מצטמצם ללקוח שנבחר.
 --
--- החתימה משתנה, ולכן הפונקציה הישנה (date, date) נמחקת ונבנית מחדש — שתי
--- גרסאות לצד זו היו נותנות ל-PostgREST קריאה דו-משמעית. קריאה עם שני
--- פרמטרים בלבד ממשיכה לעבוד דרך ברירת המחדל.
+-- **שתי חתימות, בלי `drop` ובלי ברירת מחדל.** הגרסה עם הלקוח היא חתימה
+-- חדשה (date, date, uuid), והגרסה הקיימת (date, date) נשארת ונעשית עטיפה
+-- דקה שקוראת לה עם null. ל-`p_customer_id` אין `default` בכוונה: עם ברירת
+-- מחדל, קריאה בשני פרמטרים הייתה מתאימה לשתי הפונקציות ו-PostgREST היה
+-- נכשל על קריאה דו-משמעית. כך כל קריאה מתאימה לחתימה אחת בדיוק, ואין צורך
+-- למחוק את הפונקציה הישנה — הכרטיסים והבדיקות שקוראים לה ממשיכים כמו שהם.
 
--- ===== 1. הסיכום, עם לקוח אופציונלי ========================================
-
-drop function if exists event_payments_dashboard(date, date);
+-- ===== 1. הסיכום, עם לקוח ==================================================
 
 create or replace function event_payments_dashboard(
-  p_from date, p_to date, p_customer_id uuid default null)
+  p_from date, p_to date, p_customer_id uuid)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 declare
   v_start date;
@@ -82,3 +83,16 @@ end $$;
 
 revoke execute on function event_payments_dashboard(date, date, uuid) from anon, public;
 grant  execute on function event_payments_dashboard(date, date, uuid) to authenticated;
+
+-- ===== 2. החתימה הישנה — כל הלקוחות =======================================
+--
+-- אותה חתימה ואותו טיפוס החזרה, ולכן `create or replace` שומר את ההרשאות
+-- שלה (0205). השער (`app.can_view_event_payments`) נבדק בפונקציה שהיא קוראת לה.
+
+create or replace function event_payments_dashboard(p_from date, p_to date)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select event_payments_dashboard(p_from, p_to, null::uuid)
+$$;
+
+revoke execute on function event_payments_dashboard(date, date) from anon, public;
+grant  execute on function event_payments_dashboard(date, date) to authenticated;

@@ -64,12 +64,17 @@ from (values
 ) v(event, amount);
 
 
-\echo '--- 1. החתימה ---'
+\echo '--- 1. החתימות ---'
 
-select t_eq('החתימה הישנה (date, date) אינה קיימת עוד — אין קריאה דו-משמעית',
-  to_regprocedure('event_payments_dashboard(date, date)') is null, true);
-select t_eq('anon אינו רשאי לקרוא את הסיכום',
-  has_function_privilege('anon', 'event_payments_dashboard(date, date, uuid)', 'execute'), false);
+select t_eq('שתי החתימות קיימות — הישנה נשארת, בלי drop',
+  to_regprocedure('event_payments_dashboard(date, date)') is not null
+    and to_regprocedure('event_payments_dashboard(date, date, uuid)') is not null, true);
+select t_eq('לחתימה עם הלקוח אין ברירת מחדל — קריאה בשני פרמטרים אינה דו-משמעית',
+  (select pronargdefaults from pg_proc
+    where oid = 'event_payments_dashboard(date, date, uuid)'::regprocedure), 0::smallint);
+select t_eq('anon אינו רשאי לקרוא את הסיכום, באף אחת מהחתימות',
+  has_function_privilege('anon', 'event_payments_dashboard(date, date, uuid)', 'execute')
+    or has_function_privilege('anon', 'event_payments_dashboard(date, date)', 'execute'), false);
 
 set role authenticated;
 
@@ -89,6 +94,9 @@ select t_eq('שני הלקוחות יחד: מגיע 4,000 · שולם 400 · ל�
   (select (j ->> 'due') || '/' || (j ->> 'paid') || '/' || (j ->> 'unpaid') || '/' || (j ->> 'events')
      from (select event_payments_dashboard((select d from t60) - 3, (select d from t60) + 3) as j) x),
   '4000.00/400.00/3600.00/2');
+select t_eq('החתימה הישנה מחזירה בדיוק את מה שהחדשה מחזירה בלי לקוח',
+  event_payments_dashboard((select d from t60) - 3, (select d from t60) + 3)
+    = event_payments_dashboard((select d from t60) - 3, (select d from t60) + 3, null), true);
 select t_eq('שני הלקוחות ברשימת השמות לכותרת',
   (select (j -> 'customers') @> '["לקוח א 60", "לקוח ב 60"]'::jsonb
      from (select event_payments_dashboard((select d from t60) - 3, (select d from t60) + 3) as j) x),
