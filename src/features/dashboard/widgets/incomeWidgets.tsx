@@ -13,10 +13,8 @@ import {
 import {
   Armchair,
   Banknote,
-  HandCoins,
   ICON,
   Info,
-  Percent,
   Receipt,
   STROKE,
   Truck,
@@ -43,21 +41,6 @@ interface Receivables {
   unpaid: number
   receipts_count: number
   by_customer: { name: string; color: string; owed: number; paid: number; unpaid: number }[] | null
-}
-
-interface ClientShare {
-  total: number
-  furniture_new_share?: number
-  furniture_old_share?: number
-  furniture_new_raw?: number
-  furniture_old_raw?: number
-  rows: { name: string; color: string; total: number }[] | null
-}
-
-interface KeisarCommission {
-  total: number
-  events_count: number
-  tasks_total: number
 }
 
 interface PayrollEmployer {
@@ -145,54 +128,6 @@ export const ViperUnpaidWidget = sectionKpi<Receivables>({
   select: (v) => Number(v.unpaid),
   format: (v) => fmtMoney(v),
   hint: () => 'החוב בטווח פחות התקבולים שנרשמו',
-})
-
-export const ClientShareWidget = sectionKpi<ClientShare>({
-  section: 'finance.client_share',
-  label: 'הכנסות לשיא עיצובים',
-  icon: HandCoins,
-  tone: '#3563f0',
-  delta: false,
-  select: (v) => Number(v.total),
-  format: (v) => fmtMoney(v),
-  hint: (v) =>
-    v.furniture_new_share != null && v.furniture_old_share != null ? (
-      <span className="flex flex-col gap-0.5 text-xs">
-        <span>חדש (80%): {fmtMoney(v.furniture_new_share)}</span>
-        <span>ישן (30%): {fmtMoney(v.furniture_old_share)}</span>
-      </span>
-    ) : v.rows?.length ? (
-      <span className="flex flex-col gap-0.5 text-xs">
-        {v.rows.map((r) => (
-          <span key={r.name}>
-            {r.name} {fmtMoney(Number(r.total))}
-          </span>
-        ))}
-      </span>
-    ) : (
-      '80% מריהוט חדש ו-30% מריהוט ישן'
-    ),
-})
-
-export const KeisarCommissionWidget = sectionKpi<KeisarCommission>({
-  section: 'finance.keisar_commission',
-  label: 'עמלה לקיסר',
-  icon: Percent,
-  tone: '#ef4444',
-  delta: false,
-  select: (v) => Number(v.total),
-  format: (v) => fmtMoney(v),
-  hint: (v) =>
-    v.events_count > 0 ? (
-      <span className="flex flex-col gap-0.5 text-xs">
-        <span>10% מעל 2,000 ₪ לאירוע</span>
-        <span>
-          {v.events_count} אירועים ({fmtMoney(v.tasks_total)})
-        </span>
-      </span>
-    ) : (
-      '10% מאירועים שסך משימותיהם מעל 2,000 ₪'
-    ),
 })
 
 /* ===== income mix — the legacy pie ========================================

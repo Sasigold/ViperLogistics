@@ -254,6 +254,56 @@ describe('resolveLayout', () => {
   })
 })
 
+/* Several tiles merged into one card. The card lists the retired ids it
+   `replaces`; a layout that still places one of them gets the card in that
+   slot — even when the layout had removed the card's own id before. */
+describe('a widget that replaces retired ones', () => {
+  const MERGED: WidgetMeta[] = [
+    ...META,
+    {
+      id: 'finance.card',
+      group: 'finance',
+      sizes: ['lg', 'md'],
+      defaultOn: true,
+      replaces: ['finance.tile_a', 'finance.tile_b'],
+    },
+  ]
+  const seenAll = [...MERGED.map((m) => m.id), 'finance.tile_a', 'finance.tile_b']
+  const shape = (items: LayoutItem[]) => items.map((i) => `${i.id}:${i.size}`)
+
+  it('takes the slot of the first retired tile, even if the card itself was removed', () => {
+    const saved = layout(
+      [
+        { id: 'ops.a', size: 'sm' },
+        { id: 'finance.tile_b', size: 'sm' },
+        { id: 'finance.tile_a', size: 'sm' },
+        { id: 'ops.b', size: 'md' },
+      ],
+      ['finance.card'],
+      seenAll,
+    )
+    expect(shape(resolveLayout(MERGED, saved, FALLBACK))).toEqual(['ops.a:sm', 'finance.card:lg', 'ops.b:md'])
+  })
+
+  it('only drops the retired tiles when the layout already places the card', () => {
+    const saved = layout(
+      [
+        { id: 'finance.tile_a', size: 'sm' },
+        { id: 'ops.a', size: 'sm' },
+        { id: 'finance.card', size: 'md' },
+      ],
+      [],
+      seenAll,
+    )
+    expect(shape(resolveLayout(MERGED, saved, FALLBACK))).toEqual(['ops.a:sm', 'finance.card:md'])
+  })
+
+  it('leaves a removed card removed when no retired tile is left either', () => {
+    const saved = layout([{ id: 'ops.a', size: 'sm' }], ['finance.card'], seenAll)
+    expect(resolveLayout(MERGED, saved, FALLBACK).map((i) => i.id)).toEqual(['ops.a'])
+  })
+})
+
 describe('reordering', () => {
   const items: LayoutItem[] = [
     { id: 'ops.a', size: 'sm' },

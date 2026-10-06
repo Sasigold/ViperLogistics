@@ -123,7 +123,11 @@ export function useDashboardLayout() {
        once said about it, so leaving its id in `hidden` would only make the
        catalogue draw a switch that does nothing when it is turned off. */
     const locked = new Set(lockedIds(fallback))
-    const hidden = (saved?.hidden ?? fallback.hidden).filter((h) => !locked.has(h))
+    /* A widget that is on the page is not "removed", whatever `hidden` says —
+       a merged card can come back into a layout that once removed it
+       (`replaces` in `resolveLayout`). */
+    const placed = new Set(items.map((i) => i.id))
+    const hidden = (saved?.hidden ?? fallback.hidden).filter((h) => !locked.has(h) && !placed.has(h))
     /* The view climbs the same ladder the items do — but one key at a time.
        A whole-object `saved?.view ?? fallback.view` reads "the user's view or
        the company's", and that is wrong in both directions: a user who set a

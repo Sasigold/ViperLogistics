@@ -349,7 +349,7 @@ function DetailsTab({ customer }: { customer: Customer }) {
               label="לו״ז מחסן"
               description="משימת הכנה ומשימת החזרה לכל אירוע, ויוזר ״מחסן״ שרואה רק אותן"
             />
-            {/* ‏0205: "אוסף תשלום" על כל אירוע של הלקוח, ומסך תשלומי אירועים. */}
+            {/* ‏0205: "הוסף תשלום" על כל אירוע של הלקוח, ומסך תשלומי אירועים. */}
             <Switch
               checked={form.event_payments_enabled}
               onChange={(v) => setForm((f) => ({ ...f, event_payments_enabled: v }))}

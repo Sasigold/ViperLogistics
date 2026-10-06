@@ -45,7 +45,7 @@ import {
  * תשלומים על אירוע (0205): כמה מגיע לוייפר, כמה התקבל, ומה נשאר.
  *
  * ‏`bare` — בלי מעטפת הכרטיס, לשימוש בתוך חלון (מסך התשלומים פותח את אותו
- * תוכן בדיוק, כדי שהיסטוריה ו"אוסף תשלום" יהיו אותו דבר בשני המקומות).
+ * תוכן בדיוק, כדי שהיסטוריה ו"הוסף תשלום" יהיו אותו דבר בשני המקומות).
  *
  * אינו מצייר דבר כשהמודול סגור ללקוח של האירוע: השרת עונה `enabled: false`,
  * והדף אינו צריך לדעת למה.
@@ -104,7 +104,7 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
   const collectButton = canManage && (
     <Button size="sm" variant="primary" onClick={() => setCollectOpen(true)}>
       <Plus size={ICON.sm} strokeWidth={STROKE} />
-      אוסף תשלום
+      הוסף תשלום
     </Button>
   )
 
@@ -342,7 +342,7 @@ function AddChargeModal({ open, onClose, eventId }: { open: boolean; onClose: ()
 type AmountMode = 'full' | 'partial'
 
 /**
- * "אוסף תשלום": כל הסכום או חלק ממנו, מזומן או אחר עם הערה, ותאריך — היום,
+ * "הוסף תשלום": כל הסכום או חלק ממנו, מזומן או אחר עם הערה, ותאריך — היום,
  * אלא אם נבחר אחר. השרת רושם את היתרה החדשה; החלון רק אומר אותה.
  */
 export function CollectPaymentModal({
@@ -405,7 +405,7 @@ export function CollectPaymentModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="אוסף תשלום"
+      title="הוסף תשלום"
       description={hasBalance ? `יתרה לתשלום: ${fmtMoney(balance)}` : 'לאירוע הזה אין יתרה פתוחה'}
       footer={
         <>

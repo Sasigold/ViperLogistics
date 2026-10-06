@@ -1,27 +1,73 @@
 import { describe, expect, it } from 'vitest'
 import { SECTIONS } from './sections'
-import { WIDGETS_BY_ID } from './registry'
+import { BUILT_IN_DEFAULT, WIDGETS, WIDGETS_BY_ID } from './registry'
+import { normalizeLayout, resolveLayout } from './layout'
 
 describe('Admin Dashboard updates', () => {
-  it('registers finance.keisar_commission in SECTIONS and WIDGETS', () => {
-    expect(SECTIONS).toContain('finance.keisar_commission')
-    const widget = WIDGETS_BY_ID.get('finance.keisar_commission')
-    expect(widget).toBeDefined()
-    expect(widget?.title).toBe('עמלה לקיסר')
-    expect(widget?.group).toBe('finance')
-    expect(widget?.sizes).toContain('sm')
-    expect(widget?.sections).toEqual(['finance.keisar_commission'])
-    expect(widget?.defaultOn).toBe(true)
-  })
-
-  it('registers finance.client_share with updated Sia Designs title', () => {
+  /* הכנסות לשיא עיצובים, שולם, עוד לא שולם ועמלה לקיסר — כרטיס אחד. ה-id
+     של האריח הישן נשאר כדי שהכרטיס ייכנס למקום שלו בפריסות שמורות, והגודל
+     הראשון הוא פאנל ולא אריח: אריח נשאר בגובהו ליד פאנל ומשאיר שטח ריק. */
+  it('merges client share, event payments and the Keisar commission into one panel', () => {
     expect(SECTIONS).toContain('finance.client_share')
+    expect(SECTIONS).toContain('finance.keisar_commission')
     const widget = WIDGETS_BY_ID.get('finance.client_share')
     expect(widget).toBeDefined()
-    expect(widget?.title).toBe('הכנסות לשיא עיצובים')
     expect(widget?.group).toBe('finance')
-    expect(widget?.sizes).toContain('sm')
-    expect(widget?.sections).toEqual(['finance.client_share'])
+    expect(widget?.defaultOn).toBe(true)
+    expect(widget?.sections).toEqual(['finance.client_share', 'finance.keisar_commission'])
+    expect(widget?.sizes[0]).toBe('lg')
+    expect(widget?.sizes).not.toContain('sm')
+    for (const retired of [
+      'finance.keisar_commission',
+      'finance.event_payments_paid',
+      'finance.event_payments_unpaid',
+    ]) {
+      expect(WIDGETS_BY_ID.has(retired), retired).toBe(false)
+    }
+  })
+
+  it('moves a saved small tile into the merged panel at the same slot', () => {
+    const saved = normalizeLayout({
+      v: 1,
+      items: [
+        { id: 'finance.income_mix', size: 'md' },
+        { id: 'finance.client_share', size: 'sm' },
+        { id: 'finance.event_payments_unpaid', size: 'sm' },
+        { id: 'finance.keisar_commission', size: 'sm' },
+        { id: 'finance.event_payments_paid', size: 'sm' },
+        { id: 'hr.active_and_recent_shifts', size: 'md' },
+      ],
+      hidden: [],
+      seen: WIDGETS.map((w) => w.id),
+    })
+    const out = resolveLayout(WIDGETS, saved, BUILT_IN_DEFAULT)
+    expect(out.map((i) => `${i.id}:${i.size}`)).toEqual([
+      'finance.income_mix:md',
+      'finance.client_share:lg',
+      'hr.active_and_recent_shifts:md',
+    ])
+  })
+
+  /* A layout that removed the client-share tile but kept a payments tile
+     still wants the payment numbers — and they now live only in the card. */
+  it('puts the merged panel where a kept payments tile was, even if client share was removed', () => {
+    const saved = normalizeLayout({
+      v: 1,
+      items: [
+        { id: 'finance.income_mix', size: 'md' },
+        { id: 'finance.event_payments_paid', size: 'sm' },
+        { id: 'finance.event_payments_unpaid', size: 'sm' },
+        { id: 'hr.active_and_recent_shifts', size: 'md' },
+      ],
+      hidden: ['finance.client_share', 'finance.keisar_commission'],
+      seen: WIDGETS.map((w) => w.id),
+    })
+    const out = resolveLayout(WIDGETS, saved, BUILT_IN_DEFAULT)
+    expect(out.map((i) => `${i.id}:${i.size}`)).toEqual([
+      'finance.income_mix:md',
+      'finance.client_share:lg',
+      'hr.active_and_recent_shifts:md',
+    ])
   })
 
   it('registers income.mix in SECTIONS for the revenue breakdown chart', () => {
