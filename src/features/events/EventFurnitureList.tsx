@@ -25,7 +25,7 @@
  * בטיפוס, ולא בתשובת הפונקציה, שנבנית שדה-שדה (0176 §2).
  */
 import { useState } from 'react'
-import { Armchair, ICON, Image as ImageIcon, RefreshCw, STROKE } from '../../components/ui/icons'
+import { Armchair, ICON, Image as ImageIcon, Lock, RefreshCw, STROKE } from '../../components/ui/icons'
 import { Badge, EmptyState, ErrorState, SkeletonList, cx, fmtRelative } from '../../components/ui'
 import { furnitureSummaryText, specFromItems, specSummary } from './furniture'
 import { useViperflowOrderItems, useViperflowSpec } from './furnitureQueries'
@@ -73,19 +73,28 @@ export function EventFurnitureList({
   /** נטען רק כשהלשונית פתוחה: הזמנה גדולה היא מאות שורות */
   enabled: boolean
 }) {
-  const live = useViperflowSpec(eventId, enabled)
+  /* ‏0204: אירוע שהסנכרון שלו נעצר מציג את מה שנשמר ברגע העצירה, ואינו
+     שואל את ViperFlow בכלל — מי שנעל רוצה לראות את מה שנעל, לא את מה
+     שההזמנה אומרת עכשיו. */
+  const locked = !!link?.sync_locked_at
+  const live = useViperflowSpec(eventId, enabled && !locked)
   /* הנפילה הרכה נטענת רק כשהחיה נכשלה — ולא "ליתר ביטחון" בכל פתיחה. */
-  const stored = useViperflowOrderItems(eventId, enabled && live.isError)
+  const stored = useViperflowOrderItems(eventId, enabled && (locked || live.isError))
 
-  if (live.isLoading || (live.isError && stored.isLoading)) return <SkeletonList rows={5} />
+  if (locked ? stored.isLoading : live.isLoading || (live.isError && stored.isLoading)) {
+    return <SkeletonList rows={5} />
+  }
 
-  const spec = live.data ?? specFromItems(stored.data ?? [], link)
+  const spec = (!locked && live.data) || specFromItems(stored.data ?? [], link)
   const summary = specSummary(spec)
-  const offline = !live.data
+  const offline = !locked && !live.data
 
   /* קריאה שנכשלה ואין לה על מה ליפול היא שגיאה, ולא "ההזמנה ריקה": מסך
      שאומר "אין ריהוט" כשלא הצלחנו לקרוא הוא מסך שמשקר. */
-  if (live.isError && spec.lines.length === 0) {
+  if (locked && stored.isError) {
+    return <ErrorState error={stored.error} onRetry={() => void stored.refetch()} />
+  }
+  if (!locked && live.isError && spec.lines.length === 0) {
     return <ErrorState error={stored.error ?? live.error} onRetry={() => void live.refetch()} />
   }
 
@@ -125,6 +134,13 @@ export function EventFurnitureList({
       {offline && (
         <p className="border-b border-warning-border bg-warning-subtle px-3 py-2 type-caption text-warning-text">
           ‏ViperFlow אינו זמין כרגע, והרשימה מוצגת מהסנכרון האחרון — בלי תמונות.
+        </p>
+      )}
+      {locked && (
+        <p className="flex items-center gap-1.5 border-b border-warning-border bg-warning-subtle px-3 py-2 type-caption text-warning-text">
+          <Lock size={ICON.sm} strokeWidth={STROKE} />
+          הסנכרון לאירוע נעצר {fmtRelative(link!.sync_locked_at!)} — המפרט נעול ומוצג כפי שנשמר, בלי תמונות.
+          שינויים ב-ViperFlow לא יגיעו לכאן עד שהסנכרון יחודש.
         </p>
       )}
 

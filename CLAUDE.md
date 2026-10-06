@@ -20,7 +20,7 @@ Commands: `npm run dev` · `lint` (oxlint) · `typecheck` (`tsc -b`) · `test:un
 `test:db` (`supabase/tests/run.sh`, scratch Postgres in /var/tmp, needs root/sudo + PG16+) · `test` (both) · `build`.
 CI (`.github/workflows/ci.yml`): lint, typecheck, unit, build; plus a `database` job running run.sh.
 
-Repo layout: `src/` frontend · `supabase/migrations` (0001..0201) · `supabase/functions` · `supabase/tests` · `docs/` · `public/`.
+Repo layout: `src/` frontend · `supabase/migrations` (0001..0205) · `supabase/functions` · `supabase/tests` · `docs/` · `public/`.
 There is no `supabase/config.toml`; `verify_jwt` per function and all secrets/GUCs live in the Supabase dashboard/CLI.
 Production migrations are applied out-of-band (Supabase MCP `apply_migration`/`list_migrations` or dashboard) — run `list_migrations` first.
 
@@ -60,7 +60,7 @@ Production migrations are applied out-of-band (Supabase MCP `apply_migration`/`l
 
 ## 3. Making changes — recipes
 
-**New migration**: `supabase/migrations/0202_<slug>.sql` (next number; note duplicate 0113/0175 exist). Header: `-- 0202: title`, Hebrew narrative
+**New migration**: `supabase/migrations/0206_<slug>.sql` (next number; note duplicate 0113/0175 exist, and 0202/0203 are the wall feed on branch `claude/wall-feed-crew`, already in prod). Header: `-- 0206: title`, Hebrew narrative
 (what/why, cite earlier migrations), then `-- ===== N. section =====` blocks, `create or replace function ... security definer set search_path = public`,
 revoke/grant. Views respecting RLS: `security_invoker`. Redefine whole functions/views (`work_board_view` has been redefined 21× — copy latest, 0201).
 Then add/extend a test suite and make sure `test:db` passes.
@@ -79,7 +79,7 @@ invalidate by prefix. For live-update lists use a key starting with `workboard|d
 **New dashboard widget**: component in `dashboard/widgets/*` → register in `dashboard/registry.tsx` → section key in `dashboard/sections.ts` + SQL section in `dashboard_sections` (latest 0174; redefined in full).
 KPI card: `widgets/kpi.tsx` factory. Custom user widgets: `dashboard/builder/` (`widgetSpec.ts`).
 
-**New SQL test**: `supabase/tests/57_<slug>.sql`, copy header from `56_*`; own UUID prefixes; dates far out (`current_date + N`, N > 870); assert as `set role authenticated` + `set_config('request.jwt.claim.sub',...)`;
+**New SQL test**: `supabase/tests/59_<slug>.sql`, copy header from `58_*`; own UUID prefixes; dates far out (`current_date + N`, N > 870); assert as `set role authenticated` + `set_config('request.jwt.claim.sub',...)`;
 helpers `t_eq/t_rows/t_expect_fail/t_expect_ok`; reset role; **append a block to `run.sh`** (run order is hard-coded).
 
 **Settings tab**: `features/settings/SettingsPage.tsx` `TABS` array (each has `perm`). **Notification type**: emitters 0110+, gating `app.notification_enabled` (0086), insert `app.notify` (0054), sender `functions/notify-dispatch`.
@@ -124,7 +124,7 @@ Timestamps are stamped server-side; avoid client-side "now" for business logic. 
 | search | Ctrl+K | `CommandPalette.tsx` → RPC `global_search` |
 | settings | `/settings` | `SettingsPage.tsx` `TABS`, `companyQueries.ts` (bucket `company-assets`) |
 | integrations | `/integrations` | ViperFlow/Arco status, replay, sync |
-| finance | `/receipts` | `ReceiptsPage.tsx` |
+| finance | `/receipts` `/payments` | `ReceiptsPage.tsx`; event payments (0205): card `EventPaymentsCard.tsx`, page `EventPaymentsPage.tsx`, pure `eventPayments.ts`, RPCs `event_payment_summary/add/remove`, `event_payments_list`, `event_payments_dashboard` (dashboard widgets fetch it themselves, not a `dashboard_sections` key) |
 | embed | `/embed/event` | iframe of `EventFormModal`, postMessage `viper:event-saved/closed` |
 | sync | (hook) | `useRealtimeSync.ts` — broadcast → debounced `invalidateQueries`, never patches cache |
 
@@ -136,7 +136,7 @@ Pattern: pure logic in `*.ts` with sibling `*.test.ts` (vitest is node-only, no 
 0016-0018 activity log + pricing · attendance ≈ 0019-0025/0034/0060/0065/0152/0166 · 0030-0031/0046-0054/0086/0110/0167 notifications ·
 0038-0045/0058-0059/0174 dashboard/reports · 0068-0070/0074/0087/0164/0186 income/receipts/P&L · contractors 0072/0075/0091-0108/0155 ·
 0077-0078/0102/0107 specs & signature · 0089-0090 vehicles · 0101 scoped realtime · 0109-0147 customer board, Arco-performed, recycle bin, customer crew ·
-0159-0169 login/delete/hour-fix/clock · 0170-0175/0181 quote, load heatmap · 0176-0177/0187-0195 ViperFlow · 0182-0186/0199 Arco · 0178-0180/0196-0201 customer worker accounts, warehouse schedule, worker pay view, cancelled releases crew, crew-is-people.
+0159-0169 login/delete/hour-fix/clock · 0170-0175/0181 quote, load heatmap · 0176-0177/0187-0195 ViperFlow · 0182-0186/0199 Arco · 0178-0180/0196-0201 customer worker accounts, warehouse schedule, worker pay view, cancelled releases crew, crew-is-people · 0204 per-event ViperFlow sync lock · 0205 event payments (`receipts.event_id/method`, `/payments`).
 
 Core tables: identity (`profiles`, `staff_roles`, `profile_roles`, `customers`, `contractors`, `contractor_workers`, `customer_workers`) · work (`events`, `tasks`, `task_assignments` (one row per role),
 `task_contractor_terms`, `task_contractor_workers`, `task_customer_workers`, `task_pricing`, `task_price_addons`, `event_activity/specs/signatures/quotes/income/suppliers/contacts`, `warehouse_tasks`, `warehouses`, `trucks`, `vehicles*`) ·
@@ -151,7 +151,7 @@ User kinds: `staff | customer_user | contractor_user`; admin = staff + `is_admin
 **Latest definition of critical functions** (verify with grep): `app.my_role_ids` 0104 · `app.scope_rows` 0085 · `app.event_visible` 0082 · `app.notify` 0054 · `app.notification_enabled` 0086 · emitters 0110 · `app.planned_shifts` 0034 / `_many` 0178 ·
 `app.attendance_calc` 0152 · `attendance_pay_rows`/`clock_needs_location` 0166 · `app.price_calc` 0060 · `recompute_contractor_price` 0155 · `task_pnl_rows`/`payroll_task_amounts`/`margin_summary` 0186 ·
 `dashboard_sections` 0174 · `app.report_run` 0058 · `app.load_capacity` 0175 / `load_slots` 0181 · `log_event_activity` 0170 · `release_event_crew` 0200 · `enforce_task_publish` 0179 ·
-`viperflow_apply_order` 0194 · `arco_outbound_enqueue` 0184 · `app.audit` 0196 · `work_board_view` 0201 · `shift_task_breakdown` 0201.
+`viperflow_apply_order` 0204 · `arco_outbound_enqueue` 0184 · `app.audit` 0196 · `work_board_view` 0201 · `shift_task_breakdown` 0201.
 
 **Edge functions** (`supabase/functions/`, Deno; shared pure code in `_shared/viperflow.ts`, `_shared/arco.ts`, unit-tested):
 `admin-users` (create/set password/active/delete/purge login; JWT on) · `geocode-proxy` (Google Places → Photon/Nominatim; auth in code, accepts service key) ·

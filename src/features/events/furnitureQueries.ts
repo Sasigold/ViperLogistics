@@ -7,9 +7,10 @@
  * פתיחה של משימה תמשוך אותן.
  *
  * הכתיבה אינה כאן ואין לה מקום להיות: לארבע הטבלאות של 0176 אין פוליסת
- * כתיבה כלל, והכותב היחיד הוא פונקציית הקצה בזהות service role.
+ * כתיבה כלל, והכותב היחיד הוא פונקציית הקצה בזהות service role. היוצא היחיד
+ * הוא נעילת הסנכרון (0204), שעוברת ב-RPC ולא בטבלה.
  */
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { invokeFunction, supabase } from '../../lib/supabase'
 import type { ViperflowEventLink, ViperflowOrderItem, ViperflowSpec } from '../../types/domain'
 
@@ -72,5 +73,36 @@ export function useViperflowSpec(eventId: string | null | undefined, enabled = t
     retry: false,
     staleTime: 60_000,
     queryFn: async () => await invokeFunction<ViperflowSpec>('viperflow-spec', { event_id: eventId }),
+  })
+}
+
+/**
+ * עצירה וחידוש של הסנכרון לאירוע אחד (0204).
+ *
+ * ‏`locked` מפורש ולא "החלף": שתי לשוניות על אותו אירוע אינן הופכות זו את
+ * ההכרעה של זו. בחידוש השרת גם מחיל את המשלוח האחרון שנדחה בזמן העצירה,
+ * ולכן מה שמתבטל כאן הוא כל מה שהאירוע מציג — לא רק הקישור.
+ */
+export function useSetEventSyncLock(eventId: string | null | undefined) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (locked: boolean) => {
+      const { data, error } = await supabase.rpc('viperflow_set_event_lock', {
+        p_event_id: eventId!,
+        p_locked: locked,
+      })
+      if (error) throw error
+      return data as { locked: boolean; locked_at: string | null; caught_up?: boolean }
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['viperflow_event_link', eventId] })
+      void qc.invalidateQueries({ queryKey: ['viperflow_spec', eventId] })
+      void qc.invalidateQueries({ queryKey: ['viperflow_order_items', eventId] })
+      void qc.invalidateQueries({ queryKey: ['events'] })
+      void qc.invalidateQueries({ queryKey: ['workboard'] })
+      void qc.invalidateQueries({ queryKey: ['event_activity'] })
+      void qc.invalidateQueries({ queryKey: ['dashboard'] })
+      void qc.invalidateQueries({ queryKey: ['viperflow_deliveries'] })
+    },
   })
 }

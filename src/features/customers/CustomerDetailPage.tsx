@@ -178,7 +178,7 @@ function DetailsTab({ customer }: { customer: Customer }) {
 
   const dirty = useMemo(
     () =>
-      (['name', 'color', 'can_create_events', 'contact_name', 'contact_phone', 'contact_email', 'notes', 'is_active', 'warehouse_id', 'warehouse_schedule_enabled'] as const).some(
+      (['name', 'color', 'can_create_events', 'contact_name', 'contact_phone', 'contact_email', 'notes', 'is_active', 'warehouse_id', 'warehouse_schedule_enabled', 'event_payments_enabled'] as const).some(
         (k) => form[k] !== customer[k],
       ),
     [form, customer],
@@ -200,6 +200,7 @@ function DetailsTab({ customer }: { customer: Customer }) {
           is_active: form.is_active,
           warehouse_id: form.warehouse_id,
           warehouse_schedule_enabled: form.warehouse_schedule_enabled,
+          event_payments_enabled: form.event_payments_enabled,
         })
         .eq('id', customer.id)
       if (error) throw error
@@ -347,6 +348,14 @@ function DetailsTab({ customer }: { customer: Customer }) {
               disabled={!canEdit}
               label="לו״ז מחסן"
               description="משימת הכנה ומשימת החזרה לכל אירוע, ויוזר ״מחסן״ שרואה רק אותן"
+            />
+            {/* ‏0205: "אוסף תשלום" על כל אירוע של הלקוח, ומסך תשלומי אירועים. */}
+            <Switch
+              checked={form.event_payments_enabled}
+              onChange={(v) => setForm((f) => ({ ...f, event_payments_enabled: v }))}
+              disabled={!canEdit}
+              label="תשלומי אירועים"
+              description="רישום כמה התקבל על כל אירוע, מה נשאר לגבות, ומסך תשלומים מרוכז"
             />
           </div>
         </CardBody>

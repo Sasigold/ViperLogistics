@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addMonths, endOfMonth, format, startOfMonth, subMonths } from 'date-fns'
 import {
@@ -13,6 +14,7 @@ import {
   XCircle,
 } from '../../components/ui/icons'
 import {
+  Badge,
   Button,
   Card,
   CardBody,
@@ -39,6 +41,12 @@ import { useCustomers } from '../../lib/queries'
 import { fmtDate, fmtMonth } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 import type { Receipt } from '../../types/domain'
+import { METHOD_LABELS } from './eventPayments'
+
+/** תקבול, ואם הוא תשלום על אירוע — האירוע (0205). */
+type ReceiptRow = Receipt & {
+  events: { end_client_name: string | null; event_number: string | null; event_date: string } | null
+}
 
 /**
  * רישום תקבולים (0068): מה שהלקוחות העבירו בפועל, מול מה שהם חייבים.
@@ -63,15 +71,17 @@ export default function ReceiptsPage() {
   const { data: receipts = [], isLoading } = useQuery({
     queryKey: ['receipts', from, to],
     queryFn: async () => {
+      // ‏0205: תשלום על אירוע נושא את האירוע שלו. ה-join ריק למי ש-RLS אינה
+      // מראה לו את האירוע, והשורה עדיין אומרת שזה תשלום על אירוע.
       const { data, error } = await supabase
         .from('receipts')
-        .select('*')
+        .select('*, events(end_client_name, event_number, event_date)')
         .gte('received_at', from)
         .lte('received_at', to)
         .is('deleted_at', null)
         .order('received_at', { ascending: false })
       if (error) throw error
-      return data as Receipt[]
+      return data as ReceiptRow[]
     },
   })
 
@@ -120,7 +130,7 @@ export default function ReceiptsPage() {
     invalidate()
   }
 
-  const columns: Column<Receipt>[] = [
+  const columns: Column<ReceiptRow>[] = [
     {
       key: 'received_at',
       header: 'תאריך',
@@ -151,6 +161,27 @@ export default function ReceiptsPage() {
       ),
       sortValue: (r) => Number(r.amount),
     },
+    {
+      key: 'method',
+      header: 'אמצעי',
+      render: (r) => (r.method ? <Badge tone={r.method === 'cash' ? 'success' : 'neutral'}>{METHOD_LABELS[r.method]}</Badge> : null),
+      sortValue: (r) => r.method ?? '',
+    },
+    {
+      key: 'event',
+      header: 'אירוע',
+      render: (r) =>
+        r.event_id ? (
+          <Link to={`/events/${r.event_id}`} className="truncate text-primary-text hover:underline" onClick={(e) => e.stopPropagation()}>
+            {r.events
+              ? `${r.events.end_client_name || 'אירוע'}${r.events.event_number ? ` #${r.events.event_number}` : ''}`
+              : 'תשלום על אירוע'}
+          </Link>
+        ) : (
+          <span className="type-caption text-ink-tertiary">על החשבון</span>
+        ),
+      sortValue: (r) => r.events?.end_client_name ?? '',
+    },
     { key: 'note', header: 'הערה', render: (r) => <span className="truncate">{r.note ?? ''}</span> },
     ...(canManage
       ? [
@@ -158,7 +189,7 @@ export default function ReceiptsPage() {
             key: 'actions',
             header: '',
             align: 'end' as const,
-            render: (r: Receipt) => (
+            render: (r: ReceiptRow) => (
               <IconButton label="מחיקת התקבול" size="sm" className="hover:text-error" onClick={() => void remove(r)}>
                 <Trash2 size={ICON.sm} strokeWidth={STROKE} />
               </IconButton>

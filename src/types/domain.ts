@@ -28,6 +28,8 @@ export interface Customer {
   quote_enabled: boolean
   /** האם מודול "לו״ז מחסן" פתוח ללקוח (0196) */
   warehouse_schedule_enabled: boolean
+  /** האם נרשמים תשלומים על האירועים של הלקוח — "אוסף תשלום" ומסך התשלומים (0205) */
+  event_payments_enabled: boolean
   is_active: boolean
   deleted_at: string | null
 }
@@ -63,6 +65,81 @@ export interface Receipt {
   created_by: string | null
   created_at: string
   deleted_at: string | null
+  /** האירוע שהתשלום התקבל עליו (0205). null = תקבול על החשבון השוטף */
+  event_id: string | null
+  /** אמצעי התשלום (0205). null בתקבולים שנרשמו לפני כן */
+  method: PaymentMethod | null
+}
+
+/** אמצעי תשלום של תשלום על אירוע (0205) */
+export type PaymentMethod = 'cash' | 'other'
+
+/**
+ * שורה בפירוט "כמה מגיע" של אירוע (0205): הלוגיסטיקה, או שורת הכנסה עם
+ * החלק של וייפר ממנה. ‏`pct` מתחת ל-100 הוא עמלה; ‏`gross` הוא הסכום המלא.
+ */
+export interface EventPaymentLine {
+  key: string
+  label: string
+  amount: number
+  gross: number | null
+  pct: number | null
+}
+
+/** תשלום אחד שנרשם על אירוע — תקבול עם `event_id` (0205) */
+export interface EventPayment {
+  id: string
+  amount: number
+  received_at: string
+  method: PaymentMethod | null
+  note: string | null
+  created_at: string
+  created_by_name: string | null
+}
+
+/** מה ש-`event_payment_summary` מחזיר (0205) */
+export type EventPaymentSummary =
+  | { enabled: false }
+  | {
+      enabled: true
+      cancelled: boolean
+      lines: EventPaymentLine[]
+      due: number
+      paid: number
+      balance: number
+      payments: EventPayment[]
+      can_manage: boolean
+    }
+
+/** שורה במסך התשלומים — `event_payments_list` (0205) */
+export interface EventPaymentRow {
+  event_id: string
+  event_date: string
+  end_client_name: string | null
+  event_number: string | null
+  customer_id: string
+  customer_name: string
+  customer_color: string | null
+  cancelled: boolean
+  logistics: number
+  income_share: number
+  due: number
+  paid: number
+  balance: number
+  payments_count: number
+  last_paid_at: string | null
+}
+
+/** מה ש-`event_payments_dashboard` מחזיר (0205); null למי שאינו רשאי */
+export interface EventPaymentsDashboard {
+  due: number
+  paid: number
+  unpaid: number
+  events: number
+  paid_events: number
+  open_events: number
+  customers: string[]
+  months: { month: string; events: number; due: number; paid: number; unpaid: number }[]
 }
 
 export interface Contractor {
@@ -524,7 +601,13 @@ export interface EventRow {
   custom_fields: Record<string, CustomFieldValue>
   created_by: string | null
   deleted_at: string | null
-  customers?: { name: string; color: string; performed_by_enabled?: boolean; quote_enabled?: boolean }
+  customers?: {
+    name: string
+    color: string
+    performed_by_enabled?: boolean
+    quote_enabled?: boolean
+    event_payments_enabled?: boolean
+  }
   statuses?: { name: string; color: string } | null
 }
 
@@ -542,6 +625,9 @@ export type EventActivityKind =
   | 'price_addon_added'
   | 'price_addon_removed'
   | 'quote_sent'
+  | 'synced'
+  | 'sync_locked'
+  | 'sync_unlocked'
 
 /**
  * A line of an event's activity log, as `event_activity_feed` returns it: a
@@ -671,6 +757,11 @@ export interface ViperflowEventLink {
   truck_quantity: number | null
   /** כמות העובדים שהוזמנה, לפי רשימת שמות הצוות של החיבור (0193) */
   worker_quantity: number | null
+  /**
+   * מתי נעצר הסנכרון לאירוע (0204). כל עוד מלא, שום משלוח מ-ViperFlow אינו
+   * מוחל על האירוע, והמפרט מוצג ממה שנשמר ולא נמשך חי.
+   */
+  sync_locked_at: string | null
 }
 
 /** שורה אחת ממה ש-`viperflow_connection_status()` מחזיר (0176 §6). */

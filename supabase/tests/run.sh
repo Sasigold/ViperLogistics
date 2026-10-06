@@ -579,6 +579,26 @@ OUT="$OUT
 $OUT56"
 
 echo
+echo "== the event stops listening suite =="
+# 57 מקימה לקוח, חיבור ViperFlow, שתי דמויות והזמנה משלה, על תאריך קבוע
+# (2031-05-15) מעבר לכל טווח אחר. היא רצה אחרונה כי היא משאירה אחריה אירוע,
+# משימות, שורות ריהוט ומשלוחים שאינם מנוקים.
+OUT57=$($PSQL -d vl -f "$HERE/57_the_event_stops_listening.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT57"
+OUT="$OUT
+$OUT57"
+
+echo
+echo "== the event says what was paid suite =="
+# 58 מקימה שני לקוחות, ארבעה אירועים וחמש דמויות משלה ב-current_date + 900,
+# מעבר לכל טווח אחר. היא רצה אחרונה כי היא משאירה אחריה אירועים, משימות
+# ותקבולים שאינם מנוקים.
+OUT58=$($PSQL -d vl -f "$HERE/58_the_event_says_what_was_paid.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT58"
+OUT="$OUT
+$OUT58"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { addDays } from 'date-fns'
 import { supabase } from '../../lib/supabase'
 import { toISODate } from '../../lib/dates'
-import type { DashboardStats, WorkBoardRow } from '../../types/domain'
+import type { DashboardStats, EventPaymentsDashboard, WorkBoardRow } from '../../types/domain'
 
 /**
  * The dashboard's shared reads.
@@ -51,6 +51,25 @@ export function useBoardSlice(slice: BoardSlice, today: string) {
       const { data, error } = await q
       if (error) throw error
       return data as WorkBoardRow[]
+    },
+  })
+}
+
+/**
+ * תשלומי אירועים בטווח (0205) — מה מגיע, מה שולם ומה עוד לא, ושנים-עשר
+ * החודשים שמסתיימים בסוף הטווח. אותה שאלה משרתת את כרטיסי הדשבורד ואת פס
+ * הסיכום של מסך התשלומים, כדי ששני המסכים לעולם לא יסתרו זה את זה.
+ *
+ * ‏null — למי שאינו רשאי; הכרטיס נעלם.
+ */
+export function useEventPaymentsDashboard(from: string, to: string, enabled = true) {
+  return useQuery({
+    queryKey: ['dashboard', 'event_payments', from, to],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('event_payments_dashboard', { p_from: from, p_to: to })
+      if (error) throw error
+      return (data ?? null) as EventPaymentsDashboard | null
     },
   })
 }

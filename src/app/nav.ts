@@ -10,6 +10,7 @@ import {
   Clock,
   FileText,
   Flame,
+  HandCoins,
   HardHat,
   LayoutDashboard,
   PartyPopper,
@@ -261,6 +262,15 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/reports/task-pnl', label: 'רווחיות לפי משימה', shortLabel: 'רווחיות', icon: Percent, perm: PERM.REPORTS_VIEW },
       { to: '/reports/profitability', label: 'רווחיות לקוחות', shortLabel: 'לקוחות', icon: TrendingUp, perm: PERM.REPORTS_VIEW },
       { to: '/receipts', label: 'רישום תקבולים', shortLabel: 'תקבולים', icon: Banknote, perm: PERM.FINANCE_RECEIPTS_VIEW },
+      /* ‏0205: לא לשונית של "תקבולים" — השאלה כאן היא על אירועים ("מה שולם
+         מהאירועים של החודש"), ושם על כסף שנכנס ("מה נכנס החודש"). */
+      {
+        to: '/payments',
+        label: 'תשלומי אירועים',
+        shortLabel: 'תשלומים',
+        icon: HandCoins,
+        perm: PERM.FINANCE_EVENT_PAYMENTS_VIEW,
+      },
     ],
   },
   {
@@ -332,6 +342,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/reports/profitability': 'רווחיות לקוחות',
   '/reports/task-pnl': 'רווחיות לפי משימה',
   '/receipts': 'רישום תקבולים',
+  '/payments': 'תשלומי אירועים',
   '/my/schedule': 'משמרות',
   '/my/attendance': 'שעון נוכחות',
   '/my/notifications': 'התראות',
