@@ -138,9 +138,9 @@ export interface EventPaymentsDashboard {
   events: number
   paid_events: number
   open_events: number
-  /** שמות הלקוחות שבסיכום — כולם, או רק זה שנבחר (0207) */
+  /** שמות הלקוחות שבסיכום — כולם, או רק זה שנבחר (0208) */
   customers: string[]
-  /** כל הלקוחות שתשלומי אירועים דלוקים אצלם — האפשרויות של הפילטר (0207) */
+  /** כל הלקוחות שתשלומי אירועים דלוקים אצלם — האפשרויות של הפילטר (0208) */
   customer_options?: EventPaymentsCustomer[]
   months: { month: string; events: number; due: number; paid: number; unpaid: number }[]
 }

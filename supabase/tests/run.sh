@@ -600,13 +600,13 @@ $OUT58"
 
 echo
 echo "== the payments screen picks a customer suite =="
-# 59 מקימה שלושה לקוחות, שלושה אירועים ושתי דמויות משלה ב-current_date + 960,
+# 60 מקימה שלושה לקוחות, שלושה אירועים ושתי דמויות משלה ב-current_date + 980,
 # מעבר לכל טווח אחר. היא רצה אחרונה כי היא משאירה אחריה אירועים, הכנסות
 # ותקבולים שאינם מנוקים.
-OUT59=$($PSQL -d vl -f "$HERE/59_the_payments_screen_picks_a_customer.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
-echo "$OUT59"
+OUT60=$($PSQL -d vl -f "$HERE/60_the_payments_screen_picks_a_customer.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT60"
 OUT="$OUT
-$OUT59"
+$OUT60"
 
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
