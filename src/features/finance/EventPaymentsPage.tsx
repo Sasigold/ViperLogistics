@@ -47,14 +47,21 @@ const FILTERS: { key: PaymentFilter; label: string }[] = [
 
 const PRESETS: RangePreset[] = ['month', 'prev_month', 'quarter', 'year']
 
+const ALL_CUSTOMERS = 'all'
+
 /**
  * תשלומי אירועים (0205): כל האירועים של לקוחות שהמודול פתוח להם, בטווח
  * תאריכי האירוע — כמה מגיע, כמה שולם, מה היתרה. לחיצה על שורה פותחת את
- * היסטוריית התשלומים של האירוע ואת "אוסף תשלום", אותו תוכן בדיוק כמו בדף
+ * היסטוריית התשלומים של האירוע ואת "הוסף תשלום", אותו תוכן בדיוק כמו בדף
  * האירוע.
  *
  * פס הסיכום אינו נספר כאן אלא נשאל מ-`event_payments_dashboard` — אותה פונקציה
  * שמזינה את כרטיסי הדשבורד, כדי שהמסכים לא יסתרו זה את זה.
+ *
+ * ‏0207: כשתשלומי אירועים דלוקים אצל יותר מלקוח אחד (למשל שיא עיצובים וקיסר)
+ * מופיע פילטר לקוח. רשימת הלקוחות באה מהשרת (`customer_options`) — כל מי
+ * שהמתג דלוק אצלו, גם אם אין לו אירועים בטווח — כדי שהפילטר לא יופיע וייעלם
+ * בדפדוף בין חודשים. הטבלה מסוננת כאן (בחירת שורות), והסיכום בשרת.
  */
 export default function EventPaymentsPage() {
   const navigate = useNavigate()
@@ -62,17 +69,29 @@ export default function EventPaymentsPage() {
   const [preset, setPreset] = useState<RangePreset | null>('month')
   const [filter, setFilter] = useState<PaymentFilter>('all')
   const [search, setSearch] = useState('')
+  const [customerId, setCustomerId] = useState<string | null>(null)
   const [openRow, setOpenRow] = useState<EventPaymentRow | null>(null)
 
   const invalid = rangeError(range.from, range.to)
   const { data: rows = [], isLoading, error, refetch } = useEventPaymentsList(range.from, range.to, !invalid)
-  const { data: summary } = useEventPaymentsDashboard(range.from, range.to, !invalid)
+  const { data: summary } = useEventPaymentsDashboard(range.from, range.to, !invalid, customerId)
 
-  const manyCustomers = useMemo(() => new Set(rows.map((r) => r.customer_id)).size > 1, [rows])
+  const customerOptions = summary?.customer_options ?? []
+  /* לקוח שנבחר והמתג כבה אצלו מאז — חוזרים ל"כל הלקוחות", גם בטבלה וגם בסיכום,
+     במקום לסנן לריק. עדכון בזמן רינדור, בתנאי, הוא הדרך של React לגזור state
+     מנתון שהגיע — בלי אפקט ובלי רינדור ביניים עם סיכום של לקוח אחר. */
+  if (customerId && summary && !customerOptions.some((c) => c.id === customerId)) setCustomerId(null)
+  const customer = customerId
+
+  const customerRows = useMemo(
+    () => (customer ? rows.filter((r) => r.customer_id === customer) : rows),
+    [rows, customer],
+  )
+  const manyCustomers = useMemo(() => new Set(customerRows.map((r) => r.customer_id)).size > 1, [customerRows])
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return rows.filter(
+    return customerRows.filter(
       (r) =>
         matchesFilter(Number(r.due), Number(r.paid), filter) &&
         (!q ||
@@ -80,7 +99,7 @@ export default function EventPaymentsPage() {
           (r.event_number ?? '').toLowerCase().includes(q) ||
           r.customer_name.toLowerCase().includes(q)),
     )
-  }, [rows, filter, search])
+  }, [customerRows, filter, search])
 
   const pickPreset = (p: RangePreset) => {
     setPreset(p)
@@ -228,6 +247,30 @@ export default function EventPaymentsPage() {
                 className="w-40"
               />
             </div>
+            {customerOptions.length > 1 && (
+              <div className="max-w-full overflow-x-auto">
+                <SegmentedControl<string>
+                  items={[
+                    { key: ALL_CUSTOMERS, label: 'כל הלקוחות' },
+                    ...customerOptions.map((c) => ({
+                      key: c.id,
+                      label: (
+                        <span className="flex items-center gap-1.5">
+                          <span
+                            className="size-2 shrink-0 rounded-full"
+                            style={{ background: c.color ?? '#8a93a5' }}
+                            aria-hidden
+                          />
+                          {c.name}
+                        </span>
+                      ),
+                    })),
+                  ]}
+                  value={customer ?? ALL_CUSTOMERS}
+                  onChange={(k) => setCustomerId(k === ALL_CUSTOMERS ? null : k)}
+                />
+              </div>
+            )}
             <SearchInput
               placeholder="חיפוש לפי שם או מספר אירוע"
               value={search}
@@ -293,9 +336,9 @@ export default function EventPaymentsPage() {
                 <EmptyState
                   compact
                   art="table"
-                  title={rows.length ? 'אין אירועים שעונים על הסינון' : 'אין אירועים בטווח'}
+                  title={customerRows.length ? 'אין אירועים שעונים על הסינון' : 'אין אירועים בטווח'}
                   description={
-                    rows.length
+                    customerRows.length || customer
                       ? undefined
                       : 'מוצגים אירועים של לקוחות שתשלומי אירועים מופעלים אצלם (בכרטיס הלקוח)'
                   }

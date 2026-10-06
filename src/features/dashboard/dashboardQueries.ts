@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { addDays } from 'date-fns'
 import { supabase } from '../../lib/supabase'
 import { toISODate } from '../../lib/dates'
@@ -60,14 +60,24 @@ export function useBoardSlice(slice: BoardSlice, today: string) {
  * החודשים שמסתיימים בסוף הטווח. אותה שאלה משרתת את כרטיסי הדשבורד ואת פס
  * הסיכום של מסך התשלומים, כדי ששני המסכים לעולם לא יסתרו זה את זה.
  *
+ * ‏`customerId` (‏0207) מצמצם ללקוח אחד — הפילטר של מסך התשלומים. הוא נשלח
+ * רק כשנבחר לקוח, כך שהדשבורד שואל בדיוק את מה ששאל קודם. ‏`keepPreviousData`
+ * כמו בסקשנים של הדשבורד: בהחלפת לקוח או טווח המספרים הקודמים נשארים עד
+ * שהחדשים מגיעים, והפילטר עצמו (שבא מאותה תשובה) אינו נעלם לרגע.
+ *
  * ‏null — למי שאינו רשאי; הכרטיס נעלם.
  */
-export function useEventPaymentsDashboard(from: string, to: string, enabled = true) {
+export function useEventPaymentsDashboard(from: string, to: string, enabled = true, customerId?: string | null) {
   return useQuery({
-    queryKey: ['dashboard', 'event_payments', from, to],
+    queryKey: ['dashboard', 'event_payments', from, to, customerId ?? null],
     enabled,
+    placeholderData: keepPreviousData,
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('event_payments_dashboard', { p_from: from, p_to: to })
+      const { data, error } = await supabase.rpc('event_payments_dashboard', {
+        p_from: from,
+        p_to: to,
+        ...(customerId ? { p_customer_id: customerId } : {}),
+      })
       if (error) throw error
       return (data ?? null) as EventPaymentsDashboard | null
     },

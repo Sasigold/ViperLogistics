@@ -90,10 +90,8 @@ import {
   UnderstaffedWidget,
 } from './widgets/sectionWidgets'
 import {
-  ClientShareWidget,
   FurnitureIncomeWidget,
   IncomeMixWidget,
-  KeisarCommissionWidget,
   LogisticsIncomeWidget,
   PayrollEmployerWidget,
   ProfitSummaryWidget,
@@ -102,11 +100,7 @@ import {
   ViperUnpaidWidget,
 } from './widgets/incomeWidgets'
 import { CustomerSpendWidget, SpendByEventWidget, SpendTrendWidget } from './widgets/spendWidgets'
-import {
-  EventPaymentsMonthlyWidget,
-  EventPaymentsPaidWidget,
-  EventPaymentsUnpaidWidget,
-} from './widgets/eventPaymentWidgets'
+import { ClientSummaryWidget, EventPaymentsMonthlyWidget } from './widgets/eventPaymentWidgets'
 import {
   CustomerCommissionWidget,
   CustomerEventsTotalWidget,
@@ -246,61 +240,29 @@ export const WIDGETS: WidgetDef[] = [
     sections: ['finance.receivables'],
     Component: ViperUnpaidWidget,
   },
+  /* ‏הכנסות לשיא עיצובים, עוד לא שולם, שולם ועמלה לקיסר — כרטיס אחד, במקום
+     ארבעה אריחים (`finance.keisar_commission`, `finance.event_payments_paid`
+     ו-`finance.event_payments_unpaid` פרשו). ארבעת האריחים עמדו ליד פאנל
+     גבוה והשאירו שטח ריק מתחתם; הכרטיס הוא פאנל וממלא את השורה.
+
+     ‏**ה-id נשאר `finance.client_share` בכוונה**, בניגוד לכלל "לא ממחזרים id"
+     שלמעלה: הכרטיס הזה הוא ההמשך של האריח ההוא ולא ווידג׳ט אחר, וכך בפריסה
+     שמורה הוא נכנס בדיוק למקום שבו היה האריח. הגודל השמור (`sm`) כבר אינו
+     מוצע, ו-`clampSize` מעלה אותו ל-`lg` — שני שלישים, שמשאירים מקום לפאנל
+     בשליש שלצדו. ‏`kinds` הוא אותו גדר של תשלומי האירועים (0205). */
   {
     id: 'finance.client_share',
-    title: 'הכנסות לשיא עיצובים',
-    description: 'חלק שיא עיצובים: 80% מריהוט חדש ו-30% מריהוט ישן',
-    group: 'finance',
-    icon: icon(Percent),
-    perms: [PERM.FINANCE_INCOME_VIEW],
-    sizes: ['sm'],
-    defaultOn: true,
-    usesRange: true,
-    wantsDelta: false,
-    sections: ['finance.client_share'],
-    Component: ClientShareWidget,
-  },
-  {
-    id: 'finance.keisar_commission',
-    title: 'עמלה לקיסר',
-    description: '10% מאירועים של קיסר שסך כל המשימות של האירוע עולה על 2,000 ש״ח',
-    group: 'finance',
-    icon: icon(Percent),
-    perms: [PERM.FINANCE_INCOME_VIEW],
-    sizes: ['sm'],
-    defaultOn: true,
-    usesRange: true,
-    wantsDelta: false,
-    sections: ['finance.keisar_commission'],
-    Component: KeisarCommissionWidget,
-  },
-  /* ‏0205: תשלומי אירועים — הכרטיסים שואלים בעצמם (`event_payments_dashboard`)
-     ולכן אין להם `sections`. הטווח הוא תאריך האירוע. */
-  {
-    id: 'finance.event_payments_paid',
-    title: 'תשלומי אירועים — שולם',
-    description: 'כמה שולם על האירועים שבטווח, מתוך מה שמגיע — ללקוחות שתשלומי אירועים מופעלים אצלם',
+    title: 'הכנסות, תשלומים ועמלה',
+    description: 'כרטיס אחד: הכנסות לשיא עיצובים, כמה שולם ועוד לא שולם על האירועים שבטווח, ועמלה לקיסר',
     group: 'finance',
     icon: icon(HandCoins),
-    perms: [PERM.FINANCE_EVENT_PAYMENTS_VIEW],
+    anyPerms: [PERM.FINANCE_INCOME_VIEW, PERM.FINANCE_EVENT_PAYMENTS_VIEW],
     kinds: ['staff'],
-    sizes: ['sm'],
+    sizes: ['lg', 'xl', 'md'],
     defaultOn: true,
     usesRange: true,
-    Component: EventPaymentsPaidWidget,
-  },
-  {
-    id: 'finance.event_payments_unpaid',
-    title: 'תשלומי אירועים — עוד לא שולם',
-    description: 'היתרה הפתוחה על האירועים שבטווח — מה שעוד צריך לגבות',
-    group: 'finance',
-    icon: icon(Wallet),
-    perms: [PERM.FINANCE_EVENT_PAYMENTS_VIEW],
-    kinds: ['staff'],
-    sizes: ['sm'],
-    defaultOn: true,
-    usesRange: true,
-    Component: EventPaymentsUnpaidWidget,
+    sections: ['finance.client_share', 'finance.keisar_commission'],
+    Component: ClientSummaryWidget,
   },
   {
     id: 'finance.event_payments_monthly',
@@ -1352,10 +1314,6 @@ export const BUILT_IN_DEFAULT: DashboardLayout = {
     { id: 'finance.viper_owed', size: 'sm' },
     { id: 'finance.viper_paid', size: 'sm' },
     { id: 'finance.viper_unpaid', size: 'sm' },
-    { id: 'finance.client_share', size: 'sm' },
-    { id: 'finance.keisar_commission', size: 'sm' },
-    { id: 'finance.event_payments_paid', size: 'sm' },
-    { id: 'finance.event_payments_unpaid', size: 'sm' },
 
     /* הצד של הלקוח (0074). יושב באותה שורה ולא בסקשן משלו: אצל הלקוח כל
        השורה שמעליו נעלמת, ואצל איש משרד נעלם רק הוא. */
@@ -1377,7 +1335,11 @@ export const BUILT_IN_DEFAULT: DashboardLayout = {
     { id: 'cust.tasks_by_customer', size: 'md' },
     { id: 'hr.workload', size: 'md' },
     { id: 'hr.contractor_split', size: 'md' },
-    { id: 'hr.active_and_recent_shifts', size: 'lg' },
+
+    /* הכרטיס המאוחד של שיא עיצובים בשני שלישים, והמשמרות בשליש שלצדו —
+       שורה מלאה, כמו שהמנהל סידר לעצמו. */
+    { id: 'finance.client_share', size: 'lg' },
+    { id: 'hr.active_and_recent_shifts', size: 'md' },
 
     { id: 'finance.income_mix', size: 'md' },
     { id: 'finance.profit_summary', size: 'md' },

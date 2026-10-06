@@ -28,7 +28,7 @@ export interface Customer {
   quote_enabled: boolean
   /** האם מודול "לו״ז מחסן" פתוח ללקוח (0196) */
   warehouse_schedule_enabled: boolean
-  /** האם נרשמים תשלומים על האירועים של הלקוח — "אוסף תשלום" ומסך התשלומים (0205) */
+  /** האם נרשמים תשלומים על האירועים של הלקוח — "הוסף תשלום" ומסך התשלומים (0205) */
   event_payments_enabled: boolean
   is_active: boolean
   deleted_at: string | null
@@ -138,8 +138,17 @@ export interface EventPaymentsDashboard {
   events: number
   paid_events: number
   open_events: number
+  /** שמות הלקוחות שבסיכום — כולם, או רק זה שנבחר (0207) */
   customers: string[]
+  /** כל הלקוחות שתשלומי אירועים דלוקים אצלם — האפשרויות של הפילטר (0207) */
+  customer_options?: EventPaymentsCustomer[]
   months: { month: string; events: number; due: number; paid: number; unpaid: number }[]
+}
+
+export interface EventPaymentsCustomer {
+  id: string
+  name: string
+  color: string | null
 }
 
 export interface Contractor {
