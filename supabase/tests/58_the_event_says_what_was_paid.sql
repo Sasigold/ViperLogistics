@@ -314,3 +314,53 @@ select t_eq('ועכשיו: לא שולם 0, אירוע אחד שולם במלו�
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
+
+
+\echo '--- 9. מי שנחסם מתשלומי אירועים נחסם גם בטבלה (0206) ---'
+
+-- מנהל תקבולים שתשלומי אירועים נסגרו לו במפורש. עד 0206 פוליסות `receipts`
+-- (0068) שאלו רק על `finance.receipts_manage`, והוא יכול היה לעקוף את
+-- ה-RPCs דרך מסך התקבולים.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-0000000058a5', 'p58-receipts-only@vl.test');
+insert into profiles (id, user_id, user_kind, is_admin, full_name) values
+  ('20000000-0000-0000-0000-0000000058a5', '00000000-0000-0000-0000-0000000058a5',
+   'staff', false, 'תקבולים בלבד 58');
+insert into user_permission_grants (profile_id, permission_key, allowed) values
+  ('20000000-0000-0000-0000-0000000058a5', 'finance.receipts_view', true),
+  ('20000000-0000-0000-0000-0000000058a5', 'finance.receipts_manage', true),
+  ('20000000-0000-0000-0000-0000000058a5', 'finance.event_payments_manage', false);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000058a5', false);
+
+select t_eq('הוא רואה את תשלומי האירוע (התקבולים פתוחים לו)',
+  (select count(*)::int from receipts where event_id = '30000000-0000-0000-0000-0000000058e1'), 2);
+select t_expect_fail('אינו רושם תשלום על אירוע ישירות בטבלה',
+  $$insert into receipts (customer_id, event_id, amount, method)
+    values ('10000000-0000-0000-0000-000000000058', '30000000-0000-0000-0000-0000000058e1', 50, 'cash')$$);
+select t_expect_fail('אינו משנה סכום של תשלום קיים',
+  $$update receipts set amount = 1
+     where event_id = '30000000-0000-0000-0000-0000000058e1' and deleted_at is null$$);
+select t_expect_fail('אינו מוחק אותו מחיקה רכה',
+  $$update receipts set deleted_at = now()
+     where event_id = '30000000-0000-0000-0000-0000000058e1' and deleted_at is null$$);
+select t_expect_fail('וגם אינו מנתק אותו מהאירוע',
+  $$update receipts set event_id = null
+     where event_id = '30000000-0000-0000-0000-0000000058e1' and deleted_at is null$$);
+select t_expect_ok('תקבול על החשבון — כרגיל',
+  $$insert into receipts (customer_id, amount, received_at, note)
+    values ('10000000-0000-0000-0000-00000000058b', 25, current_date + 2001, 'חשבון 58')$$);
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000058a1', false);
+select t_expect_ok('מנהל הכספים (מפתח נגזר) עורך הערה על תשלום של אירוע ישירות',
+  $$update receipts set note = 'עודכן 58'
+     where event_id = '30000000-0000-0000-0000-0000000058e1' and deleted_at is null$$);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('התשלומים של האירוע לא זזו — שולם 6,800',
+  (select sum(amount) from receipts
+    where event_id = '30000000-0000-0000-0000-0000000058e1' and deleted_at is null),
+  6800.00::numeric);

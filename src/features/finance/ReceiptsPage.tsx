@@ -57,6 +57,10 @@ type ReceiptRow = Receipt & {
 export default function ReceiptsPage() {
   const { has } = useAuth()
   const canManage = has(PERM.FINANCE_RECEIPTS_MANAGE)
+  /* ‏0206: תשלום על אירוע נערך ונמחק רק בידי מי שמחזיק גם את מפתח תשלומי
+     האירועים — השרת דוחה כל אחד אחר, וכאן הוא פשוט לא מציע את הלחיצה. */
+  const canManageEventPayments = has(PERM.FINANCE_EVENT_PAYMENTS_MANAGE)
+  const canEditRow = (r: Receipt) => canManage && (!r.event_id || canManageEventPayments)
   const qc = useQueryClient()
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
@@ -189,11 +193,12 @@ export default function ReceiptsPage() {
             key: 'actions',
             header: '',
             align: 'end' as const,
-            render: (r: ReceiptRow) => (
-              <IconButton label="מחיקת התקבול" size="sm" className="hover:text-error" onClick={() => void remove(r)}>
-                <Trash2 size={ICON.sm} strokeWidth={STROKE} />
-              </IconButton>
-            ),
+            render: (r: ReceiptRow) =>
+              canEditRow(r) ? (
+                <IconButton label="מחיקת התקבול" size="sm" className="hover:text-error" onClick={() => void remove(r)}>
+                  <Trash2 size={ICON.sm} strokeWidth={STROKE} />
+                </IconButton>
+              ) : null,
           },
         ]
       : []),
@@ -260,7 +265,13 @@ export default function ReceiptsPage() {
               columns={columns}
               getRowId={(r) => r.id}
               loading={isLoading}
-              onRowClick={canManage ? (r) => setModal({ open: true, editing: r }) : undefined}
+              onRowClick={
+                canManage
+                  ? (r) => {
+                      if (canEditRow(r)) setModal({ open: true, editing: r })
+                    }
+                  : undefined
+              }
               empty={
                 <EmptyState
                   compact
