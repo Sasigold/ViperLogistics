@@ -32,6 +32,7 @@ export type DrillTarget =
   | { to: 'vehicles' }
   | { to: 'vehicle'; id: string }
   | { to: 'receipts' }
+  | { to: 'payments' }
   | { to: 'reports' }
   | { to: 'shifts' }
   | { to: 'attendance' }
@@ -49,6 +50,7 @@ export const DRILL_PERMS: Record<DrillTarget['to'], string[]> = {
   vehicles: [PERM.FLEET_VIEW],
   vehicle: [PERM.FLEET_VIEW],
   receipts: [PERM.FINANCE_RECEIPTS_VIEW],
+  payments: [PERM.FINANCE_EVENT_PAYMENTS_VIEW],
   reports: [PERM.REPORTS_VIEW],
   shifts: [PERM.ATTENDANCE_VIEW_ALL, PERM.PORTAL_ATTENDANCE],
   attendance: [PERM.ATTENDANCE_VIEW_OWN],
@@ -92,6 +94,8 @@ export function drillHref(target: DrillTarget): string {
       return '/vehicles'
     case 'receipts':
       return '/receipts'
+    case 'payments':
+      return '/payments'
     case 'reports':
       return '/reports'
     case 'shifts':

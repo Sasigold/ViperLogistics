@@ -103,6 +103,11 @@ import {
 } from './widgets/incomeWidgets'
 import { CustomerSpendWidget, SpendByEventWidget, SpendTrendWidget } from './widgets/spendWidgets'
 import {
+  EventPaymentsMonthlyWidget,
+  EventPaymentsPaidWidget,
+  EventPaymentsUnpaidWidget,
+} from './widgets/eventPaymentWidgets'
+import {
   CustomerCommissionWidget,
   CustomerEventsTotalWidget,
   CustomerMonthsWidget,
@@ -268,6 +273,47 @@ export const WIDGETS: WidgetDef[] = [
     wantsDelta: false,
     sections: ['finance.keisar_commission'],
     Component: KeisarCommissionWidget,
+  },
+  /* ‏0203: תשלומי אירועים — הכרטיסים שואלים בעצמם (`event_payments_dashboard`)
+     ולכן אין להם `sections`. הטווח הוא תאריך האירוע. */
+  {
+    id: 'finance.event_payments_paid',
+    title: 'תשלומי אירועים — שולם',
+    description: 'כמה שולם על האירועים שבטווח, מתוך מה שמגיע — ללקוחות שתשלומי אירועים מופעלים אצלם',
+    group: 'finance',
+    icon: icon(HandCoins),
+    perms: [PERM.FINANCE_EVENT_PAYMENTS_VIEW],
+    kinds: ['staff'],
+    sizes: ['sm'],
+    defaultOn: true,
+    usesRange: true,
+    Component: EventPaymentsPaidWidget,
+  },
+  {
+    id: 'finance.event_payments_unpaid',
+    title: 'תשלומי אירועים — עוד לא שולם',
+    description: 'היתרה הפתוחה על האירועים שבטווח — מה שעוד צריך לגבות',
+    group: 'finance',
+    icon: icon(Wallet),
+    perms: [PERM.FINANCE_EVENT_PAYMENTS_VIEW],
+    kinds: ['staff'],
+    sizes: ['sm'],
+    defaultOn: true,
+    usesRange: true,
+    Component: EventPaymentsUnpaidWidget,
+  },
+  {
+    id: 'finance.event_payments_monthly',
+    title: 'תשלומי אירועים לפי חודש',
+    description: 'שולם מול עוד לא שולם, חודש בחודשו — שנים-עשר החודשים שמסתיימים בסוף הטווח',
+    group: 'finance',
+    icon: icon(HandCoins),
+    perms: [PERM.FINANCE_EVENT_PAYMENTS_VIEW],
+    kinds: ['staff'],
+    sizes: ['md', 'lg'],
+    defaultOn: true,
+    usesRange: true,
+    Component: EventPaymentsMonthlyWidget,
   },
   {
     id: 'finance.income_mix',
@@ -1308,6 +1354,8 @@ export const BUILT_IN_DEFAULT: DashboardLayout = {
     { id: 'finance.viper_unpaid', size: 'sm' },
     { id: 'finance.client_share', size: 'sm' },
     { id: 'finance.keisar_commission', size: 'sm' },
+    { id: 'finance.event_payments_paid', size: 'sm' },
+    { id: 'finance.event_payments_unpaid', size: 'sm' },
 
     /* הצד של הלקוח (0074). יושב באותה שורה ולא בסקשן משלו: אצל הלקוח כל
        השורה שמעליו נעלמת, ואצל איש משרד נעלם רק הוא. */
@@ -1333,6 +1381,7 @@ export const BUILT_IN_DEFAULT: DashboardLayout = {
 
     { id: 'finance.income_mix', size: 'md' },
     { id: 'finance.profit_summary', size: 'md' },
+    { id: 'finance.event_payments_monthly', size: 'md' },
 
     { id: 'cust.my_months', size: 'md' },
     { id: 'finance.my_spend_by_event', size: 'md' },

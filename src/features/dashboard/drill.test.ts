@@ -18,6 +18,7 @@ const EVERY: DrillTarget[] = [
   { to: 'vehicles' },
   { to: 'vehicle', id: 'v1' },
   { to: 'receipts' },
+  { to: 'payments' },
   { to: 'reports' },
   { to: 'shifts' },
   { to: 'attendance' },

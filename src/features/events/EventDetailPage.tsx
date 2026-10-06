@@ -13,6 +13,8 @@ import {
   ICON,
   LayoutGrid,
   List,
+  Lock,
+  LockOpen,
   Paperclip,
   Pencil,
   PencilLine,
@@ -64,7 +66,8 @@ import { EventQuoteModal } from './EventQuoteModal'
 import { EventSpecsModal } from './EventSpecsModal'
 import { CustomerSignatureModal } from './CustomerSignatureModal'
 import { useEventSpecs } from './specQueries'
-import { useViperflowLink } from './furnitureQueries'
+import { useSetEventSyncLock, useViperflowLink } from './furnitureQueries'
+import { EventPaymentsCard } from '../finance/EventPaymentsCard'
 import { crewPeople, crewSize } from '../tasks/crew'
 import { useCrewVisibility } from '../tasks/crewVisibility'
 import { sumAddons, useEventPriceAddons } from '../pricing/addonQueries'
@@ -93,7 +96,11 @@ export default function EventDetailPage() {
     queryKey: ['events', 'one', id],
     queryFn: async () => {
       const [e, contact, sup] = await Promise.all([
-        supabase.from('events').select('*, customers(name, color, performed_by_enabled, quote_enabled), statuses(name, color)').eq('id', id).single(),
+        supabase
+          .from('events')
+          .select('*, customers(name, color, performed_by_enabled, quote_enabled, event_payments_enabled), statuses(name, color)')
+          .eq('id', id)
+          .single(),
         supabase.from('event_contacts').select('*').eq('event_id', id).maybeSingle(),
         supabase.from('event_suppliers').select('supplier_id, suppliers(name)').eq('event_id', id),
       ])
@@ -269,6 +276,9 @@ export default function EventDetailPage() {
      למי שאינו רשאי לקרוא אותם היא מסמך שגוי, לא מסמך חלקי. */
   const quoteEnabled = !!data?.event.customers?.quote_enabled
   const canSendQuote = quoteEnabled && has(PERM.EVENTS_QUOTE_SEND) && has(PERM.PRICING_VIEW)
+  /* ‏0203: תשלומים על האירוע — אותו דפוס, דגל פר-לקוח ולא שם. השרת עונה
+     גם הוא `enabled: false` ללקוח שהמודול סגור לו; כאן זה רק חוסך שאילתה. */
+  const showPayments = !!data?.event.customers?.event_payments_enabled && has(PERM.FINANCE_EVENT_PAYMENTS_VIEW)
   const canSetPerformedBy = !!me?.profile.is_admin || has(PERM.TASKS_EDIT) || isCustomerUser
   const setPerformedBy = useMutation({
     mutationFn: async ({ taskId, value }: { taskId: string; value: PerformedBy }) => {
@@ -310,6 +320,40 @@ export default function EventDetailPage() {
     },
     onError: (e) => toast.error(errorMessage(e)),
   })
+
+  /**
+   * עצירת הסנכרון מ-ViperFlow לאירוע הזה (0202). אותו מפתח שמנהל את החיבור
+   * ומריץ משלוחים מחדש — הנעילה היא הכרעה על מה ש-ViperFlow רשאי לכתוב,
+   * לא עריכה של האירוע. השרת דוחה כל אחד אחר; כאן זו רק הדלת.
+   */
+  const syncLocked = !!viperflowLink?.sync_locked_at
+  const canLockSync = !!viperflowLink && has(PERM.INTEGRATIONS_MANAGE)
+  const setSyncLock = useSetEventSyncLock(id)
+  const toggleSyncLock = async () => {
+    const lock = !syncLocked
+    const ok = await confirm(
+      lock
+        ? 'כל עוד הסנכרון עצור, שום דבר מההזמנה ב-ViperFlow לא ישנה את האירוע: לא סכומים, לא שעות, לא כמויות, לא סטטוס ולא מפרט. המפרט יוצג כפי שהוא שמור עכשיו.'
+        : 'הסנכרון יחודש, והשינויים האחרונים שהגיעו מ-ViperFlow בזמן העצירה יוחלו על האירוע עכשיו — כולל סכומים, כמויות ומפרט.',
+      {
+        title: lock ? 'עצירת הסנכרון לאירוע' : 'חידוש הסנכרון לאירוע',
+        confirmLabel: lock ? 'עצירת סנכרון' : 'חידוש סנכרון',
+        tone: lock ? 'danger' : 'primary',
+      },
+    )
+    if (!ok) return
+    setSyncLock.mutate(lock, {
+      onSuccess: (r) =>
+        toast.success(
+          r.locked
+            ? 'הסנכרון לאירוע נעצר'
+            : r.caught_up
+              ? 'הסנכרון חודש, והשינויים מ-ViperFlow הוחלו'
+              : 'הסנכרון חודש',
+        ),
+      onError: (e) => toast.error(errorMessage(e)),
+    })
+  }
 
   /* נגזר מהשאילתה ולא נבנה בתוך ה-JSX: `.map()` שם מייצר מערך חדש בכל
      רינדור, כלומר prop שמתחלף בלי ששום דבר השתנה. יושב מעל ה-early return
@@ -690,6 +734,14 @@ export default function EventDetailPage() {
                 · מ-ViperFlow{viperflowLink.order_number ? ` · הזמנה ${viperflowLink.order_number}` : ''}
               </span>
             )}
+            {/* ‏0202: נאמר לכל מי שרואה את הקישור, ולא רק למי שרשאי לשחרר —
+                אירוע שלא זז אחרי שינוי בהזמנה נראה אחרת כמו תקלה. */}
+            {syncLocked && (
+              <Badge tone="warning">
+                <Lock size={ICON.xs} strokeWidth={STROKE} />
+                הסנכרון עצור
+              </Badge>
+            )}
             {event.location_text && (
               <span>
                 · <LocationText value={event.location_text} />
@@ -709,6 +761,21 @@ export default function EventDetailPage() {
                 {(viperflowLink?.furniture_lines ?? 0) > 0 && (
                   <Badge tone="info">{viperflowLink?.furniture_lines}</Badge>
                 )}
+              </Button>
+            )}
+            {canLockSync && (
+              <Button
+                size="sm"
+                variant={syncLocked ? 'primary' : 'secondary'}
+                loading={setSyncLock.isPending}
+                onClick={() => void toggleSyncLock()}
+              >
+                {syncLocked ? (
+                  <LockOpen size={ICON.sm} strokeWidth={STROKE} />
+                ) : (
+                  <Lock size={ICON.sm} strokeWidth={STROKE} />
+                )}
+                {syncLocked ? 'חידוש סנכרון' : 'עצירת סנכרון'}
               </Button>
             )}
             {canSendQuote && (
@@ -896,6 +963,8 @@ export default function EventDetailPage() {
               </Card>
             )}
           </div>
+
+          {showPayments && <EventPaymentsCard eventId={event.id} />}
 
           {/* Redesigned Tasks Section */}
           <div className="space-y-4">

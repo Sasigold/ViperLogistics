@@ -69,6 +69,9 @@ const KIND_COLORS: Record<EventActivityKind, string> = {
   price_addon_added: '#c2410c',
   price_addon_removed: '#b45309',
   quote_sent: '#7c3aed',
+  synced: '#0284c7',
+  sync_locked: '#b45309',
+  sync_unlocked: '#16a34a',
 }
 
 const KIND_LABELS: Record<EventActivityKind, string> = {
@@ -85,6 +88,9 @@ const KIND_LABELS: Record<EventActivityKind, string> = {
   price_addon_added: 'תוספת מחיר',
   price_addon_removed: 'תוספת הוסרה',
   quote_sent: 'הצעת מחיר נשלחה',
+  synced: 'סנכרון',
+  sync_locked: 'הסנכרון נעצר',
+  sync_unlocked: 'הסנכרון חודש',
 }
 
 /** One timeline entry: a note, a lifecycle event, or every field one save moved. */
