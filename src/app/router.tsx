@@ -42,6 +42,7 @@ const AttendanceReportPage = lazyPage(() => import('../features/attendance/Atten
 const ReportsPage = lazyPage(() => import('../features/reports/ReportsPage'))
 const ReceiptsPage = lazyPage(() => import('../features/finance/ReceiptsPage'))
 const EventPaymentsPage = lazyPage(() => import('../features/finance/EventPaymentsPage'))
+const CashWalletPage = lazyPage(() => import('../features/finance/CashWalletPage'))
 const CustomerProfitabilityPage = lazyPage(() => import('../features/reports/CustomerProfitabilityPage'))
 const TaskPnlPage = lazyPage(() => import('../features/reports/TaskPnlPage'))
 const LoadHeatmapPage = lazyPage(() => import('../features/reports/LoadHeatmapPage'))
@@ -170,6 +171,7 @@ export const router = createBrowserRouter([
           },
           { path: '/receipts', handle: { perm: PERM.FINANCE_RECEIPTS_VIEW }, element: page(<ReceiptsPage />) },
           { path: '/payments', handle: { perm: PERM.FINANCE_EVENT_PAYMENTS_VIEW }, element: page(<EventPaymentsPage />) },
+          { path: '/wallet', handle: { perm: PERM.FINANCE_CASH_WALLET_VIEW }, element: page(<CashWalletPage />) },
           /* הרשימה והדף אינם אותו מפתח: עובד שטח פותח אירוע שהוא משובץ אליו,
              ואין לו מה לעשות בקטלוג של כולם (0082). */
           { path: '/events', handle: { perm: PERM.EVENTS_LIST }, element: page(<EventsPage />) },
