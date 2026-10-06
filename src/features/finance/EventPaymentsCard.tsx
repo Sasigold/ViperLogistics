@@ -23,7 +23,7 @@ import {
 } from '../../components/ui'
 import { fmtDate } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
-import type { EventPayment, PaymentMethod } from '../../types/domain'
+import type { EventPayment, EventPaymentLine, PaymentMethod } from '../../types/domain'
 import {
   METHOD_LABELS,
   STATE_LABELS,
@@ -33,7 +33,13 @@ import {
   parseAmount,
   paymentState,
 } from './eventPayments'
-import { useAddEventPayment, useEventPaymentSummary, useRemoveEventPayment } from './eventPaymentQueries'
+import {
+  useAddEventCharge,
+  useAddEventPayment,
+  useEventPaymentSummary,
+  useRemoveEventCharge,
+  useRemoveEventPayment,
+} from './eventPaymentQueries'
 
 /**
  * תשלומים על אירוע (0205): כמה מגיע לוייפר, כמה התקבל, ומה נשאר.
@@ -47,9 +53,11 @@ import { useAddEventPayment, useEventPaymentSummary, useRemoveEventPayment } fro
 export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: boolean }) {
   const { data, isLoading, error, refetch } = useEventPaymentSummary(eventId)
   const remove = useRemoveEventPayment()
+  const removeCharge = useRemoveEventCharge()
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
   const [collectOpen, setCollectOpen] = useState(false)
+  const [chargeOpen, setChargeOpen] = useState(false)
 
   if (isLoading) {
     return bare ? (
@@ -80,10 +88,32 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
     })
   }
 
+  const removeChargeLine = async (l: EventPaymentLine) => {
+    if (!l.charge_id) return
+    const ok = await confirm(`למחוק את החיוב "${l.label}" של ${fmtMoney(l.amount)}?`, {
+      title: 'מחיקת חיוב',
+      confirmLabel: 'מחיקה',
+    })
+    if (!ok) return
+    removeCharge.mutate(l.charge_id, {
+      onSuccess: () => toast.success('החיוב נמחק'),
+      onError: (e) => toast.error(errorMessage(e)),
+    })
+  }
+
   const collectButton = canManage && (
     <Button size="sm" variant="primary" onClick={() => setCollectOpen(true)}>
       <Plus size={ICON.sm} strokeWidth={STROKE} />
       אוסף תשלום
+    </Button>
+  )
+
+  /* חיוב ידני (0207): "עלות ייצור 1,000" — נוסף למה שמגיע. אירוע שבוטל
+     אינו חייב דבר, ולכן אין עליו חיוב חדש. */
+  const chargeButton = canManage && !data.cancelled && (
+    <Button size="sm" variant="ghost" onClick={() => setChargeOpen(true)}>
+      <Plus size={ICON.sm} strokeWidth={STROKE} />
+      הוספת חיוב
     </Button>
   )
 
@@ -108,9 +138,23 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
                   ({Number(l.pct)}% מתוך {fmtMoney(l.gross)})
                 </span>
               )}
+              {l.charge_id && <Badge className="ms-1.5">חיוב ידני</Badge>}
+              {l.note && <span className="block whitespace-pre-line text-ink-secondary">{l.note}</span>}
             </dt>
-            <dd dir="ltr" className="shrink-0 tabular-nums type-body font-medium">
-              {fmtMoney(l.amount)}
+            <dd className="flex shrink-0 items-center gap-1">
+              <span dir="ltr" className="tabular-nums type-body font-medium">
+                {fmtMoney(l.amount)}
+              </span>
+              {canManage && l.charge_id && (
+                <IconButton
+                  label="מחיקת חיוב"
+                  size="sm"
+                  loading={removeCharge.isPending && removeCharge.variables === l.charge_id}
+                  onClick={() => void removeChargeLine(l)}
+                >
+                  <Trash2 size={ICON.sm} strokeWidth={STROKE} />
+                </IconButton>
+              )}
             </dd>
           </div>
         ))}
@@ -119,6 +163,7 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
             עדיין אין על האירוע מחיר או הכנסות — אין סכום לגבייה.
           </p>
         )}
+        {chargeButton && <div className="py-1.5">{chargeButton}</div>}
         <div className="flex items-baseline justify-between gap-3 pt-2">
           <dt className="type-body font-semibold">סך הכול מגיע</dt>
           <dd dir="ltr" className="tabular-nums type-title font-semibold text-primary">
@@ -208,6 +253,7 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
         eventId={eventId}
         balance={data.balance}
       />
+      <AddChargeModal open={chargeOpen} onClose={() => setChargeOpen(false)} eventId={eventId} />
     </div>
   )
 
@@ -223,6 +269,73 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
       />
       <CardBody>{body}</CardBody>
     </Card>
+  )
+}
+
+/** חיוב ידני על האירוע (0207): על מה, כמה, והערה. */
+function AddChargeModal({ open, onClose, eventId }: { open: boolean; onClose: () => void; eventId: string }) {
+  const toast = useToast()
+  const add = useAddEventCharge()
+  const [label, setLabel] = useState('')
+  const [raw, setRaw] = useState('')
+  const [note, setNote] = useState('')
+
+  const [openedFor, setOpenedFor] = useState(false)
+  if (open !== openedFor) {
+    setOpenedFor(open)
+    if (open) {
+      setLabel('')
+      setRaw('')
+      setNote('')
+    }
+  }
+
+  const amount = parseAmount(raw)
+  const valid = amount != null && !!label.trim()
+
+  const save = () => {
+    if (amount == null) return
+    add.mutate(
+      { eventId, label: label.trim(), amount, note: note.trim() || null },
+      {
+        onSuccess: () => {
+          toast.success(`נוסף חיוב של ${fmtMoney(amount)}`)
+          onClose()
+        },
+        onError: (e) => toast.error(errorMessage(e)),
+      },
+    )
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="הוספת חיוב"
+      description="סכום נוסף שמגיע על האירוע — נכנס ל״סך הכול מגיע״ וליתרה"
+      footer={
+        <>
+          <Button className="ms-auto" onClick={onClose}>
+            ביטול
+          </Button>
+          <Button variant="primary" loading={add.isPending} disabled={!valid} onClick={save}>
+            שמירה
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Field label="על מה" required>
+          <Input autoFocus placeholder="למשל: עלות ייצור" value={label} onChange={(e) => setLabel(e.target.value)} />
+        </Field>
+        <Field label="סכום (₪)" required error={raw.trim() && amount == null ? 'סכום לא תקין' : undefined}>
+          <Input inputMode="decimal" dir="ltr" placeholder="0" value={raw} onChange={(e) => setRaw(e.target.value)} />
+        </Field>
+        <Field label="הערות">
+          <Textarea autoGrow rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+        </Field>
+      </div>
+    </Modal>
   )
 }
 
@@ -352,7 +465,14 @@ export function CollectPaymentModal({
           />
         </Field>
 
-        <Field label="הערות" hint={method === 'other' ? 'למשל: העברה בנקאית, צ׳ק, ביט — ומספר אסמכתא' : undefined}>
+        <Field
+          label="הערות"
+          hint={
+            method === 'other'
+              ? 'למשל: העברה בנקאית, צ׳ק, ביט — ומספר אסמכתא'
+              : 'תשלום במזומן נכנס גם לארנק המזומנים'
+          }
+        >
           <Textarea autoGrow rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
 

@@ -599,6 +599,15 @@ OUT="$OUT
 $OUT58"
 
 echo
+echo "== the wallet counts the cash suite =="
+# 59 מקימה לקוח, שני אירועים וארבע דמויות משלה ב-current_date + 950. היא
+# רצה אחרי 58 כי הארנק סופר את כל התקבולים במזומן במסד, ובודקת הפרשים בלבד.
+OUT59=$($PSQL -d vl -f "$HERE/59_the_wallet_counts_the_cash.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT59"
+OUT="$OUT
+$OUT59"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

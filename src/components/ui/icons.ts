@@ -53,6 +53,7 @@ export {
   ExternalLink,
   // actions
   Plus,
+  Minus,
   Pencil,
   Trash2,
   Copy,

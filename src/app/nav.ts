@@ -20,6 +20,7 @@ import {
   TrendingUp,
   Truck,
   Users,
+  Wallet,
   Warehouse,
 } from '../components/ui/icons'
 import type { ComponentType } from 'react'
@@ -271,6 +272,8 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: HandCoins,
         perm: PERM.FINANCE_EVENT_PAYMENTS_VIEW,
       },
+      /* ‏0207: כמה מזומן יש ביד — כל תשלום שהתקבל במזומן, פחות ההוצאות. */
+      { to: '/wallet', label: 'ארנק מזומנים', shortLabel: 'ארנק', icon: Wallet, perm: PERM.FINANCE_CASH_WALLET_VIEW },
     ],
   },
   {
@@ -343,6 +346,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/reports/task-pnl': 'רווחיות לפי משימה',
   '/receipts': 'רישום תקבולים',
   '/payments': 'תשלומי אירועים',
+  '/wallet': 'ארנק מזומנים',
   '/my/schedule': 'משמרות',
   '/my/attendance': 'שעון נוכחות',
   '/my/notifications': 'התראות',
