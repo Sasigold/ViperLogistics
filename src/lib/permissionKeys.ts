@@ -145,7 +145,7 @@ export const PERM = {
      את התשלומים על אירוע, ואפשר לסגור לו את זה במפורש. */
   FINANCE_EVENT_PAYMENTS_VIEW: 'finance.event_payments_view',
   FINANCE_EVENT_PAYMENTS_MANAGE: 'finance.event_payments_manage',
-  /* ארנק המזומנים (0206) — בלי implied_by: מי שאוסף תשלומים אינו רואה בזה
+  /* ארנק המזומנים (0207) — בלי implied_by: מי שאוסף תשלומים אינו רואה בזה
      את ההוצאות של הבעלים. */
   FINANCE_CASH_WALLET_VIEW: 'finance.cash_wallet_view',
   FINANCE_CASH_WALLET_MANAGE: 'finance.cash_wallet_manage',

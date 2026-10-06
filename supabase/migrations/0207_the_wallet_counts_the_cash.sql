@@ -1,4 +1,4 @@
--- 0206: חיוב ידני על אירוע, וארנק המזומנים
+-- 0207: חיוב ידני על אירוע, וארנק המזומנים
 --
 -- שתי בקשות של הבעלים, על גבי כרטיס התשלומים של 0205:
 --
@@ -78,7 +78,7 @@ create table event_charges (
 );
 
 comment on table event_charges is
-  'חיוב ידני על אירוע ("עלות ייצור 1,000") — נוסף ל"מגיע" של תשלומי האירוע (0206). '
+  'חיוב ידני על אירוע ("עלות ייצור 1,000") — נוסף ל"מגיע" של תשלומי האירוע (0207). '
   'נכתב ונקרא רק דרך event_charge_add/remove ו-event_payment_summary.';
 
 create index event_charges_event_live_idx on event_charges (event_id) where deleted_at is null;
@@ -132,7 +132,7 @@ select e.id            as event_id,
 
 comment on view app.event_payment_dues is
   'לכל אירוע של לקוח שתשלומי אירועים פתוחים לו: כמה מגיע לוייפר (משימות + חלק '
-  'וייפר מההכנסות + חיובים ידניים), כמה שולם וכמה נשאר (0205, 0206). '
+  'וייפר מההכנסות + חיובים ידניים), כמה שולם וכמה נשאר (0205, 0207). '
   'נקרא רק מתוך פונקציות definer.';
 
 revoke all on app.event_payment_dues from anon, authenticated, public;
@@ -294,7 +294,7 @@ create table cash_wallet_entries (
 );
 
 comment on table cash_wallet_entries is
-  'הוצאה או הכנסה ידנית בארנק המזומנים (0206). הסכום תמיד חיובי; הכיוון ב-kind. '
+  'הוצאה או הכנסה ידנית בארנק המזומנים (0207). הסכום תמיד חיובי; הכיוון ב-kind. '
   'נכתב ונקרא רק דרך cash_wallet / cash_wallet_entry_add / cash_wallet_entry_remove.';
 
 create index cash_wallet_entries_live_idx on cash_wallet_entries (entry_date) where deleted_at is null;
@@ -316,7 +316,7 @@ select w.id, w.kind, w.entry_date,
  where w.deleted_at is null;
 
 comment on view app.cash_wallet_moves is
-  'כל תנועות ארנק המזומנים בסימן שלהן (0206). נקרא רק מתוך פונקציות definer.';
+  'כל תנועות ארנק המזומנים בסימן שלהן (0207). נקרא רק מתוך פונקציות definer.';
 
 revoke all on app.cash_wallet_moves from anon, authenticated, public;
 

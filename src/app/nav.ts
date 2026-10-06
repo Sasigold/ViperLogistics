@@ -272,7 +272,7 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: HandCoins,
         perm: PERM.FINANCE_EVENT_PAYMENTS_VIEW,
       },
-      /* ‏0206: כמה מזומן יש ביד — כל תשלום שהתקבל במזומן, פחות ההוצאות. */
+      /* ‏0207: כמה מזומן יש ביד — כל תשלום שהתקבל במזומן, פחות ההוצאות. */
       { to: '/wallet', label: 'ארנק מזומנים', shortLabel: 'ארנק', icon: Wallet, perm: PERM.FINANCE_CASH_WALLET_VIEW },
     ],
   },

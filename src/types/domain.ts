@@ -77,7 +77,7 @@ export type PaymentMethod = 'cash' | 'other'
 /**
  * שורה בפירוט "כמה מגיע" של אירוע (0205): הלוגיסטיקה, או שורת הכנסה עם
  * החלק של וייפר ממנה. ‏`pct` מתחת ל-100 הוא עמלה; ‏`gross` הוא הסכום המלא.
- * חיוב ידני (0206) נושא `charge_id` — לפיו הוא נמחק.
+ * חיוב ידני (0207) נושא `charge_id` — לפיו הוא נמחק.
  */
 export interface EventPaymentLine {
   key: string
@@ -145,7 +145,7 @@ export interface EventPaymentsDashboard {
   months: { month: string; events: number; due: number; paid: number; unpaid: number }[]
 }
 
-/** תנועה בארנק המזומנים (0206): מזומן שהתקבל על אירוע, או שורה ידנית */
+/** תנועה בארנק המזומנים (0207): מזומן שהתקבל על אירוע, או שורה ידנית */
 export type CashWalletSource = 'payment' | 'income' | 'expense'
 
 export interface CashWalletEntry {
@@ -166,7 +166,7 @@ export interface CashWalletEntry {
   created_at: string
 }
 
-/** מה ש-`cash_wallet` מחזיר (0206) */
+/** מה ש-`cash_wallet` מחזיר (0207) */
 export interface CashWallet {
   balance: number
   opening: number

@@ -14,7 +14,7 @@ export function invalidateEventPayments(qc: QueryClient) {
   void qc.invalidateQueries({ queryKey: ['events', 'payments'] })
   void qc.invalidateQueries({ queryKey: ['dashboard'] })
   void qc.invalidateQueries({ queryKey: ['receipts'] })
-  // תשלום במזומן נכנס לארנק (0206)
+  // תשלום במזומן נכנס לארנק (0207)
   void qc.invalidateQueries({ queryKey: ['wallet'] })
 }
 
@@ -79,7 +79,7 @@ export function useRemoveEventPayment() {
   })
 }
 
-/** חיוב ידני על אירוע (0206) — "עלות ייצור 1,000" נוסף ל"מגיע". */
+/** חיוב ידני על אירוע (0207) — "עלות ייצור 1,000" נוסף ל"מגיע". */
 export function useAddEventCharge() {
   const qc = useQueryClient()
   return useMutation({

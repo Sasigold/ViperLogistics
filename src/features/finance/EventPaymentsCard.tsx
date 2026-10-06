@@ -108,7 +108,7 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
     </Button>
   )
 
-  /* חיוב ידני (0206): "עלות ייצור 1,000" — נוסף למה שמגיע. אירוע שבוטל
+  /* חיוב ידני (0207): "עלות ייצור 1,000" — נוסף למה שמגיע. אירוע שבוטל
      אינו חייב דבר, ולכן אין עליו חיוב חדש. */
   const chargeButton = canManage && !data.cancelled && (
     <Button size="sm" variant="ghost" onClick={() => setChargeOpen(true)}>
@@ -272,7 +272,7 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
   )
 }
 
-/** חיוב ידני על האירוע (0206): על מה, כמה, והערה. */
+/** חיוב ידני על האירוע (0207): על מה, כמה, והערה. */
 function AddChargeModal({ open, onClose, eventId }: { open: boolean; onClose: () => void; eventId: string }) {
   const toast = useToast()
   const add = useAddEventCharge()

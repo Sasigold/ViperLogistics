@@ -20,7 +20,7 @@ Commands: `npm run dev` · `lint` (oxlint) · `typecheck` (`tsc -b`) · `test:un
 `test:db` (`supabase/tests/run.sh`, scratch Postgres in /var/tmp, needs root/sudo + PG16+) · `test` (both) · `build`.
 CI (`.github/workflows/ci.yml`): lint, typecheck, unit, build; plus a `database` job running run.sh.
 
-Repo layout: `src/` frontend · `supabase/migrations` (0001..0206) · `supabase/functions` · `supabase/tests` · `docs/` · `public/`.
+Repo layout: `src/` frontend · `supabase/migrations` (0001..0207) · `supabase/functions` · `supabase/tests` · `docs/` · `public/`.
 There is no `supabase/config.toml`; `verify_jwt` per function and all secrets/GUCs live in the Supabase dashboard/CLI.
 Production migrations are applied out-of-band (Supabase MCP `apply_migration`/`list_migrations` or dashboard) — run `list_migrations` first.
 
@@ -60,7 +60,7 @@ Production migrations are applied out-of-band (Supabase MCP `apply_migration`/`l
 
 ## 3. Making changes — recipes
 
-**New migration**: `supabase/migrations/0207_<slug>.sql` (next number; note duplicate 0113/0175 exist, and 0202/0203 are the wall feed on branch `claude/wall-feed-crew`, already in prod). Header: `-- 0207: title`, Hebrew narrative
+**New migration**: `supabase/migrations/0208_<slug>.sql` (next number; note duplicate 0113/0175 exist, and 0202/0203 are the wall feed on branch `claude/wall-feed-crew`, already in prod). Header: `-- 0208: title`, Hebrew narrative
 (what/why, cite earlier migrations), then `-- ===== N. section =====` blocks, `create or replace function ... security definer set search_path = public`,
 revoke/grant. Views respecting RLS: `security_invoker`. Redefine whole functions/views (`work_board_view` has been redefined 21× — copy latest, 0201).
 Then add/extend a test suite and make sure `test:db` passes.
@@ -124,7 +124,7 @@ Timestamps are stamped server-side; avoid client-side "now" for business logic. 
 | search | Ctrl+K | `CommandPalette.tsx` → RPC `global_search` |
 | settings | `/settings` | `SettingsPage.tsx` `TABS`, `companyQueries.ts` (bucket `company-assets`) |
 | integrations | `/integrations` | ViperFlow/Arco status, replay, sync |
-| finance | `/receipts` `/payments` `/wallet` | `ReceiptsPage.tsx`; event payments (0205): card `EventPaymentsCard.tsx`, page `EventPaymentsPage.tsx`, pure `eventPayments.ts`, RPCs `event_payment_summary/add/remove`, `event_payments_list`, `event_payments_dashboard` (dashboard widgets fetch it themselves, not a `dashboard_sections` key); manual charges (0206) `event_charges` via `event_charge_add/remove`, counted in `app.event_payment_dues`; cash wallet (0206) `CashWalletPage.tsx`, `cashWallet.ts`, RPCs `cash_wallet`, `cash_wallet_entry_add/remove` (cash receipts + `cash_wallet_entries`) |
+| finance | `/receipts` `/payments` `/wallet` | `ReceiptsPage.tsx`; event payments (0205): card `EventPaymentsCard.tsx`, page `EventPaymentsPage.tsx`, pure `eventPayments.ts`, RPCs `event_payment_summary/add/remove`, `event_payments_list`, `event_payments_dashboard` (dashboard widgets fetch it themselves, not a `dashboard_sections` key); manual charges (0207) `event_charges` via `event_charge_add/remove`, counted in `app.event_payment_dues`; cash wallet (0207) `CashWalletPage.tsx`, `cashWallet.ts`, RPCs `cash_wallet`, `cash_wallet_entry_add/remove` (cash receipts + `cash_wallet_entries`) |
 | embed | `/embed/event` | iframe of `EventFormModal`, postMessage `viper:event-saved/closed` |
 | sync | (hook) | `useRealtimeSync.ts` — broadcast → debounced `invalidateQueries`, never patches cache |
 
@@ -136,7 +136,7 @@ Pattern: pure logic in `*.ts` with sibling `*.test.ts` (vitest is node-only, no 
 0016-0018 activity log + pricing · attendance ≈ 0019-0025/0034/0060/0065/0152/0166 · 0030-0031/0046-0054/0086/0110/0167 notifications ·
 0038-0045/0058-0059/0174 dashboard/reports · 0068-0070/0074/0087/0164/0186 income/receipts/P&L · contractors 0072/0075/0091-0108/0155 ·
 0077-0078/0102/0107 specs & signature · 0089-0090 vehicles · 0101 scoped realtime · 0109-0147 customer board, Arco-performed, recycle bin, customer crew ·
-0159-0169 login/delete/hour-fix/clock · 0170-0175/0181 quote, load heatmap · 0176-0177/0187-0195 ViperFlow · 0182-0186/0199 Arco · 0178-0180/0196-0201 customer worker accounts, warehouse schedule, worker pay view, cancelled releases crew, crew-is-people · 0204 per-event ViperFlow sync lock · 0205 event payments (`receipts.event_id/method`, `/payments`) · 0206 event manual charges + cash wallet (`/wallet`).
+0159-0169 login/delete/hour-fix/clock · 0170-0175/0181 quote, load heatmap · 0176-0177/0187-0195 ViperFlow · 0182-0186/0199 Arco · 0178-0180/0196-0201 customer worker accounts, warehouse schedule, worker pay view, cancelled releases crew, crew-is-people · 0204 per-event ViperFlow sync lock · 0205 event payments (`receipts.event_id/method`, `/payments`) · 0206 receipts guard + unlock catch-up (branch `claude/viperflow-lock-and-event-payments`, in prod) · 0207 event manual charges + cash wallet (`/wallet`).
 
 Core tables: identity (`profiles`, `staff_roles`, `profile_roles`, `customers`, `contractors`, `contractor_workers`, `customer_workers`) · work (`events`, `tasks`, `task_assignments` (one row per role),
 `task_contractor_terms`, `task_contractor_workers`, `task_customer_workers`, `task_pricing`, `task_price_addons`, `event_activity/specs/signatures/quotes/income/suppliers/contacts`, `warehouse_tasks`, `warehouses`, `trucks`, `vehicles*`) ·
