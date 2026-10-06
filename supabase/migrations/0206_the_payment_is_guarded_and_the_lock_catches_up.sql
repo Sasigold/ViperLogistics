@@ -52,9 +52,9 @@ end $$;
 revoke execute on function app.receipts_event_guard() from anon, authenticated, public;
 
 -- ‏0205 הפעיל אותו רק על `update of event_id, customer_id`, ולכן שינוי סכום
--- או מחיקה רכה עקפו אותו. עכשיו — כל עדכון.
-drop trigger if exists receipts_event_guard on receipts;
-create trigger receipts_event_guard before insert or update on receipts
+-- או מחיקה רכה עקפו אותו. עכשיו — כל עדכון. ‏`create or replace trigger`
+-- (PG14+) ולא drop + create: אותה תוצאה, בלי רגע שבו הטבלה בלי שומר.
+create or replace trigger receipts_event_guard before insert or update on receipts
   for each row execute function app.receipts_event_guard();
 
 -- ===== 2. השחרור בוחר לפי חותמת ההזמנה ====================================
