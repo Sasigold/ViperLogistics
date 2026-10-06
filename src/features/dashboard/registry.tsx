@@ -274,7 +274,7 @@ export const WIDGETS: WidgetDef[] = [
     sections: ['finance.keisar_commission'],
     Component: KeisarCommissionWidget,
   },
-  /* ‏0203: תשלומי אירועים — הכרטיסים שואלים בעצמם (`event_payments_dashboard`)
+  /* ‏0205: תשלומי אירועים — הכרטיסים שואלים בעצמם (`event_payments_dashboard`)
      ולכן אין להם `sections`. הטווח הוא תאריך האירוע. */
   {
     id: 'finance.event_payments_paid',

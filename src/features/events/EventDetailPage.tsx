@@ -276,7 +276,7 @@ export default function EventDetailPage() {
      למי שאינו רשאי לקרוא אותם היא מסמך שגוי, לא מסמך חלקי. */
   const quoteEnabled = !!data?.event.customers?.quote_enabled
   const canSendQuote = quoteEnabled && has(PERM.EVENTS_QUOTE_SEND) && has(PERM.PRICING_VIEW)
-  /* ‏0203: תשלומים על האירוע — אותו דפוס, דגל פר-לקוח ולא שם. השרת עונה
+  /* ‏0205: תשלומים על האירוע — אותו דפוס, דגל פר-לקוח ולא שם. השרת עונה
      גם הוא `enabled: false` ללקוח שהמודול סגור לו; כאן זה רק חוסך שאילתה. */
   const showPayments = !!data?.event.customers?.event_payments_enabled && has(PERM.FINANCE_EVENT_PAYMENTS_VIEW)
   const canSetPerformedBy = !!me?.profile.is_admin || has(PERM.TASKS_EDIT) || isCustomerUser
@@ -322,7 +322,7 @@ export default function EventDetailPage() {
   })
 
   /**
-   * עצירת הסנכרון מ-ViperFlow לאירוע הזה (0202). אותו מפתח שמנהל את החיבור
+   * עצירת הסנכרון מ-ViperFlow לאירוע הזה (0204). אותו מפתח שמנהל את החיבור
    * ומריץ משלוחים מחדש — הנעילה היא הכרעה על מה ש-ViperFlow רשאי לכתוב,
    * לא עריכה של האירוע. השרת דוחה כל אחד אחר; כאן זו רק הדלת.
    */
@@ -734,7 +734,7 @@ export default function EventDetailPage() {
                 · מ-ViperFlow{viperflowLink.order_number ? ` · הזמנה ${viperflowLink.order_number}` : ''}
               </span>
             )}
-            {/* ‏0202: נאמר לכל מי שרואה את הקישור, ולא רק למי שרשאי לשחרר —
+            {/* ‏0204: נאמר לכל מי שרואה את הקישור, ולא רק למי שרשאי לשחרר —
                 אירוע שלא זז אחרי שינוי בהזמנה נראה אחרת כמו תקלה. */}
             {syncLocked && (
               <Badge tone="warning">

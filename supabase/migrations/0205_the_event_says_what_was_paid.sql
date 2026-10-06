@@ -1,4 +1,4 @@
--- 0203: האירוע אומר כמה מגיע עליו, כמה שולם וכמה נשאר
+-- 0205: האירוע אומר כמה מגיע עליו, כמה שולם וכמה נשאר
 --
 -- הבקשה, במילים של הבעלים: "באירועים של שיא עיצובים אני רוצה לרשום כמה כסף
 -- קיבלתי מהאירוע, והאם קיבלתי את מלוא התמורה. אני נכנס לאירוע, רואה שמגיע לי
@@ -57,7 +57,7 @@ alter table customers
   add column event_payments_enabled boolean not null default false;
 
 comment on column customers.event_payments_enabled is
-  'האם נרשמים תשלומים על האירועים של הלקוח הזה — כפתור "אוסף תשלום" ומסך התשלומים (0203).';
+  'האם נרשמים תשלומים על האירועים של הלקוח הזה — כפתור "אוסף תשלום" ומסך התשלומים (0205).';
 
 update customers c set event_payments_enabled = true
  where c.deleted_at is null
@@ -74,9 +74,9 @@ alter table receipts
   add column method   text check (method in ('cash', 'other'));
 
 comment on column receipts.event_id is
-  'האירוע שהתשלום התקבל עליו (0203). ריק = תקבול על החשבון השוטף (0068).';
+  'האירוע שהתשלום התקבל עליו (0205). ריק = תקבול על החשבון השוטף (0068).';
 comment on column receipts.method is
-  'אמצעי התשלום: cash / other (0203). ריק בתקבולים שנרשמו לפני כן.';
+  'אמצעי התשלום: cash / other (0205). ריק בתקבולים שנרשמו לפני כן.';
 
 -- תשלום על אירוע הוא תמיד חיובי. זיכוי ללקוח (0068: תקבול שלילי) נשאר
 -- תקבול על החשבון — "שילם מינוס" על אירוע אינו תשלום שמישהו אסף.
@@ -174,7 +174,7 @@ select e.id            as event_id,
 
 comment on view app.event_payment_dues is
   'לכל אירוע של לקוח שתשלומי אירועים פתוחים לו: כמה מגיע לוייפר (משימות + חלק '
-  'וייפר מההכנסות), כמה שולם וכמה נשאר (0203). נקרא רק מתוך פונקציות definer.';
+  'וייפר מההכנסות), כמה שולם וכמה נשאר (0205). נקרא רק מתוך פונקציות definer.';
 
 revoke all on app.event_payment_dues from anon, authenticated, public;
 

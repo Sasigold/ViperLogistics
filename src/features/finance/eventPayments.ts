@@ -1,5 +1,5 @@
 /**
- * תשלומי אירועים (0203) — הלוגיקה הטהורה של המסכים.
+ * תשלומי אירועים (0205) — הלוגיקה הטהורה של המסכים.
  *
  * הכסף עצמו — כמה מגיע, כמה שולם, מה היתרה — נספר בשרת (`event_payment_summary`,
  * `event_payments_list`). מה שכאן הוא רק איך קוראים את המספרים: מה מצב
@@ -128,7 +128,7 @@ export function presetRange(preset: RangePreset, today: Date): { from: string; t
   }
 }
 
-/** אותה תקרה שהשרת אוכף (0203) — שנה ועוד קצת, כמו הדשבורד. */
+/** אותה תקרה שהשרת אוכף (0205) — שנה ועוד קצת, כמו הדשבורד. */
 export const MAX_RANGE_DAYS = 400
 
 export function rangeError(from: string, to: string): string | null {

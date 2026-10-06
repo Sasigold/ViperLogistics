@@ -8,7 +8,7 @@
  *
  * הכתיבה אינה כאן ואין לה מקום להיות: לארבע הטבלאות של 0176 אין פוליסת
  * כתיבה כלל, והכותב היחיד הוא פונקציית הקצה בזהות service role. היוצא היחיד
- * הוא נעילת הסנכרון (0202), שעוברת ב-RPC ולא בטבלה.
+ * הוא נעילת הסנכרון (0204), שעוברת ב-RPC ולא בטבלה.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { invokeFunction, supabase } from '../../lib/supabase'
@@ -77,7 +77,7 @@ export function useViperflowSpec(eventId: string | null | undefined, enabled = t
 }
 
 /**
- * עצירה וחידוש של הסנכרון לאירוע אחד (0202).
+ * עצירה וחידוש של הסנכרון לאירוע אחד (0204).
  *
  * ‏`locked` מפורש ולא "החלף": שתי לשוניות על אותו אירוע אינן הופכות זו את
  * ההכרעה של זו. בחידוש השרת גם מחיל את המשלוח האחרון שנדחה בזמן העצירה,

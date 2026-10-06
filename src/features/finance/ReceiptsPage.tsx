@@ -43,7 +43,7 @@ import { errorMessage } from '../../lib/errors'
 import type { Receipt } from '../../types/domain'
 import { METHOD_LABELS } from './eventPayments'
 
-/** תקבול, ואם הוא תשלום על אירוע — האירוע (0203). */
+/** תקבול, ואם הוא תשלום על אירוע — האירוע (0205). */
 type ReceiptRow = Receipt & {
   events: { end_client_name: string | null; event_number: string | null; event_date: string } | null
 }
@@ -71,7 +71,7 @@ export default function ReceiptsPage() {
   const { data: receipts = [], isLoading } = useQuery({
     queryKey: ['receipts', from, to],
     queryFn: async () => {
-      // ‏0203: תשלום על אירוע נושא את האירוע שלו. ה-join ריק למי ש-RLS אינה
+      // ‏0205: תשלום על אירוע נושא את האירוע שלו. ה-join ריק למי ש-RLS אינה
       // מראה לו את האירוע, והשורה עדיין אומרת שזה תשלום על אירוע.
       const { data, error } = await supabase
         .from('receipts')

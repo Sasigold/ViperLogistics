@@ -262,7 +262,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: '/reports/task-pnl', label: 'רווחיות לפי משימה', shortLabel: 'רווחיות', icon: Percent, perm: PERM.REPORTS_VIEW },
       { to: '/reports/profitability', label: 'רווחיות לקוחות', shortLabel: 'לקוחות', icon: TrendingUp, perm: PERM.REPORTS_VIEW },
       { to: '/receipts', label: 'רישום תקבולים', shortLabel: 'תקבולים', icon: Banknote, perm: PERM.FINANCE_RECEIPTS_VIEW },
-      /* ‏0203: לא לשונית של "תקבולים" — השאלה כאן היא על אירועים ("מה שולם
+      /* ‏0205: לא לשונית של "תקבולים" — השאלה כאן היא על אירועים ("מה שולם
          מהאירועים של החודש"), ושם על כסף שנכנס ("מה נכנס החודש"). */
       {
         to: '/payments',

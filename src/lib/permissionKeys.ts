@@ -141,7 +141,7 @@ export const PERM = {
   FINANCE_MANAGE_SPLITS: 'finance.manage_splits',
   FINANCE_RECEIPTS_VIEW: 'finance.receipts_view',
   FINANCE_RECEIPTS_MANAGE: 'finance.receipts_manage',
-  /* תשלומי אירועים (0203) — נגזרים מהתקבולים: מי שמנהל תקבולים מנהל גם
+  /* תשלומי אירועים (0205) — נגזרים מהתקבולים: מי שמנהל תקבולים מנהל גם
      את התשלומים על אירוע, ואפשר לסגור לו את זה במפורש. */
   FINANCE_EVENT_PAYMENTS_VIEW: 'finance.event_payments_view',
   FINANCE_EVENT_PAYMENTS_MANAGE: 'finance.event_payments_manage',

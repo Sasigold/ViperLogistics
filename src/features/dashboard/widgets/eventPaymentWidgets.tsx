@@ -12,7 +12,7 @@ import type { WidgetProps } from '../dashboardTypes'
 import type { EventPaymentsDashboard } from '../../../types/domain'
 
 /**
- * תשלומי אירועים בדשבורד (0203): כמה שולם וכמה עוד לא, מהאירועים שבטווח.
+ * תשלומי אירועים בדשבורד (0205): כמה שולם וכמה עוד לא, מהאירועים שבטווח.
  *
  * הכרטיסים שואלים בעצמם (`event_payments_dashboard`) ואינם סקשן של
  * `dashboard_sections` — ראו dashboardContext.tsx: מה שווידג׳ט יכול לשאול
