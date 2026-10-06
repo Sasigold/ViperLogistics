@@ -171,6 +171,11 @@
 הנעילה יושבת על הקישור (`viperflow_links.sync_locked_at`), והבדיקה היא השורה
 הראשונה של `app.viperflow_apply_order` אחרי קריאת הקישור.
 
+**איזה משלוח מוחל בחידוש (0206):** המשלוח הנעול שחותמת ההזמנה שלו
+(`data.updated_at`) חדשה ממה שכבר הוחל — ולא לפי מתי הוא הגיע. ‏`received_at`
+הוא זמן *תחילת* טרנזקציית ה-Webhook, ומשלוח שנכנס רגע לפני העצירה וחיכה על
+הנעילה נשא זמן מוקדם ממנה; ‏0204 דילג עליו.
+
 ## מה צריך להגדיר — לפי הסדר
 
 ### 1. סודות של פונקציות הקצה
@@ -388,7 +393,7 @@ true}` על ההזמנות הפתוחות מחיל אותן מחדש — ומא�
 | רשימת הריהוט — לוגיקה טהורה | `src/features/events/furniture.ts` (+ `furniture.test.ts`) |
 | רשימת הריהוט — מסך | `src/features/events/EventFurnitureList.tsx`, בתוך `EventSpecsModal.tsx` |
 | מסך אינטגרציות | `src/features/integrations/` |
-| עצירת הסנכרון לאירוע | `supabase/migrations/0204_the_event_stops_listening.sql` |
+| עצירת הסנכרון לאירוע | `supabase/migrations/0204_the_event_stops_listening.sql`, ובחירת המשלוח בחידוש — `0206_the_payment_is_guarded_and_the_lock_catches_up.sql` |
 | חבילת הבדיקות | `supabase/tests/49_the_event_arrives_from_viperflow.sql`, `57_the_event_stops_listening.sql` |
 
 התיעוד של הצד השני — המעטפה, החתימה, מדיניות הניסיונות החוזרים וקטלוג

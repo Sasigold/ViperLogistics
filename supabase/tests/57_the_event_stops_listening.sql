@@ -291,3 +291,48 @@ select set_config('request.jwt.claim.sub', '', false);
 
 select t_eq('ארבע משאיות עדיין',
   (select truck_count from events where id = (select event_id from ev57)), 4);
+
+
+\echo '--- 6. משלוח שנכנס רגע לפני הנעילה — והשחרור עדיין משלים אותו (0206) ---'
+
+-- המצב שהבדיקה מדמה: טרנזקציית ה-Webhook התחילה (ולכן `received_at` שלה
+-- נקבע) לפני שהנעילה נשמרה, חיכתה על נעילת-הייעוץ, ונדחתה כ"נעולה" רק אחרי
+-- שהנעילה נשמרה. ‏0204 בחר לפי `received_at >= sync_locked_at` ודילג עליה.
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000057a1', false);
+select t_eq('עצירה',
+  (select (viperflow_set_event_lock((select event_id from ev57), true) ->> 'locked')::boolean), true);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('עדכון שנדחה כנעול',
+  (select viperflow_ingest(
+     t57_envelope('57-race', '2031-01-05T08:00:00.000Z', 'order.updated', 'confirmed', 170, 5, 6,
+                  '2031-05-14T09:30:00.000Z'),
+     jsonb_build_object('connection_id', (select connection_id from vf57))) ->> 'status'),
+  'locked');
+
+update viperflow_deliveries
+   set received_at = (select sync_locked_at from viperflow_links
+                       where event_id = (select event_id from ev57)) - interval '1 second'
+ where event_id = 'evt_' || md5('57-race');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000057a1', false);
+select t_eq('השחרור מוצא אותו למרות זמן ההגעה המוקדם',
+  (select (viperflow_set_event_lock((select event_id from ev57), false) ->> 'caught_up')::boolean), true);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('והעדכון הוחל: חמש משאיות',
+  (select truck_count from events where id = (select event_id from ev57)), 5);
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000057a1', false);
+select t_eq('ומחזור נעילה נוסף בלי משלוחים חדשים אינו מחיל שוב משלוח ישן',
+  (select (viperflow_set_event_lock((select event_id from ev57), true) ->> 'locked')::boolean
+          and not (viperflow_set_event_lock((select event_id from ev57), false) ->> 'caught_up')::boolean),
+  true);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
