@@ -14,6 +14,8 @@ export function invalidateEventPayments(qc: QueryClient) {
   void qc.invalidateQueries({ queryKey: ['events', 'payments'] })
   void qc.invalidateQueries({ queryKey: ['dashboard'] })
   void qc.invalidateQueries({ queryKey: ['receipts'] })
+  // תשלום במזומן נכנס לארנק (0206)
+  void qc.invalidateQueries({ queryKey: ['wallet'] })
 }
 
 /** הפירוט, התשלומים והיתרה של אירוע אחד. */
@@ -71,6 +73,35 @@ export function useRemoveEventPayment() {
   return useMutation({
     mutationFn: async (receiptId: string) => {
       const { error } = await supabase.rpc('event_payment_remove', { p_receipt_id: receiptId })
+      if (error) throw error
+    },
+    onSuccess: () => invalidateEventPayments(qc),
+  })
+}
+
+/** חיוב ידני על אירוע (0206) — "עלות ייצור 1,000" נוסף ל"מגיע". */
+export function useAddEventCharge() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { eventId: string; label: string; amount: number; note: string | null }) => {
+      const { data, error } = await supabase.rpc('event_charge_add', {
+        p_event_id: input.eventId,
+        p_label: input.label,
+        p_amount: input.amount,
+        p_note: input.note,
+      })
+      if (error) throw error
+      return data as string
+    },
+    onSuccess: () => invalidateEventPayments(qc),
+  })
+}
+
+export function useRemoveEventCharge() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (chargeId: string) => {
+      const { error } = await supabase.rpc('event_charge_remove', { p_charge_id: chargeId })
       if (error) throw error
     },
     onSuccess: () => invalidateEventPayments(qc),

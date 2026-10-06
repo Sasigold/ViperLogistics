@@ -145,6 +145,10 @@ export const PERM = {
      את התשלומים על אירוע, ואפשר לסגור לו את זה במפורש. */
   FINANCE_EVENT_PAYMENTS_VIEW: 'finance.event_payments_view',
   FINANCE_EVENT_PAYMENTS_MANAGE: 'finance.event_payments_manage',
+  /* ארנק המזומנים (0206) — בלי implied_by: מי שאוסף תשלומים אינו רואה בזה
+     את ההוצאות של הבעלים. */
+  FINANCE_CASH_WALLET_VIEW: 'finance.cash_wallet_view',
+  FINANCE_CASH_WALLET_MANAGE: 'finance.cash_wallet_manage',
   /* הצד של הלקוח באותו `task_pricing.price` שאיש משרד רואה כהכנסה. מפתח
      נפרד ולא נגזר: משמעותו תלויה במי שואל, ולכן הוא ניתן ולא יורש. */
   FINANCE_CUSTOMER_SPEND: 'finance.customer_spend',
