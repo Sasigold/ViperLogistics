@@ -15,6 +15,16 @@ describe('the widget registry', () => {
 
   /* The id is what a saved layout stores. A loose convention here is what stops
      `revenue` and `finance.revenue` from both existing a year from now. */
+  /* `replaces` names ids that are gone. A live id there would be swapped out of
+     every layout that places it, and one claimed twice would go to whichever
+     widget the map saw last. */
+  it('only replaces retired ids, each by one widget', () => {
+    const live = new Set(WIDGETS.map((w) => w.id))
+    const claimed = WIDGETS.flatMap((w) => w.replaces ?? [])
+    for (const id of claimed) expect(live.has(id), `${id} is replaced but still defined`).toBe(false)
+    expect(new Set(claimed).size).toBe(claimed.length)
+  })
+
   it('names every id <group-ish>.<thing>', () => {
     for (const w of WIDGETS) expect(w.id).toMatch(/^[a-z]+\.[a-z_]+$/)
   })

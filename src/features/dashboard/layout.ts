@@ -248,7 +248,12 @@ export const EMPTY_LAYOUT: DashboardLayout = { v: 1, items: [], hidden: [], seen
    older release. Four rules, each closing a real failure:
 
    1. An id with no definition is dropped. A widget retired in a later release
-      must not break a layout saved before it was.
+      must not break a layout saved before it was. One exception: an id some
+      widget `replaces` (tiles merged into a card) hands its slot to that
+      widget, unless the layout already places it. Without that, a layout
+      that kept a retired tile but had removed its successor would lose the
+      numbers altogether — the successor's id is in `seen`/`hidden`, so rule 2
+      would never bring it back.
    2. A widget released later appears exactly once, ever — governed by `seen`,
       not by presence in `items`. Keyed off `items` alone, a widget the user
       deliberately removed would come back on every single load.
@@ -268,10 +273,22 @@ export function resolveLayout(
   const seen = new Set(base.seen.length > 0 ? base.seen : [...base.items.map((i) => i.id), ...base.hidden])
   const hidden = new Set(base.hidden)
 
+  const heirOf = new Map<string, WidgetMeta>()
+  for (const m of metas) for (const old of m.replaces ?? []) heirOf.set(old, m)
+  const placed = new Set(base.items.filter((i) => byId.has(i.id)).map((i) => i.id))
+
   const kept: LayoutItem[] = []
   for (const item of base.items) {
     const meta = byId.get(item.id)
-    if (!meta) continue // rule 1
+    if (!meta) {
+      // rule 1 — the first retired tile of a merge becomes the card that replaced it
+      const heir = heirOf.get(item.id)
+      if (heir && !placed.has(heir.id)) {
+        placed.add(heir.id)
+        kept.push({ id: heir.id, size: clampSize(heir, item.size) })
+      }
+      continue
+    }
     kept.push({ ...item, size: clampSize(meta, item.size) })
   }
 

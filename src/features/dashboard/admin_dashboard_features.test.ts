@@ -48,6 +48,28 @@ describe('Admin Dashboard updates', () => {
     ])
   })
 
+  /* A layout that removed the client-share tile but kept a payments tile
+     still wants the payment numbers — and they now live only in the card. */
+  it('puts the merged panel where a kept payments tile was, even if client share was removed', () => {
+    const saved = normalizeLayout({
+      v: 1,
+      items: [
+        { id: 'finance.income_mix', size: 'md' },
+        { id: 'finance.event_payments_paid', size: 'sm' },
+        { id: 'finance.event_payments_unpaid', size: 'sm' },
+        { id: 'hr.active_and_recent_shifts', size: 'md' },
+      ],
+      hidden: ['finance.client_share', 'finance.keisar_commission'],
+      seen: WIDGETS.map((w) => w.id),
+    })
+    const out = resolveLayout(WIDGETS, saved, BUILT_IN_DEFAULT)
+    expect(out.map((i) => `${i.id}:${i.size}`)).toEqual([
+      'finance.income_mix:md',
+      'finance.client_share:lg',
+      'hr.active_and_recent_shifts:md',
+    ])
+  })
+
   it('registers income.mix in SECTIONS for the revenue breakdown chart', () => {
     expect(SECTIONS).toContain('income.mix')
     const widget = WIDGETS_BY_ID.get('finance.income_mix')

@@ -210,6 +210,12 @@ export interface WidgetMeta {
   anyPerms?: string[]
   /** account kinds this widget makes sense for; absent means all */
   kinds?: UserKind[]
+  /**
+   * Retired ids this widget took over (several tiles merged into one card).
+   * A saved layout that still places one of them gets this widget in that
+   * slot — see rule 1 of `resolveLayout`.
+   */
+  replaces?: readonly string[]
 }
 
 export interface WidgetDef extends WidgetMeta {

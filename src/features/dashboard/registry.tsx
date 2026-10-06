@@ -249,7 +249,9 @@ export const WIDGETS: WidgetDef[] = [
      שלמעלה: הכרטיס הזה הוא ההמשך של האריח ההוא ולא ווידג׳ט אחר, וכך בפריסה
      שמורה הוא נכנס בדיוק למקום שבו היה האריח. הגודל השמור (`sm`) כבר אינו
      מוצע, ו-`clampSize` מעלה אותו ל-`lg` — שני שלישים, שמשאירים מקום לפאנל
-     בשליש שלצדו. ‏`kinds` הוא אותו גדר של תשלומי האירועים (0205). */
+     בשליש שלצדו. פריסה שהסירה את האריח הזה אבל השאירה אחד מהשלושה שפרשו
+     מקבלת את הכרטיס במקום שלו (`replaces`, כלל 1 של `resolveLayout`).
+     ‏`kinds` הוא אותו גדר של תשלומי האירועים (0205). */
   {
     id: 'finance.client_share',
     title: 'הכנסות, תשלומים ועמלה',
@@ -262,6 +264,7 @@ export const WIDGETS: WidgetDef[] = [
     defaultOn: true,
     usesRange: true,
     sections: ['finance.client_share', 'finance.keisar_commission'],
+    replaces: ['finance.keisar_commission', 'finance.event_payments_paid', 'finance.event_payments_unpaid'],
     Component: ClientSummaryWidget,
   },
   {
