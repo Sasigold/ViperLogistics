@@ -618,6 +618,15 @@ OUT="$OUT
 $OUT60"
 
 echo
+echo "== the tasks leave with the event suite =="
+# 61 מקימה לקוח ושלושה אירועים משלה ב-current_date + 1010, מעבר לכל טווח אחר,
+# ומוחקת אותם. היא רצה אחרונה כי היא משאירה אחריה אירועים ומשימות מחוקים.
+OUT61=$($PSQL -d vl -f "$HERE/61_the_tasks_leave_with_the_event.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT61"
+OUT="$OUT
+$OUT61"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
