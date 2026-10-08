@@ -439,7 +439,7 @@ reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
 
-\echo '--- 8. מעטפה מלפני 0212 — הכול ישן וחדש, והכיסאות אפס ---'
+\echo '--- 8. מעטפה מלפני 0212 — הכול ישן וחדש, ושורת הכיסאות יורדת ---'
 
 select t_eq('מעטפה בלי עץ הקטגוריות הוחלה',
   (select viperflow_ingest(
@@ -447,10 +447,16 @@ select t_eq('מעטפה בלי עץ הקטגוריות הוחלה',
      jsonb_build_object('connection_id', (select connection_id from vf63))) ->> 'status'),
   'processed');
 
--- ישן: (1000 + 300) × 0.9 = 1170 · חדש: 1000 × 0.9 = 900 · כיסאות 0 — סך הריהוט 2070 כמו קודם
-select t_eq('אותו כסף לא נספר פעמיים',
+-- ישן: (1000 + 300) × 0.9 = 1170 · חדש: 1000 × 0.9 = 900 · אין שורת כיסאות — סך הריהוט 2070 כמו קודם
+select t_eq('אותו כסף לא נספר פעמיים — שורת הכיסאות ירדה',
   t63_income(),
-  'furniture_chairs=0.00,furniture_new=900.00,furniture_old=1170.00,trucking=2000.00');
+  'furniture_new=900.00,furniture_old=1170.00,trucking=2000.00');
+
+select t_eq('והיומן אומר שהעמלה הידנית בוטלה',
+  (select count(*)::int from event_activity
+    where event_id = (select event_id from ev63) and kind = 'synced'
+      and note like '%כיסאות נספרים שוב בריהוט ישן/חדש — העמלה הידנית עליהם בוטלה%'),
+  1);
 
 select t_eq('והאפס של מעטפה ישנה אינו "המפרט השתנה" — אין התראה נוספת',
   (select count(*)::int from notifications
@@ -483,5 +489,105 @@ select t_expect_fail('מי שאינו מנהל אינטגרציות אינו ע�
   $$select viperflow_set_connection('10000000-0000-0000-0000-000000000063',
       'לקוח כיסאות 63 — ViperFlow', true, null,
       (select connection_id from vf63), null, null, null, array['x'])$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+
+\echo '--- 10. לקוח שהכיסאות כבויים אצלו — הם נשארים בישן ובחדש ---'
+
+select t_eq('מעטפה מלאה מחזירה את הכיסאות',
+  (select viperflow_ingest(
+     t63_envelope('63-split-again', to_char(current_date, 'YYYY-MM-DD') || 'T11:00:00.000Z', 1000),
+     jsonb_build_object('connection_id', (select connection_id from vf63))) ->> 'status'),
+  'processed');
+select t_eq('כיסאות 1170 בשורה משלהם',
+  t63_income(),
+  'furniture_chairs=1170.00,furniture_new=0.00,furniture_old=900.00,trucking=2000.00');
+
+delete from customer_income_splits
+ where customer_id = '10000000-0000-0000-0000-000000000063'
+   and category_id = t63_cat('furniture_chairs');
+
+select t_eq('בלי הכיסאות אצל הלקוח — המעטפה הבאה',
+  (select viperflow_ingest(
+     t63_envelope('63-no-split', to_char(current_date, 'YYYY-MM-DD') || 'T12:00:00.000Z', 1000),
+     jsonb_build_object('connection_id', (select connection_id from vf63))) ->> 'status'),
+  'processed');
+select t_eq('הכיסאות חזרו לישן ולחדש, ולא נעלמו',
+  t63_income(),
+  'furniture_new=900.00,furniture_old=1170.00,trucking=2000.00');
+
+
+\echo '--- 11. רשימת כיסאות ריקה — אין פיצול, והעמלה הישנה אינה נספרת ---'
+
+insert into customer_income_splits (customer_id, category_id, viper_share_pct)
+values ('10000000-0000-0000-0000-000000000063', t63_cat('furniture_chairs'), 0);
+
+select t_eq('הכיסאות דלוקים שוב',
+  (select viperflow_ingest(
+     t63_envelope('63-split-3', to_char(current_date, 'YYYY-MM-DD') || 'T13:00:00.000Z', 1000),
+     jsonb_build_object('connection_id', (select connection_id from vf63))) ->> 'status'),
+  'processed');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000063a2', false);
+select t_expect_ok('עמלה של 50 ₪',
+  $$select event_income_set_commission((select event_id from ev63), t63_cat('furniture_chairs'), 50)$$);
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000063a1', false);
+select t_expect_ok('רשימת הכיסאות מתרוקנת',
+  $$select viperflow_set_connection('10000000-0000-0000-0000-000000000063',
+      'לקוח כיסאות 63 — ViperFlow', true, null,
+      (select connection_id from vf63), null, null, null, array[]::text[])$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('המעטפה הבאה אחרי הריקון',
+  (select viperflow_ingest(
+     t63_envelope('63-empty-list', to_char(current_date, 'YYYY-MM-DD') || 'T14:00:00.000Z', 1000),
+     jsonb_build_object('connection_id', (select connection_id from vf63))) ->> 'status'),
+  'processed');
+select t_eq('אין שורת כיסאות — ולכן אין עליה עמלה שתיספר במגיע',
+  t63_income(),
+  'furniture_new=900.00,furniture_old=1170.00,trucking=2000.00');
+
+
+\echo '--- 12. עד שנקבעה עמלה — האחוז, גם בדשבורד ---'
+
+update customer_income_splits set viper_share_pct = 10
+ where customer_id = '10000000-0000-0000-0000-000000000063'
+   and category_id = t63_cat('furniture_chairs');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000063a1', false);
+select t_expect_ok('הרשימה חוזרת ל-kiss-ot',
+  $$select viperflow_set_connection('10000000-0000-0000-0000-000000000063',
+      'לקוח כיסאות 63 — ViperFlow', true, null,
+      (select connection_id from vf63), null, null, null, array['kiss-ot'])$$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
+select t_eq('המעטפה הבאה מפצלת שוב, ב-10%',
+  (select viperflow_ingest(
+     t63_envelope('63-pct', to_char(current_date, 'YYYY-MM-DD') || 'T15:00:00.000Z', 1000),
+     jsonb_build_object('connection_id', (select connection_id from vf63))) ->> 'status'),
+  'processed');
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000063a1', false);
+select t_eq('בתשלומים: 10% מ-1170, בלי עמלה ידנית',
+  (select (l ->> 'amount') || ':' || coalesce(l ->> 'commission', 'null')
+     from jsonb_array_elements(event_payment_summary((select event_id from ev63)) -> 'lines') l
+    where l ->> 'category_id' = t63_cat('furniture_chairs')::text),
+  '117.00:null');
+select t_eq('ובדשבורד אותו מספר — בפילוח לפי קטגוריה',
+  (select (dashboard_sections(array['income.by_category'], current_date + 1070, current_date + 1070)
+            #>> '{income.by_category,manual_commission_total}')::numeric),
+  117::numeric);
+select t_eq('ובפילוח ההכנסות',
+  (select (x ->> 'total')::numeric
+     from jsonb_array_elements(dashboard_sections(array['income.mix'], current_date + 1070, current_date + 1070)
+                               -> 'income.mix') x
+    where x ->> 'label' = 'עמלת כיסאות'),
+  117::numeric);
 reset role;
 select set_config('request.jwt.claim.sub', '', false);

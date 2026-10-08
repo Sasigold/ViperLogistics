@@ -16,7 +16,11 @@
 --      ‏`furniture_chairs`. שורת ריהוט שהקטגוריה שלה ב-ViperFlow ברשימת
 --      הכיסאות של החיבור **יוצאת מהישן ומהחדש** ונספרת לבד — אותו כסף אינו
 --      נספר פעמיים. סך הריהוט (ישן + חדש + כיסאות) שווה בדיוק למה שהיה לפני
---      0212, ולכן כל מספר "ברוטו" (הכנסות, רווחיות, מגמה) אינו זז.
+--      0212, ולכן כל מספר "ברוטו" (הכנסות, רווחיות, מגמה) אינו זז. הפיצול
+--      קורה רק כשיש לו לאן לנחות — רשימת הכיסאות אינה ריקה והכיסאות מופעלים
+--      ללקוח. אחרת (וגם במעטפה ישנה, בלי עץ הקטגוריות) הכיסאות נשארים בישן
+--      ובחדש, ושורת כיסאות שנשארה על האירוע יורדת עם העמלה שעליה — אחרת
+--      אותו כסף היה נספר פעמיים.
 --
 --   2. **שם הקטגוריה הוא הגדרה של החיבור, לא קוד.** אותו נימוק של 0192 על
 --      שמות השורות: הקטלוג של ViperFlow אינו שלנו. ‏`chairs_category_names`
@@ -93,13 +97,15 @@ select 'כיסאות', 'furniture', '#ec4899', 25, 'furniture_chairs', true
  where not exists (select 1 from income_categories
                     where viperflow_income_source = 'furniture_chairs' and deleted_at is null);
 
--- דלוק ב-0% אצל כל מי שהריהוט החדש דלוק אצלו: "אין עמלה עד שקבעת".
+-- דלוק ב-0% אצל כל מי שריהוט ישן או חדש דלוק אצלו: "אין עמלה עד שקבעת".
+-- (הפיצול עצמו קורה רק אצל לקוח שהכיסאות דלוקים אצלו — §7 — ולכן לקוח
+-- שיכבה אותם מקבל את הכיסאות בחזרה בישן ובחדש, ולא מאבד אותם.)
 insert into customer_income_splits (customer_id, category_id, viper_share_pct)
-select s.customer_id, ch.id, 0
+select distinct s.customer_id, ch.id, 0
   from customer_income_splits s
-  join income_categories nw on nw.id = s.category_id
-                           and nw.viperflow_income_source = 'furniture_new'
-                           and nw.deleted_at is null
+  join income_categories fu on fu.id = s.category_id
+                           and fu.viperflow_income_source in ('furniture_old', 'furniture_new')
+                           and fu.deleted_at is null
  cross join (select id from income_categories
               where viperflow_income_source = 'furniture_chairs' and deleted_at is null) ch
 on conflict (customer_id, category_id) do nothing;
@@ -332,6 +338,9 @@ declare
   v_old_amount  numeric;
   v_new_amount  numeric;
   v_cats        boolean;
+  v_ch_on       boolean;
+  v_split       boolean;
+  v_ch_gone     boolean;
   v_chairs      numeric;
   v_ch_before   numeric;
   v_ch_comm     numeric;
@@ -450,20 +459,29 @@ begin
   -- ‏0212: ‏`categories_enriched` מורם כשפונקציית הקצה קראה גם את עץ
   -- הקטגוריות, ואז כל שורת ריהוט נושאת את שמות הקטגוריה שלה ושל אבותיה. שורה
   -- שהקטגוריה שלה ברשימת הכיסאות של החיבור יוצאת מהישן ומהחדש ונספרת לבד.
-  -- מעטפה ישנה, בלי עץ הקטגוריות, סופרת הכול לישן ולחדש כמו לפני 0212 —
-  -- ולכן הכיסאות שלה אפס, כדי שאותו כסף לא ייספר פעמיים. ההנחה חלה על
-  -- הכיסאות כמו על כל שורת ריהוט.
+  -- ההנחה חלה על הכיסאות כמו על כל שורת ריהוט.
+  --
+  -- הפיצול קורה רק כשיש לו לאן לנחות: עץ הקטגוריות ידוע, רשימת הכיסאות של
+  -- החיבור אינה ריקה, וקטגוריית הכיסאות מופעלת ללקוח. בכל מקרה אחר — מעטפה
+  -- ישנה, רשימה ריקה, לקוח בלי כיסאות — הכיסאות נשארים בישן ובחדש כמו לפני
+  -- 0212, ושום כסף אינו נעלם בדרך.
   v_cats := v_catalog and coalesce((p_order ->> 'categories_enriched')::boolean, false);
+  v_ch_on := exists (
+    select 1 from customer_income_splits s
+      join income_categories ic on ic.id = s.category_id
+     where s.customer_id = v_conn.customer_id
+       and ic.viperflow_income_source = 'furniture_chairs'
+       and ic.is_active and ic.deleted_at is null);
+  v_split := v_cats and v_ch_on and coalesce(cardinality(v_conn.chairs_category_names), 0) > 0;
 
   if v_catalog then
     v_old_amount := round(app.viperflow_furniture_amount(p_order -> 'items', false,
-      case when v_cats then v_conn.chairs_category_names end) * (1 - v_discount / 100), 2);
+      case when v_split then v_conn.chairs_category_names end) * (1 - v_discount / 100), 2);
     v_new_amount := round(app.viperflow_furniture_amount(p_order -> 'items', true,
-      case when v_cats then v_conn.chairs_category_names end) * (1 - v_discount / 100), 2);
-    v_chairs := case when v_cats
+      case when v_split then v_conn.chairs_category_names end) * (1 - v_discount / 100), 2);
+    v_chairs := case when v_split
       then round(app.viperflow_chairs_amount(p_order -> 'items', v_conn.chairs_category_names)
-                 * (1 - v_discount / 100), 2)
-      else 0 end;
+                 * (1 - v_discount / 100), 2) end;
   end if;
 
   -- ‏0192: הצוות מתחלק בין שתי המשימות, וההובלה הולכת להכנסות. שתיהן
@@ -600,28 +618,46 @@ begin
       v_parts := v_parts || ('ריהוט חדש ' || to_char(v_new_amount, 'FM999G999G990D00') || ' ₪');
     end if;
 
-    -- ‏0212: הכיסאות, והעמלה שנקבעה עליהם ביד. סכום שזז בסנכרון הזה וגם שונה
-    -- ממה שהעמלה נקבעה עליו הוא בדיוק "המפרט השתנה לאחר קביעת העמלה". סכום
-    -- שחזר אל הבסיס אינו מתריע — העמלה שוב נכונה.
-    select ei.amount, ei.commission_amount, ei.commission_basis, ic.name
-      into v_ch_before, v_ch_comm, v_ch_basis, v_ch_label
-      from event_income ei
-      join income_categories ic on ic.id = ei.category_id
-     where ei.event_id = v_event_id
-       and ic.viperflow_income_source = 'furniture_chairs'
-       and ic.is_active and ic.deleted_at is null;
-    if app.viperflow_apply_income(v_event_id, v_conn.customer_id, 'furniture_chairs', v_chairs) then
-      if v_created and v_chairs <> 0 then
-        v_parts := v_parts || ('כיסאות ' || to_char(v_chairs, 'FM999G999G990D00') || ' ₪');
+    if v_split then
+      -- ‏0212: הכיסאות, והעמלה שנקבעה עליהם ביד. סכום שזז בסנכרון הזה וגם
+      -- שונה ממה שהעמלה נקבעה עליו הוא בדיוק "המפרט השתנה לאחר קביעת העמלה".
+      -- סכום שחזר אל הבסיס אינו מתריע — העמלה שוב נכונה.
+      select ei.amount, ei.commission_amount, ei.commission_basis, ic.name
+        into v_ch_before, v_ch_comm, v_ch_basis, v_ch_label
+        from event_income ei
+        join income_categories ic on ic.id = ei.category_id
+       where ei.event_id = v_event_id
+         and ic.viperflow_income_source = 'furniture_chairs'
+         and ic.is_active and ic.deleted_at is null;
+      if app.viperflow_apply_income(v_event_id, v_conn.customer_id, 'furniture_chairs', v_chairs) then
+        if v_created and v_chairs <> 0 then
+          v_parts := v_parts || ('כיסאות ' || to_char(v_chairs, 'FM999G999G990D00') || ' ₪');
+        end if;
+        if v_ch_comm is not null
+           and v_ch_before is distinct from v_chairs
+           and v_ch_basis is distinct from v_chairs then
+          v_ch_alert := true;
+          v_parts := v_parts || (coalesce(v_ch_label, 'כיסאות')
+            || ': המפרט השתנה לאחר קביעת העמלה — יש לתמחר אותה מחדש');
+        end if;
       end if;
-      -- מעטפה בלי עץ הקטגוריות אינה יודעת דבר על הכיסאות: האפס שלה אינו
-      -- "המפרט השתנה".
-      if v_cats and v_ch_comm is not null
-         and v_ch_before is distinct from v_chairs
-         and v_ch_basis is distinct from v_chairs then
-        v_ch_alert := true;
-        v_parts := v_parts || (coalesce(v_ch_label, 'כיסאות')
-          || ': המפרט השתנה לאחר קביעת העמלה — יש לתמחר אותה מחדש');
+    else
+      -- ‏0212: הכיסאות נספרו כאן בישן ובחדש. שורת כיסאות שנשארה מסנכרון
+      -- קודם (או מעריכה ידנית בזמן עצירה) היא אותו כסף פעם שנייה — היא
+      -- יורדת, ואיתה העמלה שנקבעה עליה.
+      with gone as (
+        delete from event_income ei
+         using income_categories ic
+         where ic.id = ei.category_id
+           and ei.event_id = v_event_id
+           and ic.viperflow_income_source = 'furniture_chairs'
+        returning ei.commission_amount, ic.name)
+      select count(*) > 0, max(commission_amount), max(name)
+        into v_ch_gone, v_ch_comm, v_ch_label
+        from gone;
+      if v_ch_gone then
+        v_parts := v_parts || (coalesce(v_ch_label, 'כיסאות') || ' נספרים שוב בריהוט ישן/חדש'
+          || case when v_ch_comm is not null then ' — העמלה הידנית עליהם בוטלה' else '' end);
       end if;
     end if;
   end if;
@@ -648,7 +684,7 @@ begin
     'discount',      v_discount,
     'furniture_old', v_old_amount,
     'furniture_new', v_new_amount,
-    'furniture_chairs', case when v_cats then v_chairs end,
+    'furniture_chairs', case when v_split then v_chairs end,
     'items',         app.viperflow_items_fingerprint(v_event_id)));
 
   if not v_created then
@@ -1318,9 +1354,11 @@ grant  execute on function viperflow_connection_status() to authenticated;
 
 -- ===== 15. הדשבורד: העמלה הידנית כולה של וייפר =============================
 --
--- גוף 0174, וארבעה סקשנים משתנים:
---   * ‏`income.by_category` — לכל קטגוריה גם `commission` (סך העמלה הידנית)
---     ו-`manual_commission`, ובראש `manual_commission_total`.
+-- גוף 0174, וארבעה סקשנים משתנים. בכולם החלק של וייפר בקטגוריה ידנית הוא
+-- ‏`app.income_viper_share` — העמלה שנקבעה, ועד שנקבעה האחוז — אותו מספר
+-- שהמגיע של תשלומי האירוע סופר.
+--   * ‏`income.by_category` — לכל קטגוריה גם `viper_share` ו-`manual_commission`,
+--     ובראש `manual_commission_total`.
 --   * ‏`income.mix` — פרוסה "עמלת כיסאות": סך העמלה הידנית, מאה אחוז.
 --   * ‏`finance.profit_summary` — אותה עמלה נכנסת להכנסות של הרווח.
 --   * ‏`finance.client_share` — חלק הלקוח בקטגוריה עם עמלה ידנית הוא הסכום פחות
@@ -1564,9 +1602,9 @@ begin
           join income_categories ic on ic.id = ei.category_id
          where ic.name = 'ריהוט ישן'
       ),
-      -- ‏0212: עמלה שנקבעה ביד (כיסאות) — כולה של וייפר
+      -- ‏0212: הכיסאות — העמלה שנקבעה ביד, כולה של וייפר (ועד שנקבעה, האחוז)
       furn_manual as (
-        select coalesce(sum(ei.commission_amount), 0) as total
+        select coalesce(sum(app.income_viper_share(ei.amount, ei.viper_share_pct, ei.commission_amount)), 0) as total
           from event_income ei
           join app.live_events e on e.id = ei.event_id and e.deleted_at is null
                and e.event_date between p_from and p_to
@@ -1600,8 +1638,9 @@ begin
       with cat as (
         select ic.id, ic.name, ic.family, ic.color, ic.sort_order, ic.manual_commission,
                round(coalesce(sum(ei.amount) filter (where e.id is not null), 0), 2) as total,
-               -- ‏0212: העמלה שנקבעה ביד בקטגוריה — כולה של וייפר
-               round(coalesce(sum(ei.commission_amount) filter (where e.id is not null), 0), 2) as commission
+               -- ‏0212: החלק של וייפר — העמלה שנקבעה ביד, ועד שנקבעה האחוז
+               round(coalesce(sum(app.income_viper_share(ei.amount, ei.viper_share_pct, ei.commission_amount))
+                                filter (where e.id is not null), 0), 2) as viper_share
           from income_categories ic
           left join event_income ei on ei.category_id = ic.id
           left join app.live_events e on e.id = ei.event_id and e.deleted_at is null
@@ -1615,7 +1654,7 @@ begin
         'logistics_total', round(coalesce((select sum(total) from cat where family = 'logistics'), 0), 2),
         'total', round(coalesce((select sum(total) from cat), 0), 2),
         'manual_commission_total',
-          round(coalesce((select sum(commission) from cat where manual_commission), 0), 2))
+          round(coalesce((select sum(viper_share) from cat where manual_commission), 0), 2))
         into v_val;
 
     -- ── פילוח הכנסות: הובלות שיא עיצובים, לוגיסטיקה לפי לקוח, ריהוט חדש (20%), ריהוט ישן (70%) ──
@@ -1691,10 +1730,10 @@ begin
          where ic.name = 'ריהוט ישן'
          group by ic.color
       ),
-      -- 5. ‏0212: עמלה שנקבעה ביד (כיסאות) — 100% להכנסות
+      -- 5. ‏0212: עמלה שנקבעה ביד (כיסאות) — 100% להכנסות (ועד שנקבעה, האחוז)
       furn_manual as (
         select 'עמלת ' || ic.name as label, ic.color as color,
-               round(sum(coalesce(ei.commission_amount, 0)), 2) as total
+               round(sum(app.income_viper_share(ei.amount, ei.viper_share_pct, ei.commission_amount)), 2) as total
           from event_income ei
           join app.live_events e on e.id = ei.event_id and e.deleted_at is null
                and e.event_date between p_from and p_to
@@ -1775,9 +1814,11 @@ begin
         -- ‏0212: הכיסאות — הסכום, העמלה שנקבעה ביד, ומה שנשאר ללקוח
         'chairs_raw', round(coalesce(sum(case when ic.manual_commission then ei.amount else 0 end), 0), 2),
         'chairs_commission', round(coalesce(sum(case when ic.manual_commission
-                                                      then coalesce(ei.commission_amount, 0) else 0 end), 0), 2),
+                                                      then app.income_viper_share(ei.amount, ei.viper_share_pct, ei.commission_amount)
+                                                      else 0 end), 0), 2),
         'chairs_share', round(coalesce(sum(case when ic.manual_commission
-                                                 then ei.amount - coalesce(ei.commission_amount, 0) else 0 end), 0), 2),
+                                                 then ei.amount - app.income_viper_share(ei.amount, ei.viper_share_pct, ei.commission_amount)
+                                                 else 0 end), 0), 2),
         'rows', case when app.has('customers.view') then
           (select coalesce(jsonb_agg(row_to_json(y)), '[]') from (
              select c.name, c.color,

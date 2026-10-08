@@ -35,14 +35,14 @@ interface IncomeByCategory {
     family: 'furniture' | 'logistics'
     color: string
     total: number
-    /** ‏0212: העמלה שנקבעה ביד בקטגוריה */
-    commission?: number
+    /** ‏0212: החלק של וייפר — העמלה שנקבעה ביד, ועד שנקבעה האחוז */
+    viper_share?: number
     manual_commission?: boolean
   }[]
   furniture_total: number
   logistics_total: number
   total: number
-  /** ‏0212: סך העמלה שנקבעה ביד (כיסאות) — כולה של וייפר */
+  /** ‏0212: החלק של וייפר בקטגוריות שהעמלה עליהן ידנית (כיסאות) */
   manual_commission_total?: number
 }
 
