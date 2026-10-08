@@ -75,6 +75,8 @@ export function useSetViperflowConnection() {
       logisticsPrice?: ViperflowLogisticsPriceSource | null
       truckingNames?: string[] | null
       crewNames?: string[] | null
+      /** ‏0212: קטגוריות הכיסאות בקטלוג. רשימה ריקה = אין פיצול כיסאות */
+      chairsNames?: string[] | null
     }) => {
       const { data, error } = await supabase.rpc('viperflow_set_connection', {
         p_customer_id: input.customerId,
@@ -85,6 +87,7 @@ export function useSetViperflowConnection() {
         p_logistics_price: input.logisticsPrice ?? null,
         p_trucking_names: input.truckingNames ?? null,
         p_crew_names: input.crewNames ?? null,
+        p_chairs_names: input.chairsNames ?? null,
       })
       if (error) throw error
       return data as string

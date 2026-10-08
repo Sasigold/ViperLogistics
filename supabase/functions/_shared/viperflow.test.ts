@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   MONEY_KEYS,
   catalogIds,
+  categoryNames,
+  fetchCatalogAndCategories,
+  fetchCategories,
   connectionIdFromPath,
   hexToBytes,
   redactMoney,
@@ -312,6 +315,114 @@ describe('הקטלוג: חדש או ישן (0190)', () => {
 
   it('הזמנה בלי שורות אינה נופלת', () => {
     expect(withCatalog({ id: 'x' }, new Map())).toEqual({ id: 'x' })
+  })
+})
+
+describe('הכיסאות: הקטגוריה בקטלוג (0212)', () => {
+  const CHAIRS = 'cccccccc-0000-0000-0000-000000000001'
+  const SUB = 'cccccccc-0000-0000-0000-000000000002'
+  const TABLES = 'cccccccc-0000-0000-0000-000000000003'
+  const categories = new Map([
+    [CHAIRS, { name: 'kiss-ot', parent_id: null }],
+    [SUB, { name: ' כיסאות בר ', parent_id: CHAIRS }],
+    [TABLES, { name: 'שולחנות', parent_id: null }],
+  ])
+
+  it('שם הקטגוריה ושמות כל אבותיה, הקרוב ראשון', () => {
+    expect(categoryNames(categories, SUB)).toEqual(['כיסאות בר', 'kiss-ot'])
+    expect(categoryNames(categories, TABLES)).toEqual(['שולחנות'])
+  })
+
+  it('בלי קטגוריה, או קטגוריה שאינה בעץ — אין שמות', () => {
+    expect(categoryNames(categories, null)).toEqual([])
+    expect(categoryNames(categories, 'dddddddd-0000-0000-0000-000000000000')).toEqual([])
+  })
+
+  it('מעגל בעץ אינו תוקע', () => {
+    const loop = new Map([
+      ['a', { name: 'א', parent_id: 'b' }],
+      ['b', { name: 'ב', parent_id: 'a' }],
+    ])
+    expect(categoryNames(loop, 'a')).toEqual(['א', 'ב'])
+  })
+
+  const items = [
+    { line_type: 'product', is_component: false, product_id: 'aaaaaaaa-1111-2222-3333-444444444444', name: 'כיסא בר' },
+    { line_type: 'product', is_component: false, product_id: 'bbbbbbbb-1111-2222-3333-444444444444', name: 'שולחן' },
+    { line_type: 'truck', is_component: false, name: 'הובלה' },
+  ]
+  const catalog = new Map([
+    ['aaaaaaaa-1111-2222-3333-444444444444', { is_new: true, image_url: null, category_id: SUB }],
+    ['bbbbbbbb-1111-2222-3333-444444444444', { is_new: false, image_url: null, category_id: TABLES }],
+  ])
+
+  it('עם העץ — כל שורת ריהוט נושאת את שמות הקטגוריה, והדגל מורם', () => {
+    const out = withCatalog({ items }, catalog, categories) as {
+      categories_enriched?: boolean
+      items: { category_names?: string[] }[]
+    }
+    expect(out.categories_enriched).toBe(true)
+    expect(out.items.map((i) => i.category_names)).toEqual([['כיסאות בר', 'kiss-ot'], ['שולחנות'], undefined])
+  })
+
+  it('בלי העץ — המעטפה כמו לפני 0212', () => {
+    const out = withCatalog({ items }, catalog) as { categories_enriched?: boolean; items: object[] }
+    expect(out.categories_enriched).toBeUndefined()
+    expect(out.items.every((i) => !('category_names' in i))).toBe(true)
+  })
+
+  describe('השאילתות', () => {
+    afterEach(() => vi.unstubAllGlobals())
+
+    function stub(routes: Record<string, unknown | number>) {
+      const calls: string[] = []
+      vi.stubGlobal('fetch', async (url: string) => {
+        calls.push(url)
+        const key = Object.keys(routes).find((k) => url.includes(k))
+        const body = key ? routes[key] : 404
+        if (typeof body === 'number') return new Response('{}', { status: body })
+        return new Response(JSON.stringify(body), { status: 200 })
+      })
+      return calls
+    }
+
+    it('העץ נקרא, ו-parent_id נשמר', async () => {
+      stub({ '/categories': { data: [{ id: 'x', name: 'kiss-ot', parent_id: null }], pagination: { has_more: false } } })
+      const out = await fetchCategories('https://vf.test/v1', 'k')
+      expect(out?.get('x')).toEqual({ name: 'kiss-ot', parent_id: null })
+    })
+
+    it('עץ חלקי (has_more) הוא "לא ידוע"', async () => {
+      stub({ '/categories': { data: [], pagination: { has_more: true } } })
+      expect(await fetchCategories('https://vf.test/v1', 'k')).toBeNull()
+    })
+
+    it('בלי העץ אין גם קטלוג — הפיצול כולו או כלום', async () => {
+      stub({
+        '/products': { data: [{ id: 'aaaaaaaa-1111-2222-3333-444444444444', is_new: true, category_id: 'x' }] },
+        '/categories': 403,
+      })
+      expect(await fetchCatalogAndCategories('https://vf.test/v1', 'k', ['aaaaaaaa-1111-2222-3333-444444444444'])).toBeNull()
+    })
+
+    it('הקטגוריה של המוצר נקראת מהקטלוג, והעץ שנשמר בריצה אינו נשאל שוב', async () => {
+      const calls = stub({
+        '/products': { data: [{ id: 'aaaaaaaa-1111-2222-3333-444444444444', is_new: false, category_id: 'x' }] },
+      })
+      const cached = new Map([['x', { name: 'kiss-ot', parent_id: null }]])
+      const out = await fetchCatalogAndCategories('https://vf.test/v1', 'k', ['aaaaaaaa-1111-2222-3333-444444444444'], cached)
+      expect(out?.catalog.get('aaaaaaaa-1111-2222-3333-444444444444')?.category_id).toBe('x')
+      expect(out?.categories).toBe(cached)
+      expect(calls.some((u) => u.includes('/categories'))).toBe(false)
+    })
+
+    it('הזמנה בלי שורות ריהוט אינה שואלת דבר', async () => {
+      const calls = stub({})
+      const out = await fetchCatalogAndCategories('https://vf.test/v1', 'k', [])
+      expect(out?.catalog.size).toBe(0)
+      expect(out?.categories.size).toBe(0)
+      expect(calls).toEqual([])
+    })
   })
 })
 

@@ -64,6 +64,10 @@ interface ClientShare {
   total: number
   furniture_new_share?: number
   furniture_old_share?: number
+  /** ‏0212: הכיסאות — הסכום, העמלה שנקבעה ביד, ומה שנשאר ללקוח */
+  chairs_raw?: number
+  chairs_commission?: number
+  chairs_share?: number
 }
 
 interface KeisarCommission {
@@ -154,6 +158,11 @@ export function ClientSummaryWidget(_props: WidgetProps) {
           <span className="flex flex-col gap-0.5">
             <span>חדש (80%): {fmtMoney(Number(v.furniture_new_share))}</span>
             <span>ישן (30%): {fmtMoney(Number(v.furniture_old_share))}</span>
+            {Number(v.chairs_raw ?? 0) > 0 && (
+              <span>
+                כיסאות: {fmtMoney(Number(v.chairs_share ?? 0))} (עמלה {fmtMoney(Number(v.chairs_commission ?? 0))})
+              </span>
+            )}
           </span>
         ) : (
           '80% מריהוט חדש ו-30% מריהוט ישן'

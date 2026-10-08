@@ -72,9 +72,52 @@ export function matchesFilter(due: number, paid: number, filter: PaymentFilter):
 /**
  * שורה בפירוט: שורת הכנסה שוייפר מקבל ממנה פחות ממאה אחוז היא עמלה, וכך
  * הבעלים קורא לה ("עמלות מהריהוט הישן"). הובלות, שהן 100%, נשארות בשמן.
+ * שורה שהעמלה עליה נקבעת ביד (0212, כיסאות) היא עמלה תמיד — גם בלי אחוז.
  */
-export function lineLabel(line: Pick<EventPaymentLine, 'label' | 'pct'>): string {
-  return line.pct != null && line.pct < 100 ? `עמלה — ${line.label}` : line.label
+export function lineLabel(
+  line: Pick<EventPaymentLine, 'label' | 'pct' | 'manual_commission' | 'commission'>,
+): string {
+  const commission = line.manual_commission || line.commission != null || (line.pct != null && line.pct < 100)
+  return commission ? `עמלה — ${line.label}` : line.label
+}
+
+/**
+ * העמלה שהוקלדה ביד (0212), כמספר — או null כשאינה תקינה. כמו `parseAmount`,
+ * אבל אפס מותר: "אין עמלה על הכיסאות באירוע הזה" היא הכרעה, לא שדה ריק.
+ */
+export function parseCommission(raw: string): number | null {
+  const clean = raw.replace(/[\s,₪]/g, '')
+  if (!/^\d+(\.\d{1,2})?$/.test(clean)) return null
+  const n = Number(clean)
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
+/** אותו כלל שהשרת אוכף: עמלה אינה גבוהה מהסכום שעליו היא נקבעת. */
+export function commissionError(amount: number | null, gross: number): string | null {
+  if (amount == null) return 'סכום לא תקין'
+  if (cents(amount) > cents(gross)) return 'העמלה גבוהה מהסכום'
+  return null
+}
+
+/**
+ * מה כתוב מתחת לשורה שהעמלה עליה ידנית (0212). השרת אומר אם היא ישנה —
+ * כאן רק מנסחים: על כמה היא נקבעה, וכמה זה עכשיו.
+ */
+export function commissionNote(
+  line: Pick<EventPaymentLine, 'gross' | 'commission' | 'commission_basis' | 'commission_stale'>,
+  money: (n: number) => string,
+): { tone: 'warning' | 'muted'; text: string } {
+  const gross = Number(line.gross ?? 0)
+  if (line.commission == null) {
+    return { tone: 'warning', text: `לא נקבעה עמלה · הסכום ${money(gross)}` }
+  }
+  if (line.commission_stale) {
+    return {
+      tone: 'warning',
+      text: `שים לב: המפרט השתנה לאחר קביעת העמלה — העמלה נקבעה על ${money(Number(line.commission_basis ?? 0))}, והסכום עכשיו ${money(gross)}. יש לתמחר מחדש.`,
+    }
+  }
+  return { tone: 'muted', text: `עמלה ידנית מתוך ${money(gross)}` }
 }
 
 /**

@@ -146,6 +146,45 @@ export function redactMoney(value: unknown): unknown {
 export interface CatalogEntry {
   is_new: boolean
   image_url: string | null
+  /** The product's category in their catalogue (0212). Absent = unknown. */
+  category_id?: string | null
+}
+
+/**
+ * One node of their category tree (0212): `GET /v1/categories`, same
+ * `products:read` scope as the products. Categories nest through `parent_id`.
+ */
+export interface CategoryEntry {
+  name: string
+  parent_id: string | null
+}
+
+/** Deeper than anybody nests a catalogue; also the guard against a cycle. */
+const MAX_CATEGORY_DEPTH = 20
+
+/**
+ * A category's name and the names of all its ancestors, nearest first.
+ *
+ * The chairs rule (0212) is "a product in the chairs category, or anywhere
+ * under it" — so a line carries the whole path, and the translator only has
+ * to ask whether any of these names is on the connection's list.
+ */
+export function categoryNames(
+  categories: Map<string, CategoryEntry>,
+  categoryId: string | null | undefined,
+): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  let id = categoryId ? String(categoryId) : null
+  while (id && !seen.has(id) && out.length < MAX_CATEGORY_DEPTH) {
+    seen.add(id)
+    const node = categories.get(id)
+    if (!node) break
+    const name = node.name.trim()
+    if (name) out.push(name)
+    id = node.parent_id
+  }
+  return out
 }
 
 /** Their list endpoint takes at most 100 ids and returns at most 100 rows. */
@@ -177,8 +216,18 @@ export function catalogIds(items: unknown): string[] {
  * An item with no product (free text somebody typed) is not in the catalogue
  * and is therefore not new — which is the rule as stated: whatever is not
  * marked new equipment is old.
+ *
+ * **`categories_enriched` (0212) is the same promise for the category tree.**
+ * With it, every furniture line carries `category_names` — its category and
+ * every ancestor — and the translator takes the chairs out of old/new. Without
+ * it (no tree passed) the order is marked exactly as before 0212, and the
+ * translator counts every line as old or new.
  */
-export function withCatalog(order: unknown, catalog: Map<string, CatalogEntry> | null): unknown {
+export function withCatalog(
+  order: unknown,
+  catalog: Map<string, CatalogEntry> | null,
+  categories?: Map<string, CategoryEntry> | null,
+): unknown {
   if (!catalog || !order || typeof order !== 'object') return order
   const row = order as Record<string, unknown>
   const items = Array.isArray(row.items) ? row.items : null
@@ -187,10 +236,16 @@ export function withCatalog(order: unknown, catalog: Map<string, CatalogEntry> |
   return {
     ...row,
     catalog_enriched: true,
+    ...(categories ? { categories_enriched: true } : {}),
     items: items.map((raw) => {
       const item = (raw ?? {}) as Record<string, unknown>
       if (item.line_type !== 'product') return item
-      return { ...item, is_new: catalog.get(String(item.product_id ?? ''))?.is_new === true }
+      const entry = catalog.get(String(item.product_id ?? ''))
+      return {
+        ...item,
+        is_new: entry?.is_new === true,
+        ...(categories ? { category_names: categoryNames(categories, entry?.category_id) } : {}),
+      }
     }),
   }
 }
@@ -233,7 +288,14 @@ export async function fetchCatalog(
     if (!res || !res.ok) return null
 
     const page = (await res.json().catch(() => null)) as
-      | { data?: { id?: string; is_new?: boolean; default_image_url?: string | null }[] }
+      | {
+          data?: {
+            id?: string
+            is_new?: boolean
+            default_image_url?: string | null
+            category_id?: string | null
+          }[]
+        }
       | null
     if (!page) return null
 
@@ -242,10 +304,79 @@ export async function fetchCatalog(
       out.set(String(product.id), {
         is_new: product.is_new === true,
         image_url: product.default_image_url ? String(product.default_image_url) : null,
+        category_id: product.category_id ? String(product.category_id) : null,
       })
     }
   }
   return out
+}
+
+/**
+ * Their whole category tree, in one call (0212): `GET /v1/categories` answers
+ * every category of the account (up to a thousand) on one page.
+ *
+ * Null is "we do not know", exactly as in `fetchCatalog` — and a caller that
+ * gets null here must not pretend there are no chairs: it drops the catalogue
+ * as a whole, so the furniture income is left as it is instead of being
+ * written without the chairs split and flipped back on the next delivery.
+ * A page whose `pagination.has_more` is true is a tree we only saw part of,
+ * and is null too.
+ */
+export async function fetchCategories(
+  base: string,
+  key: string,
+  timeoutMs = 15_000,
+): Promise<Map<string, CategoryEntry> | null> {
+  const res = await fetch(`${base}/categories`, {
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'x-region': 'ap-northeast-1',
+      'User-Agent': 'ViperLogistics/1.0',
+    },
+    signal: AbortSignal.timeout(timeoutMs),
+  }).catch(() => null)
+  if (!res || !res.ok) return null
+
+  const page = (await res.json().catch(() => null)) as
+    | {
+        data?: { id?: string; name?: string; parent_id?: string | null }[]
+        pagination?: { has_more?: boolean }
+      }
+    | null
+  if (!page || !Array.isArray(page.data) || page.pagination?.has_more === true) return null
+
+  const out = new Map<string, CategoryEntry>()
+  for (const c of page.data) {
+    if (!c?.id) continue
+    out.set(String(c.id), {
+      name: String(c.name ?? ''),
+      parent_id: c.parent_id ? String(c.parent_id) : null,
+    })
+  }
+  return out
+}
+
+/**
+ * The catalogue and the category tree together, for the two functions that
+ * write income (0212). Either one missing makes both missing: the furniture
+ * split is old/new/chairs or nothing, never old/new on one delivery and
+ * old/new/chairs on the next.
+ *
+ * An order with no furniture lines asks for neither — there is nothing to
+ * split, and an empty tree is an honest answer for it.
+ */
+export async function fetchCatalogAndCategories(
+  base: string,
+  key: string,
+  ids: readonly string[],
+  cachedCategories?: Map<string, CategoryEntry> | null,
+): Promise<{ catalog: Map<string, CatalogEntry>; categories: Map<string, CategoryEntry> } | null> {
+  const catalog = await fetchCatalog(base, key, ids)
+  if (!catalog) return null
+  if (catalog.size === 0) return { catalog, categories: new Map() }
+  const categories = cachedCategories ?? (await fetchCategories(base, key))
+  if (!categories) return null
+  return { catalog, categories }
 }
 
 /**

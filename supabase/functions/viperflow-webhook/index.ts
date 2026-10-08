@@ -22,10 +22,12 @@
 // Secrets, continued:
 //   VIPERFLOW_API_KEY  optional here, and only for one thing: asking the
 //                      catalogue whether each item is new equipment, so the
-//                      furniture income can be split old/new (0190). Without
-//                      it the envelope carries no `catalog_enriched` flag and
-//                      the translator skips the income — everything else in
-//                      the delivery is applied exactly the same.
+//                      furniture income can be split old/new (0190), and
+//                      which category each item sits in, so the chairs get a
+//                      line of their own (0212). Without it the envelope
+//                      carries no `catalog_enriched` flag and the translator
+//                      skips the income — everything else in the delivery is
+//                      applied exactly the same.
 //
 // The signature, the redaction and the catalogue call live in
 // ../_shared/viperflow.ts, which has no Deno imports so that vitest can cover
@@ -34,9 +36,10 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   type CatalogEntry,
+  type CategoryEntry,
   catalogIds,
   connectionIdFromPath,
-  fetchCatalog,
+  fetchCatalogAndCategories,
   redactMoney,
   timestampAcceptable,
   verifySignature,
@@ -51,7 +54,8 @@ function json(body: unknown, status = 200): Response {
 }
 
 /**
- * The catalogue for this delivery's items, or null when it cannot be had.
+ * The catalogue for this delivery's items, and the category tree (0212), or
+ * null when either cannot be had.
  *
  * The base URL lives on the connection row and nowhere else (0176 §4.1), so
  * it is read the same way the translator resolves the connection: the one in
@@ -62,7 +66,7 @@ async function catalogForOrder(
   admin: ReturnType<typeof createClient>,
   connectionId: string | null,
   order: unknown,
-): Promise<Map<string, CatalogEntry> | null> {
+): Promise<{ catalog: Map<string, CatalogEntry>; categories: Map<string, CategoryEntry> } | null> {
   const apiKey = Deno.env.get('VIPERFLOW_API_KEY') ?? ''
   if (!apiKey) return null
 
@@ -79,7 +83,7 @@ async function catalogForOrder(
   const { data, error } = await query
   if (error || !data || data.length !== 1) return null
 
-  return await fetchCatalog(String(data[0].api_base_url).replace(/\/+$/, ''), apiKey, ids)
+  return await fetchCatalogAndCategories(String(data[0].api_base_url).replace(/\/+$/, ''), apiKey, ids)
 }
 
 Deno.serve(async (req) => {
@@ -129,13 +133,14 @@ Deno.serve(async (req) => {
   const clean = redactMoney(envelope) as Record<string, unknown>
 
   /* ‏0190: which item is new equipment is a question about the catalogue, and
-     the order does not answer it. A failure here costs the income split and
-     nothing else — the delivery is applied either way. */
-  const catalog = await catalogForOrder(admin, connectionId, clean.data)
-  if (!catalog) console.warn('[viperflow-webhook] catalogue unavailable — income not split')
+     the order does not answer it. ‏0212: nor which category it sits in, which
+     is what takes the chairs out of old/new. A failure here costs the income
+     split and nothing else — the delivery is applied either way. */
+  const known = await catalogForOrder(admin, connectionId, clean.data)
+  if (!known) console.warn('[viperflow-webhook] catalogue unavailable — income not split')
 
   const { data, error } = await admin.rpc('viperflow_ingest', {
-    p_envelope: { ...clean, data: withCatalog(clean.data, catalog) },
+    p_envelope: { ...clean, data: withCatalog(clean.data, known?.catalog ?? null, known?.categories) },
     p_meta: {
       connection_id: connectionId,
       delivery_id: req.headers.get('x-viperflow-delivery'),

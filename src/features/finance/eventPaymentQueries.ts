@@ -107,3 +107,49 @@ export function useRemoveEventCharge() {
     onSuccess: () => invalidateEventPayments(qc),
   })
 }
+
+/**
+ * עריכת סכומי ההכנסות של אירוע מכרטיס התשלומים (0212). אותו מסלול של טופס
+ * האירוע: באירוע מ-ViperFlow שהסנכרון שלו רץ, השרת דוחה שינוי בסכום שמגיע
+ * משם — העצירה היא שפותחת אותו.
+ *
+ * ‏`amounts`: קטגוריה → סכום כמחרוזת, וריק = מחיקת השורה.
+ */
+export function useSaveEventIncome() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { eventId: string; amounts: Record<string, string> }) => {
+      const { error } = await supabase.rpc('event_income_save', {
+        p_event_id: input.eventId,
+        p_amounts: input.amounts,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      invalidateEventPayments(qc)
+      void qc.invalidateQueries({ queryKey: ['event_income'] })
+    },
+  })
+}
+
+/**
+ * העמלה הידנית על קטגוריה (0212, כיסאות). ‏null מוחק אותה. כל קביעה — גם
+ * באותו סכום — מאשרת את הסכום הנוכחי כבסיס, וכך מורידה את "המפרט השתנה".
+ */
+export function useSetIncomeCommission() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { eventId: string; categoryId: string; amount: number | null }) => {
+      const { error } = await supabase.rpc('event_income_set_commission', {
+        p_event_id: input.eventId,
+        p_category_id: input.categoryId,
+        p_amount: input.amount,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      invalidateEventPayments(qc)
+      void qc.invalidateQueries({ queryKey: ['event_income'] })
+    },
+  })
+}

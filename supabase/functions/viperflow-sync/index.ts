@@ -20,7 +20,8 @@
 //
 // Secrets (Edge Function secrets, never the database — 0176 §1):
 //   VIPERFLOW_API_KEY     vf_live_… , needs `orders:read`, and `products:read`
-//                         for the new/old furniture split (0190)
+//                         for the new/old furniture split (0190) and the
+//                         category tree that gives the chairs their own line (0212)
 //   VIPERFLOW_SYNC_SECRET optional; without it the scheduled path is closed
 //
 // Deploy normally — JWT verification stays ON here, unlike viperflow-webhook,
@@ -31,7 +32,13 @@
 // docs/VIPERFLOW.md §6 has the exact curl.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { catalogIds, fetchCatalog, redactMoney, withCatalog } from '../_shared/viperflow.ts'
+import {
+  type CategoryEntry,
+  catalogIds,
+  fetchCatalogAndCategories,
+  redactMoney,
+  withCatalog,
+} from '../_shared/viperflow.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -218,6 +225,8 @@ Deno.serve(async (req) => {
   let scannedThrough: string | null = null
   /** One line in the log for a scan of eighty orders, not eighty. */
   let catalogWarned = false
+  /** ‏0212: the category tree, read once per run — it is the same for every order. */
+  let categories: Map<string, CategoryEntry> | null = null
   try {
     if (body.order_ids?.length) {
       ids = body.order_ids.slice(0, MAX_ORDERS)
@@ -279,10 +288,12 @@ Deno.serve(async (req) => {
       if (!order?.id) continue
 
       /* ‏0190: the catalogue says which item is new equipment, and the order
-         does not. Null costs the income split and nothing else. */
+         does not. ‏0212: the category tree says which item is a chair.
+         Null costs the income split and nothing else. */
       const clean = redactMoney(order) as Record<string, unknown>
-      const catalog = await fetchCatalog(base, apiKey, catalogIds(clean.items))
-      if (!catalog && !catalogWarned) {
+      const known = await fetchCatalogAndCategories(base, apiKey, catalogIds(clean.items), categories)
+      if (known && known.categories.size > 0) categories = known.categories
+      if (!known && !catalogWarned) {
         catalogWarned = true
         console.warn('[viperflow-sync] catalogue unavailable — income not split')
       }
@@ -294,7 +305,7 @@ Deno.serve(async (req) => {
         api_version: 'v1',
         livemode: true,
         origin: { source: 'system', integration: 'viperlogistics-sync' },
-        data: withCatalog(clean, catalog),
+        data: withCatalog(clean, known?.catalog ?? null, known?.categories),
         previous: null,
       }
 

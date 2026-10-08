@@ -32,11 +32,13 @@ export default function IncomeSplitTab({ customerId }: { customerId: string }) {
   const invalidate = () => void qc.invalidateQueries({ queryKey: ['customer_income_splits', customerId] })
 
   const toggle = useMutation({
-    mutationFn: async ({ categoryId, on }: { categoryId: string; on: boolean }) => {
+    mutationFn: async ({ categoryId, on, manual }: { categoryId: string; on: boolean; manual: boolean }) => {
       if (on) {
+        /* ‏0212: בקטגוריה שהעמלה עליה ידנית (כיסאות) וייפר מתחיל באפס — "אין
+           עמלה עד שקבעת" — ולא במאה של ברירת המחדל. */
         const { error } = await supabase
           .from('customer_income_splits')
-          .insert({ customer_id: customerId, category_id: categoryId })
+          .insert({ customer_id: customerId, category_id: categoryId, ...(manual ? { viper_share_pct: 0 } : {}) })
         if (error) throw error
       } else {
         const { error } = await supabase
@@ -95,8 +97,9 @@ export default function IncomeSplitTab({ customerId }: { customerId: string }) {
                   color={c.color}
                   enabled={!!split}
                   pct={split ? Number(split.viper_share_pct) : 100}
+                  manual={c.manual_commission}
                   busy={toggle.isPending || setPct.isPending}
-                  onToggle={(on) => toggle.mutate({ categoryId: c.id, on })}
+                  onToggle={(on) => toggle.mutate({ categoryId: c.id, on, manual: c.manual_commission })}
                   onPct={(pct) => setPct.mutate({ categoryId: c.id, pct })}
                 />
               )
@@ -122,6 +125,8 @@ function SplitRow(props: {
   color: string
   enabled: boolean
   pct: number
+  /** ‏0212: העמלה נקבעת ביד על כל אירוע — האחוז חל רק כל עוד לא נקבעה */
+  manual?: boolean
   busy: boolean
   onToggle: (on: boolean) => void
   onPct: (pct: number) => void
@@ -145,6 +150,11 @@ function SplitRow(props: {
       <span className="size-2 shrink-0 rounded-full" style={{ background: props.color }} aria-hidden />
       <span className="min-w-24 flex-1">
         <Checkbox label={props.name} checked={props.enabled} onChange={props.onToggle} disabled={props.busy} />
+        {props.manual && props.enabled && (
+          <span className="mt-0.5 block type-caption text-ink-tertiary">
+            העמלה נקבעת ביד על כל אירוע, בשקלים. האחוז חל רק כל עוד לא נקבעה.
+          </span>
+        )}
       </span>
       {props.enabled && (
         <span className="flex items-center gap-2">

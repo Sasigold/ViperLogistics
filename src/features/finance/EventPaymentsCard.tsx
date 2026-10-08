@@ -1,6 +1,16 @@
 import { useState } from 'react'
 import { format } from 'date-fns'
-import { Banknote, HandCoins, ICON, Plus, STROKE, Trash2 } from '../../components/ui/icons'
+import {
+  AlertTriangle,
+  Banknote,
+  HandCoins,
+  ICON,
+  Lock,
+  Pencil,
+  Plus,
+  STROKE,
+  Trash2,
+} from '../../components/ui/icons'
 import {
   Badge,
   Button,
@@ -23,14 +33,17 @@ import {
 } from '../../components/ui'
 import { fmtDate } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
-import type { EventPayment, EventPaymentLine, PaymentMethod } from '../../types/domain'
+import type { EventIncomeEditCategory, EventPayment, EventPaymentLine, PaymentMethod } from '../../types/domain'
 import {
   METHOD_LABELS,
   STATE_LABELS,
   STATE_TONES,
+  commissionError,
+  commissionNote,
   lineLabel,
   overpayWarning,
   parseAmount,
+  parseCommission,
   paymentState,
 } from './eventPayments'
 import {
@@ -39,6 +52,8 @@ import {
   useEventPaymentSummary,
   useRemoveEventCharge,
   useRemoveEventPayment,
+  useSaveEventIncome,
+  useSetIncomeCommission,
 } from './eventPaymentQueries'
 
 /**
@@ -58,6 +73,8 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
   const { confirm, dialog } = useConfirm()
   const [collectOpen, setCollectOpen] = useState(false)
   const [chargeOpen, setChargeOpen] = useState(false)
+  const [incomeOpen, setIncomeOpen] = useState(false)
+  const [commissionLine, setCommissionLine] = useState<EventPaymentLine | null>(null)
 
   if (isLoading) {
     return bare ? (
@@ -75,6 +92,12 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
 
   const state = paymentState(data.due, data.paid)
   const canManage = data.can_manage
+  const canEditIncome = data.can_edit_income
+  /* ‏0212: באירוע מ-ViperFlow שהסנכרון שלו רץ, הסכומים שמגיעים משם סגורים
+     לעריכה — עצירת הסנכרון (בראש הדף) היא שפותחת אותם. */
+  const syncedAmounts = data.lines.some((l) => l.synced)
+  const editableCategories = (data.income_categories ?? []).filter((c) => c.editable)
+  const staleLines = data.lines.filter((l) => l.commission_stale)
 
   const removePayment = async (p: EventPayment) => {
     const ok = await confirm(`למחוק את התשלום של ${fmtMoney(p.amount)} מ-${fmtDate(p.received_at)}?`, {
@@ -117,6 +140,14 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
     </Button>
   )
 
+  /* ‏0212: עריכת הסכומים — ריהוט חדש, ישן, כיסאות, הובלות. */
+  const incomeButton = canEditIncome && !data.cancelled && editableCategories.length > 0 && (
+    <Button size="sm" variant="ghost" onClick={() => setIncomeOpen(true)}>
+      <Pencil size={ICON.sm} strokeWidth={STROKE} />
+      עריכת סכומים
+    </Button>
+  )
+
   const body = (
     <div className="space-y-4">
       {dialog}
@@ -125,6 +156,20 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
         <p className="rounded-lg border border-warning-border bg-warning-subtle px-3 py-2 type-caption text-warning-text">
           האירוע בוטל — אין עליו סכום לגבייה. תשלום שכבר התקבל נשאר רשום.
         </p>
+      )}
+
+      {/* ‏0212: "המפרט השתנה לאחר קביעת העמלה" — בראש הכרטיס, לא רק בשורה */}
+      {staleLines.length > 0 && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-warning-border bg-warning-subtle px-3 py-2 type-caption text-warning-text"
+        >
+          <AlertTriangle size={ICON.sm} strokeWidth={STROKE} className="mt-0.5 shrink-0" />
+          <span>
+            שים לב: המפרט השתנה לאחר קביעת העמלה ({staleLines.map((l) => l.label).join(', ')}) — יש לתמחר
+            מחדש את העמלה.
+          </span>
+        </div>
       )}
 
       {/* הפירוט: מה מגיע ועל מה */}
@@ -140,11 +185,21 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
               )}
               {l.charge_id && <Badge className="ms-1.5">חיוב ידני</Badge>}
               {l.note && <span className="block whitespace-pre-line text-ink-secondary">{l.note}</span>}
+              {l.manual_commission && <CommissionNote line={l} />}
             </dt>
             <dd className="flex shrink-0 items-center gap-1">
               <span dir="ltr" className="tabular-nums type-body font-medium">
                 {fmtMoney(l.amount)}
               </span>
+              {canEditIncome && l.manual_commission && l.category_id && (
+                <IconButton
+                  label={l.commission == null ? 'קביעת עמלה' : 'עריכת עמלה'}
+                  size="sm"
+                  onClick={() => setCommissionLine(l)}
+                >
+                  <Pencil size={ICON.sm} strokeWidth={STROKE} />
+                </IconButton>
+              )}
               {canManage && l.charge_id && (
                 <IconButton
                   label="מחיקת חיוב"
@@ -163,7 +218,18 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
             עדיין אין על האירוע מחיר או הכנסות — אין סכום לגבייה.
           </p>
         )}
-        {chargeButton && <div className="py-1.5">{chargeButton}</div>}
+        {(chargeButton || incomeButton) && (
+          <div className="flex flex-wrap gap-1 py-1.5">
+            {chargeButton}
+            {incomeButton}
+          </div>
+        )}
+        {canEditIncome && syncedAmounts && !data.cancelled && (
+          <p className="flex items-start gap-1.5 py-1.5 type-caption text-ink-tertiary">
+            <Lock size={ICON.sm} strokeWidth={STROKE} className="mt-0.5 shrink-0" />
+            הסכומים מגיעים מ-ViperFlow. כדי לערוך אותם ביד — ״עצירת סנכרון״ בראש הדף.
+          </p>
+        )}
         <div className="flex items-baseline justify-between gap-3 pt-2">
           <dt className="type-body font-semibold">סך הכול מגיע</dt>
           <dd dir="ltr" className="tabular-nums type-title font-semibold text-primary">
@@ -254,6 +320,13 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
         balance={data.balance}
       />
       <AddChargeModal open={chargeOpen} onClose={() => setChargeOpen(false)} eventId={eventId} />
+      <IncomeEditModal
+        open={incomeOpen}
+        onClose={() => setIncomeOpen(false)}
+        eventId={eventId}
+        categories={data.income_categories ?? []}
+      />
+      <CommissionModal line={commissionLine} onClose={() => setCommissionLine(null)} eventId={eventId} />
     </div>
   )
 
@@ -269,6 +342,218 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
       />
       <CardBody>{body}</CardBody>
     </Card>
+  )
+}
+
+/** מתחת לשורה שהעמלה עליה ידנית (0212): על כמה נקבעה, או שהמפרט זז ממנה. */
+function CommissionNote({ line }: { line: EventPaymentLine }) {
+  const note = commissionNote(line, fmtMoney)
+  return (
+    <span
+      className={cx(
+        'mt-0.5 flex items-start gap-1',
+        note.tone === 'warning' ? 'font-medium text-warning-text' : 'tabular-nums',
+      )}
+    >
+      {note.tone === 'warning' && <AlertTriangle size={ICON.xs} strokeWidth={STROKE} className="mt-0.5 shrink-0" />}
+      {note.text}
+    </span>
+  )
+}
+
+/**
+ * קביעת העמלה על הכיסאות (0212): סכום בשקלים, וכולו של וייפר. שמירה — גם
+ * באותו סכום — מאשרת את הסכום הנוכחי כבסיס, וכך "המפרט השתנה" יורד.
+ */
+function CommissionModal({
+  line,
+  onClose,
+  eventId,
+}: {
+  line: EventPaymentLine | null
+  onClose: () => void
+  eventId: string
+}) {
+  const toast = useToast()
+  const set = useSetIncomeCommission()
+  const [raw, setRaw] = useState('')
+
+  const [openedFor, setOpenedFor] = useState<string | null>(null)
+  const key = line?.key ?? null
+  if (key !== openedFor) {
+    setOpenedFor(key)
+    if (line) setRaw(line.commission != null ? String(Number(line.commission)) : '')
+  }
+
+  const gross = Number(line?.gross ?? 0)
+  const amount = parseCommission(raw)
+  const error = raw.trim() ? commissionError(amount, gross) : null
+
+  const save = (value: number | null) => {
+    if (!line?.category_id) return
+    set.mutate(
+      { eventId, categoryId: line.category_id, amount: value },
+      {
+        onSuccess: () => {
+          toast.success(value == null ? 'העמלה נמחקה' : `נקבעה עמלה של ${fmtMoney(value)}`)
+          onClose()
+        },
+        onError: (e) => toast.error(errorMessage(e)),
+      },
+    )
+  }
+
+  return (
+    <Modal
+      open={!!line}
+      onClose={onClose}
+      title={line ? `עמלה — ${line.label}` : 'עמלה'}
+      description={`הסכום: ${fmtMoney(gross)}. העמלה שתקבע כאן נספרת כולה לוייפר.`}
+      footer={
+        <>
+          {line?.commission != null && (
+            <Button variant="ghost" loading={set.isPending && set.variables?.amount == null} onClick={() => save(null)}>
+              מחיקת העמלה
+            </Button>
+          )}
+          <Button className="ms-auto" onClick={onClose}>
+            ביטול
+          </Button>
+          <Button
+            variant="primary"
+            loading={set.isPending && set.variables?.amount != null}
+            disabled={amount == null || !!error}
+            onClick={() => save(amount)}
+          >
+            שמירה
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {line?.commission_stale && (
+          <p className="rounded-lg border border-warning-border bg-warning-subtle px-3 py-2 type-caption text-warning-text">
+            המפרט השתנה לאחר קביעת העמלה: היא נקבעה על {fmtMoney(Number(line.commission_basis ?? 0))}, והסכום
+            עכשיו {fmtMoney(gross)}. שמירה — גם באותו סכום — מאשרת את העמלה מול הסכום החדש.
+          </p>
+        )}
+        <Field label="עמלה (₪)" required error={error ?? undefined}>
+          <Input
+            autoFocus
+            inputMode="decimal"
+            dir="ltr"
+            placeholder="0"
+            value={raw}
+            onChange={(e) => setRaw(e.target.value)}
+          />
+        </Field>
+      </div>
+    </Modal>
+  )
+}
+
+/**
+ * עריכת הסכומים של האירוע (0212): כל קטגוריה שמופעלת ללקוח, ושדה ריק מוחק.
+ * קטגוריה שהסכום שלה מגיע מ-ViperFlow בזמן שהסנכרון רץ מוצגת נעולה — השרת
+ * היה דוחה אותה ממילא.
+ */
+function IncomeEditModal({
+  open,
+  onClose,
+  eventId,
+  categories,
+}: {
+  open: boolean
+  onClose: () => void
+  eventId: string
+  categories: EventIncomeEditCategory[]
+}) {
+  const toast = useToast()
+  const save = useSaveEventIncome()
+  const [values, setValues] = useState<Record<string, string>>({})
+
+  const [openedFor, setOpenedFor] = useState(false)
+  if (open !== openedFor) {
+    setOpenedFor(open)
+    if (open) {
+      setValues(Object.fromEntries(categories.map((c) => [c.id, c.amount != null ? String(Number(c.amount)) : ''])))
+    }
+  }
+
+  const invalid = categories.some((c) => {
+    const v = (values[c.id] ?? '').trim()
+    return c.editable && v !== '' && parseCommission(v) == null
+  })
+
+  const submit = () => {
+    const amounts = Object.fromEntries(
+      categories
+        .filter((c) => c.editable)
+        .map((c) => {
+          const v = (values[c.id] ?? '').trim()
+          const n = v === '' ? null : parseCommission(v)
+          return [c.id, n == null ? '' : String(n)]
+        }),
+    )
+    save.mutate(
+      { eventId, amounts },
+      {
+        onSuccess: () => {
+          toast.success('הסכומים נשמרו')
+          onClose()
+        },
+        onError: (e) => toast.error(errorMessage(e)),
+      },
+    )
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="עריכת סכומים"
+      description="הסכום המלא של כל קטגוריה. העמלה של וייפר נגזרת ממנו — באחוז של הלקוח, או בעמלה שנקבעה ביד."
+      footer={
+        <>
+          <Button className="ms-auto" onClick={onClose}>
+            ביטול
+          </Button>
+          <Button variant="primary" loading={save.isPending} disabled={invalid} onClick={submit}>
+            שמירה
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {categories.map((c) => {
+          const v = values[c.id] ?? ''
+          const bad = c.editable && v.trim() !== '' && parseCommission(v) == null
+          return (
+            <Field
+              key={c.id}
+              label={`${c.name} (₪)`}
+              hint={
+                !c.editable
+                  ? 'מגיע מ-ViperFlow — עצירת סנכרון פותחת אותו לעריכה'
+                  : c.manual_commission
+                    ? 'העמלה על הסכום הזה נקבעת ביד, בשורה שלו בכרטיס'
+                    : undefined
+              }
+              error={bad ? 'סכום לא תקין' : undefined}
+            >
+              <Input
+                inputMode="decimal"
+                dir="ltr"
+                placeholder="0"
+                disabled={!c.editable}
+                value={v}
+                onChange={(e) => setValues((prev) => ({ ...prev, [c.id]: e.target.value }))}
+              />
+            </Field>
+          )
+        })}
+      </div>
+    </Modal>
   )
 }
 

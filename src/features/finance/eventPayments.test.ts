@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  commissionError,
+  commissionNote,
   lineLabel,
   matchesFilter,
   overpayWarning,
   parseAmount,
+  parseCommission,
   paymentState,
   presetRange,
   rangeError,
@@ -105,5 +108,45 @@ describe('rangeError', () => {
     expect(rangeError('2026-01-01', '2027-06-30')).not.toBeNull()
     expect(rangeError('2026-10-31', '2026-10-01')).not.toBeNull()
     expect(rangeError('', '2026-10-01')).not.toBeNull()
+  })
+})
+
+describe('manual commission (0212)', () => {
+  const money = (n: number) => `${n} ₪`
+
+  it('a manual-commission line is a commission even without a percent', () => {
+    expect(lineLabel({ label: 'כיסאות', pct: null, manual_commission: true })).toBe('עמלה — כיסאות')
+    expect(lineLabel({ label: 'כיסאות', pct: null, manual_commission: true, commission: 100 })).toBe('עמלה — כיסאות')
+  })
+
+  it('zero is a commission; empty, negative and three decimals are not', () => {
+    expect(parseCommission('0')).toBe(0)
+    expect(parseCommission('1,250.5')).toBe(1250.5)
+    expect(parseCommission('₪ 100')).toBe(100)
+    expect(parseCommission('')).toBeNull()
+    expect(parseCommission('-5')).toBeNull()
+    expect(parseCommission('1.234')).toBeNull()
+  })
+
+  it('a commission above the amount is refused, equal is fine', () => {
+    expect(commissionError(1001, 1000)).toBe('העמלה גבוהה מהסכום')
+    expect(commissionError(1000, 1000)).toBeNull()
+    expect(commissionError(null, 1000)).toBe('סכום לא תקין')
+  })
+
+  it('says when no commission was set, when it is current, and when the spec moved', () => {
+    expect(commissionNote({ gross: 1000, commission: null }, money)).toEqual({
+      tone: 'warning',
+      text: 'לא נקבעה עמלה · הסכום 1000 ₪',
+    })
+    expect(commissionNote({ gross: 1000, commission: 100, commission_basis: 1000, commission_stale: false }, money)).toEqual({
+      tone: 'muted',
+      text: 'עמלה ידנית מתוך 1000 ₪',
+    })
+    const stale = commissionNote({ gross: 2000, commission: 100, commission_basis: 1000, commission_stale: true }, money)
+    expect(stale.tone).toBe('warning')
+    expect(stale.text).toContain('המפרט השתנה לאחר קביעת העמלה')
+    expect(stale.text).toContain('1000 ₪')
+    expect(stale.text).toContain('2000 ₪')
   })
 })

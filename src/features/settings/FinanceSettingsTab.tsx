@@ -35,6 +35,7 @@ const VIPERFLOW_SOURCE_LABEL: Record<
 > = {
   furniture_old: 'ViperFlow · ציוד ישן',
   furniture_new: 'ViperFlow · ציוד חדש',
+  furniture_chairs: 'ViperFlow · קטגוריית הכיסאות',
   trucking: 'ViperFlow · שורות ההובלה',
 }
 
@@ -209,6 +210,8 @@ function IncomeCategoriesCard() {
                 {c.viperflow_income_source && (
                   <Badge tone="info">{VIPERFLOW_SOURCE_LABEL[c.viperflow_income_source]}</Badge>
                 )}
+                {/* ‏0212: העמלה נקבעת ביד על כל אירוע, ולא לפי אחוז */}
+                {c.manual_commission && <Badge tone="warning">עמלה ידנית</Badge>}
                 {!c.is_active && <Badge tone="neutral">כבויה</Badge>}
                 <Switch
                   checked={c.is_active}

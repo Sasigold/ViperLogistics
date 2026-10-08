@@ -20,7 +20,7 @@ Commands: `npm run dev` · `lint` (oxlint) · `typecheck` (`tsc -b`) · `test:un
 `test:db` (`supabase/tests/run.sh`, scratch Postgres in /var/tmp, needs root/sudo + PG16+) · `test` (both) · `build`.
 CI (`.github/workflows/ci.yml`): lint, typecheck, unit, build; plus a `database` job running run.sh.
 
-Repo layout: `src/` frontend · `supabase/migrations` (0001..0211) · `supabase/functions` · `supabase/tests` · `docs/` · `public/`.
+Repo layout: `src/` frontend · `supabase/migrations` (0001..0212) · `supabase/functions` · `supabase/tests` · `docs/` · `public/`.
 There is no `supabase/config.toml`; `verify_jwt` per function and all secrets/GUCs live in the Supabase dashboard/CLI.
 Production migrations are applied out-of-band (Supabase MCP `apply_migration`/`list_migrations` or dashboard) — run `list_migrations` first.
 
@@ -60,7 +60,7 @@ Production migrations are applied out-of-band (Supabase MCP `apply_migration`/`l
 
 ## 3. Making changes — recipes
 
-**New migration**: `supabase/migrations/0212_<slug>.sql` (next number; note duplicate 0113/0175 exist, 0202/0203 are the wall feed on branch `claude/wall-feed-crew` and 0206 is on `claude/viperflow-lock-and-event-payments`, both already in prod). Header: `-- 0212: title`, Hebrew narrative
+**New migration**: `supabase/migrations/0213_<slug>.sql` (next number; note duplicate 0113/0175 exist, 0202/0203 are the wall feed on branch `claude/wall-feed-crew` and 0206 is on `claude/viperflow-lock-and-event-payments`, both already in prod). Header: `-- 0213: title`, Hebrew narrative
 (what/why, cite earlier migrations), then `-- ===== N. section =====` blocks, `create or replace function ... security definer set search_path = public`,
 revoke/grant. Views respecting RLS: `security_invoker`. Redefine whole functions/views (`work_board_view` has been redefined 21× — copy latest, 0201).
 Then add/extend a test suite and make sure `test:db` passes.
@@ -76,10 +76,10 @@ New field permission: `register_field` + `app.enforce_field_perms` trigger + `re
 **New shared query/mutation**: feature-local → `features/<x>/<x>Queries.ts`; shared reference data → `src/lib/queries.ts`. Query keys `[entity, variant, ...args]`;
 invalidate by prefix. For live-update lists use a key starting with `workboard|dashboard|attendance|portal|events|calendar|tasks` (see `features/sync/useRealtimeSync.ts`).
 
-**New dashboard widget**: component in `dashboard/widgets/*` → register in `dashboard/registry.tsx` → section key in `dashboard/sections.ts` + SQL section in `dashboard_sections` (latest 0174; redefined in full).
+**New dashboard widget**: component in `dashboard/widgets/*` → register in `dashboard/registry.tsx` → section key in `dashboard/sections.ts` + SQL section in `dashboard_sections` (latest 0212; redefined in full).
 KPI card: `widgets/kpi.tsx` factory. Custom user widgets: `dashboard/builder/` (`widgetSpec.ts`).
 
-**New SQL test**: `supabase/tests/63_<slug>.sql`, copy header from `62_*`; own UUID prefixes; dates far out (`current_date + N`, N > 870); assert as `set role authenticated` + `set_config('request.jwt.claim.sub',...)`;
+**New SQL test**: `supabase/tests/64_<slug>.sql`, copy header from `63_*`; own UUID prefixes; dates far out (`current_date + N`, N > 870); assert as `set role authenticated` + `set_config('request.jwt.claim.sub',...)`;
 helpers `t_eq/t_rows/t_expect_fail/t_expect_ok`; reset role; **append a block to `run.sh`** (run order is hard-coded).
 
 **Settings tab**: `features/settings/SettingsPage.tsx` `TABS` array (each has `perm`). **Notification type**: emitters 0110+, gating `app.notification_enabled` (0086), insert `app.notify` (0054), sender `functions/notify-dispatch`.
@@ -124,7 +124,7 @@ Timestamps are stamped server-side; avoid client-side "now" for business logic. 
 | search | Ctrl+K | `CommandPalette.tsx` → RPC `global_search` |
 | settings | `/settings` | `SettingsPage.tsx` `TABS`, `companyQueries.ts` (bucket `company-assets`) |
 | integrations | `/integrations` | ViperFlow/Arco status, replay, sync |
-| finance | `/receipts` `/payments` `/wallet` | `ReceiptsPage.tsx`; event payments (0205): card `EventPaymentsCard.tsx`, page `EventPaymentsPage.tsx`, pure `eventPayments.ts`, RPCs `event_payment_summary/add/remove`, `event_payments_list`, `event_payments_dashboard(from, to, customer_id?)` (0208 customer filter on `/payments`; dashboard widgets fetch it themselves, not a `dashboard_sections` key); manual charges (0207) `event_charges` via `event_charge_add/remove`, counted in `app.event_payment_dues`; cash wallet (0207) `CashWalletPage.tsx`, `cashWallet.ts`, RPCs `cash_wallet`, `cash_wallet_entry_add/remove` (cash receipts + `cash_wallet_entries`); dashboard: one merged card `ClientSummaryWidget` (id `finance.client_share`: client share + Keisar commission + paid/unpaid) |
+| finance | `/receipts` `/payments` `/wallet` | `ReceiptsPage.tsx`; event payments (0205): card `EventPaymentsCard.tsx`, page `EventPaymentsPage.tsx`, pure `eventPayments.ts`, RPCs `event_payment_summary/add/remove`, `event_payments_list`, `event_payments_dashboard(from, to, customer_id?)` (0208 customer filter on `/payments`; dashboard widgets fetch it themselves, not a `dashboard_sections` key); manual charges (0207) `event_charges` via `event_charge_add/remove`, counted in `app.event_payment_dues`; chairs commission + edit amounts (0212) `CommissionModal`/`IncomeEditModal` in the card; cash wallet (0207) `CashWalletPage.tsx`, `cashWallet.ts`, RPCs `cash_wallet`, `cash_wallet_entry_add/remove` (cash receipts + `cash_wallet_entries`); dashboard: one merged card `ClientSummaryWidget` (id `finance.client_share`: client share + Keisar commission + paid/unpaid) |
 | embed | `/embed/event` | iframe of `EventFormModal`, postMessage `viper:event-saved/closed` |
 | sync | (hook) | `useRealtimeSync.ts` — broadcast → debounced `invalidateQueries`, never patches cache |
 
@@ -136,7 +136,7 @@ Pattern: pure logic in `*.ts` with sibling `*.test.ts` (vitest is node-only, no 
 0016-0018 activity log + pricing · attendance ≈ 0019-0025/0034/0060/0065/0152/0166 · 0030-0031/0046-0054/0086/0110/0167 notifications ·
 0038-0045/0058-0059/0174 dashboard/reports · 0068-0070/0074/0087/0164/0186 income/receipts/P&L · contractors 0072/0075/0091-0108/0155 ·
 0077-0078/0102/0107 specs & signature · 0089-0090 vehicles · 0101 scoped realtime · 0109-0147 customer board, Arco-performed, recycle bin, customer crew ·
-0159-0169 login/delete/hour-fix/clock · 0170-0175/0181 quote, load heatmap · 0176-0177/0187-0195 ViperFlow · 0182-0186/0199 Arco · 0178-0180/0196-0201 customer worker accounts, warehouse schedule, worker pay view, cancelled releases crew, crew-is-people · 0204 per-event ViperFlow sync lock · 0205 event payments (`receipts.event_id/method`, `/payments`) · 0206 receipts guard + unlock catch-up (branch `claude/viperflow-lock-and-event-payments`, in prod) · 0207 event manual charges + cash wallet (`/wallet`) · 0208 payments customer filter · 0209 deleting an event soft-deletes its tasks (same stamp; restore brings them back), `app.live_tasks` also drops tasks of deleted events · 0210 Cibus import (`cibus_transactions`, `cibus_user_links`, match ±1h via `app.cibus_entry_for`, perm `attendance.cibus`) · 0211 Cibus: guess/link staff only, `unmatched_*` excludes unlinked.
+0159-0169 login/delete/hour-fix/clock · 0170-0175/0181 quote, load heatmap · 0176-0177/0187-0195 ViperFlow · 0182-0186/0199 Arco · 0178-0180/0196-0201 customer worker accounts, warehouse schedule, worker pay view, cancelled releases crew, crew-is-people · 0204 per-event ViperFlow sync lock · 0205 event payments (`receipts.event_id/method`, `/payments`) · 0206 receipts guard + unlock catch-up (branch `claude/viperflow-lock-and-event-payments`, in prod) · 0207 event manual charges + cash wallet (`/wallet`) · 0208 payments customer filter · 0209 deleting an event soft-deletes its tasks (same stamp; restore brings them back), `app.live_tasks` also drops tasks of deleted events · 0210 Cibus import (`cibus_transactions`, `cibus_user_links`, match ±1h via `app.cibus_entry_for`, perm `attendance.cibus`) · 0211 Cibus: guess/link staff only, `unmatched_*` excludes unlinked · 0212 chairs: 3rd ViperFlow furniture income (`furniture_chairs`, connection `chairs_category_names`, edge tags lines with `category_names` + `categories_enriched`), manual ₪ commission (`event_income.commission_amount/basis`, `app.income_viper_share`, RPCs `event_income_set_commission`/`event_income_save`), notification `income_commission_stale`, synced amounts read-only unless sync locked, unlock re-applies last delivery.
 
 Core tables: identity (`profiles`, `staff_roles`, `profile_roles`, `customers`, `contractors`, `contractor_workers`, `customer_workers`) · work (`events`, `tasks`, `task_assignments` (one row per role),
 `task_contractor_terms`, `task_contractor_workers`, `task_customer_workers`, `task_pricing`, `task_price_addons`, `event_activity/specs/signatures/quotes/income/suppliers/contacts`, `warehouse_tasks`, `warehouses`, `trucks`, `vehicles*`) ·
@@ -150,8 +150,8 @@ User kinds: `staff | customer_user | contractor_user`; admin = staff + `is_admin
 
 **Latest definition of critical functions** (verify with grep): `app.my_role_ids` 0104 · `app.scope_rows` 0085 · `app.event_visible` 0082 · `app.notify` 0054 · `app.notification_enabled` 0086 · emitters 0110 · `app.planned_shifts` 0034 / `_many` 0178 ·
 `app.attendance_calc` 0152 · `attendance_pay_rows`/`clock_needs_location` 0166 · `app.price_calc` 0060 · `recompute_contractor_price` 0155 · `task_pnl_rows`/`payroll_task_amounts`/`margin_summary` 0186 ·
-`dashboard_sections` 0174 · `app.report_run` 0058 · `app.load_capacity` 0175 / `load_slots` 0181 · `log_event_activity` 0170 · `release_event_crew` 0200 · `enforce_task_publish` 0179 ·
-`viperflow_apply_order` 0204 · `arco_outbound_enqueue` 0184 · `app.audit` 0196 · `work_board_view` 0201 · `shift_task_breakdown` 0201.
+`dashboard_sections` 0212 · `app.report_run` 0058 · `app.load_capacity` 0175 / `load_slots` 0181 · `log_event_activity` 0170 · `release_event_crew` 0200 · `enforce_task_publish` 0179 ·
+`viperflow_apply_order` 0212 · `viperflow_set_event_lock` 0212 · `event_payment_summary`/`app.event_payment_dues` 0212 · `app.apply_event_income` 0212 · `arco_outbound_enqueue` 0184 · `app.audit` 0196 · `work_board_view` 0201 · `shift_task_breakdown` 0201.
 
 **Edge functions** (`supabase/functions/`, Deno; shared pure code in `_shared/viperflow.ts`, `_shared/arco.ts`, unit-tested):
 `admin-users` (create/set password/active/delete/purge login; JWT on) · `geocode-proxy` (Google Places → Photon/Nominatim; auth in code, accepts service key) ·
