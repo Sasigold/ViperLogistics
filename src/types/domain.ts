@@ -2086,6 +2086,7 @@ export interface CibusReport {
     amount: number
     matched_count: number
     matched_amount: number
+    /** בלי נוכחות — של עובדים שזוהו בלבד (0211); מי שלא זוהה נספר ב-unlinked_* */
     unmatched_count: number
     unmatched_amount: number
     unlinked_count: number

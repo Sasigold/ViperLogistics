@@ -911,7 +911,11 @@ export function AttendanceReport({
             label="סיבוס"
             value={fmtCibusAmount(cibus.totals.amount)}
             hint={
-              cibus.totals.unmatched_count > 0 ? `${cibus.totals.unmatched_count} בלי נוכחות` : 'הכול בזמן משמרת'
+              cibus.totals.unmatched_count > 0
+                ? `${cibus.totals.unmatched_count} בלי נוכחות`
+                : cibus.totals.unlinked_count > 0
+                  ? `${cibus.totals.unlinked_count} לא זוהו`
+                  : 'הכול בזמן משמרת'
             }
             tone="#e8590c"
           />

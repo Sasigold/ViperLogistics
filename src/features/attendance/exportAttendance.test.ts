@@ -321,14 +321,18 @@ describe('buildAttendanceWorkbook', () => {
     expect(wb.map((s) => s.name)).toContain('רק סיבוס')
   })
 
-  it('names an unidentified cibus user as such', () => {
+  it('names an unidentified cibus user as such, and totals them apart', () => {
     const wb = buildAttendanceWorkbook(
       report(),
       RANGE,
-      cibus([...twoTxns(), txn({ id: 'c3', entry_id: null, profile_id: null, full_name: null, employee_name: 'זר' })]),
+      cibus([...twoTxns(), txn({ id: 'c3', entry_id: null, profile_id: null, full_name: null, employee_name: 'זר', amount: 15 })], {
+        totals: { ...cibus([]).totals, unlinked_count: 1, unlinked_amount: 15 },
+      }),
     )
     const sheet = wb.find((s) => s.name === 'סיבוס ללא נוכחות')!
-    expect(tables(sheet.blocks)[0]!.rows.map((r) => r.name)).toContain('זר (לא זוהה)')
+    const table = tables(sheet.blocks)[0]!
+    expect(table.rows.map((r) => r.name)).toEqual(['עובד', 'זר (לא זוהה)'])
+    expect(table.footer.map((f) => f.values.amount)).toEqual([30, 15])
   })
 })
 

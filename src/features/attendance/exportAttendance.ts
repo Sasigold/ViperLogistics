@@ -469,8 +469,21 @@ export function buildAttendanceWorkbook(
   const flat = buildAttendanceSheet(report, cibus)
   sheets.push({ name: sheetName('כל המשמרות', taken), blocks: [{ kind: 'table', ...flat }] })
 
-  if (cibus && cibus.totals.unmatched_count > 0) {
-    const all = cibus.transactions.filter((x) => !x.entry_id)
+  if (cibus && (cibus.totals.unmatched_count > 0 || cibus.totals.unlinked_count > 0)) {
+    // מי שזוהה קודם, ומי שלא זוהה בסוף — הוא לא נבדק מול נוכחות (0211)
+    const all = [
+      ...cibus.transactions.filter((x) => !x.entry_id && x.profile_id),
+      ...cibus.transactions.filter((x) => !x.profile_id),
+    ]
+    const footer: SheetPlan['footer'] = [
+      { values: { name: 'סה״כ ללא נוכחות', amount: cibus.totals.unmatched_amount }, style: 'bold' },
+    ]
+    if (cibus.totals.unlinked_count > 0) {
+      footer.push({
+        values: { name: 'לא זוהו (לא נבדקו מול נוכחות)', amount: cibus.totals.unlinked_amount },
+        style: 'italic',
+      })
+    }
     sheets.push({
       name: sheetName('סיבוס ללא נוכחות', taken),
       blocks: [
@@ -484,7 +497,7 @@ export function buildAttendanceWorkbook(
             name: x.full_name ?? `${x.employee_name} (לא זוהה)`,
             ...unmatchedRow(x),
           })),
-          footer: [{ values: { name: 'סה״כ', amount: cibus.totals.unmatched_amount }, style: 'bold' }],
+          footer,
         },
       ],
     })

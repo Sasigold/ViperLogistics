@@ -112,6 +112,15 @@ export function CibusSummaryCard({ report }: { report: CibusReport }) {
                   </span>
                 </>
               )}
+              {/* ‏0211: מי שלא זוהה לא נבדק מול נוכחות, ולכן אינו חריגה */}
+              {t.unlinked_count > 0 && (
+                <>
+                  <span className="text-ink-tertiary" aria-hidden>|</span>
+                  <span className="tabular text-warning-text">
+                    {t.unlinked_count} לא זוהו · {fmtCibusAmount(t.unlinked_amount)}
+                  </span>
+                </>
+              )}
             </p>
           </div>
         </div>
