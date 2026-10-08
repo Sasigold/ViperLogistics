@@ -42,7 +42,7 @@ interface IncomeByCategory {
   furniture_total: number
   logistics_total: number
   total: number
-  /** ‏0212: החלק של וייפר בקטגוריות שהעמלה עליהן ידנית (כיסאות) */
+  /** ‏0212: החלק של וייפר בקטגוריות שהעמלה עליהן ידנית (כיסאות, פריטים חופשיים) */
   manual_commission_total?: number
 }
 
@@ -82,22 +82,26 @@ export const FurnitureIncomeWidget = sectionKpi<IncomeByCategory>({
   delta: true,
   select: (v) => Number(v.furniture_total),
   format: (v) => fmtMoney(v),
-  hint: () => 'ריהוט ישן, חדש וכיסאות שהוזנו על אירועים',
+  hint: () => 'ריהוט ישן, חדש, כיסאות ופריטים חופשיים שהוזנו על אירועים',
 })
 
 /* ‏0212: העמלה על הכיסאות נקבעת ביד על כל אירוע, וכולה של וייפר. הרמז אומר
-   מאיזה סכום — כדי שעמלה של 300 על 20,000 לא תיקרא כמו 300 על 3,000. */
+   מאיזה סכום — כדי שעמלה של 300 על 20,000 לא תיקרא כמו 300 על 3,000.
+   ‏0213: גם על הפריטים החופשיים — הסך של שתיהן, והרמז מפרט כל אחת. */
 export const ChairsCommissionWidget = sectionKpi<IncomeByCategory>({
   section: 'income.by_category',
-  label: 'עמלה מכיסאות',
+  label: 'עמלות ידניות',
   icon: Armchair,
   tone: '#ec4899',
   delta: true,
   select: (v) => Number(v.manual_commission_total ?? 0),
   format: (v) => fmtMoney(v),
   hint: (v) => {
-    const gross = v.rows.filter((r) => r.manual_commission).reduce((sum, r) => sum + Number(r.total), 0)
-    return gross > 0 ? `עמלה ידנית · 100% לוייפר · מתוך ${fmtMoney(gross)}` : 'עמלה ידנית · 100% לוייפר'
+    const manual = v.rows.filter((r) => r.manual_commission && Number(r.total) > 0)
+    if (manual.length === 0) return 'עמלה ידנית · 100% לוייפר'
+    return manual
+      .map((r) => `${r.name} ${fmtMoney(Number(r.viper_share ?? 0))} מתוך ${fmtMoney(Number(r.total))}`)
+      .join(' · ')
   },
 })
 

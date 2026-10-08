@@ -45,16 +45,21 @@ export interface IncomeCategory {
   sort_order: number
   is_active: boolean
   deleted_at: string | null
-  /** מה הקטגוריה מקבלת מסנכרון ViperFlow (0190, 0192, 0212) */
+  /** מה הקטגוריה מקבלת מסנכרון ViperFlow (0190, 0192, 0212, 0213) */
   viperflow_income_source: ViperflowIncomeSource | null
   /**
-   * העמלה בקטגוריה נקבעת ביד, בשקלים, על כל אירוע — וכולה של וייפר (0212,
-   * כיסאות). בלעדיה החלק של וייפר הוא האחוז שבחלוקת הלקוח.
+   * העמלה בקטגוריה נקבעת ביד, בשקלים, על כל אירוע — וכולה של וייפר (0212/0213,
+   * כיסאות ופריטים חופשיים). בלעדיה החלק של וייפר הוא האחוז שבחלוקת הלקוח.
    */
   manual_commission: boolean
 }
 
-export type ViperflowIncomeSource = 'furniture_old' | 'furniture_new' | 'furniture_chairs' | 'trucking'
+export type ViperflowIncomeSource =
+  | 'furniture_old'
+  | 'furniture_new'
+  | 'furniture_chairs'
+  | 'furniture_custom'
+  | 'trucking'
 
 /** קיום שורה = הקטגוריה מופעלת ללקוח; חלק הלקוח נגזר (100 פחות) */
 export interface CustomerIncomeSplit {
@@ -98,7 +103,7 @@ export interface EventPaymentLine {
   note?: string | null
   /** שורת הכנסה (0212): הקטגוריה שלה */
   category_id?: string
-  /** העמלה בקטגוריה נקבעת ביד (כיסאות) */
+  /** העמלה בקטגוריה נקבעת ביד (כיסאות, פריטים חופשיים) */
   manual_commission?: boolean
   /** העמלה שנקבעה ביד, בשקלים; null = טרם נקבעה */
   commission?: number | null

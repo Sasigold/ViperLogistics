@@ -161,7 +161,7 @@ export const WIDGETS: WidgetDef[] = [
   {
     id: 'finance.furniture_income',
     title: 'הכנסות מריהוט',
-    description: 'ריהוט ישן, חדש וכיסאות שהוזנו על אירועים בטווח',
+    description: 'ריהוט ישן, חדש, כיסאות ופריטים חופשיים שהוזנו על אירועים בטווח',
     group: 'finance',
     icon: icon(Banknote),
     perms: [PERM.FINANCE_INCOME_VIEW],
@@ -172,11 +172,12 @@ export const WIDGETS: WidgetDef[] = [
     sections: ['income.by_category'],
     Component: FurnitureIncomeWidget,
   },
-  /* ‏0212: העמלה שנקבעה ביד על הכיסאות — כולה של וייפר. */
+  /* ‏0212: העמלה שנקבעה ביד על הכיסאות — כולה של וייפר. ‏0213: וגם על
+     הפריטים החופשיים. המזהה נשאר, כי הוא שמור בפריסות של המשתמשים. */
   {
     id: 'finance.chairs_commission',
-    title: 'עמלה מכיסאות',
-    description: 'העמלה שנקבעה ביד על הכיסאות באירועים שבטווח — נספרת כולה לוייפר',
+    title: 'עמלות ידניות',
+    description: 'העמלה שנקבעה ביד על הכיסאות ועל הפריטים החופשיים באירועים שבטווח — נספרת כולה לוייפר',
     group: 'finance',
     icon: icon(Armchair),
     perms: [PERM.FINANCE_INCOME_VIEW],
