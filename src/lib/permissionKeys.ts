@@ -31,6 +31,8 @@ export const PERM = {
   ATTENDANCE_SETTINGS: 'attendance.settings',
   ATTENDANCE_MANAGE_WAREHOUSES: 'attendance.manage_warehouses',
   ATTENDANCE_EXPORT: 'attendance.export',
+  /** ייבוא קובץ הסיבוס והצלבתו מול הנוכחות (0210) */
+  ATTENDANCE_CIBUS: 'attendance.cibus',
   BOARD_VIEW: 'board.view',
   BOARD_VIEW_STAFFING: 'board.view_staffing',
   /* שני הכלים שמעל הלו״ז שאינם "לצפות בו": לסנן, ולפתוח כרטיס משימה. בלי
