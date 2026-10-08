@@ -64,16 +64,35 @@ interface ClientShare {
   total: number
   furniture_new_share?: number
   furniture_old_share?: number
-  /** ‏0212: הכיסאות — הסכום, העמלה שנקבעה ביד, ומה שנשאר ללקוח */
+  /** ‏0212: הכיסאות — הסכום, העמלה שנקבעה ביד, ומה שנשאר ללקוח. מ-0213 זה
+      הסך של כל הקטגוריות הידניות (כיסאות ופריטים חופשיים) */
   chairs_raw?: number
   chairs_commission?: number
   chairs_share?: number
+  /** ‏0213: אותם שלושה מספרים לכל קטגוריה ידנית לבד, לפי סדר הקטגוריות */
+  manual_rows?: { name: string; raw: number; commission: number; share: number }[]
 }
 
 interface KeisarCommission {
   total: number
   events_count: number
   tasks_total: number
+}
+
+/* ‏0213: שורה לכל קטגוריה ידנית שיש בה כסף. שרת מלפני 0213 שולח רק את הסך,
+   והוא נקרא אז "כיסאות" — כמו שהיה. */
+function manualRows(v: ClientShare): { name: string; share: number; commission: number }[] {
+  const rows = v.manual_rows ?? [
+    {
+      name: 'כיסאות',
+      raw: Number(v.chairs_raw ?? 0),
+      commission: Number(v.chairs_commission ?? 0),
+      share: Number(v.chairs_share ?? 0),
+    },
+  ]
+  return rows
+    .filter((r) => Number(r.raw) > 0)
+    .map((r) => ({ name: r.name, share: Number(r.share), commission: Number(r.commission) }))
 }
 
 const SHARE_TONE = '#3563f0'
@@ -158,11 +177,11 @@ export function ClientSummaryWidget(_props: WidgetProps) {
           <span className="flex flex-col gap-0.5">
             <span>חדש (80%): {fmtMoney(Number(v.furniture_new_share))}</span>
             <span>ישן (30%): {fmtMoney(Number(v.furniture_old_share))}</span>
-            {Number(v.chairs_raw ?? 0) > 0 && (
-              <span>
-                כיסאות: {fmtMoney(Number(v.chairs_share ?? 0))} (עמלה {fmtMoney(Number(v.chairs_commission ?? 0))})
+            {manualRows(v).map((r) => (
+              <span key={r.name}>
+                {r.name}: {fmtMoney(r.share)} (עמלה {fmtMoney(r.commission)})
               </span>
-            )}
+            ))}
           </span>
         ) : (
           '80% מריהוט חדש ו-30% מריהוט ישן'

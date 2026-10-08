@@ -646,6 +646,16 @@ OUT="$OUT
 $OUT63"
 
 echo
+echo "== the free items have a line of their own suite =="
+# 64 מקימה לקוח ("שיא עיצובים", בשביל כרטיס הלקוח בדשבורד), חיבור, שלוש
+# דמויות והזמנה משלה ב-current_date + 1100, מעבר לכל טווח אחר. היא רצה
+# אחרונה כי היא משאירה אחריה אירוע, הכנסות, משלוחים והתראות שאינם מנוקים.
+OUT64=$($PSQL -d vl -f "$HERE/64_the_free_items_have_a_line_of_their_own.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT64"
+OUT="$OUT
+$OUT64"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

@@ -36,6 +36,7 @@ const VIPERFLOW_SOURCE_LABEL: Record<
   furniture_old: 'ViperFlow · ציוד ישן',
   furniture_new: 'ViperFlow · ציוד חדש',
   furniture_chairs: 'ViperFlow · קטגוריית הכיסאות',
+  furniture_custom: 'ViperFlow · פריטים חופשיים',
   trucking: 'ViperFlow · שורות ההובלה',
 }
 
