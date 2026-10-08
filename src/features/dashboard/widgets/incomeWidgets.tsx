@@ -29,10 +29,21 @@ import { sectionKpi } from './financeWidgets'
 /* ===== shapes the server sends (0069) ===================================== */
 
 interface IncomeByCategory {
-  rows: { id: string; name: string; family: 'furniture' | 'logistics'; color: string; total: number }[]
+  rows: {
+    id: string
+    name: string
+    family: 'furniture' | 'logistics'
+    color: string
+    total: number
+    /** ‏0212: החלק של וייפר — העמלה שנקבעה ביד, ועד שנקבעה האחוז */
+    viper_share?: number
+    manual_commission?: boolean
+  }[]
   furniture_total: number
   logistics_total: number
   total: number
+  /** ‏0212: החלק של וייפר בקטגוריות שהעמלה עליהן ידנית (כיסאות) */
+  manual_commission_total?: number
 }
 
 interface Receivables {
@@ -71,7 +82,23 @@ export const FurnitureIncomeWidget = sectionKpi<IncomeByCategory>({
   delta: true,
   select: (v) => Number(v.furniture_total),
   format: (v) => fmtMoney(v),
-  hint: () => 'ריהוט ישן וחדש שהוזנו על אירועים',
+  hint: () => 'ריהוט ישן, חדש וכיסאות שהוזנו על אירועים',
+})
+
+/* ‏0212: העמלה על הכיסאות נקבעת ביד על כל אירוע, וכולה של וייפר. הרמז אומר
+   מאיזה סכום — כדי שעמלה של 300 על 20,000 לא תיקרא כמו 300 על 3,000. */
+export const ChairsCommissionWidget = sectionKpi<IncomeByCategory>({
+  section: 'income.by_category',
+  label: 'עמלה מכיסאות',
+  icon: Armchair,
+  tone: '#ec4899',
+  delta: true,
+  select: (v) => Number(v.manual_commission_total ?? 0),
+  format: (v) => fmtMoney(v),
+  hint: (v) => {
+    const gross = v.rows.filter((r) => r.manual_commission).reduce((sum, r) => sum + Number(r.total), 0)
+    return gross > 0 ? `עמלה ידנית · 100% לוייפר · מתוך ${fmtMoney(gross)}` : 'עמלה ידנית · 100% לוייפר'
+  },
 })
 
 export const LogisticsIncomeWidget = sectionKpi<IncomeByCategory>({

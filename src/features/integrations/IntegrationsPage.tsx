@@ -268,6 +268,29 @@ function ConnectionCard({
     }
   }
 
+  /* ‏0212: אילו קטגוריות בקטלוג של ViperFlow הן כיסאות. רשימה ריקה מותרת —
+     פירושה "אין פיצול", והכיסאות נספרים בריהוט ישן/חדש כמו קודם. */
+  async function setChairsNames(raw: string) {
+    const names = raw
+      .split(',')
+      .map((n) => n.trim())
+      .filter((n) => n !== '')
+    if (names.join(',') === connection.chairs_category_names.join(',')) return
+    try {
+      await save.mutateAsync({
+        customerId: connection.customer_id,
+        label: connection.label,
+        isActive: connection.is_active,
+        notes: connection.notes,
+        connectionId: connection.id,
+        chairsNames: names,
+      })
+      toast.success(names.length ? 'קטגוריות הכיסאות עודכנו' : 'פיצול הכיסאות כובה')
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
+
   /* "חי" אינו `is_active` לבדו: חיבור דלוק שלא נכנס דרכו דבר יומיים הוא
      בדיוק המצב שמסך כזה קיים כדי להראות. */
   const quiet =
@@ -355,6 +378,18 @@ function ConnectionCard({
                 inputSize="sm"
                 defaultValue={connection.crew_line_names.join(', ')}
                 onBlur={(e) => void setLineNames('crew', e.target.value)}
+                disabled={save.isPending}
+              />
+            </Field>
+            <Field
+              label="קטגוריות הכיסאות"
+              hint="מופרדות בפסיק, כפי שהן נקראות בקטלוג של ViperFlow. מוצר בקטגוריה כזו (או בתת-קטגוריה שלה) יוצא מריהוט ישן/חדש ונספר בשורת ״כיסאות״, שהעמלה עליה נקבעת ביד. ריק = אין פיצול"
+              className="sm:col-span-2"
+            >
+              <Input
+                inputSize="sm"
+                defaultValue={connection.chairs_category_names.join(', ')}
+                onBlur={(e) => void setChairsNames(e.target.value)}
                 disabled={save.isPending}
               />
             </Field>

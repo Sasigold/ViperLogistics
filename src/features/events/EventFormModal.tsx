@@ -52,7 +52,8 @@ import { SpecPicker } from './SpecPicker'
 import { emptySpecDraft, specDraftIsEmpty, specDraftLiveProblem, specDraftProblem } from './specs'
 import type { SpecDraft } from './specs'
 import { uploadSpec } from './specQueries'
-import type { EventRow, ExecutionMethod } from '../../types/domain'
+import type { EventRow, ExecutionMethod, IncomeCategory } from '../../types/domain'
+import { useViperflowLink } from './furnitureQueries'
 import { errorMessage } from '../../lib/errors'
 
 /**
@@ -226,6 +227,11 @@ export function EventFormModal({
   const { data: incomeSplits = [] } = useCustomerIncomeSplits(effectiveCustomerId)
   const { data: eventIncome } = useEventIncome(open && event ? event.id : null)
   const canEditIncome = has(PERM.FINANCE_INCOME_EDIT)
+  /* ‏0212: באירוע מ-ViperFlow שהסנכרון שלו רץ, סכום שמגיע משם אינו נערך
+     כאן — הוא היה נדרס בסנכרון הבא, והשרת דוחה אותו. עצירת הסנכרון פותחת. */
+  const { data: viperflowLink = null } = useViperflowLink(event?.id, open && !!event)
+  const viperflowSynced = !!viperflowLink && !viperflowLink.sync_locked_at
+  const incomeLocked = (c: IncomeCategory) => viperflowSynced && !!c.viperflow_income_source
   /**
    * מפרט כבר בטופס היצירה (0113).
    *
@@ -515,7 +521,7 @@ export function EventFormModal({
          ומרוקנת סכומים שכבר הוזנו (ערך ריק = "רוקן" בסמנטיקת ה-patch). */
       if (enabledCategories.length > 0 && canEditIncome && (!event || eventIncome !== undefined)) {
         payload.event_income = Object.fromEntries(
-          enabledCategories.map((c) => [c.id, form.income[c.id] ?? '']),
+          enabledCategories.filter((c) => !incomeLocked(c)).map((c) => [c.id, form.income[c.id] ?? '']),
         )
       }
       if (event) {
@@ -969,17 +975,25 @@ export function EventFormModal({
           <div className="grid gap-4 sm:grid-cols-2">
             {enabledCategories.map((c) => {
               const pct = Number(incomeSplits.find((s) => s.category_id === c.id)?.viper_share_pct ?? 100)
+              const locked = incomeLocked(c)
               return (
                 <Field
                   key={c.id}
                   label={`${c.name} (₪)`}
-                  hint={`ויפר ${pct}% · לקוח ${Math.round((100 - pct) * 100) / 100}%`}
+                  hint={
+                    locked
+                      ? 'מגיע מ-ViperFlow — עצירת סנכרון פותחת אותו לעריכה'
+                      : c.manual_commission
+                        ? 'העמלה נקבעת ביד, בכרטיס התשלומים של האירוע'
+                        : `ויפר ${pct}% · לקוח ${Math.round((100 - pct) * 100) / 100}%`
+                  }
                 >
                   <Input
                     type="number"
                     step="any"
                     min="0"
                     dir="ltr"
+                    disabled={locked}
                     value={form.income[c.id] ?? ''}
                     onChange={(e) =>
                       setForm((f) => ({ ...f, income: { ...f.income, [c.id]: e.target.value } }))

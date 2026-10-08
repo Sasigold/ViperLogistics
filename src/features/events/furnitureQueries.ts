@@ -92,7 +92,7 @@ export function useSetEventSyncLock(eventId: string | null | undefined) {
         p_locked: locked,
       })
       if (error) throw error
-      return data as { locked: boolean; locked_at: string | null; caught_up?: boolean }
+      return data as { locked: boolean; locked_at: string | null; caught_up?: boolean; reapplied?: boolean }
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['viperflow_event_link', eventId] })
@@ -103,6 +103,8 @@ export function useSetEventSyncLock(eventId: string | null | undefined) {
       void qc.invalidateQueries({ queryKey: ['event_activity'] })
       void qc.invalidateQueries({ queryKey: ['dashboard'] })
       void qc.invalidateQueries({ queryKey: ['viperflow_deliveries'] })
+      // ‏0212: חידוש מחיל מחדש את ההזמנה — סכומי ההכנסות שנערכו ביד נדרסים
+      void qc.invalidateQueries({ queryKey: ['event_income'] })
     },
   })
 }

@@ -45,9 +45,16 @@ export interface IncomeCategory {
   sort_order: number
   is_active: boolean
   deleted_at: string | null
-  /** מה הקטגוריה מקבלת מסנכרון ViperFlow (0190, 0192) */
-  viperflow_income_source: 'furniture_old' | 'furniture_new' | 'trucking' | null
+  /** מה הקטגוריה מקבלת מסנכרון ViperFlow (0190, 0192, 0212) */
+  viperflow_income_source: ViperflowIncomeSource | null
+  /**
+   * העמלה בקטגוריה נקבעת ביד, בשקלים, על כל אירוע — וכולה של וייפר (0212,
+   * כיסאות). בלעדיה החלק של וייפר הוא האחוז שבחלוקת הלקוח.
+   */
+  manual_commission: boolean
 }
+
+export type ViperflowIncomeSource = 'furniture_old' | 'furniture_new' | 'furniture_chairs' | 'trucking'
 
 /** קיום שורה = הקטגוריה מופעלת ללקוח; חלק הלקוח נגזר (100 פחות) */
 export interface CustomerIncomeSplit {
@@ -82,11 +89,38 @@ export type PaymentMethod = 'cash' | 'other'
 export interface EventPaymentLine {
   key: string
   label: string
+  /** החלק של וייפר בשורה — העמלה הידנית כשנקבעה, אחרת האחוז מהסכום */
   amount: number
   gross: number | null
+  /** null בשורה שהעמלה עליה ידנית (0212) */
   pct: number | null
   charge_id?: string | null
   note?: string | null
+  /** שורת הכנסה (0212): הקטגוריה שלה */
+  category_id?: string
+  /** העמלה בקטגוריה נקבעת ביד (כיסאות) */
+  manual_commission?: boolean
+  /** העמלה שנקבעה ביד, בשקלים; null = טרם נקבעה */
+  commission?: number | null
+  /** הסכום שהעמלה נקבעה עליו */
+  commission_basis?: number | null
+  commission_set_at?: string | null
+  /** הסכום זז מאז שהעמלה נקבעה — "המפרט השתנה לאחר קביעת העמלה" */
+  commission_stale?: boolean
+  /** הסכום מגיע מ-ViperFlow והסנכרון רץ — אינו נערך ביד */
+  synced?: boolean
+}
+
+/** קטגוריה שמופעלת ללקוח, לחלון עריכת הסכומים בכרטיס התשלומים (0212) */
+export interface EventIncomeEditCategory {
+  id: string
+  name: string
+  family: IncomeFamily
+  amount: number | null
+  manual_commission: boolean
+  source: ViperflowIncomeSource | null
+  /** false = הסכום מסונכרן מ-ViperFlow, והסנכרון לאירוע רץ */
+  editable: boolean
 }
 
 /** תשלום אחד שנרשם על אירוע — תקבול עם `event_id` (0205) */
@@ -112,6 +146,12 @@ export type EventPaymentSummary =
       balance: number
       payments: EventPayment[]
       can_manage: boolean
+      /** `finance.income_edit` — עורך סכומים וקובע עמלה (0212) */
+      can_edit_income: boolean
+      /** האירוע הגיע מ-ViperFlow; null = לא */
+      viperflow: { locked: boolean } | null
+      /** null כשאין `can_edit_income` */
+      income_categories: EventIncomeEditCategory[] | null
     }
 
 /** שורה במסך התשלומים — `event_payments_list` (0205) */
@@ -829,6 +869,11 @@ export interface ViperflowConnectionStatus {
   trucking_line_names: string[]
   /** שמות שורות הצוות — כמות העובדים ומחיר ההקמה והפירוק (0192) */
   crew_line_names: string[]
+  /**
+   * קטגוריות הקטלוג (וכל תת-קטגוריה שלהן) שנספרות ככיסאות — יוצאות מריהוט
+   * ישן/חדש ונכתבות לקטגוריית ההכנסה "כיסאות" (0212). ריק = אין פיצול.
+   */
+  chairs_category_names: string[]
   linked_events: number
   last_event_at: string | null
   received_24h: number

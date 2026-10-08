@@ -49,12 +49,12 @@ create temp table t12cat as
 select id, name, family from income_categories;
 grant select on t12cat to authenticated;
 
-\echo '--- הקטלוג נזרע ב-0068 ---'
+\echo '--- הקטלוג נזרע ב-0068 (ו-0212 הוסיפה את הכיסאות) ---'
 
-select t_eq('ארבע קטגוריות נזרעו',
-  (select count(*)::int from income_categories where deleted_at is null), 4);
-select t_eq('שתיים ממשפחת ריהוט',
-  (select count(*)::int from income_categories where family = 'furniture'), 2);
+select t_eq('חמש קטגוריות נזרעו',
+  (select count(*)::int from income_categories where deleted_at is null), 5);
+select t_eq('שלוש ממשפחת ריהוט — ישן, חדש וכיסאות',
+  (select count(*)::int from income_categories where family = 'furniture'), 3);
 select t_eq('אחוז עלות המעביד נזרע',
   (select (value ->> 'pct')::numeric from app_settings where key = 'finance.employer_cost'), 30::numeric);
 
@@ -85,7 +85,7 @@ select t_expect_fail('בלי finance.manage_splits: כתיבת חלוקה נחס
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000012a1', false);
 
 select t_eq('מנהלת הכספים רואה את הקטלוג',
-  (select count(*)::int from income_categories), 4);
+  (select count(*)::int from income_categories), 5);
 select t_eq('ורואה את חלוקות הלקוח',
   (select count(*)::int from customer_income_splits
     where customer_id = '10000000-0000-0000-0000-000000000012'), 2);

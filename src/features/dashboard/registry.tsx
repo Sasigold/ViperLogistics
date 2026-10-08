@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Armchair,
   Banknote,
   Bell,
   Building2,
@@ -90,6 +91,7 @@ import {
   UnderstaffedWidget,
 } from './widgets/sectionWidgets'
 import {
+  ChairsCommissionWidget,
   FurnitureIncomeWidget,
   IncomeMixWidget,
   LogisticsIncomeWidget,
@@ -159,7 +161,7 @@ export const WIDGETS: WidgetDef[] = [
   {
     id: 'finance.furniture_income',
     title: 'הכנסות מריהוט',
-    description: 'ריהוט ישן וחדש שהוזנו על אירועים בטווח',
+    description: 'ריהוט ישן, חדש וכיסאות שהוזנו על אירועים בטווח',
     group: 'finance',
     icon: icon(Banknote),
     perms: [PERM.FINANCE_INCOME_VIEW],
@@ -169,6 +171,21 @@ export const WIDGETS: WidgetDef[] = [
     wantsDelta: true,
     sections: ['income.by_category'],
     Component: FurnitureIncomeWidget,
+  },
+  /* ‏0212: העמלה שנקבעה ביד על הכיסאות — כולה של וייפר. */
+  {
+    id: 'finance.chairs_commission',
+    title: 'עמלה מכיסאות',
+    description: 'העמלה שנקבעה ביד על הכיסאות באירועים שבטווח — נספרת כולה לוייפר',
+    group: 'finance',
+    icon: icon(Armchair),
+    perms: [PERM.FINANCE_INCOME_VIEW],
+    sizes: ['sm'],
+    defaultOn: true,
+    usesRange: true,
+    wantsDelta: true,
+    sections: ['income.by_category'],
+    Component: ChairsCommissionWidget,
   },
   {
     id: 'finance.logistics_income',
@@ -1312,6 +1329,7 @@ export const BUILT_IN_DEFAULT: DashboardLayout = {
 
     /* שורת הכספים של המערכת הישנה (0068/0069) */
     { id: 'finance.furniture_income', size: 'sm' },
+    { id: 'finance.chairs_commission', size: 'sm' },
     { id: 'finance.logistics_income', size: 'sm' },
     { id: 'finance.payroll_employer', size: 'sm' },
     { id: 'finance.viper_owed', size: 'sm' },
