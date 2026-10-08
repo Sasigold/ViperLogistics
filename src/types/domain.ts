@@ -2026,6 +2026,75 @@ export interface AttendanceReport {
   }
 }
 
+/** שורה אחת מקובץ הסיבוס, כפי שהדפדפן שולח אותה ל-`cibus_import` (0210) */
+export interface CibusImportRow {
+  txn_no: number
+  /** שעון ישראל, בלי אזור זמן: '2026-08-31T00:25'. השרת ממקם אותה. */
+  occurred_local: string
+  user_no: number | null
+  first_name: string | null
+  last_name: string | null
+  employee_name: string
+  merchant: string | null
+  deal_type: string | null
+  amount: number
+  company_part: number | null
+  employee_part: number | null
+}
+
+export interface CibusImportResult {
+  inserted: number
+  updated: number
+  /** עובדי סיבוס מהקובץ שטרם צומדו לעובד במערכת */
+  unlinked: { link_key: string; employee_name: string }[]
+}
+
+export interface CibusTransaction {
+  id: string
+  txn_no: number
+  occurred_at: string
+  link_key: string
+  /** השם כפי שהוא בסיבוס */
+  employee_name: string
+  /** null כשעובד הסיבוס טרם צומד לעובד במערכת */
+  profile_id: string | null
+  full_name: string | null
+  merchant: string | null
+  deal_type: string | null
+  amount: number
+  /** דיווח הנוכחות שהמשיכה נפלה בו (או עד שעה לפניו/אחריו); null = בלי נוכחות */
+  entry_id: string | null
+}
+
+export interface CibusEmployeeTotals {
+  profile_id: string
+  full_name: string
+  count: number
+  amount: number
+  matched_count: number
+  matched_amount: number
+  unmatched_count: number
+  unmatched_amount: number
+}
+
+export interface CibusReport {
+  transactions: CibusTransaction[]
+  employees: CibusEmployeeTotals[]
+  unlinked: { link_key: string; employee_name: string; count: number; amount: number }[]
+  totals: {
+    count: number
+    amount: number
+    matched_count: number
+    matched_amount: number
+    /** בלי נוכחות — של עובדים שזוהו בלבד (0211); מי שלא זוהה נספר ב-unlinked_* */
+    unmatched_count: number
+    unmatched_amount: number
+    unlinked_count: number
+    unlinked_amount: number
+  }
+  last_import_at: string | null
+}
+
 export interface WorkerPaySettings {
   profile_id: string
   hourly_rate: number | null

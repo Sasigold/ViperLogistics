@@ -20,9 +20,11 @@ import {
   PieChart,
   Plus,
   PlusCircle,
+  Receipt,
   STROKE,
   SlidersHorizontal,
   Timer,
+  Upload,
   Wallet,
   XCircle,
 } from '../../components/ui/icons'
@@ -72,7 +74,11 @@ import {
   visibleFlags,
 } from './shiftFormat'
 import type { ShiftTone } from './shiftFormat'
-import type { AttendanceReportRow, AttendanceStatus } from '../../types/domain'
+import type { AttendanceReportRow, AttendanceStatus, CibusTransaction } from '../../types/domain'
+import { useCibusReport } from './cibusQueries'
+import { cibusByEntry, cibusLine, cibusTime, fmtCibusAmount } from './cibus'
+import { CibusImportModal } from './CibusImportModal'
+import { CibusSummaryCard } from './CibusSummaryCard'
 import { errorMessage } from '../../lib/errors'
 
 const HEBREW_MONTH_NAMES = [
@@ -199,13 +205,15 @@ interface ShiftRowView {
   tone: ShiftTone
   row: AttendanceReportRow
   hours: number
+  /** משיכות הסיבוס שנפלו במשמרת, או עד שעה לפניה/אחריה (0210) */
+  cibus: CibusTransaction[]
 }
 
 /**
  * משמרת אחת לתצוגה. הכל נגזר מהשורה עצמה ולא ממצב המסך, ולכן זה יושב מחוץ
  * לרכיב.
  */
-function toShiftView(r: AttendanceReportRow, sameDayCount: number): ShiftRowView {
+function toShiftView(r: AttendanceReportRow, sameDayCount: number, cibus: CibusTransaction[] = []): ShiftRowView {
   const clockIn = new Date(r.clock_in_at)
   /* התאריך על הכרטיס הוא של הכניסה בפועל ולא `work_date`, שהוא תאריך
      המשמרת המתוכננת: מי שנכנס ב-23:45 למשמרת של 00:30 עבד בערב הזה, וכרטיס
@@ -253,6 +261,7 @@ function toShiftView(r: AttendanceReportRow, sameDayCount: number): ShiftRowView
     tone: shiftTone(r),
     row: r,
     hours: actual,
+    cibus,
   }
 }
 
@@ -265,6 +274,13 @@ interface EmployeeGroup {
   bonus: number
   total: number | null
   shifts: ShiftRowView[]
+}
+
+/** הסיבוס של עובד בחודש, כפי שהשרת סיכם אותו (0210) */
+interface EmployeeCibus {
+  amount: number
+  unmatchedCount: number
+  unmatchedAmount: number
 }
 
 export default function AttendanceReportPage() {
@@ -312,6 +328,8 @@ export function AttendanceReport({
    * ומפתח כזה רק היה מכפיל את ההכרעה בשני מקומות.
    */
   const canOpenRow = true
+  /** סיבוס (0210): ייבוא הקובץ והצלבתו מול המשמרות. אנשי צוות בלבד. */
+  const canCibus = has(PERM.ATTENDANCE_CIBUS)
 
   const toast = useToast()
 
@@ -339,6 +357,7 @@ export function AttendanceReport({
   const [status, setStatus] = useState<AttendanceStatus | ''>('')
   const [selected, setSelected] = useState<AttendanceReportRow | null>(null)
   const [adding, setAdding] = useState(false)
+  const [importingCibus, setImportingCibus] = useState(false)
 
   // עובד שרואה רק את עצמו לא מקבל מסנן עובדים ולא מסנן קבלנים, ולכן גם לא
   // משלם על שתי השאילתות שממלאות אותם — profiles ו-contractors היו חוזרים
@@ -364,6 +383,24 @@ export function AttendanceReport({
   })
 
   /**
+   * הסיבוס של אותו חודש ואותו סינון עובדים. ההצלבה (איזו משיכה נפלה באיזו
+   * משמרת) והסיכומים מגיעים מהשרת; כאן רק מצמידים כל משיכה לשורה שלה.
+   */
+  const { data: cibus } = useCibusReport({ from, to, profileIds }, canCibus)
+  const cibusMap = useMemo(() => cibusByEntry(cibus), [cibus])
+  const hasCibus = (cibus?.totals.count ?? 0) > 0
+  const employeeCibus = useMemo(
+    () =>
+      new Map<string, EmployeeCibus>(
+        (cibus?.employees ?? []).map((e) => [
+          e.profile_id,
+          { amount: e.amount, unmatchedCount: e.unmatched_count, unmatchedAmount: e.unmatched_amount },
+        ]),
+      ),
+    [cibus],
+  )
+
+  /**
    * הייצוא הוא הסיבה היחידה ש-ExcelJS ייטען, ולכן הוא נטען רק בלחיצה —
    * אותו דפוס של ExcelDialog. הנתונים הם בדיוק מה שהמסך כבר קיבל, כדי
    * שהקובץ יסכים עם המסך גם כשמסננים.
@@ -374,7 +411,7 @@ export function AttendanceReport({
     setExporting(true)
     try {
       const { exportAttendanceReport } = await import('./exportAttendance')
-      await exportAttendanceReport(data, { from, to })
+      await exportAttendanceReport(data, { from, to }, hasCibus ? cibus : null)
     } catch (e) {
       toast.error(errorMessage(e))
     } finally {
@@ -478,8 +515,8 @@ export function AttendanceReport({
           a.seq - b.seq ||
           a.clock_in_at.localeCompare(b.clock_in_at),
       )
-      .map((r) => toShiftView(r, perDay.get(dayOf(r)) ?? 1))
-  }, [rows])
+      .map((r) => toShiftView(r, perDay.get(dayOf(r)) ?? 1, cibusMap.get(r.id)))
+  }, [rows, cibusMap])
 
   /**
    * קיבוץ לפי עובד, לדוח שיש בו יותר מאחד. זה מה שהופך את "הבונוס נספר
@@ -662,6 +699,28 @@ export function AttendanceReport({
       },
     ]
 
+    // ‏0210: הסיבוס שנמשך במשמרת. רק כשיש בכלל סיבוס בחודש.
+    if (hasCibus) {
+      base.push({
+        key: 'cibus',
+        header: 'סיבוס',
+        align: 'end',
+        sortValue: (r) => (cibusMap.get(r.id) ?? []).reduce((a, t) => a + t.amount, 0),
+        render: (r) => {
+          const list = cibusMap.get(r.id)
+          if (!list?.length) return <span className="text-ink-tertiary">—</span>
+          return (
+            <span
+              className="tabular-nums font-semibold"
+              title={list.map(cibusLine).join('\n')}
+            >
+              {list.map((t) => fmtCibusAmount(t.amount)).join(' + ')}
+            </span>
+          )
+        },
+      })
+    }
+
     // עמודת הבונוס מופיעה רק כשיש בונוסים בכלל, ותמיד לפני "שכר" — שכבר
     // כולל אותה, כי הסך מגיע מחושב מהשרת.
     if (showMoney && showBonus) {
@@ -698,7 +757,7 @@ export function AttendanceReport({
       })
     }
     return base
-  }, [showMoney, showBonus, showEmployeeFilter, showOvertime])
+  }, [showMoney, showBonus, showEmployeeFilter, showOvertime, hasCibus, cibusMap])
 
   const cardList = (list: ShiftRowView[]) => (
     <div className="space-y-2">
@@ -802,7 +861,7 @@ export function AttendanceReport({
       <div
         className={cx(
           'grid gap-3 grid-cols-2 sm:grid-cols-4',
-          (showMoney && showBonus ? 1 : 0) + (showMoney ? 1 : 0) >= 1 && 'lg:grid-cols-6',
+          (showMoney && showBonus ? 1 : 0) + (showMoney ? 1 : 0) + (hasCibus ? 1 : 0) >= 1 && 'lg:grid-cols-6',
         )}
       >
         <SummaryTile
@@ -844,6 +903,21 @@ export function AttendanceReport({
             value={fmtMoney(totals?.bonus ?? 0)}
             hint="כלול בסך לתשלום"
             tone="#1fa189"
+          />
+        )}
+        {hasCibus && cibus && (
+          <SummaryTile
+            icon={<Receipt size={ICON.xl} strokeWidth={STROKE} />}
+            label="סיבוס"
+            value={fmtCibusAmount(cibus.totals.amount)}
+            hint={
+              cibus.totals.unmatched_count > 0
+                ? `${cibus.totals.unmatched_count} בלי נוכחות`
+                : cibus.totals.unlinked_count > 0
+                  ? `${cibus.totals.unlinked_count} לא זוהו`
+                  : 'הכול בזמן משמרת'
+            }
+            tone="#e8590c"
           />
         )}
         {showMoney && (
@@ -918,6 +992,12 @@ export function AttendanceReport({
               </Select>
             </div>
           )}
+          {canCibus && (
+            <Button variant="ghost" size="sm" onClick={() => setImportingCibus(true)}>
+              <Upload size={ICON.sm} strokeWidth={STROKE} />
+              ייבוא סיבוס
+            </Button>
+          )}
           {exportButton}
         </div>
       </div>
@@ -962,6 +1042,15 @@ export function AttendanceReport({
                   {showMoney && g.bonus > 0 && (
                     <span className="tabular font-semibold text-accent-700 dark:text-accent-300">
                       בונוס {fmtMoney(g.bonus)}
+                    </span>
+                  )}
+                  {employeeCibus.get(g.profileId) && (
+                    <span className="tabular">סיבוס {fmtCibusAmount(employeeCibus.get(g.profileId)!.amount)}</span>
+                  )}
+                  {(employeeCibus.get(g.profileId)?.unmatchedCount ?? 0) > 0 && (
+                    <span className="tabular font-semibold text-error-text">
+                      {employeeCibus.get(g.profileId)!.unmatchedCount} בלי נוכחות ·{' '}
+                      {fmtCibusAmount(employeeCibus.get(g.profileId)!.unmatchedAmount)}
                     </span>
                   )}
                   {showMoney && g.total != null && (
@@ -1013,8 +1102,12 @@ export function AttendanceReport({
         </Card>
       )}
 
+      {/* ‏0210: הסיבוס של החודש — ובעיקר המשיכות שלא היה מולן דיווח נוכחות */}
+      {!isLoading && !error && cibus && hasCibus && <CibusSummaryCard report={cibus} />}
+
       <AttendanceEntryDrawer row={selected} onClose={() => setSelected(null)} />
       {adding && <ManualEntryModal onClose={() => setAdding(false)} />}
+      {importingCibus && <CibusImportModal onClose={() => setImportingCibus(false)} />}
     </div>
   )
 }
@@ -1228,6 +1321,26 @@ function ShiftCard({
             <Banknote size={ICON.xs} strokeWidth={STROKE} />
             {fmtMoney(d.bonus)}
           </span>
+        </p>
+      )}
+
+      {/* ‏0210: סיבוס שנמשך במשמרת — כמה ואיפה. שורה משלו, כמו הבונוס בטלפון. */}
+      {d.cibus.length > 0 && (
+        <p className="order-last flex w-full flex-wrap justify-end gap-1">
+          {d.cibus.map((t) => (
+            <span
+              key={t.id}
+              className="inline-flex max-w-full items-center gap-1 rounded-lg border border-line-subtle bg-subtle px-2 py-0.5 type-caption"
+              title={t.deal_type ?? undefined}
+            >
+              <Receipt size={ICON.xs} strokeWidth={STROKE} className="shrink-0 text-ink-tertiary" />
+              <span className="font-bold tabular">{fmtCibusAmount(t.amount)}</span>
+              <span className="truncate text-ink-secondary">{t.merchant ?? 'סיבוס'}</span>
+              <span className="tabular text-ink-tertiary" dir="ltr">
+                {cibusTime(t.occurred_at)}
+              </span>
+            </span>
+          ))}
         </p>
       )}
 

@@ -20,7 +20,7 @@ Commands: `npm run dev` · `lint` (oxlint) · `typecheck` (`tsc -b`) · `test:un
 `test:db` (`supabase/tests/run.sh`, scratch Postgres in /var/tmp, needs root/sudo + PG16+) · `test` (both) · `build`.
 CI (`.github/workflows/ci.yml`): lint, typecheck, unit, build; plus a `database` job running run.sh.
 
-Repo layout: `src/` frontend · `supabase/migrations` (0001..0209) · `supabase/functions` · `supabase/tests` · `docs/` · `public/`.
+Repo layout: `src/` frontend · `supabase/migrations` (0001..0211) · `supabase/functions` · `supabase/tests` · `docs/` · `public/`.
 There is no `supabase/config.toml`; `verify_jwt` per function and all secrets/GUCs live in the Supabase dashboard/CLI.
 Production migrations are applied out-of-band (Supabase MCP `apply_migration`/`list_migrations` or dashboard) — run `list_migrations` first.
 
@@ -60,7 +60,7 @@ Production migrations are applied out-of-band (Supabase MCP `apply_migration`/`l
 
 ## 3. Making changes — recipes
 
-**New migration**: `supabase/migrations/0210_<slug>.sql` (next number; note duplicate 0113/0175 exist, 0202/0203 are the wall feed on branch `claude/wall-feed-crew` and 0206 is on `claude/viperflow-lock-and-event-payments`, both already in prod). Header: `-- 0210: title`, Hebrew narrative
+**New migration**: `supabase/migrations/0212_<slug>.sql` (next number; note duplicate 0113/0175 exist, 0202/0203 are the wall feed on branch `claude/wall-feed-crew` and 0206 is on `claude/viperflow-lock-and-event-payments`, both already in prod). Header: `-- 0212: title`, Hebrew narrative
 (what/why, cite earlier migrations), then `-- ===== N. section =====` blocks, `create or replace function ... security definer set search_path = public`,
 revoke/grant. Views respecting RLS: `security_invoker`. Redefine whole functions/views (`work_board_view` has been redefined 21× — copy latest, 0201).
 Then add/extend a test suite and make sure `test:db` passes.
@@ -79,7 +79,7 @@ invalidate by prefix. For live-update lists use a key starting with `workboard|d
 **New dashboard widget**: component in `dashboard/widgets/*` → register in `dashboard/registry.tsx` → section key in `dashboard/sections.ts` + SQL section in `dashboard_sections` (latest 0174; redefined in full).
 KPI card: `widgets/kpi.tsx` factory. Custom user widgets: `dashboard/builder/` (`widgetSpec.ts`).
 
-**New SQL test**: `supabase/tests/62_<slug>.sql`, copy header from `61_*`; own UUID prefixes; dates far out (`current_date + N`, N > 870); assert as `set role authenticated` + `set_config('request.jwt.claim.sub',...)`;
+**New SQL test**: `supabase/tests/63_<slug>.sql`, copy header from `62_*`; own UUID prefixes; dates far out (`current_date + N`, N > 870); assert as `set role authenticated` + `set_config('request.jwt.claim.sub',...)`;
 helpers `t_eq/t_rows/t_expect_fail/t_expect_ok`; reset role; **append a block to `run.sh`** (run order is hard-coded).
 
 **Settings tab**: `features/settings/SettingsPage.tsx` `TABS` array (each has `perm`). **Notification type**: emitters 0110+, gating `app.notification_enabled` (0086), insert `app.notify` (0054), sender `functions/notify-dispatch`.
@@ -106,7 +106,7 @@ Timestamps are stamped server-side; avoid client-side "now" for business logic. 
 
 | Module | Routes / entry | Change X → go to |
 |---|---|---|
-| attendance | `/shifts` `/attendance` `/my/schedule` `/my/attendance` | data hooks `attendanceQueries.ts`; board window/filters `shiftBoard.ts`; Excel `exportAttendance.ts`; overtime UI `OvertimeSettingsTab`; clock UI `TimeClockPage`, geo `useGeolocation/LocationPicker`; pay math is SQL (`app.attendance_calc`) |
+| attendance | `/shifts` `/attendance` `/my/schedule` `/my/attendance` | data hooks `attendanceQueries.ts`; board window/filters `shiftBoard.ts`; Excel `exportAttendance.ts` (workbook: summary + sheet per employee + flat + Cibus); Cibus import (0210) `cibus.ts` parser, `cibusQueries.ts`, `CibusImportModal`/`CibusSummaryCard`, RPCs `cibus_import/link/report`; overtime UI `OvertimeSettingsTab`; clock UI `TimeClockPage`, geo `useGeolocation/LocationPicker`; pay math is SQL (`app.attendance_calc`) |
 | calendar | `/calendar` | everything in `CalendarPage.tsx` (1134 lines; FullCalendar, `update_event`, `saved_filters`) |
 | contractors | `/contractors(/:id)`, `/my/staff` | terms/payments UI `ContractorDetailPage`; own staff `MyStaffPage`; worker-assign hooks in `lib/queries.ts` |
 | customers | `/customers(/:id)`, `/my/crew` | pricing editor `PricingTab` + `pricingSchema.ts` (mirrors `app.price_calc`); income split `IncomeSplitTab`; board/form fields in `CustomerDetailPage`; crew visibility → `tasks/crewVisibility.ts` |
@@ -136,7 +136,7 @@ Pattern: pure logic in `*.ts` with sibling `*.test.ts` (vitest is node-only, no 
 0016-0018 activity log + pricing · attendance ≈ 0019-0025/0034/0060/0065/0152/0166 · 0030-0031/0046-0054/0086/0110/0167 notifications ·
 0038-0045/0058-0059/0174 dashboard/reports · 0068-0070/0074/0087/0164/0186 income/receipts/P&L · contractors 0072/0075/0091-0108/0155 ·
 0077-0078/0102/0107 specs & signature · 0089-0090 vehicles · 0101 scoped realtime · 0109-0147 customer board, Arco-performed, recycle bin, customer crew ·
-0159-0169 login/delete/hour-fix/clock · 0170-0175/0181 quote, load heatmap · 0176-0177/0187-0195 ViperFlow · 0182-0186/0199 Arco · 0178-0180/0196-0201 customer worker accounts, warehouse schedule, worker pay view, cancelled releases crew, crew-is-people · 0204 per-event ViperFlow sync lock · 0205 event payments (`receipts.event_id/method`, `/payments`) · 0206 receipts guard + unlock catch-up (branch `claude/viperflow-lock-and-event-payments`, in prod) · 0207 event manual charges + cash wallet (`/wallet`) · 0208 payments customer filter · 0209 deleting an event soft-deletes its tasks (same stamp; restore brings them back), `app.live_tasks` also drops tasks of deleted events.
+0159-0169 login/delete/hour-fix/clock · 0170-0175/0181 quote, load heatmap · 0176-0177/0187-0195 ViperFlow · 0182-0186/0199 Arco · 0178-0180/0196-0201 customer worker accounts, warehouse schedule, worker pay view, cancelled releases crew, crew-is-people · 0204 per-event ViperFlow sync lock · 0205 event payments (`receipts.event_id/method`, `/payments`) · 0206 receipts guard + unlock catch-up (branch `claude/viperflow-lock-and-event-payments`, in prod) · 0207 event manual charges + cash wallet (`/wallet`) · 0208 payments customer filter · 0209 deleting an event soft-deletes its tasks (same stamp; restore brings them back), `app.live_tasks` also drops tasks of deleted events · 0210 Cibus import (`cibus_transactions`, `cibus_user_links`, match ±1h via `app.cibus_entry_for`, perm `attendance.cibus`) · 0211 Cibus: guess/link staff only, `unmatched_*` excludes unlinked.
 
 Core tables: identity (`profiles`, `staff_roles`, `profile_roles`, `customers`, `contractors`, `contractor_workers`, `customer_workers`) · work (`events`, `tasks`, `task_assignments` (one row per role),
 `task_contractor_terms`, `task_contractor_workers`, `task_customer_workers`, `task_pricing`, `task_price_addons`, `event_activity/specs/signatures/quotes/income/suppliers/contacts`, `warehouse_tasks`, `warehouses`, `trucks`, `vehicles*`) ·

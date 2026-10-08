@@ -627,6 +627,15 @@ OUT="$OUT
 $OUT61"
 
 echo
+echo "== the cibus meets the clock suite =="
+# 62 מקימה ארבע דמויות, משמרות ומשיכות סיבוס משלה ב-current_date + 1040,
+# מעבר לכל טווח אחר. היא רצה אחרונה כי היא משאירה אחריה נוכחות ומשיכות.
+OUT62=$($PSQL -d vl -f "$HERE/62_the_cibus_meets_the_clock.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT62"
+OUT="$OUT
+$OUT62"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
