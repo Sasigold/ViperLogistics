@@ -5,6 +5,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { addMonths, differenceInCalendarDays, eachDayOfInterval, endOfMonth, isSameMonth, parseISO, startOfMonth } from 'date-fns'
 import {
   CalendarCheck,
+  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -419,8 +420,8 @@ export default function WorkBoardPage() {
     canTune ? (prefs.current.emptyDays ?? FIXED_VIEW.emptyDays) : FIXED_VIEW.emptyDays,
   )
   const [viewMode, setViewMode] = useState<ViewMode>(canTune ? (prefs.current.view ?? FIXED_VIEW.view) : FIXED_VIEW.view)
-  /** "go to today" asked for a range that isn't loaded yet — scroll once it is */
-  const [jumpPending, setJumpPending] = useState(false)
+  /** the day "go to today" or the date picker asked for — scrolled to once its month is loaded */
+  const [jumpTo, setJumpTo] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   /** phone only — the field lives behind its icon until it is asked for */
   const [searchOpen, setSearchOpen] = useState(false)
@@ -909,51 +910,60 @@ export default function WorkBoardPage() {
   const now = new Date()
   const shiftMonth = (by: number) => setMonth((m) => addMonths(m, by))
 
-  /* ── jump to today ────────────────────────────────────────────────────────
+  /* ── jump to a day (today, or one picked from the month title) ────────────
      Not `virtualizer.scrollToIndex`: virtual-core reads a horizontal offset as
      `scrollLeft * -1` under RTL but writes it back unnegated, so every scroll
      it performs here would land on the mirror image of the target. The offset
      we need is one we already compute — a day band's `start` — so the scroller
-     is driven directly, with the sign the library itself reads by.          */
+     is driven directly, with the sign the library itself reads by.
 
-  const scrollToToday = useCallback(() => {
-    const band = bands.find((b) => b.dayKey === today)
-    if (!band) return false
-    if (asCards) {
-      const section = cardsRef.current?.querySelector(`[data-day="${today}"]`)
-      section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      return !!section
-    }
-    const el = scrollRef.current
-    if (!el) return false
-    /* `start` is measured along the track, and the legend is sticky *over* it
-       rather than pushing it, so it needs no allowance here. */
-    const offset = Math.max(0, band.start - 8)
-    el.scrollTo({ left: getComputedStyle(el).direction === 'rtl' ? -offset : offset, behavior: 'smooth' })
-    return true
-  }, [bands, today, asCards])
+     A day with no column (empty days hidden) lands on the first day after it
+     that has one, else the last day before it — a jump that moves nowhere
+     reads as a broken button. Returns the day it landed on, or null.        */
 
-  const goToToday = () => {
+  const scrollToDay = useCallback(
+    (dayKey: string) => {
+      const band = bands.find((b) => b.dayKey >= dayKey) ?? bands[bands.length - 1]
+      if (!band) return null
+      if (asCards) {
+        const section = cardsRef.current?.querySelector(`[data-day="${band.dayKey}"]`)
+        section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        return section ? band.dayKey : null
+      }
+      const el = scrollRef.current
+      if (!el) return null
+      /* `start` is measured along the track, and the legend is sticky *over* it
+         rather than pushing it, so it needs no allowance here. */
+      const offset = Math.max(0, band.start - 8)
+      el.scrollTo({ left: getComputedStyle(el).direction === 'rtl' ? -offset : offset, behavior: 'smooth' })
+      return band.dayKey
+    },
+    [bands, asCards],
+  )
+
+  const goToDay = (dayKey: string) => {
     // a folded day would otherwise "arrive" as a 46px spine
-    setCollapsedDays((s) => (s.has(today) ? new Set([...s].filter((d) => d !== today)) : s))
-    if (isSameMonth(month, now)) {
-      if (!scrollToToday()) toast.info('אין משימות היום בטווח המוצג')
-      return
-    }
-    setMonth(startOfMonth(now))
-    setJumpPending(true)
+    setCollapsedDays((s) => (s.has(dayKey) ? new Set([...s].filter((d) => d !== dayKey)) : s))
+    const target = parseISO(dayKey)
+    if (!isSameMonth(month, target)) setMonth(startOfMonth(target))
+    setJumpTo(dayKey)
   }
 
-  /* the range change has to round-trip to the server before today has a column
-     to scroll to; the flag clears after one attempt either way */
+  /* a month change has to round-trip to the server before the day has a column
+     to scroll to, and an unfolded day has to render first; either way the
+     request clears after one attempt */
   useEffect(() => {
-    if (!jumpPending || isLoading) return
-    if (!scrollToToday()) toast.info('אין משימות היום בטווח המוצג')
-    setJumpPending(false)
-  }, [jumpPending, isLoading, scrollToToday, toast])
+    if (!jumpTo || isLoading) return
+    const landed = scrollToDay(jumpTo)
+    if (landed !== jumpTo) {
+      const when = jumpTo === today ? 'היום' : `ב-${fmtDate(jumpTo)}`
+      toast.info(landed ? `אין משימות ${when} — הוצג היום הקרוב` : `אין משימות ${when}`)
+    }
+    setJumpTo(null)
+  }, [jumpTo, isLoading, scrollToDay, today, toast])
 
   /* ── חזרה מהאירוע: הגלילה לעוגן ─────────────────────────────────────────
-     בצורת `jumpPending` שמעליו, ומאותה סיבה — החודש צריך לחזור מהשרת לפני
+     בצורת `jumpTo` שמעליו, ומאותה סיבה — החודש צריך לחזור מהשרת לפני
      שיש עמודה לגלול אליה. שלוש הכרעות:
 
        • **ניסיון אחד לכל עוגן.** ‏`restoredRef` נסגר גם כשנמצא וגם כשלא:
@@ -971,7 +981,7 @@ export default function WorkBoardPage() {
 
     /* יום מקופל אינו נושא עמודה אלא שדרה ברוחב 46px. פותחים אותו ויוצאים —
        ה-effect ירוץ שוב עם ההיסטים החדשים, בדיוק כמו הפתיחה המקדימה של
-       `goToToday`. */
+       `goToDay`. */
     const col = columns.find((c) => c.kind === 'task' && c.id === atParam)
     if (col && collapsedDays.has(col.dayKey)) {
       setCollapsedDays((s) => new Set([...s].filter((d) => d !== col.dayKey)))
@@ -995,7 +1005,7 @@ export default function WorkBoardPage() {
       return
     }
     /* מרכוז, ולא `start - 8` של רצועת היום: היעד הוא עמודה אחת, והחלון
-       הזמין הוא הרוחב פחות הלגנדה הדביקה. ‏RTL כמו ב-`scrollToToday` —
+       הזמין הוא הרוחב פחות הלגנדה הדביקה. ‏RTL כמו ב-`scrollToDay` —
        ‏`virtualizer.scrollToIndex` שבור כאן, ראו ההערה שלמעלה. */
     const room = el.clientWidth - metrics.legend - metrics.col
     const offset = Math.max(0, start - Math.max(0, room) / 2)
@@ -1024,22 +1034,45 @@ export default function WorkBoardPage() {
 
   /* One control for the whole date question: which month. The arrows are
      logical — "back" is the inline-end side under RTL — so the chevrons point
-     the way the reader's eye travels. */
+     the way the reader's eye travels. The title between them opens a date
+     picker: paging month by month to a date three months out was the slow
+     way to answer "what do we have on the 14th". */
   const monthNav = (
     <div className="flex shrink-0 items-center gap-0.5 rounded-lg bg-subtle p-0.5">
       <IconButton label="חודש קודם" size="sm" bare onClick={() => shiftMonth(-1)}>
         <ChevronRight size={ICON.sm} strokeWidth={STROKE} className="rtl:rotate-0 ltr:rotate-180" />
       </IconButton>
-      <button
-        onClick={() => setMonth(startOfMonth(now))}
-        title="חזרה לחודש הנוכחי"
-        className={cx(
-          'min-w-24 rounded-md px-2 py-0.5 text-center type-caption font-bold transition-colors hover:bg-hover',
-          isSameMonth(month, now) ? 'text-ink' : 'text-ink-secondary',
+      <Popover
+        trigger={({ toggle, ...aria }) => (
+          <button
+            type="button"
+            onClick={toggle}
+            {...aria}
+            title="מעבר לתאריך"
+            className={cx(
+              'flex min-w-24 items-center justify-center gap-1 rounded-md px-2 py-0.5 type-caption font-bold transition-colors hover:bg-hover',
+              isSameMonth(month, now) ? 'text-ink' : 'text-ink-secondary',
+            )}
+          >
+            {fmtMonth(month)}
+            <CalendarDays size={ICON.xs} strokeWidth={STROKE} className="text-ink-tertiary" />
+          </button>
         )}
       >
-        {fmtMonth(month)}
-      </button>
+        {(close) => (
+          <DateJumpPanel
+            initial={isSameMonth(month, now) ? today : from}
+            onPick={(dayKey) => {
+              close()
+              goToDay(dayKey)
+            }}
+            onToday={() => {
+              close()
+              goToDay(today)
+            }}
+          />
+        )}
+      </Popover>
       <IconButton label="חודש הבא" size="sm" bare onClick={() => shiftMonth(1)}>
         <ChevronLeft size={ICON.sm} strokeWidth={STROKE} className="rtl:rotate-0 ltr:rotate-180" />
       </IconButton>
@@ -1182,9 +1215,9 @@ export default function WorkBoardPage() {
                 </>
               )}
 
-              {/* icon only on purpose: this scrolls to today's column, while
-                  the month title beside it jumps to today's *month* */}
-              <IconButton label="מעבר לעמודה של היום" size="sm" onClick={goToToday}>
+              {/* icon only on purpose: one click to today's column, while the
+                  month title beside it opens a picker for any other date */}
+              <IconButton label="מעבר לעמודה של היום" size="sm" onClick={() => goToDay(today)}>
                 <CalendarCheck size={ICON.sm} strokeWidth={STROKE} />
               </IconButton>
 
@@ -1640,6 +1673,102 @@ export default function WorkBoardPage() {
         />
       </div>
     </RequirePermission>
+  )
+}
+
+/* ===== date jump ==========================================================
+   The panel under the month title. The platform's own calendar opens as soon
+   as the panel does — the click on the title is the gesture `showPicker`
+   needs — and a day picked there jumps at once: that is the whole request.
+
+   "Picked" is the native `change` event, not React's `onChange` (which is
+   `input`). Inside Chrome's calendar every arrow key rewrites the value and
+   fires `input`; only a click on a day, or Enter, fires `change`. Jumping on
+   `input` would leave on the first arrow press.
+
+   Typing is the other trap. Every keystroke in the field fires `change` too,
+   and each finished segment is a valid date of its own (`0002`, `0020`,
+   `0202` on the way to `2026`), so a date edited by hand waits for Enter or
+   the button. A keydown on the field marks it typed; a pointer on the field
+   (its calendar icon included) clears the mark for the next pick.          */
+
+/** a date the board can show; the year guard is the partly-typed case */
+const isJumpDate = (v: string) => /^20\d\d-\d\d-\d\d$/.test(v)
+
+/** keys that edit a date field by hand, as opposed to moving through it */
+const isEditKey = (key: string) =>
+  key.length === 1 || key === 'Backspace' || key === 'Delete' || key === 'ArrowUp' || key === 'ArrowDown'
+
+function DateJumpPanel({
+  initial,
+  onPick,
+  onToday,
+}: {
+  initial: string
+  onPick: (dayKey: string) => void
+  onToday: () => void
+}) {
+  const [value, setValue] = useState(initial)
+  const typed = useRef(false)
+  const boxRef = useRef<HTMLDivElement>(null)
+  const pick = useRef(onPick)
+  useEffect(() => {
+    pick.current = onPick
+  })
+  const ready = isJumpDate(value)
+
+  useEffect(() => {
+    const el = boxRef.current?.querySelector('input')
+    if (!el) return
+    const onCommit = () => {
+      if (!typed.current && isJumpDate(el.value)) pick.current(el.value)
+    }
+    el.addEventListener('change', onCommit)
+    /* a frame later, so the panel has its place before the calendar anchors
+       to it */
+    const id = requestAnimationFrame(() => {
+      el.focus()
+      const picker = el as { showPicker?: () => void }
+      try {
+        picker.showPicker?.()
+      } catch {
+        /* no picker API, or an embedding iframe — the field is still there */
+      }
+    })
+    return () => {
+      cancelAnimationFrame(id)
+      el.removeEventListener('change', onCommit)
+    }
+  }, [])
+
+  return (
+    <div ref={boxRef} className="w-60 space-y-2 p-2">
+      <MenuLabel>מעבר לתאריך</MenuLabel>
+      <Input
+        type="date"
+        inputSize="sm"
+        aria-label="תאריך"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onPointerDown={() => {
+          typed.current = false
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            if (ready) onPick(value)
+          } else if (isEditKey(e.key)) typed.current = true
+        }}
+      />
+      <div className="flex gap-1.5">
+        <Button size="sm" variant="primary" block disabled={!ready} onClick={() => onPick(value)}>
+          מעבר
+        </Button>
+        <Button size="sm" variant="ghost" block onClick={onToday}>
+          היום
+        </Button>
+      </div>
+    </div>
   )
 }
 
