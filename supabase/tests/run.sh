@@ -676,6 +676,15 @@ OUT="$OUT
 $OUT66"
 
 echo
+echo "== the calendar answers in time suite =="
+# 67 מקימה לקוח, שני עובדים ושלושה אירועים משלה ב-current_date + 1140..1142,
+# מעבר לטווחים של 65, ואינה משנה תפקידים משותפים.
+OUT67=$($PSQL -d vl -f "$HERE/67_the_calendar_answers_in_time.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT67"
+OUT="$OUT
+$OUT67"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
