@@ -8,6 +8,7 @@ import { router } from './app/router'
 import { dismissSplash } from './app/splash'
 import { ErrorBoundary, ToastProvider } from './components/ui'
 import { reportError } from './lib/reportError'
+import { clearCachedReads } from './lib/cachedReads'
 import { useAuth } from './state/auth'
 import { installZoomGuard } from './lib/zoomGuard'
 
@@ -32,6 +33,23 @@ const queryClient = new QueryClient({
     onError: (error, _vars, _ctx, mutation) =>
       reportError(error, { kind: 'mutation', key: mutation.options.mutationKey?.join('/') }),
   }),
+})
+
+/**
+ * הנתונים שייכים למשתמש שקרא אותם. כשהוא יוצא או מתחלף באותה לשונית (מנהל
+ * שנכנס בשם עובד כדי לבדוק מה הוא רואה), ה-cache של React Query נשאר בזיכרון
+ * ומוצג מיד למי שנכנס — לוח השנה המלא של הקודם, עד שהשאילתה חוזרת. אז מנקים
+ * אותו, ואת המטמון של ה-service worker איתו (0217). הכניסה הראשונה (אין משתמש
+ * קודם) אינה מנקה: העותקים במטמון כבר שמורים לפי משתמש.
+ */
+let lastUserId: string | null = null
+useAuth.subscribe((state) => {
+  const userId = state.session?.user.id ?? null
+  if (lastUserId !== null && userId !== lastUserId) {
+    queryClient.clear()
+    void clearCachedReads()
+  }
+  lastUserId = userId
 })
 
 void useAuth.getState().boot().finally(dismissSplash)

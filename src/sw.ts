@@ -87,6 +87,32 @@ const SUPABASE_ORIGIN = (() => {
   }
 })()
 
+/*
+ * המטמון נשמר לפי משתמש. ‏ignoreVary למטה אומר שהכותרת Authorization אינה
+ * חלק מהמפתח, ועד 0217 המפתח היה ה-URL לבדו: כשהשרת איחר מעבר ל-4 שניות,
+ * עובד שנכנס במכשיר שבו מנהל פתח קודם את לוח השנה קיבל את לוח השנה **של
+ * המנהל** — כל האירועים, בלי RLS. עכשיו ה-`sub` של הטוקן נכנס למפתח, ועותק
+ * של משתמש אחד לעולם אינו עונה לאחר. (היציאה גם מנקה את המטמון כולו —
+ * ‏`clearCachedReads` ב-src/lib/cachedReads.ts.)
+ */
+function requestUser(request: Request): string {
+  const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '')
+  const payload = token?.split('.')[1]
+  if (!payload) return 'anon'
+  try {
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+    const sub = (JSON.parse(json) as { sub?: unknown }).sub
+    return typeof sub === 'string' && sub ? sub : 'anon'
+  } catch {
+    return 'anon'
+  }
+}
+
+// המטמון הישן נשמר לפי URL בלבד (ראו למעלה) — עותקים בו אינם של משתמש ידוע
+self.addEventListener('activate', (event: ExtendableEvent) => {
+  event.waitUntil(caches.delete('supabase-reads'))
+})
+
 registerRoute(
   ({ url, request }) =>
     SUPABASE_ORIGIN != null &&
@@ -94,10 +120,19 @@ registerRoute(
     url.pathname.startsWith('/rest/v1/') &&
     request.method === 'GET',
   new NetworkFirst({
-    cacheName: 'supabase-reads',
+    cacheName: 'supabase-reads-v2',
     networkTimeoutSeconds: 4,
     matchOptions: { ignoreVary: true },
-    plugins: [new ExpirationPlugin({ maxEntries: 64, maxAgeSeconds: 7 * 24 * 3600 })],
+    plugins: [
+      {
+        cacheKeyWillBeUsed: async ({ request }) => {
+          const key = new URL(request.url)
+          key.searchParams.set('__vl_user', requestUser(request))
+          return key.href
+        },
+      },
+      new ExpirationPlugin({ maxEntries: 64, maxAgeSeconds: 7 * 24 * 3600 }),
+    ],
   }),
 )
 
