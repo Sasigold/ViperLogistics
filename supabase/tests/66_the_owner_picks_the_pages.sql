@@ -288,6 +288,13 @@ select t_eq('ולא את של מנהלי המערכת', (select count(*)::int fr
 select t66_as('b3');
 select t_eq('צופה אצל לקוח אחר אינו קורא את השורות של הלקוח', (select count(*)::int from page_visibility
   where profile_id = '20000000-0000-0000-0000-0000000066b2'), 0);
+-- ‏0216: גם עמית אצל אותו לקוח, בלי "צפייה בעובדים", אינו קורא אותן.
+select t66_as('a1');
+select t_expect_ok('מנהל מערכת מסתיר את הדוחות ממנהל הלקוח',
+  $$select page_visibility_set('reports', false, p_profile_id => '20000000-0000-0000-0000-0000000066b1')$$);
+select t66_as('b2');
+select t_eq('והצופה אצל אותו לקוח אינו קורא את השורה של המנהל שלו (עד 0216: כן)',
+  (select count(*)::int from page_visibility where profile_id = '20000000-0000-0000-0000-0000000066b1'), 0);
 select t66_as('a3');
 select t_eq('עובד קורא את השורה האישית שלו', (select count(*)::int from page_visibility
   where profile_id = '20000000-0000-0000-0000-0000000066a3'), 1);
