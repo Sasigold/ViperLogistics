@@ -16,6 +16,7 @@ import { EmptyState, Kbd, cx } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
+import { hiddenPagesOf } from '../../app/pages'
 import type { SearchResult } from '../../types/domain'
 
 const KINDS = {
@@ -34,6 +35,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const [active, setActive] = useState(0)
   const navigate = useNavigate()
   const has = useAuth((s) => s.has)
+  const me = useAuth((s) => s.me)
   const listRef = useRef<HTMLDivElement>(null)
 
   /* ה-RPC רץ על הערך המושהה ולא על כל הקשה — "אולם" הוא חיפוש אחד ולא
@@ -60,8 +62,17 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
      scopes the rows, but a hit that navigates to a permission-denied card is
      worse than no hit: it offers a door that does not open. */
   const groups = useMemo(() => {
+    /* ‏0215: גם דף שהבעלים הסתיר הוא דלת שאינה נפתחת — עובד נפתח ברשימת
+       העובדים, ומשימה בלו״ז. כרטיסי אירוע ולקוח אינם דפים, ונפתחים תמיד. */
+    const hidden = hiddenPagesOf(me)
     const order = (['task', 'event', 'customer', 'profile'] as (keyof typeof KINDS)[]).filter((kind) =>
-      kind === 'customer' ? has(PERM.CUSTOMERS_VIEW) : kind === 'profile' ? has(PERM.USERS_VIEW) : true,
+      kind === 'customer'
+        ? has(PERM.CUSTOMERS_VIEW)
+        : kind === 'profile'
+          ? has(PERM.USERS_VIEW) && !hidden.has('users')
+          : kind === 'task'
+            ? !hidden.has('board')
+            : true,
     )
     const flat: SearchResult[] = []
     const out: { kind: keyof typeof KINDS; items: SearchResult[]; offset: number }[] = []
@@ -72,7 +83,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       flat.push(...items)
     }
     return { groups: out, flat }
-  }, [results, has])
+  }, [results, has, me])
 
   useEffect(() => setActive(0), [q, results])
   useEffect(() => {

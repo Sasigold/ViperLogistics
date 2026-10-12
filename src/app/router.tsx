@@ -125,39 +125,43 @@ export const router = createBrowserRouter([
              כל אחת מהן היא עכשיו נתיב של ממש, וכאן נשאר מה שהוא באמת —
              סיכום כספי. `portal.view` יכול לגדר אותו רק מפני ש-0071 §1 כיבה
              את ה-default_allowed שלו. */
-          { path: '/portal', handle: { perm: PERM.PORTAL_VIEW }, element: page(<PortalPage />) },
+          { path: '/portal', handle: { perm: PERM.PORTAL_VIEW, page: 'portal' }, element: page(<PortalPage />) },
           /* ‏`audience` ולא מפתח נוסף: המסך שייך לקבלן, ומנהל מערכת מחזיק את
              כל המפתחות בהגדרה — ראו forContractors ב-nav.ts. */
           {
             path: '/my/staff',
-            handle: { perm: PERM.PORTAL_MANAGE_WORKERS, audience: forContractors },
+            handle: { perm: PERM.PORTAL_MANAGE_WORKERS, audience: forContractors, page: 'my_staff' },
             element: page(<MyStaffPage />),
           },
           /* המקבילה של הלקוח שמבצע בעצמו (0133), על אותה הכרעה: המפתח ניתן
              לתפקיד `customer_manager` כולו, והדגל פר-לקוח הוא הגדר. */
           {
             path: '/my/crew',
-            handle: { perm: PERM.CUSTOMERS_MANAGE_OWN_STAFF, audience: forSelfPerformingCustomers },
+            handle: { perm: PERM.CUSTOMERS_MANAGE_OWN_STAFF, audience: forSelfPerformingCustomers, page: 'my_crew' },
             element: page(<MyCrewPage />),
           },
-          { path: '/calendar', handle: { perm: PERM.CALENDAR_VIEW }, element: page(<CalendarPage />) },
-          { path: '/board', handle: { perm: PERM.BOARD_VIEW }, element: page(<WorkBoardPage />) },
+          {
+            path: '/calendar',
+            handle: { perm: PERM.CALENDAR_VIEW, page: 'calendar' },
+            element: page(<CalendarPage />),
+          },
+          { path: '/board', handle: { perm: PERM.BOARD_VIEW, page: 'board' }, element: page(<WorkBoardPage />) },
           /* ‏0196: המפתח ניתן לתפקידים שלמים, והדגל פר-לקוח הוא הגדר — אותה
              הכרעה של `/my/crew`. */
           {
             path: '/warehouse',
-            handle: { perm: PERM.WAREHOUSE_VIEW, audience: forWarehouseSchedule },
+            handle: { perm: PERM.WAREHOUSE_VIEW, audience: forWarehouseSchedule, page: 'warehouse' },
             element: page(<WarehouseSchedulePage />),
           },
-          { path: '/reports', handle: { perm: PERM.REPORTS_VIEW }, element: page(<ReportsPage />) },
+          { path: '/reports', handle: { perm: PERM.REPORTS_VIEW, page: 'reports' }, element: page(<ReportsPage />) },
           {
             path: '/reports/profitability',
-            handle: { perm: PERM.REPORTS_VIEW },
+            handle: { perm: PERM.REPORTS_VIEW, page: 'profitability' },
             element: page(<CustomerProfitabilityPage />),
           },
           {
             path: '/reports/task-pnl',
-            handle: { perm: PERM.REPORTS_VIEW },
+            handle: { perm: PERM.REPORTS_VIEW, page: 'task_pnl' },
             element: page(<TaskPnlPage />),
           },
           /* מפתח משלה ולא `reports.view` (0173): המפה אומרת כמה עובדים
@@ -166,20 +170,40 @@ export const router = createBrowserRouter([
              המיגרציה לכל מי שכבר מחזיק `reports.view`. */
           {
             path: '/reports/load',
-            handle: { perm: PERM.REPORTS_LOAD },
+            handle: { perm: PERM.REPORTS_LOAD, page: 'load' },
             element: page(<LoadHeatmapPage />),
           },
-          { path: '/receipts', handle: { perm: PERM.FINANCE_RECEIPTS_VIEW }, element: page(<ReceiptsPage />) },
-          { path: '/payments', handle: { perm: PERM.FINANCE_EVENT_PAYMENTS_VIEW }, element: page(<EventPaymentsPage />) },
-          { path: '/wallet', handle: { perm: PERM.FINANCE_CASH_WALLET_VIEW }, element: page(<CashWalletPage />) },
+          {
+            path: '/receipts',
+            handle: { perm: PERM.FINANCE_RECEIPTS_VIEW, page: 'receipts' },
+            element: page(<ReceiptsPage />),
+          },
+          {
+            path: '/payments',
+            handle: { perm: PERM.FINANCE_EVENT_PAYMENTS_VIEW, page: 'payments' },
+            element: page(<EventPaymentsPage />),
+          },
+          {
+            path: '/wallet',
+            handle: { perm: PERM.FINANCE_CASH_WALLET_VIEW, page: 'wallet' },
+            element: page(<CashWalletPage />),
+          },
           /* הרשימה והדף אינם אותו מפתח: עובד שטח פותח אירוע שהוא משובץ אליו,
              ואין לו מה לעשות בקטלוג של כולם (0082). */
-          { path: '/events', handle: { perm: PERM.EVENTS_LIST }, element: page(<EventsPage />) },
+          { path: '/events', handle: { perm: PERM.EVENTS_LIST, page: 'events' }, element: page(<EventsPage />) },
           { path: '/events/:id', handle: { perm: PERM.EVENTS_VIEW }, element: page(<EventDetailPage />) },
-          { path: '/customers', handle: { perm: PERM.CUSTOMERS_VIEW }, element: page(<CustomersPage />) },
+          {
+            path: '/customers',
+            handle: { perm: PERM.CUSTOMERS_VIEW, page: 'customers' },
+            element: page(<CustomersPage />),
+          },
           { path: '/customers/:id', handle: { perm: PERM.CUSTOMERS_VIEW }, element: page(<CustomerDetailPage />) },
-          { path: '/users', handle: { perm: PERM.USERS_VIEW }, element: page(<UsersPage />) },
-          { path: '/contractors', handle: { perm: PERM.CONTRACTORS_VIEW }, element: page(<ContractorsPage />) },
+          { path: '/users', handle: { perm: PERM.USERS_VIEW, page: 'users' }, element: page(<UsersPage />) },
+          {
+            path: '/contractors',
+            handle: { perm: PERM.CONTRACTORS_VIEW, page: 'contractors' },
+            element: page(<ContractorsPage />),
+          },
           {
             path: '/contractors/:id',
             handle: { perm: PERM.CONTRACTORS_VIEW },
@@ -187,7 +211,7 @@ export const router = createBrowserRouter([
           },
           /* צי הרכב (0089). שני הנתיבים על אותו מפתח: מי שרואה את הרשימה
              רואה גם כרטיס, והלשוניות שבתוכו נחתכות בנפרד לפי המפתח שלהן. */
-          { path: '/vehicles', handle: { perm: PERM.FLEET_VIEW }, element: page(<VehiclesPage />) },
+          { path: '/vehicles', handle: { perm: PERM.FLEET_VIEW, page: 'vehicles' }, element: page(<VehiclesPage />) },
           { path: '/vehicles/:id', handle: { perm: PERM.FLEET_VIEW }, element: page(<VehicleDetailPage />) },
           /* לוח השיבוץ של הצוות. לא view_own: בשונה מהדוח, אין כאן גרסה
              מצומצמת שמראה לך את עצמך — לזה יש את /my/schedule. שני מפתחות
@@ -196,7 +220,7 @@ export const router = createBrowserRouter([
              הסגל שלו. */
           {
             path: '/shifts',
-            handle: { anyPerm: [PERM.ATTENDANCE_VIEW_ALL, PERM.PORTAL_ATTENDANCE] },
+            handle: { anyPerm: [PERM.ATTENDANCE_VIEW_ALL, PERM.PORTAL_ATTENDANCE], page: 'shifts' },
             element: page(<ShiftBoardPage />),
           },
           /* view_own, not view_all: the report widens from "my hours" to "the
@@ -205,33 +229,37 @@ export const router = createBrowserRouter([
              different questions. */
           {
             path: '/attendance',
-            handle: { perm: PERM.ATTENDANCE_VIEW_OWN },
+            handle: { perm: PERM.ATTENDANCE_VIEW_OWN, page: 'attendance' },
             element: page(<AttendanceReportPage />),
           },
           // /my/* הוא המסך של האדם עצמו — שעון ומשמרות — ולכן הוא פתוח לכל סוג
           // משתמש שיש לו את המפתח, כולל עובד קבלן ואיש קשר אצל לקוח.
           {
             path: '/my/schedule',
-            handle: { perm: PERM.ATTENDANCE_VIEW_SCHEDULE, audience: forEmployees },
+            handle: { perm: PERM.ATTENDANCE_VIEW_SCHEDULE, audience: forEmployees, page: 'my_schedule' },
             element: page(<MySchedulePage />),
           },
           {
             path: '/my/attendance',
-            handle: { perm: PERM.ATTENDANCE_VIEW_OWN, audience: forEmployees },
+            handle: { perm: PERM.ATTENDANCE_VIEW_OWN, audience: forEmployees, page: 'my_clock' },
             element: page(<TimeClockPage />),
           },
           {
             path: '/my/notifications',
-            handle: { perm: PERM.NOTIFICATIONS_PREFERENCES },
+            handle: { perm: PERM.NOTIFICATIONS_PREFERENCES, page: 'notifications' },
             element: page(<NotificationPreferencesPage />),
           },
-          { path: '/settings', handle: { perm: PERM.SETTINGS_VIEW }, element: page(<SettingsPage />) },
+          {
+            path: '/settings',
+            handle: { perm: PERM.SETTINGS_VIEW, page: 'settings' },
+            element: page(<SettingsPage />),
+          },
           /* ‏0176: מסך משלו ולא לשונית בהגדרות. ‏`/settings` כולו עטוף ב-
              `settings.view`, והחיבור ל-ViperFlow הוא מודול הרשאות נפרד —
              מי שמנטר אותו אינו בהכרח מי שמסדר סוגי משימה. */
           {
             path: '/integrations',
-            handle: { perm: PERM.INTEGRATIONS_VIEW },
+            handle: { perm: PERM.INTEGRATIONS_VIEW, page: 'integrations' },
             element: page(<IntegrationsPage />),
           },
         ],

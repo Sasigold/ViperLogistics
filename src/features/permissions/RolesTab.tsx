@@ -7,7 +7,7 @@
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Filter, ICON, KeyRound, Plus, STROKE, Shield, Trash2, Users } from '../../components/ui/icons'
+import { Filter, ICON, KeyRound, LayoutDashboard, Plus, STROKE, Shield, Trash2, Users } from '../../components/ui/icons'
 import {
   Badge,
   Button,
@@ -32,6 +32,8 @@ import { usePermissionRoles, refreshOwnCapabilities } from '../../lib/permission
 import { PermissionMatrix } from './PermissionMatrix'
 import { ScopeEditor } from './ScopeEditor'
 import { FieldPermissions } from './FieldPermissions'
+import { PageVisibilityEditor } from './PageVisibility'
+import { useAuth } from '../../state/auth'
 import type { PermissionRole } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
@@ -45,6 +47,7 @@ const ROLE_TABS = [
   { key: 'permissions' as const, label: 'הרשאות', icon: <Shield size={ICON.sm} /> },
   { key: 'fields' as const, label: 'שדות', icon: <KeyRound size={ICON.sm} /> },
   { key: 'scopes' as const, label: 'הגבלת נתונים', icon: <Filter size={ICON.sm} /> },
+  { key: 'pages' as const, label: 'דפים', icon: <LayoutDashboard size={ICON.sm} /> },
 ]
 
 export function RolesTab() {
@@ -54,6 +57,8 @@ export function RolesTab() {
   const { data: roles = [], isLoading } = usePermissionRoles()
   const [editing, setEditing] = useState<PermissionRole | null>(null)
   const [creating, setCreating] = useState(false)
+  const [adminPages, setAdminPages] = useState(false)
+  const viewerIsAdmin = useAuth((s) => !!s.me?.profile.is_admin)
   const [form, setForm] = useState({ key: '', name_he: '', description_he: '', user_kind: '' })
 
   // how many people hold each role — the number that tells you whether an edit
@@ -126,6 +131,29 @@ export function RolesTab() {
         />
         <CardBody padded={false}>
           <ul>
+            {/* ‏0215: מנהלי המערכת אינם תפקיד — ההרשאות אינן חלות עליהם — אבל
+                אילו דפים יוצגו להם נקבע כאן, לצד התפקידים, כקבוצה אחת. */}
+            {viewerIsAdmin && (
+              <li className="flex flex-wrap items-center gap-3 border-b border-line-subtle bg-subtle/30 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => setAdminPages(true)}
+                  className="min-w-48 flex-1 text-start focus-visible:outline-none focus-visible:focus-ring"
+                >
+                  <p className="flex items-center gap-2 type-body font-semibold">
+                    מנהלי מערכת
+                    <Badge tone="neutral">קבוצה</Badge>
+                  </p>
+                  <p className="type-caption text-ink-tertiary">
+                    כל ההרשאות פתוחות להם תמיד. כאן בוחרים רק אילו דפים יוצגו בתפריט שלהם.
+                  </p>
+                </button>
+                <Button size="sm" onClick={() => setAdminPages(true)}>
+                  <LayoutDashboard size={ICON.sm} strokeWidth={STROKE} />
+                  דפים
+                </Button>
+              </li>
+            )}
             {roles.map((r) => (
               <li
                 key={r.id}
@@ -226,12 +254,24 @@ export function RolesTab() {
       </Drawer>
 
       {editing && <RoleDrawer role={editing} onClose={() => setEditing(null)} />}
+
+      {adminPages && (
+        <Drawer
+          open
+          onClose={() => setAdminPages(false)}
+          title="מנהלי מערכת — דפים"
+          description="אילו דפים יוצגו לכל מנהלי המערכת"
+          footer={<Button onClick={() => setAdminPages(false)}>סגירה</Button>}
+        >
+          <PageVisibilityEditor subject={{ kind: 'admins' }} />
+        </Drawer>
+      )}
     </div>
   )
 }
 
 function RoleDrawer({ role, onClose }: { role: PermissionRole; onClose: () => void }) {
-  const [tab, setTab] = useState<'permissions' | 'fields' | 'scopes'>('permissions')
+  const [tab, setTab] = useState<'permissions' | 'fields' | 'scopes' | 'pages'>('permissions')
   return (
     <Drawer
       open
@@ -247,6 +287,11 @@ function RoleDrawer({ role, onClose }: { role: PermissionRole; onClose: () => vo
         )}
         {tab === 'fields' && <FieldPermissions subject={{ kind: 'role', roleId: role.id }} />}
         {tab === 'scopes' && <ScopeEditor subject={{ kind: 'role', roleId: role.id }} />}
+        {tab === 'pages' && (
+          <PageVisibilityEditor
+            subject={{ kind: 'role', roleId: role.id, roleName: role.name_he, userKind: role.user_kind }}
+          />
+        )}
       </div>
     </Drawer>
   )

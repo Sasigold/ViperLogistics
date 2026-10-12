@@ -666,6 +666,16 @@ OUT="$OUT
 $OUT65"
 
 echo
+echo "== the owner picks the pages suite =="
+# 66 מקימה שני לקוחות, קבלן ותשע דמויות משלה, ואינה נוגעת באירועים או
+# במשימות. היא משאירה אחריה דפים מוסתרים על תפקידים משותפים (עובד, ראש
+# צוות, נהג) ועל "מנהלי מערכת" — ולכן היא רצה אחרונה.
+OUT66=$($PSQL -d vl -f "$HERE/66_the_owner_picks_the_pages.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT66"
+OUT="$OUT
+$OUT66"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]
