@@ -517,5 +517,52 @@ select t_eq('הצוות קורא אותה', (select count(*)::int from customer_
   where customer_id = '10000000-0000-0000-0000-0000000065b0' and field_key = 'notes'
     and state = 'hidden'), 1);
 
+
+-- ===== 10. שני הפערים שהסקירה של 0214 מצאה (0216) =========================
+
+\echo '--- 10. 0216: מטא-דאטה בין עמיתים, והתראה מול היקף חלקי ---'
+
+-- (א) צופה אצל לקוח, בלי "צפייה בעובדים", אינו קורא את ההרשאות של עמיתיו.
+select t65_as('b2');
+select t_eq('צופה אצל לקוח אינו רואה את התפקידים של עמיתיו (עד 0216: כן)',
+  (select count(*)::int from profile_roles where profile_id = '20000000-0000-0000-0000-0000000065b1'), 0);
+select t_eq('ולא את ההרשאות האישיות שלהם',
+  (select count(*)::int from user_permission_grants where profile_id = '20000000-0000-0000-0000-0000000065b5'), 0);
+select t65_as('b1');
+select t_eq('ומנהל עם "צפייה בעובדים" — עדיין כן',
+  (select count(*)::int from user_permission_grants where profile_id = '20000000-0000-0000-0000-0000000065b5'), 2);
+
+-- (ב) חלון תאריכים אישי לצופה: אירוע א4, שמחוץ לחלון, אושר — והוא אינו
+-- מקבל עליו התראה, בדיוק כמו שאינו רואה אותו.
+reset role;
+insert into permission_scopes (profile_id, resource, scope_type, days_back, days_forward)
+values ('20000000-0000-0000-0000-0000000065b2', 'events', 'date_window', 30, 30);
+alter table events disable trigger events_default_tasks;
+insert into events (id, customer_id, end_client_name, event_number, event_date)
+values ('30000000-0000-0000-0000-0000000065e4', '10000000-0000-0000-0000-0000000065a0',
+        'אירוע א4 65', 'EV-65-A4', current_date + 1133);
+alter table events enable trigger events_default_tasks;
+set role authenticated;
+
+select t65_as('b2');
+select t_eq('הצופה אינו רואה את א4 — מחוץ לחלון התאריכים שלו',
+  (select count(*)::int from events where id = '30000000-0000-0000-0000-0000000065e4'), 0);
+select t65_as('b5');
+select t_eq('וצופה אחר אצל אותו לקוח אינו קורא את ההיקף שלו',
+  (select count(*)::int from permission_scopes where profile_id = '20000000-0000-0000-0000-0000000065b2'), 0);
+select t65_as('a6');
+select t_expect_ok('מנהל מערכת מאשר את א4',
+  $$select set_event_approved('30000000-0000-0000-0000-0000000065e4', true)$$);
+reset role;
+select t_eq('הצופה אינו מקבל התראה על אירוע מחוץ להיקף שלו (עד 0216: קיבל שם ותאריך)',
+  (select count(*)::int from notifications where recipient_id = '20000000-0000-0000-0000-0000000065b2'
+     and type = 'event_approved' and entity_id = '30000000-0000-0000-0000-0000000065e4'), 0);
+select t_eq('ומנהל אצל הלקוח, שאינו מוגבל, מקבל',
+  (select count(*)::int from notifications where recipient_id = '20000000-0000-0000-0000-0000000065b1'
+     and type = 'event_approved' and entity_id = '30000000-0000-0000-0000-0000000065e4'), 1);
+select t_eq('ועובד הסגל, שלא שובץ אליו, אינו מקבל',
+  (select count(*)::int from notifications where recipient_id = '20000000-0000-0000-0000-0000000065b3'
+     and type = 'event_approved' and entity_id = '30000000-0000-0000-0000-0000000065e4'), 0);
+
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
