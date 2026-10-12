@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
-import { Navigate, Outlet, useLocation, useMatches } from 'react-router'
+import { Link, Navigate, Outlet, useLocation, useMatches } from 'react-router'
 import { Truck } from '../../components/ui/icons'
 import { Button, Card, EmptyState, Spinner } from '../../components/ui'
 import { useAuth } from '../../state/auth'
 import { errorMessage } from '../../lib/errors'
 import { navAudience } from '../../app/nav'
 import type { NavAudience } from '../../app/nav'
+import type { PageKey } from '../../app/pages'
 import type { PermissionAction } from '../../types/domain'
 
 /** Branded boot screen — better than a bare spinner on a cold load. */
@@ -85,6 +86,24 @@ function NoPermissionCard() {
   )
 }
 
+/** דף שהבעלים הסתיר (0215) — אינו "אין הרשאה", ולכן הוא אומר משהו אחר. */
+function PageHiddenCard() {
+  return (
+    <Card className="mx-auto max-w-md">
+      <EmptyState
+        art="alert"
+        title="הדף הזה אינו מוצג לך"
+        description="מנהל המערכת הסתיר אותו מהתפריט שלך. אם הוא דרוש לך — פנה אליו."
+        action={
+          <Link to="/" className="type-button text-primary hover:underline">
+            לדף הבית
+          </Link>
+        }
+      />
+    </Card>
+  )
+}
+
 /**
  * What a route declares about itself. `perm` is the registry key needed to open
  * it; `open` marks the handful that gate themselves (the landing route, which
@@ -106,6 +125,12 @@ export interface RouteHandle {
    * כדי שמה שאינו בתפריט גם לא ייפתח בהקלדת הנתיב.
    */
   audience?: (a: NavAudience) => boolean
+  /**
+   * הדף שהנתיב הוא (0215). דף שהבעלים הסתיר אינו נפתח גם בהקלדת הנתיב —
+   * אותה גדר שמורידה אותו מהתפריט. מסכי פרטים אינם מכריזים עליו: הם נפתחים
+   * מתוך מסכים אחרים, וההרשאות לבדן מכריעות עליהם.
+   */
+  page?: PageKey
   open?: true
 }
 
@@ -140,8 +165,10 @@ export function RouteGate({ children }: { children: ReactNode }) {
     return <NoPermissionCard />
   }
   if (handle.open) return <>{children}</>
+  const audience = navAudience(me)
+  if (handle.page && audience.hiddenPages?.has(handle.page)) return <PageHiddenCard />
   const held = handle.anyPerm ? handle.anyPerm.some(has) : has(handle.perm!)
-  const ok = held && (handle.audience?.(navAudience(me)) ?? true)
+  const ok = held && (handle.audience?.(audience) ?? true)
   return ok ? <>{children}</> : <NoPermissionCard />
 }
 

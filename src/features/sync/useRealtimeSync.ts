@@ -44,12 +44,15 @@ export function syncTopics(me: MyPermissions): string[] {
   } else if (user_kind === 'staff') {
     const taskScopes = me.scopes.filter((s) => s.resource === 'tasks')
     const own = taskScopes.some((s) => s.scope_type === 'own')
-    const customers = taskScopes.filter((s) => s.scope_type === 'customers').flatMap((s) => s.values)
-    const contractors = taskScopes.filter((s) => s.scope_type === 'contractors').flatMap((s) => s.values)
+    const customerRows = taskScopes.filter((s) => s.scope_type === 'customers')
+    const contractorRows = taskScopes.filter((s) => s.scope_type === 'contractors')
+    const customers = customerRows.flatMap((s) => s.values)
+    const contractors = contractorRows.flatMap((s) => s.values)
     // מי שרואה רק את שיבוציו נשאר בערוץ האישי; היקף נקוב מאזין ללקוחות/קבלנים
-    // שלו; ומי שאינו מוגבל כלל — הסדרן — שומע הכול בערוץ אחד.
+    // שלו; ומי שאינו מוגבל כלל — הסדרן — שומע הכול בערוץ אחד. הגבלה שעוד לא
+    // נבחר בה ערך מגבילה לשום דבר (0214), ולכן השאלה היא אם יש שורה, לא ערכים.
     if (!own) {
-      if (!customers.length && !contractors.length) topics.add('sync:staff')
+      if (!customerRows.length && !contractorRows.length) topics.add('sync:staff')
       customers.forEach((id) => topics.add(`sync:customer:${id}`))
       contractors.forEach((id) => topics.add(`sync:contractor:${id}`))
     }

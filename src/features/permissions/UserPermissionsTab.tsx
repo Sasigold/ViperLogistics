@@ -8,7 +8,7 @@
  */
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Filter, ICON, KeyRound, STROKE, Shield, Users } from '../../components/ui/icons'
+import { Filter, ICON, KeyRound, LayoutDashboard, STROKE, Shield, Users } from '../../components/ui/icons'
 import {
   Badge,
   Button,
@@ -28,6 +28,7 @@ import { PermissionMatrix } from './PermissionMatrix'
 import { ScopeEditor } from './ScopeEditor'
 import { FieldPermissions } from './FieldPermissions'
 import { UserFormFieldsCard } from './UserFormFieldsCard'
+import { PageVisibilityEditor } from './PageVisibility'
 import type { Profile } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
@@ -36,19 +37,37 @@ const TABS = [
   { key: 'permissions' as const, label: 'הרשאות', icon: <Shield size={ICON.sm} /> },
   { key: 'fields' as const, label: 'שדות', icon: <KeyRound size={ICON.sm} /> },
   { key: 'scopes' as const, label: 'נתונים', icon: <Filter size={ICON.sm} /> },
+  { key: 'pages' as const, label: 'דפים', icon: <LayoutDashboard size={ICON.sm} /> },
 ]
 
 export function UserPermissionsTab({ profile }: { profile: Profile }) {
-  const [tab, setTab] = useState<'roles' | 'permissions' | 'fields' | 'scopes'>('roles')
+  const [tab, setTab] = useState<'roles' | 'permissions' | 'fields' | 'scopes' | 'pages'>('roles')
   const has = useAuth((s) => s.has)
+  const viewerIsAdmin = useAuth((s) => !!s.me?.profile.is_admin)
 
   if (profile.is_admin) {
     return (
-      <EmptyState
-        art="check"
-        title="מנהל מערכת"
-        description="גישה מלאה לכל המודולים, השדות והנתונים — טבלת ההרשאות אינה חלה על מנהלי מערכת"
-      />
+      <div className="space-y-4">
+        <EmptyState
+          art="check"
+          title="מנהל מערכת"
+          description="גישה מלאה לכל המודולים, השדות והנתונים — טבלת ההרשאות אינה חלה על מנהלי מערכת"
+        />
+        {/* ‏0215: מה שכן חל על מנהל מערכת — אילו דפים מוצגים לו. רק מנהל מערכת
+            קובע את זה, והשרת אוכף. */}
+        {viewerIsAdmin && (
+          <Card>
+            <CardHeader
+              title="דפים"
+              subtitle="אילו דפים יוצגו בתפריט שלו. מה שלא נקבע כאן — לפי קבוצת מנהלי המערכת."
+              icon={<LayoutDashboard size={ICON.md} strokeWidth={STROKE} />}
+            />
+            <CardBody>
+              <PageVisibilityEditor subject={{ kind: 'user', profile }} />
+            </CardBody>
+          </Card>
+        )}
+      </div>
     )
   }
 
@@ -83,7 +102,18 @@ export function UserPermissionsTab({ profile }: { profile: Profile }) {
           {profile.customer_id && <UserFormFieldsCard profile={profile} />}
         </div>
       )}
-      {tab === 'scopes' && <ScopeEditor subject={{ kind: 'user', profileId: profile.id }} />}
+      {tab === 'pages' && <PageVisibilityEditor subject={{ kind: 'user', profile }} />}
+      {tab === 'scopes' && (
+        <ScopeEditor
+          subject={{
+            kind: 'user',
+            profileId: profile.id,
+            userKind: profile.user_kind,
+            customerId: profile.customer_id,
+            contractorId: profile.contractor_id,
+          }}
+        />
+      )}
     </div>
   )
 }

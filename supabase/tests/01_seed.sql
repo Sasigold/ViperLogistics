@@ -8,6 +8,16 @@ grant all on all tables in schema public to authenticated;
 grant all on all sequences in schema public to authenticated;
 grant execute on all functions in schema public, app to authenticated;
 
+-- ...אבל ברירות המחדל של Supabase חלות כשהטבלה *נוצרת*, ולכן מיגרציה שמצמצמת
+-- אחר כך טבלה לעמודות מסוימות נשארת בתוקף במסד החי. ההענקה הגורפת שלמעלה
+-- רצה אחרי כל המיגרציות ומבטלת את הצמצום הזה כאן, ולכן הוא נאמר שוב — אותן
+-- שורות בדיוק כמו ב-0214 §8 (סכומי ההזמנה מ-ViperFlow).
+revoke select on table viperflow_links from authenticated, anon;
+grant select (event_id, connection_id, order_id, order_number, order_status, order_updated_at,
+              last_event_id, last_synced_at, created_at, truck_quantity, worker_quantity,
+              sync_locked_at, sync_locked_by)
+   on table viperflow_links to authenticated;
+
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000a1', 'owner@vl.test'),
   ('00000000-0000-0000-0000-0000000000c1', 'client-admin@acme.test'),

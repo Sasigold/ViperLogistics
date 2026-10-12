@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PERM } from '../lib/permissions'
-import { ANY_AUDIENCE, bottomNavItems, navItemVisible, visibleNavSections } from './nav'
+import { ANY_AUDIENCE, bottomNavItems, navItemVisible, pagePerms, pagePermitted, visibleNavSections } from './nav'
 import type { NavAudience, NavItem } from './nav'
 
 /**
@@ -153,6 +153,62 @@ describe('navItemVisible', () => {
     const gated = item({ perm: 'a', audience: (aud) => aud.isEmployee })
     expect(navItemVisible(gated, hasFrom(['a']), { ...ANY_AUDIENCE, isEmployee: true })).toBe(true)
     expect(navItemVisible(gated, hasFrom(['a']), { ...ANY_AUDIENCE, isEmployee: false })).toBe(false)
+  })
+})
+
+// ‏0215: הדפים שהבעלים הסתיר — גדר שעוברת גם על מנהל מערכת.
+describe('דפים מוסתרים', () => {
+  const adminHiding = (pages: string[]): NavAudience => ({
+    isAdmin: true,
+    isEmployee: true,
+    isContractor: false,
+    isSelfPerformingCustomer: false,
+    hasWarehouseSchedule: true,
+    hiddenPages: new Set(pages),
+  })
+  const seenBy = (aud: NavAudience) =>
+    visibleNavSections(() => true, aud).flatMap((s) => s.items.map((i) => i.to))
+
+  it('מנהל מערכת שהוסתרו ממנו "משמרות" ו"כספים" — אינו רואה אותם, ורואה את לוח משמרות הצוות', () => {
+    const seen = seenBy(adminHiding(['my_schedule', 'portal']))
+    expect(seen).not.toContain('/my/schedule')
+    expect(seen).not.toContain('/portal')
+    expect(seen).toContain('/shifts')
+    expect(seen).toContain('/my/attendance')
+  })
+
+  it('דף אחד מוריד את כל הרשומות שמובילות אליו', () => {
+    const seen = visibleNavSections(
+      hasFrom([PERM.ATTENDANCE_VIEW_OWN, PERM.ATTENDANCE_VIEW_SCHEDULE]),
+      { ...ANY_AUDIENCE, hiddenPages: new Set(['attendance']) },
+    ).flatMap((s) => s.items.map((i) => i.to))
+    expect(seen).not.toContain('/attendance')
+    expect(seen).toContain('/my/schedule')
+  })
+
+  it('הבר התחתון מתמלא ממה שנשאר גלוי', () => {
+    const items = bottomNavItems(visibleNavSections(() => true, adminHiding(['portal', 'calendar'])))
+    expect(items.map((i) => i.to)).not.toContain('/portal')
+    expect(items).toHaveLength(4)
+  })
+
+  it('הסתרה אינה פותחת: דף שאין עליו הרשאה נשאר סגור', () => {
+    const seen = visibleNavSections(hasFrom([PERM.BOARD_VIEW]), { ...ANY_AUDIENCE, hiddenPages: new Set() }).flatMap(
+      (s) => s.items.map((i) => i.to),
+    )
+    expect(seen).toEqual(['/board'])
+  })
+
+  it('pagePermitted שואל את ההרשאות בלבד, על כל הרשומות של הדף', () => {
+    expect(pagePermitted('attendance', hasFrom([PERM.ATTENDANCE_VIEW_OWN]))).toBe(true)
+    expect(pagePermitted('attendance', hasFrom([PERM.ATTENDANCE_VIEW_ALL]))).toBe(true)
+    expect(pagePermitted('shifts', hasFrom([PERM.PORTAL_ATTENDANCE]))).toBe(true)
+    expect(pagePermitted('wallet', hasFrom([PERM.BOARD_VIEW]))).toBe(false)
+  })
+
+  it('pagePerms מחזיר את המפתחות שהדף נשען עליהם', () => {
+    expect(pagePerms('shifts').sort()).toEqual([PERM.ATTENDANCE_VIEW_ALL, PERM.PORTAL_ATTENDANCE].sort())
+    expect(pagePerms('calendar')).toEqual([PERM.CALENDAR_VIEW])
   })
 })
 

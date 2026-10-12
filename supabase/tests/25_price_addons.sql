@@ -145,9 +145,9 @@ select t_eq('וסך התוספות הוא מה שנוסף לחשבון שלו',
   (select sum(amount) from event_price_addons('30000000-0000-0000-0000-00000000025a')),
   230::numeric);
 
--- המפתח בידו — ההענקה למעלה היא מפורשת — והכתיבה עדיין חסומה. זו בדיוק
--- הזרוע `user_kind = 'staff'` ב-`tpa_write`.
-select t_eq('המפתח בידו', app.has('pricing.edit'), true);
+-- ההענקה למעלה מפורשת, ומאז 0214 היא אינה מעניקה דבר: ‏`pricing.edit` חל על
+-- צוות בלבד. והכתיבה חסומה גם בלי זה — הזרוע `user_kind = 'staff'` ב-`tpa_write`.
+select t_eq('המפתח הוענק לו — ואינו חל על לקוח', app.has('pricing.edit'), false);
 
 select t_expect_fail('ובכל זאת אינו מוסיף תוספת', $$
   insert into task_price_addons (task_id, amount, note)

@@ -26,6 +26,8 @@ import {
 import type { ComponentType } from 'react'
 import { PERM } from '../lib/permissions'
 import type { MyPermissions } from '../types/domain'
+import { hiddenPagesOf } from './pages'
+import type { PageKey } from './pages'
 
 /**
  * מי המשתמש *הוא*, להבדיל ממה שמותר לו.
@@ -50,6 +52,11 @@ export interface NavAudience {
    * רק כשהמודול פתוח ללקוח שלו; קבלן — לעולם לא.
    */
   hasWarehouseSchedule: boolean
+  /**
+   * הדפים שהבעלים הסתיר ממנו (0215) — הגדר היחידה כאן שאינה "מי הוא" אלא
+   * "מה הוחלט עליו", ולכן היא עוברת גם על מנהל מערכת. חסר = דבר אינו מוסתר.
+   */
+  hiddenPages?: ReadonlySet<string>
 }
 
 /** בלי הקשר — הכול פתוח. ברירת המחדל של בדיקות ושל קריאות ישנות. */
@@ -79,6 +86,7 @@ export function navAudience(me: MyPermissions | null): NavAudience {
       me.profile.is_admin ||
       me.profile.user_kind === 'staff' ||
       (me.profile.user_kind === 'customer_user' && !!me.customer?.warehouse_schedule_enabled),
+    hiddenPages: hiddenPagesOf(me),
   }
 }
 
@@ -112,6 +120,8 @@ export const forWarehouseSchedule = (a: NavAudience) => a.hasWarehouseSchedule
 
 export interface NavItem {
   to: string
+  /** הדף שהרשומה מובילה אליו (0215) — מה שהבעלים מסתיר או מציג */
+  page: PageKey
   label: string
   /** shorter label for the mobile bottom bar, where a slot is ~4rem wide */
   shortLabel?: string
@@ -153,18 +163,43 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'תפעול',
     items: [
-      { to: '/', label: 'דשבורד', icon: LayoutDashboard, perm: PERM.DASHBOARD_VIEW, end: true, primary: true },
+      {
+        to: '/',
+        page: 'dashboard',
+        label: 'דשבורד',
+        icon: LayoutDashboard,
+        perm: PERM.DASHBOARD_VIEW,
+        end: true,
+        primary: true,
+      },
       /* הסיכום הכספי של הקבלן — הדשבורד שלו, ולכן הוא יושב לצד הדשבורד ולא
          בסקשן הנתונים. הוא גם הרשומה הראשונה שמנהל קבלן רואה, ולכן `/` מפנה
          אליו מעצמו דרך HomeRoute. */
-      { to: '/portal', label: 'כספים ותשלומים', shortLabel: 'כספים', icon: Banknote, perm: PERM.PORTAL_VIEW, primary: true },
-      { to: '/calendar', label: 'לוח שנה', icon: Calendar, perm: PERM.CALENDAR_VIEW, primary: true },
-      { to: '/board', label: 'לו״ז עבודה', shortLabel: 'לו״ז', icon: ClipboardList, perm: PERM.BOARD_VIEW, primary: true },
+      {
+        to: '/portal',
+        page: 'portal',
+        label: 'כספים ותשלומים',
+        shortLabel: 'כספים',
+        icon: Banknote,
+        perm: PERM.PORTAL_VIEW,
+        primary: true,
+      },
+      { to: '/calendar', page: 'calendar', label: 'לוח שנה', icon: Calendar, perm: PERM.CALENDAR_VIEW, primary: true },
+      {
+        to: '/board',
+        page: 'board',
+        label: 'לו״ז עבודה',
+        shortLabel: 'לו״ז',
+        icon: ClipboardList,
+        perm: PERM.BOARD_VIEW,
+        primary: true,
+      },
       /* ‏0196: הכנה והחזרה במחסן לכל אירוע. בלי `primary`, כדי שלא ידחוק את
          "אירועים" מהבר התחתון של מנהל הלקוח; ליוזר "מחסן", שזה המסך היחיד
          שלו, הבר ממלא את עצמו ממה שנשאר גלוי ממילא. */
       {
         to: '/warehouse',
+        page: 'warehouse',
         label: 'לו״ז מחסן',
         shortLabel: 'מחסן',
         icon: Warehouse,
@@ -180,6 +215,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       {
         to: '/my/schedule',
+        page: 'my_schedule',
         label: 'משמרות',
         shortLabel: 'משמרות',
         icon: CalendarClock,
@@ -188,6 +224,7 @@ export const NAV_SECTIONS: NavSection[] = [
       },
       {
         to: '/my/attendance',
+        page: 'my_clock',
         label: 'שעון נוכחות',
         shortLabel: 'שעון',
         icon: Clock,
@@ -201,6 +238,7 @@ export const NAV_SECTIONS: NavSection[] = [
          מחזיק אף אחד מהשניים (המודול portal סגור לו), ולכן הוא רואה אותה. */
       {
         to: '/attendance',
+        page: 'attendance',
         label: 'דוח הנוכחות שלי',
         shortLabel: 'דוח',
         icon: FileText,
@@ -213,6 +251,7 @@ export const NAV_SECTIONS: NavSection[] = [
          view_all, שרואה את הרשומה הרחבה יותר ב"נתונים". */
       {
         to: '/attendance',
+        page: 'attendance',
         label: 'נוכחות הסגל שלי',
         shortLabel: 'נוכחות',
         icon: Clock,
@@ -222,65 +261,144 @@ export const NAV_SECTIONS: NavSection[] = [
       /* הסגל של הקבלן, ולכן רק לקבלן: המפתח לבדו הראה את המסך גם למנהל
          מערכת (שעוקף כל מפתח) ולכל איש משרד שקיבל אותו בטעות, ולשניהם אין
          סגל משלהם — `my_contractor_workers` היה מחזיר להם רשימה ריקה. */
-      { to: '/my/staff', label: 'העובדים שלי', icon: Users, perm: PERM.PORTAL_MANAGE_WORKERS, audience: forContractors },
+      {
+        to: '/my/staff',
+        page: 'my_staff',
+        label: 'העובדים שלי',
+        icon: Users,
+        perm: PERM.PORTAL_MANAGE_WORKERS,
+        audience: forContractors,
+      },
       /* המקבילה של הלקוח שמבצע בעצמו (0133) — אותה רשומה, מאגר אחר. */
       {
         to: '/my/crew',
+        page: 'my_crew',
         label: 'הסגל שלי',
         icon: Users,
         perm: PERM.CUSTOMERS_MANAGE_OWN_STAFF,
         audience: forSelfPerformingCustomers,
       },
-      { to: '/my/notifications', label: 'התראות', icon: Bell, perm: PERM.NOTIFICATIONS_PREFERENCES },
+      {
+        to: '/my/notifications',
+        page: 'notifications',
+        label: 'התראות',
+        icon: Bell,
+        perm: PERM.NOTIFICATIONS_PREFERENCES,
+      },
     ],
   },
   {
     title: 'נתונים',
     items: [
-      { to: '/events', label: 'אירועים', icon: PartyPopper, perm: PERM.EVENTS_LIST, primary: true },
-      { to: '/customers', label: 'לקוחות', icon: Building2, perm: PERM.CUSTOMERS_VIEW },
-      { to: '/users', label: 'עובדים', icon: Users, perm: PERM.USERS_VIEW },
-      { to: '/contractors', label: 'קבלנים', icon: HardHat, perm: PERM.CONTRACTORS_VIEW },
-      { to: '/vehicles', label: 'ניהול רכבים', shortLabel: 'רכבים', icon: Truck, perm: PERM.FLEET_VIEW },
+      { to: '/events', page: 'events', label: 'אירועים', icon: PartyPopper, perm: PERM.EVENTS_LIST, primary: true },
+      { to: '/customers', page: 'customers', label: 'לקוחות', icon: Building2, perm: PERM.CUSTOMERS_VIEW },
+      { to: '/users', page: 'users', label: 'עובדים', icon: Users, perm: PERM.USERS_VIEW },
+      { to: '/contractors', page: 'contractors', label: 'קבלנים', icon: HardHat, perm: PERM.CONTRACTORS_VIEW },
+      {
+        to: '/vehicles',
+        page: 'vehicles',
+        label: 'ניהול רכבים',
+        shortLabel: 'רכבים',
+        icon: Truck,
+        perm: PERM.FLEET_VIEW,
+      },
       /* shortLabel 'שיבוץ' ולא 'משמרות': מי שרואה את הרשומה הזאת רואה במקביל
          גם את "משמרות" שלמעלה, ושתי רשומות באותו שם הן שתי רשומות שאי אפשר
          לבחור ביניהן. */
       {
         to: '/shifts',
+        page: 'shifts',
         label: 'לוח משמרות צוות',
         shortLabel: 'שיבוץ',
         icon: CalendarDays,
         anyPerm: [PERM.ATTENDANCE_VIEW_ALL, PERM.PORTAL_ATTENDANCE],
       },
-      { to: '/attendance', label: 'דוח נוכחות', shortLabel: 'נוכחות', icon: Clock, perm: PERM.ATTENDANCE_VIEW_ALL },
-      { to: '/reports', label: 'דוחות', shortLabel: 'דוחות', icon: BarChart3, perm: PERM.REPORTS_VIEW },
+      {
+        to: '/attendance',
+        page: 'attendance',
+        label: 'דוח נוכחות',
+        shortLabel: 'נוכחות',
+        icon: Clock,
+        perm: PERM.ATTENDANCE_VIEW_ALL,
+      },
+      {
+        to: '/reports',
+        page: 'reports',
+        label: 'דוחות',
+        shortLabel: 'דוחות',
+        icon: BarChart3,
+        perm: PERM.REPORTS_VIEW,
+      },
       /* מפת העומסים יושבת ראשונה בין הדוחות (0173): היא השאלה שנשאלת לפני
          שמקבלים עבודה נוספת, ולא אחרי שהחודש נגמר. */
-      { to: '/reports/load', label: 'מפת עומסים', shortLabel: 'עומסים', icon: Flame, perm: PERM.REPORTS_LOAD },
+      {
+        to: '/reports/load',
+        page: 'load',
+        label: 'מפת עומסים',
+        shortLabel: 'עומסים',
+        icon: Flame,
+        perm: PERM.REPORTS_LOAD,
+      },
       /* שני דפי הרווחיות הם יעדים ולא לשוניות של "דוחות": הם המסכים שנפתחים
          הכי הרבה בסקשן הזה, והדרך היחידה אליהם הייתה שני קישורים בתוך שורת
          התבניות של /reports — מקום שצריך לדעת עליו כדי למצוא אותו. */
-      { to: '/reports/task-pnl', label: 'רווחיות לפי משימה', shortLabel: 'רווחיות', icon: Percent, perm: PERM.REPORTS_VIEW },
-      { to: '/reports/profitability', label: 'רווחיות לקוחות', shortLabel: 'לקוחות', icon: TrendingUp, perm: PERM.REPORTS_VIEW },
-      { to: '/receipts', label: 'רישום תקבולים', shortLabel: 'תקבולים', icon: Banknote, perm: PERM.FINANCE_RECEIPTS_VIEW },
+      {
+        to: '/reports/task-pnl',
+        page: 'task_pnl',
+        label: 'רווחיות לפי משימה',
+        shortLabel: 'רווחיות',
+        icon: Percent,
+        perm: PERM.REPORTS_VIEW,
+      },
+      {
+        to: '/reports/profitability',
+        page: 'profitability',
+        label: 'רווחיות לקוחות',
+        shortLabel: 'לקוחות',
+        icon: TrendingUp,
+        perm: PERM.REPORTS_VIEW,
+      },
+      {
+        to: '/receipts',
+        page: 'receipts',
+        label: 'רישום תקבולים',
+        shortLabel: 'תקבולים',
+        icon: Banknote,
+        perm: PERM.FINANCE_RECEIPTS_VIEW,
+      },
       /* ‏0205: לא לשונית של "תקבולים" — השאלה כאן היא על אירועים ("מה שולם
          מהאירועים של החודש"), ושם על כסף שנכנס ("מה נכנס החודש"). */
       {
         to: '/payments',
+        page: 'payments',
         label: 'תשלומי אירועים',
         shortLabel: 'תשלומים',
         icon: HandCoins,
         perm: PERM.FINANCE_EVENT_PAYMENTS_VIEW,
       },
       /* ‏0207: כמה מזומן יש ביד — כל תשלום שהתקבל במזומן, פחות ההוצאות. */
-      { to: '/wallet', label: 'ארנק מזומנים', shortLabel: 'ארנק', icon: Wallet, perm: PERM.FINANCE_CASH_WALLET_VIEW },
+      {
+        to: '/wallet',
+        page: 'wallet',
+        label: 'ארנק מזומנים',
+        shortLabel: 'ארנק',
+        icon: Wallet,
+        perm: PERM.FINANCE_CASH_WALLET_VIEW,
+      },
     ],
   },
   {
     title: 'מערכת',
     items: [
-      { to: '/settings', label: 'הגדרות', icon: Settings, perm: PERM.SETTINGS_VIEW },
-      { to: '/integrations', label: 'אינטגרציות', shortLabel: 'חיבורים', icon: Plug, perm: PERM.INTEGRATIONS_VIEW },
+      { to: '/settings', page: 'settings', label: 'הגדרות', icon: Settings, perm: PERM.SETTINGS_VIEW },
+      {
+        to: '/integrations',
+        page: 'integrations',
+        label: 'אינטגרציות',
+        shortLabel: 'חיבורים',
+        icon: Plug,
+        perm: PERM.INTEGRATIONS_VIEW,
+      },
     ],
   },
 ]
@@ -295,7 +413,33 @@ export function navItemVisible(
   audience: NavAudience = ANY_AUDIENCE,
 ): boolean {
   const held = item.anyPerm ? item.anyPerm.some(has) : has(item.perm!)
-  return held && !item.hiddenBy?.some(has) && (item.audience?.(audience) ?? true)
+  return (
+    held &&
+    !item.hiddenBy?.some(has) &&
+    (item.audience?.(audience) ?? true) &&
+    !audience.hiddenPages?.has(item.page)
+  )
+}
+
+/** הרשומות בתפריט שמובילות לדף (0215) — לרוב אחת; ל"דוח נוכחות" שלוש. */
+export function pageEntries(page: string, sections = NAV_SECTIONS): NavItem[] {
+  return sections.flatMap((s) => s.items).filter((i) => i.page === page)
+}
+
+/**
+ * האם ההרשאות לבדן פותחות את הדף — בלי גדרות "מי הוא" ובלי הסתרה. מסך
+ * העריכה של הדפים שואל את זה על משתמש או תפקיד אחר, שאין לו `navAudience`,
+ * כדי לומר ליד דף ש"מוצג" אינו "פתוח" כשההרשאות סוגרות אותו.
+ */
+export function pagePermitted(page: string, has: (perm: string) => boolean, sections = NAV_SECTIONS): boolean {
+  return pageEntries(page, sections).some(
+    (i) => (i.anyPerm ? i.anyPerm.some(has) : has(i.perm!)) && !i.hiddenBy?.some(has),
+  )
+}
+
+/** המפתחות שהדף נשען עליהם — כדי לדעת אם הוא רלוונטי לסוג משתמש בכלל. */
+export function pagePerms(page: string, sections = NAV_SECTIONS): string[] {
+  return [...new Set(pageEntries(page, sections).flatMap((i) => i.anyPerm ?? (i.perm ? [i.perm] : [])))]
 }
 
 /** הסקשנים שנשארים אחרי הסינון — בלי סקשן שהתרוקן. */

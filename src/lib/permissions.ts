@@ -186,6 +186,24 @@ export function usePermissionScopes(profileId?: string | null, roleId?: string |
   })
 }
 
+/**
+ * שורות ההיקף של כמה תפקידים בבת אחת — מה שאדם יורש מהתפקידים שלו. מסך
+ * ההיקפים של משתמש הציג עד 0214 רק את השורות האישיות, ולכן עובד שהתפקיד שלו
+ * מגביל ל"רק מה שמשויך אליי" הוצג כ"ללא הגבלת נתונים".
+ */
+export function useRolesScopes(roleIds: string[]) {
+  const key = [...roleIds].sort().join(',')
+  return useQuery({
+    queryKey: ['permission_scopes', 'roles', key],
+    enabled: roleIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('permission_scopes').select('*').in('role_id', roleIds)
+      if (error) throw error
+      return data as PermissionScope[]
+    },
+  })
+}
+
 export function useFieldPermissionRows(profileId?: string | null, roleId?: string | null) {
   return useQuery({
     queryKey: ['field_permissions', profileId ?? null, roleId ?? null],
@@ -220,8 +238,8 @@ export function useGroupedRegistry(kind?: UserKind) {
 }
 
 export const SCOPE_LABELS: Record<string, string> = {
-  all: 'ללא הגבלה',
-  own: 'רק מה שמשויך אליי',
+  all: 'ללא הגבלה (מבטל את ההגבלות מהתפקיד)',
+  own: 'רק מה שמשויך אליו',
   customers: 'לקוחות מסוימים',
   contractors: 'קבלנים מסוימים',
   task_types: 'סוגי משימות מסוימים',

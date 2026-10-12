@@ -28,7 +28,10 @@ export default function HomeRoute() {
   const me = useAuth((s) => s.me)
 
   if (!me) return <Skeleton className="h-32 w-full" />
-  if (has(PERM.DASHBOARD_VIEW)) {
+  const audience = navAudience(me)
+  // ‏0215: דשבורד שהבעלים הסתיר הוא כמו דשבורד שאין עליו הרשאה — הבית שולח
+  // ליעד הראשון בתפריט שנשאר גלוי.
+  if (has(PERM.DASHBOARD_VIEW) && !audience.hiddenPages?.has('dashboard')) {
     // הבדיקה מקוננת בתוך `dashboard.view` בכוונה: לקוח "אירועים בלבד" שאין לו
     // את ההרשאה ממשיך ליפול לפריט הניווט הראשון שלו, בדיוק כמו קודם.
     const Page = me.profile.user_kind === 'customer_user' ? CustomerDashboard : DashboardPage
@@ -40,9 +43,7 @@ export default function HomeRoute() {
   }
 
   // `to !== '/'` keeps the dashboard entry from redirecting this route to itself
-  const first = NAV_SECTIONS.flatMap((s) => s.items).find(
-    (n) => n.to !== '/' && navItemVisible(n, has, navAudience(me)),
-  )
+  const first = NAV_SECTIONS.flatMap((s) => s.items).find((n) => n.to !== '/' && navItemVisible(n, has, audience))
   if (first) return <Navigate to={first.to} replace />
 
   return (

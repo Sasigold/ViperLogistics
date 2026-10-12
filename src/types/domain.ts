@@ -1533,6 +1533,11 @@ export interface MyPermissions {
    * נשלט במפתחות, ולא בקונפיגורציה פר-לקוח.
    */
   board_config: { field_key: string; state: BoardFieldState }[]
+  /**
+   * הדפים שהוסתרו מהמשתמש (0215), כפי ש-`app.hidden_pages` הכריעה. חסר בשרת
+   * שעוד אין בו 0215 — ואז דבר אינו מוסתר. קוראים דרך `hiddenPagesOf`.
+   */
+  hidden_pages?: string[]
 }
 
 /**

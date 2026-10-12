@@ -89,7 +89,10 @@ set role authenticated;
 
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000023a1', false);
 
-select t_eq('למנהל הלקוח הוענק pricing.edit אישית', app.has('pricing.edit'), true);
+-- ‏0214: ‏`pricing.edit` חל על צוות בלבד, ולכן גם הענקה אישית אינה מעניקה אותו
+-- ללקוח. השורות שאחרי בודקות שהכתיבה חסומה בכל מקרה — הגדר בפוליסה לא זז.
+select t_eq('למנהל הלקוח הוענק pricing.edit אישית — ומפתח של צוות אינו חל עליו',
+  app.has('pricing.edit'), false);
 select t_eq('והוא עדיין קורא את המחיר שלו',
   (select price from task_pricing where task_id = '61000000-0000-0000-0000-000000023001'), 1000::numeric);
 
