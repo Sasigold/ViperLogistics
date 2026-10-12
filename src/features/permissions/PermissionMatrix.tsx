@@ -57,7 +57,22 @@ const SOURCE_LABELS: Record<string, string> = {
   default: 'ברירת מחדל של המערכת',
   inherited: 'נגזר מהרשאה רחבה יותר',
   none: 'ברירת מחדל — חסום',
+  not_applicable: 'אינו חל על סוג המשתמש',
 }
+
+/**
+ * מסך מול הנתונים שהוא מציג. ‏"צפייה באירועים" קובעת אילו אירועים השרת מחזיר,
+ * ו"צפייה בלוח שנה" קובעת אם המסך נפתח — ושני המפתחות נקבעים בנפרד. כשאחד
+ * פתוח והשני סגור התוצאה מפתיעה ("נתתי לו לראות אירועים והוא לא רואה לוח
+ * שנה"), ולכן המטריצה אומרת את זה ליד המפתח, ומציעה לפתוח את השני בלחיצה.
+ */
+const SCREENS: { screen: string; data: string; what: string; warnClosedScreen: boolean }[] = [
+  { screen: 'calendar.view', data: 'events.view', what: 'האירועים בלוח השנה', warnClosedScreen: true },
+  // רשימת האירועים סגורה לתפקידי השטח בכוונה (0082) — אין על מה להזהיר שם
+  { screen: 'events.list', data: 'events.view', what: 'רשימת האירועים', warnClosedScreen: false },
+  { screen: 'board.view', data: 'tasks.view', what: 'המשימות בלו״ז', warnClosedScreen: true },
+  { screen: 'pricing.view', data: 'events.view', what: 'המחירים (בדף האירוע וברשימה)', warnClosedScreen: false },
+]
 
 export function PermissionMatrix({
   subject,
@@ -118,11 +133,47 @@ export function PermissionMatrix({
   }
 
   const effectiveOf = (key: string) =>
-    resolveEffective(key, registry, {
-      userGrants: subject.kind === 'user' ? layers.own : new Map(),
-      roleGrants: subject.kind === 'user' ? layers.rolesMap : layers.own,
-      kindDefaults: layers.kinds,
-    })
+    resolveEffective(
+      key,
+      registry,
+      {
+        userGrants: subject.kind === 'user' ? layers.own : new Map(),
+        roleGrants: subject.kind === 'user' ? layers.rolesMap : layers.own,
+        kindDefaults: layers.kinds,
+      },
+      subject.userKind,
+    )
+  const labelOf = (key: string) => registry.find((r) => r.key === key)?.label_he ?? key
+  /** "נגזר מ'צפייה באירועים'" — ממה בדיוק, ולא רק "מהרשאה רחבה יותר" */
+  const sourceText = (eff: ReturnType<typeof effectiveOf>) =>
+    eff.source === 'inherited' && eff.via ? `נגזר מ"${labelOf(eff.via)}"` : SOURCE_LABELS[eff.source]
+  const applies = (key: string) => {
+    const def = registry.find((r) => r.key === key)
+    return !!def && (!subject.userKind || def.applies_to.includes(subject.userKind))
+  }
+  /** אזהרה ליד מפתח שהמסך שלו והנתונים שלו נקבעו בנפרד ולא מסתדרים */
+  const pairingHint = (key: string): { text: string; fix?: string } | null => {
+    for (const p of SCREENS) {
+      if (key === p.screen && applies(p.data)) {
+        const screen = effectiveOf(p.screen)
+        const data = effectiveOf(p.data)
+        if (screen.allowed && !data.allowed) {
+          return {
+            text: `"${labelOf(p.data)}" חסומה — ${p.what} יוצגו רק במה שהמשתמש משובץ אליו`,
+            fix: p.data,
+          }
+        }
+      }
+      if (key === p.data && p.warnClosedScreen && applies(p.screen)) {
+        const screen = effectiveOf(p.screen)
+        const data = effectiveOf(p.data)
+        if (data.allowed && !screen.allowed) {
+          return { text: `"${labelOf(p.screen)}" חסום — המשתמש לא יראה את ${p.what}`, fix: p.screen }
+        }
+      }
+    }
+    return null
+  }
 
   const invalidate = () => {
     void qc.invalidateQueries({
@@ -294,6 +345,26 @@ export function PermissionMatrix({
                       <p className="type-caption text-ink-tertiary" dir="ltr">
                         {item.key}
                       </p>
+                      {(() => {
+                        const hint = pairingHint(item.key)
+                        if (!hint) return null
+                        const fix = hint.fix
+                        return (
+                          <p className="mt-1 flex flex-wrap items-center gap-2 type-caption text-warning-text">
+                            <AlertTriangle size={ICON.xs} strokeWidth={STROKE} />
+                            {hint.text}
+                            {fix && (!canGrant || canGrant(fix)) && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => update.mutate({ key: fix, state: 'allow' })}
+                              >
+                                לפתוח גם את "{labelOf(fix)}"
+                              </Button>
+                            )}
+                          </p>
+                        )
+                      })()}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -301,7 +372,7 @@ export function PermissionMatrix({
                         {eff.allowed ? 'בפועל: מותר' : 'בפועל: חסום'}
                       </Badge>
                       <span className="hidden type-caption text-ink-tertiary sm:inline">
-                        {SOURCE_LABELS[eff.source]}
+                        {sourceText(eff)}
                       </span>
                       <Tooltip
                         content={

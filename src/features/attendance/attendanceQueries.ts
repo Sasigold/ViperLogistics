@@ -381,21 +381,21 @@ export function useSetTopupWaiver() {
 }
 
 /**
- * הגדרות השכר והשעון של עובד. חוזרת null גם כשהשורה קיימת אבל ה-RLS חוסם
- * אותה — הכרטיס במסך הוא שמגודר, לא השאילתה.
+ * הגדרות השכר והשעון של עובד, דרך `worker_settings_for` (0214).
+ *
+ * הקריאה הישירה מהטבלה פתחה למי שמנהל רק את השעון (`attendance.manage_clock`)
+ * את כל השורה — כולל התעריף והבונוסים של כל עובד. הפונקציה מחזירה את השעון
+ * לכל מי שרשאי לשורה, ואת הכסף רק למי שרשאי לכסף: עמודת כסף שחסרה בתשובה
+ * היא "אינך רשאי", לא "לא הוגדר". ‏null — אין עדיין שורה לעובד הזה.
  */
 export function useWorkerPaySettings(profileId?: string | null) {
   return useQuery({
     queryKey: ['worker_pay_settings', profileId],
     enabled: !!profileId,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('worker_pay_settings')
-        .select('*')
-        .eq('profile_id', profileId)
-        .maybeSingle()
+      const { data, error } = await supabase.rpc('worker_settings_for', { p_profile_id: profileId })
       if (error) throw error
-      return (data as WorkerPaySettings) ?? null
+      return (data as WorkerPaySettings | null) ?? null
     },
   })
 }
@@ -418,9 +418,14 @@ export function useSaveWorkerPaySettings(profileId?: string | null) {
         if (error) throw error
         return
       }
-      const { error } = await supabase
-        .from('worker_pay_settings')
-        .upsert({ profile_id: profileId, ...patch }, { onConflict: 'profile_id' })
+      /* המשרד כותב דרך `worker_settings_save` (0214), שבודקת כל עמודה מול
+         המפתח שכותב אותה: כסף תחת `attendance.manage_pay`, שעון תחת
+         `attendance.manage_clock`. מי שמחזיק רק אחד מהם שולח רק את שלו —
+         הכרטיס מציג לו רק את הסקשן שלו — ושדה שאינו שלו נדחה בשרת. */
+      const { error } = await supabase.rpc('worker_settings_save', {
+        p_profile_id: profileId,
+        p_settings: patch,
+      })
       if (error) throw error
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['worker_pay_settings', profileId] }),

@@ -103,6 +103,7 @@ describe('resolveEffective', () => {
     expect(resolveEffective('tasks.reschedule', registry, layers)).toEqual({
       allowed: true,
       source: 'inherited',
+      via: 'tasks.edit',
     })
   })
 
@@ -140,6 +141,45 @@ describe('resolveEffective', () => {
     expect(resolveEffective('ghost.key', [def('tasks.edit')], empty)).toEqual({
       allowed: false,
       source: 'none',
+    })
+  })
+
+  // ‏0214: ‏app.has עונה "לא" על מפתח שאינו חל על סוג המשתמש. כך יצא שמנהלי
+  // לקוח החזיקו "הפקה ושליחה של הצעת מחיר" (staff בלבד) בירושה מ"עריכת
+  // אירוע" — מפתח שהמטריצה אפילו לא הציגה להם.
+  it('refuses a key that does not apply to the kind, whatever the layers say', () => {
+    const registry = [
+      def('events.quote_send', { applies_to: ['staff'], implied_by: 'events.edit' }),
+      def('events.edit', { applies_to: ['staff', 'customer_user'] }),
+    ]
+    const layers = { ...empty, roleGrants: new Map([['events.edit', true]]) }
+    expect(resolveEffective('events.quote_send', registry, layers, 'customer_user')).toEqual({
+      allowed: false,
+      source: 'not_applicable',
+    })
+    expect(resolveEffective('events.quote_send', registry, layers, 'staff')).toEqual({
+      allowed: true,
+      source: 'inherited',
+      via: 'events.edit',
+    })
+  })
+
+  it('even a personal grant does not open a key the kind cannot hold', () => {
+    const registry = [def('portal.view', { applies_to: ['contractor_user'] })]
+    const layers = { ...empty, userGrants: new Map([['portal.view', true]]) }
+    expect(resolveEffective('portal.view', registry, layers, 'customer_user')).toMatchObject({ allowed: false })
+  })
+
+  it('names the broader key a decision came from', () => {
+    const registry = [
+      def('calendar.view', { implied_by: 'events.view' }),
+      def('events.view'),
+    ]
+    const layers = { ...empty, kindDefaults: new Map([['events.view', true]]) }
+    expect(resolveEffective('calendar.view', registry, layers, 'staff')).toEqual({
+      allowed: true,
+      source: 'inherited',
+      via: 'events.view',
     })
   })
 })

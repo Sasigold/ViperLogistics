@@ -4,14 +4,18 @@
  * A scope narrows a resource along one dimension. Dimensions AND together and
  * values within a dimension OR: customers [א, ב] plus a −7…+30 day window means
  * "tasks for either of those two customers, in that window". No rows for a
- * resource means no restriction.
+ * resource means no restriction beyond the user's kind (a customer user never
+ * sees another customer; a contractor sees only what was delegated to it).
  *
  * These are enforced in the SELECT policies, not here — this screen only
- * writes the rules.
+ * writes the rules. Since 0214 it also shows, for a person, what their roles
+ * impose and what the result is in plain words: before that, a worker whose
+ * role says "only what is assigned to me" was shown here as "no restriction",
+ * and one personal row silently replaced every role restriction.
  */
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { CalendarClock, Filter, ICON, Plus, STROKE, Trash2 } from '../../components/ui/icons'
+import { CalendarClock, Eye, Filter, ICON, Plus, STROKE, Trash2 } from '../../components/ui/icons'
 import {
   Badge,
   Button,
@@ -28,12 +32,35 @@ import {
   useToast,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
-import { SCOPE_LABELS, SCOPE_RESOURCES, usePermissionScopes, refreshOwnCapabilities } from '../../lib/permissions'
+import {
+  SCOPE_LABELS,
+  SCOPE_RESOURCES,
+  usePermissionRoles,
+  usePermissionScopes,
+  useProfileRoles,
+  useRolesScopes,
+  refreshOwnCapabilities,
+} from '../../lib/permissions'
+import { describeScope, effectiveRoleIds, effectiveScope } from '../../lib/scopes'
 import { useContractors, useCustomers, useStatuses, useTaskTypes, useTrucks, useExecutionMethods } from '../../lib/queries'
-import type { PermissionScope, ScopeType } from '../../types/domain'
+import type { PermissionScope, ScopeType, UserKind } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
 
-export type ScopeSubject = { kind: 'user'; profileId: string } | { kind: 'role'; roleId: string }
+export type ScopeSubject =
+  | {
+      kind: 'user'
+      profileId: string
+      userKind: UserKind
+      customerId?: string | null
+      contractorId?: string | null
+    }
+  | { kind: 'role'; roleId: string }
+
+/** "ללא הגבלה" אישית קיימת רק לאדם: לתפקיד היא אינה מבטלת דבר (0214). */
+const typesFor = (resource: string, subject: ScopeSubject): ScopeType[] => {
+  const base = (SCOPE_RESOURCES.find((r) => r.key === resource)?.types ?? []) as ScopeType[]
+  return subject.kind === 'user' ? [...base, 'all'] : base
+}
 
 export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
   const toast = useToast()
@@ -51,6 +78,16 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
   const { data: statuses = [] } = useStatuses()
   const { data: trucks = [] } = useTrucks()
   const { data: methods = [] } = useExecutionMethods()
+
+  // מה שהאדם יורש: התפקידים שבתוקף לו, וההגבלות שהם נושאים
+  const { data: roles = [] } = usePermissionRoles()
+  const { data: heldRoleIds = [] } = useProfileRoles(profileId)
+  const activeRoleIds = useMemo(
+    () => (subject.kind === 'user' ? effectiveRoleIds(roles, heldRoleIds, subject.userKind) : []),
+    [subject, roles, heldRoleIds],
+  )
+  const { data: roleScopes = [] } = useRolesScopes(activeRoleIds)
+  const roleName = (id: string | null) => roles.find((r) => r.id === id)?.name_he ?? 'תפקיד'
 
   const optionsFor = (type: ScopeType): { id: string; label: string }[] => {
     switch (type) {
@@ -70,9 +107,10 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
         return []
     }
   }
+  const nameOf = (type: ScopeType, id: string) => optionsFor(type).find((o) => o.id === id)?.label ?? 'לא ידוע'
 
   const invalidate = () => {
-    void qc.invalidateQueries({ queryKey: ['permission_scopes', profileId ?? null, roleId ?? null] })
+    void qc.invalidateQueries({ queryKey: ['permission_scopes'] })
     refreshOwnCapabilities()
   }
 
@@ -88,7 +126,7 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
       if (error) throw error
     },
     onSuccess: () => {
-      toast.success('הוגדרה הגבלת נתונים')
+      toast.success(scopeType === 'all' ? 'ההגבלות מהתפקיד בוטלו למשתמש הזה' : 'הוגדרה הגבלת נתונים')
       invalidate()
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -121,14 +159,31 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
 
   if (isLoading) return <Skeleton className="h-64 w-full" />
 
-  const allowedTypes = SCOPE_RESOURCES.find((r) => r.key === resource)?.types ?? []
+  const allowedTypes = typesFor(resource, subject)
+  const resourceLabel = (key: string) => SCOPE_RESOURCES.find((r) => r.key === key)?.label ?? key
 
   return (
     <div className="space-y-4">
+      {subject.kind === 'user' && (
+        <EffectiveCard
+          subject={subject}
+          personal={scopes}
+          fromRoles={roleScopes}
+          roleName={roleName}
+          nameOf={nameOf}
+          customerName={customers.find((c) => c.id === subject.customerId)?.name ?? null}
+          contractorName={contractors.find((c) => c.id === subject.contractorId)?.name ?? null}
+        />
+      )}
+
       <Card>
         <CardHeader
-          title="הגבלת נתונים"
-          subtitle="בלי הגבלות — רואים את כל מה שההרשאות מתירות. כל הגבלה מצמצמת מימד אחד."
+          title={subject.kind === 'user' ? 'הגבלות אישיות' : 'הגבלת נתונים'}
+          subtitle={
+            subject.kind === 'user'
+              ? 'הגבלה אישית מחליפה את ההגבלה מהתפקיד מאותו סוג בלבד. כדי לבטל את כל ההגבלות מהתפקיד — "ללא הגבלה".'
+              : 'כל מי שמחזיק את התפקיד מוגבל כך. כל הגבלה מצמצמת מימד אחד.'
+          }
           icon={<Filter size={ICON.md} strokeWidth={STROKE} />}
         />
         <CardBody className="space-y-3">
@@ -139,8 +194,8 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
                 onChange={(e) => {
                   const next = e.target.value
                   setResource(next)
-                  const types = SCOPE_RESOURCES.find((r) => r.key === next)?.types ?? []
-                  if (!types.includes(scopeType)) setScopeType((types[0] as ScopeType) ?? 'customers')
+                  const types = typesFor(next, subject)
+                  if (!types.includes(scopeType)) setScopeType(types[0] ?? 'customers')
                 }}
               >
                 {SCOPE_RESOURCES.map((r) => (
@@ -168,17 +223,19 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
           {scopes.length === 0 ? (
             <EmptyState
               art="check"
-              title="ללא הגבלת נתונים"
-              description="המשתמש רואה כל מה שההרשאות שלו מתירות, בכל הלקוחות ובכל התאריכים"
+              title={subject.kind === 'user' ? 'אין הגבלות אישיות' : 'ללא הגבלת נתונים'}
+              description={
+                subject.kind === 'user'
+                  ? 'חלות רק ההגבלות מהתפקיד (למעלה) והגדר של סוג המשתמש'
+                  : 'מי שמחזיק את התפקיד רואה כל מה שההרשאות שלו מתירות — במסגרת סוג המשתמש שלו'
+              }
             />
           ) : (
             <ul className="space-y-2">
               {scopes.map((s) => (
                 <li key={s.id} className="rounded-lg border border-line-subtle p-3">
                   <div className="mb-2 flex items-center gap-2">
-                    <Badge tone="primary">
-                      {SCOPE_RESOURCES.find((r) => r.key === s.resource)?.label ?? s.resource}
-                    </Badge>
+                    <Badge tone="primary">{resourceLabel(s.resource)}</Badge>
                     <span className="type-body font-semibold">{SCOPE_LABELS[s.scope_type]}</span>
                     <IconButton
                       className="ms-auto"
@@ -222,12 +279,11 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
                       </Field>
                     </div>
                   ) : s.scope_type === 'own' ? (
-                    <p className="type-caption text-ink-tertiary">
-                      רואה רק רשומות ששובץ אליהן או שיצר בעצמו
-                    </p>
+                    <p className="type-caption text-ink-tertiary">רואה רק רשומות ששובץ אליהן או שיצר בעצמו</p>
                   ) : s.scope_type === 'all' ? (
-                    <p className="type-caption text-ink-tertiary">
-                      ללא הגבלה — מבטל הגבלות שמגיעות מתפקיד
+                    <p className="type-caption text-warning-text">
+                      כל ההגבלות שמגיעות מהתפקיד על {resourceLabel(s.resource)} בוטלו למשתמש הזה. הגדר של סוג
+                      המשתמש נשאר: משתמש לקוח רואה רק את הלקוח שלו, וקבלן רק את מה שהואצל לו.
                     </p>
                   ) : (
                     <>
@@ -239,7 +295,7 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
                       />
                       {s.scope_values.length === 0 && (
                         <p className="mt-1 type-caption text-warning-text">
-                          רשימה ריקה אינה מגבילה דבר — יש לבחור לפחות פריט אחד
+                          לא נבחר אף ערך — עד שייבחר, המשתמש לא יראה אף רשומה ב{resourceLabel(s.resource)}
                         </p>
                       )}
                     </>
@@ -251,5 +307,77 @@ export function ScopeEditor({ subject }: { subject: ScopeSubject }) {
         </CardBody>
       </Card>
     </div>
+  )
+}
+
+/**
+ * מה שהמשתמש רואה בפועל, מודול אחר מודול — הגדר של סוג המשתמש, ההגבלות
+ * מהתפקיד (ואם הוחלפו), וההגבלות האישיות, בשפה ולא בטבלה.
+ */
+function EffectiveCard({
+  subject,
+  personal,
+  fromRoles,
+  roleName,
+  nameOf,
+  customerName,
+  contractorName,
+}: {
+  subject: Extract<ScopeSubject, { kind: 'user' }>
+  personal: PermissionScope[]
+  fromRoles: PermissionScope[]
+  roleName: (id: string | null) => string
+  nameOf: (type: ScopeType, id: string) => string
+  customerName: string | null
+  contractorName: string | null
+}) {
+  return (
+    <Card>
+      <CardHeader
+        title="מה המשתמש רואה בפועל"
+        subtitle="הגדר של סוג המשתמש, ההגבלות מהתפקיד וההגבלות האישיות — כפי שהשרת אוכף אותם"
+        icon={<Eye size={ICON.md} strokeWidth={STROKE} />}
+      />
+      <CardBody padded={false}>
+        <ul>
+          {SCOPE_RESOURCES.map((r) => {
+            const eff = effectiveScope(r.key, personal, fromRoles)
+            const lines = describeScope(r.key, eff, {
+              userKind: subject.userKind,
+              customerName,
+              contractorName,
+              nameOf,
+            })
+            const inherited = fromRoles.filter((s) => s.resource === r.key && s.scope_type !== 'all')
+            return (
+              <li key={r.key} className="border-b border-line-subtle px-4 py-3 last:border-0">
+                <p className="type-body font-semibold">{r.label}</p>
+                <ul className="mt-1 list-disc space-y-0.5 ps-5">
+                  {lines.map((line) => (
+                    <li key={line} className="type-body text-ink-secondary">
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+                {inherited.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="type-caption text-ink-tertiary">מהתפקיד:</span>
+                    {inherited.map((s) => {
+                      const replaced = eff.overridden.includes(s)
+                      return (
+                        <Badge key={s.id} tone={replaced ? 'neutral' : 'info'}>
+                          {roleName(s.role_id)} · {SCOPE_LABELS[s.scope_type]}
+                          {replaced ? ' (בוטל אישית)' : ''}
+                        </Badge>
+                      )
+                    })}
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      </CardBody>
+    </Card>
   )
 }

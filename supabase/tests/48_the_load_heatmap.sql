@@ -399,8 +399,10 @@ select t_eq('ואותה דחייה גם ביום הבודד',
   ((select load_day(d0) from t48) -> 'meta' ->> 'denied')::boolean, true);
 
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000048a4', false);
-select t_eq('לקוח אינו מקבל את העומס של העסק',
-  (t48map() -> 'meta' ->> 'denied')::boolean, true);
+-- ‏0214: ‏`reports.load` חל על צוות בלבד, ולכן גם ההענקה שלמעלה אינה פותחת אותו
+-- ללקוח — הדחייה מגיעה כבר בשער הראשון, לפני `app.load_denied`.
+select t_eq('ללקוח המפתח אינו חל, גם כשהוענק לו', app.has('reports.load'), false);
+select t_expect_fail('ולכן הוא אינו מקבל את העומס של העסק', 'select t48map()');
 
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000048a2', false);
 select t_expect_fail('בלי המפתח הדלת נסגרת, ולא מחזירה מפה ריקה',
