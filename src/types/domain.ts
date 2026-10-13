@@ -2446,24 +2446,30 @@ export interface WarehouseScheduleRow {
 
 /* ===== תלושי שכר (0218) ===== */
 
-/** שורה של `payslip_amounts`. הסכומים כפי שנקראו מהתלוש או הוקלדו; שלושת האחרונים מחושבים במסד. */
+/**
+ * שורה של `payslip_amounts`. הסכומים כפי שנקראו מהתלוש או הוקלדו; ביטוח לאומי
+ * מעסיק ושלושת האחרונים מחושבים במסד (0219).
+ */
 export interface PayslipAmounts {
   gross_pay: number | null
   net_pay: number | null
-  imputed_income: number | null
+  /** חייב מ.ה. — הבסיס לביטוח לאומי מעסיק */
+  taxable_income: number | null
   income_tax: number | null
   employee_national_insurance: number | null
+  employee_health_tax: number | null
   employee_pension: number | null
   employee_study_fund: number | null
   employer_pension: number | null
   employer_severance: number | null
   employer_study_fund: number | null
+  /** מחושב מ-taxable_income לפי מדרגות הביטוח הלאומי שבהגדרות; null בלי חייב מ.ה. או בלי מדרגות */
   employer_national_insurance: number | null
   employer_other: number | null
   printed_employer_cost: number | null
-  /** סך הפרשות המעביד (מחושב) */
+  /** סך תשלומי המעסיק (מחושב) */
   employer_contributions: number
-  /** ברוטו − זקיפות + הפרשות המעביד (מחושב); null כשאין ברוטו */
+  /** ברוטו + תשלומי המעסיק (מחושב); null כשאין ברוטו */
   employer_cost: number | null
   /** ברוטו − נטו (מחושב) */
   deductions: number | null
@@ -2471,10 +2477,17 @@ export interface PayslipAmounts {
   updated_at: string
 }
 
+/** מה שהטופס כותב — בלי מה שהמסד מחשב. */
 export type PayslipAmountKey = Exclude<
   keyof PayslipAmounts,
-  'employer_contributions' | 'employer_cost' | 'deductions' | 'source' | 'updated_at'
+  'employer_national_insurance' | 'employer_contributions' | 'employer_cost' | 'deductions' | 'source' | 'updated_at'
 >
+
+/** מדרגת ביטוח לאומי מעסיק (0219): עד `up_to` (null — בלי תקרה), באחוזים. */
+export interface PayslipNiBracket {
+  up_to: number | null
+  rate: number
+}
 
 /** תלוש במסך המנהל — שורה של `payslips_board`. */
 export interface PayslipBoardRow {

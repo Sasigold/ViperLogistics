@@ -9,19 +9,23 @@
 /** ברירת המחדל. `PAYSLIP_MODEL` בסודות הפונקציה מחליף אותה. */
 export const PAYSLIP_MODEL = 'claude-opus-5-5'
 
-/** הרכיבים, בסדר שבו המסך מציג אותם. שמות זהים לעמודות `payslip_amounts`. */
+/**
+ * הרכיבים, בסדר שבו המסך מציג אותם. שמות זהים לעמודות `payslip_amounts`.
+ * ביטוח לאומי מעסיק אינו כאן: הוא מחושב במסד מ-`taxable_income` לפי המדרגות
+ * שבהגדרות (0219), וזקיפות שווי אינן חלק מהעלות.
+ */
 export const AMOUNT_KEYS = [
   'gross_pay',
   'net_pay',
-  'imputed_income',
   'income_tax',
   'employee_national_insurance',
+  'employee_health_tax',
   'employee_pension',
   'employee_study_fund',
-  'employer_pension',
   'employer_severance',
+  'employer_pension',
+  'taxable_income',
   'employer_study_fund',
-  'employer_national_insurance',
   'employer_other',
   'printed_employer_cost',
 ] as const
@@ -29,10 +33,15 @@ export const AMOUNT_KEYS = [
 export type AmountKey = (typeof AMOUNT_KEYS)[number]
 
 /**
- * רכיבים שהם סכום אחד מודפס. כל השאר מצטברים: ביטוח לאומי ומס בריאות, או שתי
- * קרנות פנסיה, יכולים לחזור כשתי שורות של אותו רכיב — ושתיהן נספרות.
+ * רכיבים שהם סכום אחד מודפס. כל השאר מצטברים: שתי קרנות פנסיה, או שתי שורות
+ * פיצויים, יכולות לחזור כשתי שורות של אותו רכיב — ושתיהן נספרות.
  */
-const SINGLE_VALUE: ReadonlySet<string> = new Set<AmountKey>(['gross_pay', 'net_pay', 'printed_employer_cost'])
+const SINGLE_VALUE: ReadonlySet<string> = new Set<AmountKey>([
+  'gross_pay',
+  'net_pay',
+  'taxable_income',
+  'printed_employer_cost',
+])
 
 export interface PayslipReading {
   kind: 'payslip' | 'other'
@@ -56,19 +65,25 @@ Identify the page:
 - period_month, period_year: the month the payslip is for (e.g. "תלוש שכר לחודש 09/2026" → 9, 2026).
 - page_index, page_total: page numbering printed on the page ("דף 2 מתוך 2", "עמוד 1 מתוך 2"), if any.
 
-amounts: a list of {component, amount} — one entry for each component below that is printed on this page, and nothing for a component that is not printed. Current month only, never the cumulative year-to-date columns (מצטבר / מתחילת השנה). Plain numbers in shekels, no thousands separators. Never estimate or compute a value from rates; report only what is printed (sums of several printed lines of the same component are fine). The components:
+amounts: a list of {component, amount} — one entry for each component below that is printed on this page, and nothing for a component that is not printed. Current month only, never the cumulative year-to-date columns (מצטבר / מתחילת השנה). Plain numbers in shekels, no thousands separators. Never estimate or compute a value from rates; report only what is printed (sums of several printed lines of the same component are fine). Where to look is typical of the payslips this company receives; if the layout differs, find the same labels elsewhere on the page.
+
+General figures:
 - gross_pay: total payments for the month (סה"כ תשלומים / שכר ברוטו). If both "סה"כ תשלומים" and "ברוטו למס הכנסה" appear, use סה"כ תשלומים.
 - net_pay: the final amount paid to the employee (נטו לתשלום).
-- imputed_income: non-cash benefit values (שווי רכב, שווי טלפון, שווי ארוחות, שווי מתנות, זקיפת הפרשות מעביד) — only the part that is included inside gross_pay. If such values are listed separately and not counted in gross_pay, use 0.
+
+Employee deductions (usually in the deductions block at the bottom right):
 - income_tax: מס הכנסה.
-- employee_national_insurance: the employee's ביטוח לאומי plus מס בריאות.
-- employee_pension: the employee's deductions to pension / provident fund / managers' insurance (תגמולי עובד, קופת גמל עובד), summed over all funds.
+- employee_national_insurance: the employee's ביטוח לאומי only — not the health tax.
+- employee_health_tax: the employee's דמי בריאות / מס בריאות.
+- employee_pension: the employee's deductions to pension / provident fund / managers' insurance — usually shown under the fund's name (e.g. מיטב דש, תגמולי עובד, קופ"ג עובד), summed over all funds.
 - employee_study_fund: the employee's קרן השתלמות deduction.
-- employer_pension: the employer's contributions to pension / provident fund / managers' insurance (תגמולי מעביד), summed over all funds, excluding severance.
-- employer_severance: the employer's severance contributions (פיצויים).
+
+Employer payments (usually in the block at the top left):
+- employer_severance: the employer's monthly severance contribution ("פיצויים חודשי" / פיצויים מעסיק).
+- employer_pension: the employer's monthly provident / pension contribution ("קופ"ג מעסיק-חודשי" / תגמולי מעביד), summed over all funds, excluding severance.
+- taxable_income: the amount liable for income tax this month ("חייב מ.ה." / "חייב במס הכנסה" / ברוטו למס הכנסה), usually in the left column. This is the base the company uses to compute the employer's national insurance — do not report the employer's national insurance itself.
 - employer_study_fund: the employer's קרן השתלמות contribution.
-- employer_national_insurance: the employer's share of ביטוח לאומי (ב"ל מעביד), only if printed.
-- employer_other: any other employer contribution printed on the payslip that is not one of the above (e.g. אובדן כושר עבודה מעביד when shown separately, מס שכר).
+- employer_other: any other employer contribution printed on the payslip that is not one of the above (e.g. אובדן כושר עבודה מעביד when shown separately). Not the employer's national insurance.
 - printed_employer_cost: the total employer cost if the payslip prints one (עלות מעביד / עלות שכר כוללת).
 
 notes: one short sentence about anything unclear on the page, otherwise null.`
@@ -150,7 +165,7 @@ export function normalizeReading(raw: unknown): PayslipReading {
   const year = intIn(r.period_year, 2000, 2099)
   const amounts: Partial<Record<AmountKey, number>> = {}
   // הסכמה מחזירה רשימה [{component, amount}]; אובייקט {רכיב: סכום} מתקבל גם הוא.
-  // רכיב שחוזר ברשימה מצטבר, חוץ מסכום יחיד (ברוטו, נטו, עלות מודפסת) — שם האחרון קובע.
+  // רכיב שחוזר ברשימה מצטבר, חוץ מסכום יחיד (ברוטו, נטו, חייב מ.ה., עלות מודפסת) — שם האחרון קובע.
   const known = new Set<string>(AMOUNT_KEYS)
   if (kind === 'payslip' && Array.isArray(r.amounts)) {
     for (const e of r.amounts as unknown[]) {

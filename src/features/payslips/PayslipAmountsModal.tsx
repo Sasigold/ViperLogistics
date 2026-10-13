@@ -57,7 +57,7 @@ export function PayslipAmountsModal({ slip, onClose }: { slip: PayslipBoardRow; 
         <div className="grid gap-3 sm:grid-cols-3">
           {[
             { label: 'ברוטו', value: a?.gross_pay },
-            { label: 'הפרשות המעביד', value: a?.employer_contributions },
+            { label: 'תשלומי המעסיק', value: a?.employer_contributions },
             { label: 'עלות מעביד', value: a?.employer_cost, strong: true },
           ].map((s) => (
             <div
@@ -77,8 +77,8 @@ export function PayslipAmountsModal({ slip, onClose }: { slip: PayslipBoardRow; 
 
         <p className="flex items-start gap-2 type-caption text-ink-secondary">
           <Info size={ICON.sm} strokeWidth={STROKE} className="mt-0.5 shrink-0" />
-          עלות מעביד = ברוטו − זקיפות שווי + הפרשות המעביד (פנסיה, פיצויים, קרן השתלמות, ביטוח לאומי מעביד ואחרות).
-          ניכויי העובד — מס, ביטוח לאומי ופנסיה של העובד — כבר בתוך הברוטו, ולכן ברוטו פחות נטו אינו עלות המעביד.
+          עלות מעביד = ברוטו + תשלומי המעסיק: פיצויים, קופ״ג מעסיק, ביטוח לאומי מעסיק (מחושב מ״חייב מ.ה.״ לפי
+          המדרגות בהגדרות ← תלושי שכר) ושאר ההפרשות. ניכויי העובד כבר בתוך הברוטו, ולכן אינם נוספים לעלות.
         </p>
 
         {flags.length > 0 && (
@@ -114,6 +114,17 @@ export function PayslipAmountsModal({ slip, onClose }: { slip: PayslipBoardRow; 
                   />
                 </Field>
               ))}
+              {g.fields.some((f) => f.key === 'taxable_income') && (
+                <Field label="ביטוח לאומי מעסיק" hint="מחושב מ״חייב מ.ה.״ לפי המדרגות — מתעדכן אחרי שמירה">
+                  <Input
+                    dir="ltr"
+                    className="text-end tabular-nums"
+                    readOnly
+                    disabled
+                    value={a?.employer_national_insurance == null ? '—' : fmtMoney(a.employer_national_insurance)}
+                  />
+                </Field>
+              )}
             </div>
           </fieldset>
         ))}

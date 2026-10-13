@@ -10,7 +10,13 @@ import type { QueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
-import type { MyPayslip, PayslipAmountKey, PayslipBatchOverview, PayslipBoard } from '../../types/domain'
+import type {
+  MyPayslip,
+  PayslipAmountKey,
+  PayslipBatchOverview,
+  PayslipBoard,
+  PayslipNiBracket,
+} from '../../types/domain'
 import { PAYSLIP_BUCKET, READ_CHUNK, chunks, pagePath, slipPages } from './payslips'
 import { mergePdfs, splitPages } from './payslipPdf'
 
@@ -190,8 +196,10 @@ export interface ReadOutcome {
   configured: boolean
   read: number
   failed: { page: number; error: string }[]
-  /** הקיבוץ לתלושים הוחל */
+  /** הקיבוץ לתלושים הוחל (או, ב-'amounts', הסכומים עודכנו) */
   grouped: boolean
+  /** ב-'amounts': תלושים שהסכומים שלהם הוקלדו ביד ולכן לא עודכנו */
+  manual?: number
 }
 
 interface PageResult {
@@ -222,6 +230,8 @@ export async function readPayslipBatch(
   batchId: string,
   pages: number[],
   onStep: (s: UploadStep) => void,
+  /** 'group' — קיבוץ מחדש לתלושים; 'amounts' — רק הסכומים, לקובץ שכבר שויכו ממנו תלושים (0219) */
+  mode: 'group' | 'amounts' = 'group',
 ): Promise<ReadOutcome> {
   const failed: ReadOutcome['failed'] = []
   let read = 0
@@ -241,9 +251,49 @@ export async function readPayslipBatch(
   if (read === 0) return { configured: true, read, failed, grouped: false }
 
   onStep({ step: 'group' })
+  if (mode === 'amounts') {
+    const { data, error } = await supabase.rpc('payslip_refresh_amounts', { p_batch_id: batchId })
+    if (error) throw error
+    return { configured: true, read, failed, grouped: true, manual: (data as { manual: number }).manual }
+  }
   const { error } = await supabase.rpc('payslip_apply_reading', { p_batch_id: batchId })
   if (error) throw error
   return { configured: true, read, failed, grouped: true }
+}
+
+/* ===== מדרגות ביטוח לאומי מעסיק (0219) ===== */
+
+export function useNiBrackets() {
+  const has = useAuth((s) => s.has)
+  return useQuery({
+    queryKey: [KEY, 'ni_brackets'],
+    enabled: has(PERM.PAYSLIPS_EMPLOYER_COST),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('payslip_settings')
+        .select('value')
+        .eq('key', 'employer_ni_brackets')
+        .maybeSingle()
+      if (error) throw error
+      return ((data?.value as PayslipNiBracket[] | undefined) ?? []).map((b) => ({
+        up_to: b.up_to === null ? null : Number(b.up_to),
+        rate: Number(b.rate),
+      }))
+    },
+  })
+}
+
+/** שמירה מחשבת מחדש את ביטוח הלאומי של כל התלושים; מחזירה כמה. */
+export function useSaveNiBrackets() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (brackets: PayslipNiBracket[]) => {
+      const { data, error } = await supabase.rpc('payslip_ni_brackets_save', { p_brackets: brackets })
+      if (error) throw error
+      return data as number
+    },
+    onSuccess: () => void invalidate(qc),
+  })
 }
 
 export function useInvalidatePayslips() {

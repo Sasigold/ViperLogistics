@@ -11,6 +11,7 @@ import {
   ICON,
   Map,
   Plus,
+  Receipt,
   RotateCcw,
   STROKE,
   Shield,
@@ -52,6 +53,7 @@ import { OvertimeSettingsTab } from '../attendance/OvertimeSettingsTab'
 import { FinanceSettingsTab } from './FinanceSettingsTab'
 import { CompanyTab } from './CompanyTab'
 import { NotificationsAdminTab } from '../notifications/NotificationsAdminTab'
+import { NiBracketsTab } from '../payslips/NiBracketsTab'
 import { errorMessage } from '../../lib/errors'
 
 /**
@@ -81,6 +83,8 @@ const TABS = [
   { key: 'finance', label: 'כספים', icon: <Banknote size={ICON.sm} />, perm: PERM.SETTINGS_EDIT },
   { key: 'company', label: 'פרטי החברה', icon: <Building2 size={ICON.sm} />, perm: PERM.SETTINGS_EDIT },
   { key: 'attendance', label: 'נוכחות ושעות נוספות', icon: <Clock size={ICON.sm} />, perm: PERM.ATTENDANCE_SETTINGS },
+  /* ‏0219: מדרגות ביטוח לאומי מעסיק לתלושי השכר */
+  { key: 'payslips', label: 'תלושי שכר', icon: <Receipt size={ICON.sm} />, perm: PERM.PAYSLIPS_EMPLOYER_COST },
   { key: 'notifications', label: 'התראות', icon: <Bell size={ICON.sm} />, perm: PERM.NOTIFICATIONS_MANAGE },
   { key: 'roles', label: 'הרשאות ותפקידים', icon: <Shield size={ICON.sm} />, perm: PERM.SETTINGS_PERMISSIONS },
   { key: 'recycle', label: 'סל מיחזור', icon: <RotateCcw size={ICON.sm} />, perm: PERM.SETTINGS_RECYCLE_BIN },
@@ -109,6 +113,7 @@ export default function SettingsPage() {
         {active === 'finance' && <FinanceSettingsTab />}
         {active === 'company' && <CompanyTab />}
         {active === 'attendance' && <OvertimeSettingsTab />}
+        {active === 'payslips' && <NiBracketsTab />}
         {active === 'notifications' && <NotificationsAdminTab />}
         {active === 'roles' && <RolesTab />}
         {active === 'recycle' && <RecycleBinTab />}

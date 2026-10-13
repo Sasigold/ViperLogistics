@@ -139,8 +139,8 @@ select payslip_store_reading(:'batch1', 2, '{
   "kind":"payslip","employee_name":null,"employee_no":"17","period":"2031-05-01",
   "page_index":2,"page_total":2,"amounts":{"gross_pay":12000,"net_pay":9000,"imputed_income":1000,
   "income_tax":1200,"employee_national_insurance":800,"employee_pension":720,
-  "employer_pension":780,"employer_severance":750,"employer_national_insurance":500,
-  "printed_employer_cost":13030}}'::jsonb, 'test');
+  "employer_pension":780,"employer_severance":750,"taxable_income":11000,
+  "printed_employer_cost":13800}}'::jsonb, 'test');
 -- מספור של הקובץ כולו ("עמוד 3"): עובדת אחרת, ולכן אינו המשך
 select payslip_store_reading(:'batch1', 3, '{
   "kind":"payslip","employee_name":"דנה לויתן 68","employee_no":null,"period":"2031-05-01",
@@ -175,12 +175,18 @@ select id as slip4 from payslips where batch_id = :'batch1' and page_from = 4 \g
 
 \echo '--- 4. עלות המעביד ---'
 select t68_as('c1');
+-- מדרגות ביטוח לאומי מעסיק (0219): עד 7,000 — 1%, מעליהן 5%
+select t_eq('שמירת המדרגות מחשבת מחדש את התלושים שכבר נקראו',
+  payslip_ni_brackets_save('[{"up_to":7000,"rate":1},{"up_to":null,"rate":5}]') >= 2, true);
 select t_eq('הסכומים של תלוש רב-עמודי: הערך האחרון לכל רכיב',
   (select gross_pay::text || '|' || net_pay::text from payslip_amounts where payslip_id = :'slip1'), '12000.00|9000.00');
--- ‏12,000 − 1,000 זקיפות + 780 פנסיה + 750 פיצויים + 500 ביטוח לאומי
-select t_eq('עלות מעביד = ברוטו − זקיפות + הפרשות המעביד',
-  (select employer_cost from payslip_amounts where payslip_id = :'slip1'), 13030.00::numeric);
-select t_eq('ההפרשות לבדן', (select employer_contributions from payslip_amounts where payslip_id = :'slip1'), 2030.00::numeric);
+-- ‏12,000 + 780 קופ"ג + 750 פיצויים + ביטוח לאומי על חייב מ.ה. 11,000:
+-- ‏7,000 × 1% + 4,000 × 5% = 270. הזקיפות שנקראו (1,000) אינן מופחתות (0219).
+select t_eq('ביטוח לאומי מעסיק מחושב מחייב מ.ה. לפי המדרגות',
+  (select employer_national_insurance from payslip_amounts where payslip_id = :'slip1'), 270.00::numeric);
+select t_eq('עלות מעביד = ברוטו + תשלומי המעסיק',
+  (select employer_cost from payslip_amounts where payslip_id = :'slip1'), 13800.00::numeric);
+select t_eq('ההפרשות לבדן', (select employer_contributions from payslip_amounts where payslip_id = :'slip1'), 1800.00::numeric);
 select t_eq('הניכויים = ברוטו − נטו (אינם עלות מעביד)',
   (select deductions from payslip_amounts where payslip_id = :'slip1'), 3000.00::numeric);
 select t_eq('ומתיישבת עם "עלות מעביד" שהתלוש מדפיס',
@@ -191,8 +197,9 @@ select t_eq('עמוד שאינו תלוש — בלי סכומים',
 select t_expect_fail('רואה עלות אינו משייך', format($$select payslip_assign('%s', '20000000-0000-0000-0000-0000000068d1')$$, :'slip1'));
 
 select t_expect_ok('רואה עלות מתקן סכומים ביד',
-  format($$select payslip_amounts_save('%s', '{"gross_pay":"6000","net_pay":5100,"employer_pension":390,"employer_severance":375,"employer_national_insurance":250}')$$, :'slip3'));
-select t_eq('ועלות המעביד מתעדכנת', (select employer_cost from payslip_amounts where payslip_id = :'slip3'), 7015.00::numeric);
+  format($$select payslip_amounts_save('%s', '{"gross_pay":"6000","net_pay":5100,"employer_pension":390,"employer_severance":375,"taxable_income":6000}')$$, :'slip3'));
+-- ‏6,000 + 390 + 375 + 6,000 × 1%
+select t_eq('ועלות המעביד מתעדכנת', (select employer_cost from payslip_amounts where payslip_id = :'slip3'), 6825.00::numeric);
 select t_eq('המקור: ידני', (select source from payslip_amounts where payslip_id = :'slip3'), 'manual');
 select t_expect_ok('הפרשה בלי ברוטו נשמרת',
   format($$select payslip_amounts_save('%s', '{"employer_pension":100,"net_pay":"abc"}')$$, :'slip4'));
@@ -282,9 +289,9 @@ select t_expect_fail('אין צירוף לתלוש הראשון בקובץ',
   format($$select payslip_merge_previous('%s')$$, :'slip1'));
 
 select t68_as('c1');
-select t_eq('הסכומים נשארו עם התלוש', (select employer_cost from payslip_amounts where payslip_id = :'slip1'), 13030.00::numeric);
+select t_eq('הסכומים נשארו עם התלוש', (select employer_cost from payslip_amounts where payslip_id = :'slip1'), 13800.00::numeric);
 select t_eq('סיכומי החודש — על תלושים ששויכו',
-  (payslips_board(null, '2031-05-01') -> 'totals' ->> 'employer_cost')::numeric, 20045.00::numeric);
+  (payslips_board(null, '2031-05-01') -> 'totals' ->> 'employer_cost')::numeric, 20625.00::numeric);
 select t_eq('ומספרם', (payslips_board(null, '2031-05-01') -> 'totals' ->> 'count')::int, 2);
 
 -- ===== 8. "רק מה שמותר" ====================================================

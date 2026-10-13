@@ -5,7 +5,7 @@
  * כאן רק תוויות, נתיבים, חלוקת עמודים לקריאה ובדיקות תצוגה על מספרים שהשרת
  * כבר החזיר.
  */
-import type { MyPayslip, PayslipAmountKey, PayslipAmounts } from '../../types/domain'
+import type { MyPayslip, PayslipAmountKey, PayslipAmounts, PayslipNiBracket } from '../../types/domain'
 
 export const PAYSLIP_BUCKET = 'payslips'
 
@@ -105,8 +105,10 @@ export function costFlags(a: PayslipAmounts | null | undefined): CostFlag[] {
   if (!a) return [{ tone: 'info', text: 'אין סכומים — התלוש לא נקרא ולא הוקלד' }]
   const flags: CostFlag[] = []
   if (a.gross_pay === null) flags.push({ tone: 'warning', text: 'חסר ברוטו — אין עלות מעביד' })
-  if (a.gross_pay !== null && a.employer_national_insurance === null)
-    flags.push({ tone: 'warning', text: 'ביטוח לאומי מעביד לא מופיע — העלות אינה כוללת אותו' })
+  if (a.gross_pay !== null && a.taxable_income === null)
+    flags.push({ tone: 'warning', text: 'חסר "חייב מ.ה." — ביטוח לאומי מעסיק לא חושב' })
+  if (a.taxable_income !== null && a.employer_national_insurance === null)
+    flags.push({ tone: 'warning', text: 'לא הוגדרו מדרגות ביטוח לאומי מעסיק (בהגדרות)' })
   if (
     a.printed_employer_cost !== null &&
     a.employer_cost !== null &&
@@ -122,40 +124,40 @@ export interface AmountField {
   hint?: string
 }
 
-/** הרכיבים בטופס, בשלוש קבוצות — כמו שהם מסודרים בתלוש. */
+/** הרכיבים בטופס, בקבוצות — כמו שהם מסודרים בתלוש (0219). */
 export const AMOUNT_GROUPS: { title: string; hint: string; fields: AmountField[] }[] = [
   {
-    title: 'שכר',
+    title: 'נתונים כלליים',
     hint: 'מה ששולם לעובד החודש',
     fields: [
       { key: 'gross_pay', label: 'ברוטו (סה״כ תשלומים)' },
       { key: 'net_pay', label: 'נטו לתשלום' },
-      {
-        key: 'imputed_income',
-        label: 'זקיפות שווי בתוך הברוטו',
-        hint: 'שווי רכב, טלפון וכד׳ — נכללים בברוטו לצורכי מס אבל אינם כסף ששולם',
-      },
     ],
   },
   {
-    title: 'ניכויי העובד',
-    hint: 'יורדים מהברוטו של העובד — אינם חלק מעלות המעביד',
+    title: 'ניכויים מהעובד',
+    hint: 'בתלוש בצד ימין למטה. יורדים מהברוטו של העובד — אינם חלק מעלות המעביד',
     fields: [
+      { key: 'employee_national_insurance', label: 'ביטוח לאומי' },
+      { key: 'employee_health_tax', label: 'דמי בריאות' },
+      { key: 'employee_pension', label: 'פנסיה / גמל — עובד', hint: 'לפי שם הקרן בתלוש, למשל מיטב דש' },
       { key: 'income_tax', label: 'מס הכנסה' },
-      { key: 'employee_national_insurance', label: 'ביטוח לאומי ומס בריאות — עובד' },
-      { key: 'employee_pension', label: 'פנסיה / גמל — עובד' },
       { key: 'employee_study_fund', label: 'קרן השתלמות — עובד' },
     ],
   },
   {
-    title: 'הפרשות המעביד',
-    hint: 'משולמות מעל הברוטו — הן מה שהופך את הברוטו לעלות מעביד',
+    title: 'תשלומי המעסיק',
+    hint: 'בתלוש בצד שמאל למעלה. משולמים מעל הברוטו — הם מה שהופך את הברוטו לעלות מעביד',
     fields: [
-      { key: 'employer_pension', label: 'פנסיה / גמל — מעביד' },
-      { key: 'employer_severance', label: 'פיצויים' },
-      { key: 'employer_study_fund', label: 'קרן השתלמות — מעביד' },
-      { key: 'employer_national_insurance', label: 'ביטוח לאומי — מעביד' },
-      { key: 'employer_other', label: 'הפרשות מעביד אחרות', hint: 'אובדן כושר עבודה, מס שכר וכד׳' },
+      { key: 'employer_severance', label: 'פיצויים חודשי' },
+      { key: 'employer_pension', label: 'קופ״ג מעסיק — חודשי' },
+      {
+        key: 'taxable_income',
+        label: 'חייב מ.ה.',
+        hint: 'ביטוח לאומי מעסיק מחושב ממנו לפי המדרגות בהגדרות',
+      },
+      { key: 'employer_study_fund', label: 'קרן השתלמות — מעסיק' },
+      { key: 'employer_other', label: 'תשלומי מעסיק אחרים', hint: 'אובדן כושר עבודה וכד׳' },
     ],
   },
   {
@@ -186,4 +188,44 @@ export function groupByPeriod<T extends Pick<MyPayslip, 'period'>>(rows: readonl
   return [...map.entries()]
     .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
     .map(([period, slips]) => ({ period, slips }))
+}
+
+/** מדרגה בטופס ההגדרות: מחרוזות כפי שהוקלדו. */
+export interface BracketDraft {
+  up_to: string
+  rate: string
+}
+
+/**
+ * בדיקת טופס המדרגות לפני שליחה — אותם כללים של `payslip_ni_brackets_save`
+ * (השרת בודק שוב). מחזירה את המדרגות או הודעת שגיאה.
+ */
+export function parseBrackets(rows: readonly BracketDraft[]): { brackets: PayslipNiBracket[] } | { error: string } {
+  const out: PayslipNiBracket[] = []
+  let prev = 0
+  for (let i = 0; i < rows.length; i++) {
+    const n = i + 1
+    const rate = parseAmountInput(rows[i].rate)
+    if (rate === null || rate < 0 || rate > 100) return { error: `מדרגה ${n}: האחוז חייב להיות בין 0 ל-100` }
+    if (rows[i].up_to.trim() === '') {
+      if (i < rows.length - 1) return { error: 'רק המדרגה האחרונה יכולה להיות בלי תקרה' }
+      out.push({ up_to: null, rate })
+      continue
+    }
+    const up = parseAmountInput(rows[i].up_to)
+    if (up === null || up <= prev) return { error: `מדרגה ${n}: הסכום חייב להיות גדול מהמדרגה שלפניה` }
+    prev = up
+    out.push({ up_to: up, rate })
+  }
+  if (out.length > 12) return { error: 'עד 12 מדרגות' }
+  return { brackets: out }
+}
+
+/** תיאור מדרגה בעברית: "מ-7,000 עד 15,000 ₪ — 5%". */
+export function bracketLabel(brackets: readonly PayslipNiBracket[], i: number): string {
+  const from = i === 0 ? 0 : (brackets[i - 1].up_to ?? 0)
+  const fmt = (v: number) => v.toLocaleString('he-IL', { maximumFractionDigits: 2 })
+  const b = brackets[i]
+  const range = b.up_to === null ? `מעל ${fmt(from)} ₪` : `מ-${fmt(from)} עד ${fmt(b.up_to)} ₪`
+  return `${range} — ${fmt(b.rate)}%`
 }

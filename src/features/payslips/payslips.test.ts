@@ -4,6 +4,7 @@ import type { PayslipAmounts } from '../../types/domain'
 import {
   AMOUNT_KEYS,
   READ_CHUNK,
+  bracketLabel,
   chunks,
   costFlags,
   defaultUploadPeriod,
@@ -11,6 +12,7 @@ import {
   pagePath,
   pageRangeLabel,
   parseAmountInput,
+  parseBrackets,
   periodLabel,
   periodOptions,
   shiftPeriod,
@@ -23,19 +25,20 @@ import { AMOUNT_KEYS as READ_KEYS } from '../../../supabase/functions/_shared/pa
 const amounts = (over: Partial<PayslipAmounts> = {}): PayslipAmounts => ({
   gross_pay: 12000,
   net_pay: 9000,
-  imputed_income: 1000,
+  taxable_income: 11000,
   income_tax: 1200,
-  employee_national_insurance: 800,
+  employee_national_insurance: 500,
+  employee_health_tax: 300,
   employee_pension: 720,
   employee_study_fund: null,
   employer_pension: 780,
   employer_severance: 750,
   employer_study_fund: null,
-  employer_national_insurance: 500,
+  employer_national_insurance: 270,
   employer_other: null,
-  printed_employer_cost: 13030,
-  employer_contributions: 2030,
-  employer_cost: 13030,
+  printed_employer_cost: 13800,
+  employer_contributions: 1800,
+  employer_cost: 13800,
   deductions: 3000,
   source: 'reading',
   updated_at: '2026-10-01T00:00:00Z',
@@ -92,12 +95,21 @@ describe('costFlags', () => {
       'חסר ברוטו — אין עלות מעביד',
     ])
   })
-  it('בלי ביטוח לאומי מעביד — העלות חלקית', () => {
-    expect(costFlags(amounts({ employer_national_insurance: null, printed_employer_cost: null }))).toHaveLength(1)
+  it('בלי חייב מ.ה. — ביטוח לאומי מעסיק לא חושב', () => {
+    expect(
+      costFlags(amounts({ taxable_income: null, employer_national_insurance: null, printed_employer_cost: null })).map(
+        (f) => f.text,
+      ),
+    ).toEqual(['חסר "חייב מ.ה." — ביטוח לאומי מעסיק לא חושב'])
+  })
+  it('יש חייב מ.ה. ואין ביטוח לאומי — אין מדרגות', () => {
+    expect(
+      costFlags(amounts({ employer_national_insurance: null, printed_employer_cost: null })).map((f) => f.text),
+    ).toEqual(['לא הוגדרו מדרגות ביטוח לאומי מעסיק (בהגדרות)'])
   })
   it('פער מול העלות שבתלוש — מעל שקל', () => {
     expect(costFlags(amounts({ printed_employer_cost: 13500 })).map((f) => f.tone)).toEqual(['warning'])
-    expect(costFlags(amounts({ printed_employer_cost: 13030.6 }))).toEqual([])
+    expect(costFlags(amounts({ printed_employer_cost: 13800.6 }))).toEqual([])
   })
 })
 
@@ -110,6 +122,48 @@ describe('הטופס', () => {
     expect(parseAmountInput(' ₪ 900 ')).toBe(900)
     expect(parseAmountInput('')).toBeNull()
     expect(parseAmountInput('12a')).toBeNull()
+  })
+})
+
+describe('מדרגות ביטוח לאומי', () => {
+  it('תקינות — כמו בשרת', () => {
+    expect(
+      parseBrackets([
+        { up_to: '7,000', rate: '1' },
+        { up_to: '15000', rate: '5' },
+      ]),
+    ).toEqual({
+      brackets: [
+        { up_to: 7000, rate: 1 },
+        { up_to: 15000, rate: 5 },
+      ],
+    })
+    expect(parseBrackets([{ up_to: '', rate: '4.51' }])).toEqual({ brackets: [{ up_to: null, rate: 4.51 }] })
+    expect(parseBrackets([])).toEqual({ brackets: [] })
+  })
+  it('שגיאות', () => {
+    expect(parseBrackets([{ up_to: '7000', rate: '101' }])).toHaveProperty('error')
+    expect(
+      parseBrackets([
+        { up_to: '7000', rate: '1' },
+        { up_to: '5000', rate: '5' },
+      ]),
+    ).toHaveProperty('error')
+    expect(
+      parseBrackets([
+        { up_to: '', rate: '1' },
+        { up_to: '5000', rate: '5' },
+      ]),
+    ).toHaveProperty('error')
+    expect(parseBrackets([{ up_to: '7000', rate: '' }])).toHaveProperty('error')
+  })
+  it('תיאור', () => {
+    const b = [
+      { up_to: 7000, rate: 1 },
+      { up_to: null, rate: 5 },
+    ]
+    expect(bracketLabel(b, 0)).toBe('מ-0 עד 7,000 ₪ — 1%')
+    expect(bracketLabel(b, 1)).toBe('מעל 7,000 ₪ — 5%')
   })
 })
 

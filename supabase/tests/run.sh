@@ -694,6 +694,13 @@ echo "$OUT68"
 OUT="$OUT
 $OUT68"
 
+# ‏69: מדרגות ביטוח לאומי מעסיק וקריאת הסכומים מחדש (0219). משנה את המדרגות
+# (הגדרה אחת לכל המסד) ומשאירה אותן ריקות; אף חבילה אחרת אינה נשענת עליהן.
+OUT69=$($PSQL -d vl -f "$HERE/69_the_owner_sets_the_employer_cost.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT69"
+OUT="$OUT
+$OUT69"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
