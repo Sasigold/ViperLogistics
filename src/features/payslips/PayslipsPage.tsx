@@ -58,7 +58,6 @@ import {
   usePayslipBatches,
   usePayslipsBoard,
   useRemovePayslip,
-  useSkipPayslip,
   useRemovePayslipBatch,
 } from './payslipQueries'
 import { PayslipAssignWizard } from './PayslipAssignWizard'
@@ -197,20 +196,20 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
   const [amountsFor, setAmountsFor] = useState<string | null>(null)
   const { data, isLoading, error, refetch } = usePayslipsBoard({ period })
   const assign = useAssignPayslip()
-  const skip = useSkipPayslip()
   const remove = useRemovePayslip()
 
   const rows = useMemo(
     () =>
       (data?.slips ?? [])
-        // משויכים, וגם מה שסומן "ללא שיוך" (0220) — גם הוא תלוש ששולם
-        .filter((r) => r.profile_id || r.skipped)
+        // רק משויכים: "ללא שיוך" אינו בטבלה ואינו בסיכומים (0222)
+        .filter((r) => r.profile_id)
         .sort((a, b) => slipOwner(a).localeCompare(slipOwner(b), 'he')),
     [data?.slips],
   )
   const waiting = (data?.slips ?? []).filter(
     (r) => !r.profile_id && !r.skipped && r.detected_kind !== 'other',
   ).length
+  const skippedCount = (data?.slips ?? []).filter((r) => !r.profile_id && r.skipped).length
   const showCost = canCost && !!data?.can_view_cost
   const t = data?.totals
   const amountsSlip = amountsFor ? (data?.slips.find((r) => r.id === amountsFor) ?? null) : null
@@ -218,10 +217,6 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
   const fail = (e: unknown) => toast.error(errorMessage(e))
 
   const unassign = async (r: PayslipBoardRow) => {
-    if (r.skipped) {
-      skip.mutate({ id: r.id, skip: false }, { onError: fail })
-      return
-    }
     const ok = await confirm(`לבטל את השיוך של התלוש ל${r.full_name}? הוא יחזור לרשימת הממתינים.`, {
       title: 'ביטול שיוך',
       confirmLabel: 'ביטול השיוך',
@@ -303,6 +298,13 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
           </p>
         )}
 
+        {skippedCount > 0 && (
+          <p className="type-caption text-ink-tertiary">
+            {skippedCount} תלושים ל{periodLabel(period)} סומנו ״ללא שיוך״ — אינם בטבלה ובסיכומים (אפשר לשייך אותם מאשף
+            השיוך של הקובץ)
+          </p>
+        )}
+
         {data && rows.length === 0 && <EmptyState compact art="table" title="אין תלושים משויכים לחודש הזה" />}
 
         {rows.length > 0 && (
@@ -332,11 +334,6 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
                           {slipOwner(r)}
                           {r.contractor_name && (
                             <span className="font-normal text-ink-tertiary"> · {r.contractor_name}</span>
-                          )}
-                          {r.skipped && (
-                            <Badge tone="neutral" className="ms-1.5">
-                              ללא שיוך
-                            </Badge>
                           )}
                         </p>
                         <p className="type-caption text-ink-tertiary">
@@ -390,10 +387,7 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
                           )}
                           {canManage && (
                             <>
-                              <IconButton
-                                label={r.skipped ? 'החזרה לממתינים' : 'ביטול השיוך'}
-                                onClick={() => void unassign(r)}
-                              >
+                              <IconButton label="ביטול השיוך" onClick={() => void unassign(r)}>
                                 <X size={ICON.md} strokeWidth={STROKE} />
                               </IconButton>
                               <IconButton label="הסרת התלוש" onClick={() => void removeSlip(r)}>

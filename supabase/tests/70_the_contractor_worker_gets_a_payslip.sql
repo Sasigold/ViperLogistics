@@ -116,8 +116,9 @@ select t_eq('סקירת הקבצים: אחד שויך, אחד ללא שיוך, �
      from jsonb_array_elements(payslip_batches_overview()) b where b ->> 'id' = :'batch'), '1/1/3');
 
 select t70_as('a0');
-select t_eq('סיכומי החודש סופרים גם "ללא שיוך"',
-  (payslips_board(:'batch') -> 'totals' ->> 'count')::int, 2);
+-- ‏0222: "ללא שיוך" אינו נספר — רק התלוש המשויך
+select t_eq('סיכומי החודש אינם סופרים "ללא שיוך"',
+  (payslips_board(:'batch') -> 'totals' ->> 'count')::int, 1);
 
 select t70_as('b1');
 select t_expect_ok('החזרה לממתינים', format($$select payslip_skip('%s', false)$$, :'slip2'));
