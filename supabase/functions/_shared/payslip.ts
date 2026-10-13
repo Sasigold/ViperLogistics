@@ -28,6 +28,12 @@ export const AMOUNT_KEYS = [
 
 export type AmountKey = (typeof AMOUNT_KEYS)[number]
 
+/**
+ * רכיבים שהם סכום אחד מודפס. כל השאר מצטברים: ביטוח לאומי ומס בריאות, או שתי
+ * קרנות פנסיה, יכולים לחזור כשתי שורות של אותו רכיב — ושתיהן נספרות.
+ */
+const SINGLE_VALUE: ReadonlySet<string> = new Set<AmountKey>(['gross_pay', 'net_pay', 'printed_employer_cost'])
+
 export interface PayslipReading {
   kind: 'payslip' | 'other'
   employee_name: string | null
@@ -143,19 +149,23 @@ export function normalizeReading(raw: unknown): PayslipReading {
   const month = intIn(r.period_month, 1, 12)
   const year = intIn(r.period_year, 2000, 2099)
   const amounts: Partial<Record<AmountKey, number>> = {}
-  // הסכמה מחזירה רשימה [{component, amount}]; אובייקט {רכיב: סכום} מתקבל גם הוא
-  const rawAmounts: Record<string, unknown> = {}
-  if (Array.isArray(r.amounts)) {
+  // הסכמה מחזירה רשימה [{component, amount}]; אובייקט {רכיב: סכום} מתקבל גם הוא.
+  // רכיב שחוזר ברשימה מצטבר, חוץ מסכום יחיד (ברוטו, נטו, עלות מודפסת) — שם האחרון קובע.
+  const known = new Set<string>(AMOUNT_KEYS)
+  if (kind === 'payslip' && Array.isArray(r.amounts)) {
     for (const e of r.amounts as unknown[]) {
       const item = (e && typeof e === 'object' ? e : {}) as Record<string, unknown>
-      if (typeof item.component === 'string') rawAmounts[item.component] = item.amount
+      const k = item.component
+      const v = amount(item.amount)
+      if (typeof k !== 'string' || !known.has(k) || v === null) continue
+      const key = k as AmountKey
+      amounts[key] =
+        SINGLE_VALUE.has(key) || amounts[key] === undefined ? v : Math.round((amounts[key]! + v) * 100) / 100
     }
-  } else if (r.amounts && typeof r.amounts === 'object') {
-    Object.assign(rawAmounts, r.amounts)
-  }
-  if (kind === 'payslip') {
+  } else if (kind === 'payslip' && r.amounts && typeof r.amounts === 'object') {
+    const obj = r.amounts as Record<string, unknown>
     for (const k of AMOUNT_KEYS) {
-      const v = amount(rawAmounts[k])
+      const v = amount(obj[k])
       if (v !== null) amounts[k] = v
     }
   }

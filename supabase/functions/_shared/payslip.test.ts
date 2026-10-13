@@ -107,6 +107,21 @@ describe('PAYSLIP_SCHEMA', () => {
     })
     expect(r.amounts).toEqual({ gross_pay: 12000, employer_severance: 750 })
   })
+
+  it('רכיב שחוזר מצטבר (ביטוח לאומי + בריאות, שתי קרנות), סכום יחיד אינו מוכפל', () => {
+    const r = normalizeReading({
+      kind: 'payslip',
+      amounts: [
+        { component: 'employee_national_insurance', amount: 500.1 },
+        { component: 'employee_national_insurance', amount: 300.2 },
+        { component: 'employer_pension', amount: 400 },
+        { component: 'employer_pension', amount: 380 },
+        { component: 'gross_pay', amount: 12000 },
+        { component: 'gross_pay', amount: 12000 },
+      ],
+    })
+    expect(r.amounts).toEqual({ employee_national_insurance: 800.3, employer_pension: 780, gross_pay: 12000 })
+  })
 })
 
 describe('bytesToBase64', () => {
