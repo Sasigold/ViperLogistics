@@ -682,9 +682,12 @@ begin
   end loop;
   v_groups := v_groups || jsonb_build_array(cur);
 
-  -- אף תלוש בקובץ לא שויך (נבדק למעלה), ולכן אף עובד לא ראה אותם. גם מה
-  -- שהוסר ביד ("לא תלוש") חוזר — הקיבוץ מתחיל מהעמודים.
-  delete from payslips where batch_id = p_batch_id;
+  -- אף תלוש בקובץ לא שויך (נבדק למעלה), ולכן אף עובד לא ראה אותם. הם
+  -- יורדים בהסרה רכה ונפתחים מחדש מהעמודים — וגם מה שהוסר ביד ("לא תלוש")
+  -- חוזר, כי הקיבוץ מתחיל מהעמודים. (רכה ולא מחיקה: הכלי שמחיל מיגרציות
+  -- בייצור עוצר על כל פקודת מחיקה, גם בתוך גוף פונקציה.)
+  update payslips set deleted_at = now(), deleted_by = v_me
+   where batch_id = p_batch_id and deleted_at is null;
 
   for g in select value from jsonb_array_elements(v_groups) loop
     v_detected := app.payslip_period(g ->> 'period');
@@ -720,8 +723,10 @@ begin
   update payslip_batches set read_at = now() where id = p_batch_id;
 
   return jsonb_build_object(
-    'slips',      (select count(*) from payslips where batch_id = p_batch_id and detected_kind is distinct from 'other'),
-    'other',      (select count(*) from payslips where batch_id = p_batch_id and detected_kind = 'other'),
+    'slips',      (select count(*) from payslips where batch_id = p_batch_id and deleted_at is null
+                                                   and detected_kind is distinct from 'other'),
+    'other',      (select count(*) from payslips where batch_id = p_batch_id and deleted_at is null
+                                                   and detected_kind = 'other'),
     'read_pages', v_read,
     'pages',      v_batch.page_count);
 end $$;
@@ -794,8 +799,9 @@ end $$;
 revoke execute on function payslip_set_period(uuid, date) from anon, public;
 grant  execute on function payslip_set_period(uuid, date) to authenticated;
 
--- התלוש הוא המשך של זה שלפניו בקובץ: העמודים שלו עוברים אליו. הקודם שומר
--- את השיוך ואת החודש שלו; הסכומים — שלו, ואם אין לו ברוטו, של זה.
+-- התלוש הוא המשך של זה שלפניו בקובץ: העמודים שלו עוברים אליו, והוא עצמו
+-- יורד בהסרה רכה. הקודם שומר את השיוך ואת החודש שלו; הסכומים — שלו, ואם אין
+-- לו ברוטו, של זה.
 create or replace function payslip_merge_previous(p_payslip_id uuid)
 returns uuid language plpgsql security definer set search_path = public as $$
 declare
@@ -822,13 +828,36 @@ begin
   update payslips set page_to = v_slip.page_to where id = v_prev.id;
 
   if not exists (select 1 from payslip_amounts where payslip_id = v_prev.id and gross_pay is not null) then
-    delete from payslip_amounts
-     where payslip_id = v_prev.id
-       and exists (select 1 from payslip_amounts where payslip_id = v_slip.id);
-    update payslip_amounts set payslip_id = v_prev.id where payslip_id = v_slip.id;
+    insert into payslip_amounts (
+      payslip_id, gross_pay, net_pay, imputed_income,
+      income_tax, employee_national_insurance, employee_pension, employee_study_fund,
+      employer_pension, employer_severance, employer_study_fund, employer_national_insurance,
+      employer_other, printed_employer_cost, source, updated_by, updated_at)
+    select v_prev.id, gross_pay, net_pay, imputed_income,
+           income_tax, employee_national_insurance, employee_pension, employee_study_fund,
+           employer_pension, employer_severance, employer_study_fund, employer_national_insurance,
+           employer_other, printed_employer_cost, source, updated_by, updated_at
+      from payslip_amounts where payslip_id = v_slip.id
+    on conflict (payslip_id) do update set
+      gross_pay                   = excluded.gross_pay,
+      net_pay                     = excluded.net_pay,
+      imputed_income              = excluded.imputed_income,
+      income_tax                  = excluded.income_tax,
+      employee_national_insurance = excluded.employee_national_insurance,
+      employee_pension            = excluded.employee_pension,
+      employee_study_fund         = excluded.employee_study_fund,
+      employer_pension            = excluded.employer_pension,
+      employer_severance          = excluded.employer_severance,
+      employer_study_fund         = excluded.employer_study_fund,
+      employer_national_insurance = excluded.employer_national_insurance,
+      employer_other              = excluded.employer_other,
+      printed_employer_cost       = excluded.printed_employer_cost,
+      source                      = excluded.source,
+      updated_by                  = excluded.updated_by,
+      updated_at                  = excluded.updated_at;
   end if;
 
-  delete from payslips where id = v_slip.id;
+  update payslips set deleted_at = now(), deleted_by = app.profile_id() where id = v_slip.id;
   return v_prev.id;
 end $$;
 
