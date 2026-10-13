@@ -12,6 +12,7 @@
 revoke execute on function payslip_store_reading(uuid, int, jsonb, text) from anon, authenticated, public;
 revoke execute on function app.payslip_amounts_put(uuid, jsonb, text) from anon, authenticated, public;
 revoke execute on function app.payslip_ni_recompute() from anon, authenticated, public;
+revoke execute on function app.payslip_ni_brackets_for(date) from anon, authenticated, public;
 
 insert into auth.users (id, email)
 select ('00000000-0000-0000-0000-0000000071' || s)::uuid, 'p71-' || s || '@vl.test'
@@ -55,6 +56,8 @@ select t_eq('בלי אף תקופה — אין ביטוח לאומי', t71_ni(:'
 
 \echo '--- 1. מי קובע ---'
 select t71_as('b1');
+select t_expect_fail('העזר הפנימי אינו פתוח למשתמש מחובר (0224)',
+  $$select app.payslip_ni_brackets_for('2033-03-01')$$);
 select t_expect_fail('מנהלת תלושים בלי עלות מעביד אינה קובעת',
   $$select payslip_ni_set_save(null, '2033-01-01', null, '[{"up_to":null,"rate":1}]')$$);
 
