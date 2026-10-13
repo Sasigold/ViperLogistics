@@ -685,6 +685,16 @@ OUT="$OUT
 $OUT67"
 
 echo
+echo "== the payslip finds its owner suite =="
+# 68 מקימה לקוח ושש דמויות משלה, ושני קבצי תלושים לחודשים 2031-05/06 —
+# תאריכים שאף חבילה אחרת אינה נוגעת בהם. היא משאירה אחריה התראת
+# `payslip_available` אחת ושורת צימוד, ואינה משנה תפקידים משותפים.
+OUT68=$($PSQL -d vl -f "$HERE/68_the_payslip_finds_its_owner.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT68"
+OUT="$OUT
+$OUT68"
+
+echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
 [ "$FAILED" -eq 0 ]

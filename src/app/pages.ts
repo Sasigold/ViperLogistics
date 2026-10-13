@@ -39,6 +39,7 @@ export const PAGES = [
   { key: 'my_clock', label: 'שעון נוכחות', section: 'הנוכחות שלי', hint: 'החתמת כניסה ויציאה' },
   { key: 'my_staff', label: 'העובדים שלי', section: 'הנוכחות שלי', hint: 'הסגל של קבלן' },
   { key: 'my_crew', label: 'הסגל שלי', section: 'הנוכחות שלי', hint: 'הסגל של לקוח שמבצע בעצמו' },
+  { key: 'my_payslips', label: 'תלושי השכר שלי', section: 'הנוכחות שלי', hint: 'התלושים ששויכו לעובד' },
   { key: 'notifications', label: 'התראות', section: 'הנוכחות שלי', hint: 'העדפות ההתראות של המשתמש' },
   { key: 'events', label: 'אירועים', section: 'נתונים', hint: 'רשימת האירועים. כרטיס אירוע נפתח גם בלעדיה' },
   { key: 'customers', label: 'לקוחות', section: 'נתונים' },
@@ -59,6 +60,7 @@ export const PAGES = [
   { key: 'receipts', label: 'רישום תקבולים', section: 'נתונים' },
   { key: 'payments', label: 'תשלומי אירועים', section: 'נתונים' },
   { key: 'wallet', label: 'ארנק מזומנים', section: 'נתונים' },
+  { key: 'payslips', label: 'תלושי שכר', section: 'נתונים', hint: 'העלאה מרואה החשבון, שיוך לעובדים ועלות מעביד' },
   { key: 'settings', label: 'הגדרות', section: 'מערכת' },
   { key: 'integrations', label: 'אינטגרציות', section: 'מערכת' },
 ] as const satisfies readonly PageDef[]
