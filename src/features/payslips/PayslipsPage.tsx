@@ -201,8 +201,8 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
   const rows = useMemo(
     () =>
       (data?.slips ?? [])
-        // רק משויכים: "ללא שיוך" אינו בטבלה ואינו בסיכומים (0222)
-        .filter((r) => r.profile_id)
+        // רק אנשי צוות משויכים: "ללא שיוך" (0222) ועובדי קבלנים (0223) אינם בטבלה ובסיכומים
+        .filter((r) => r.profile_id && !r.contractor_worker)
         .sort((a, b) => slipOwner(a).localeCompare(slipOwner(b), 'he')),
     [data?.slips],
   )
@@ -210,6 +210,7 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
     (r) => !r.profile_id && !r.skipped && r.detected_kind !== 'other',
   ).length
   const skippedCount = (data?.slips ?? []).filter((r) => !r.profile_id && r.skipped).length
+  const contractorCount = (data?.slips ?? []).filter((r) => r.profile_id && r.contractor_worker).length
   const showCost = canCost && !!data?.can_view_cost
   const t = data?.totals
   const amountsSlip = amountsFor ? (data?.slips.find((r) => r.id === amountsFor) ?? null) : null
@@ -298,6 +299,12 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
           </p>
         )}
 
+        {contractorCount > 0 && (
+          <p className="type-caption text-ink-tertiary">
+            {contractorCount} תלושים ל{periodLabel(period)} שויכו לעובדי קבלנים — הם רואים אותם, אבל הם אינם בטבלה
+            ובסיכומים
+          </p>
+        )}
         {skippedCount > 0 && (
           <p className="type-caption text-ink-tertiary">
             {skippedCount} תלושים ל{periodLabel(period)} סומנו ״ללא שיוך״ — אינם בטבלה ובסיכומים (אפשר לשייך אותם מאשף
