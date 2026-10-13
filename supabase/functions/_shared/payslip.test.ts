@@ -79,11 +79,33 @@ describe('amount', () => {
 })
 
 describe('PAYSLIP_SCHEMA', () => {
-  it('כל רכיב בסכמה הוא עמודה, וכולם חובה (structured outputs)', () => {
-    const a = PAYSLIP_SCHEMA.properties.amounts
-    expect(Object.keys(a.properties).sort()).toEqual([...AMOUNT_KEYS].sort())
-    expect([...a.required].sort()).toEqual([...AMOUNT_KEYS].sort())
+  const unions = (node: unknown): number => {
+    if (!node || typeof node !== 'object') return 0
+    const o = node as Record<string, unknown>
+    const own = Array.isArray(o.anyOf) || Array.isArray(o.type) ? 1 : 0
+    return own + Object.values(o).reduce<number>((n, v) => n + unions(v), 0)
+  }
+
+  it('לכל היותר 16 שדות עם union — מעבר לזה ה-API דוחה את הבקשה (400)', () => {
+    expect(unions(PAYSLIP_SCHEMA)).toBeLessThanOrEqual(16)
+  })
+
+  it('כל רכיב בסכמה הוא עמודה, וכל שדה עליון חובה (structured outputs)', () => {
+    const item = PAYSLIP_SCHEMA.properties.amounts.items
+    expect([...item.properties.component.enum].sort()).toEqual([...AMOUNT_KEYS].sort())
     expect([...PAYSLIP_SCHEMA.required].sort()).toEqual(Object.keys(PAYSLIP_SCHEMA.properties).sort())
+  })
+
+  it('רשימת הרכיבים שהמודל מחזיר מתנרמלת לסכומים', () => {
+    const r = normalizeReading({
+      kind: 'payslip',
+      amounts: [
+        { component: 'gross_pay', amount: 12000 },
+        { component: 'employer_severance', amount: 750.004 },
+        { component: 'unknown', amount: 5 },
+      ],
+    })
+    expect(r.amounts).toEqual({ gross_pay: 12000, employer_severance: 750 })
   })
 })
 

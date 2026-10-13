@@ -50,7 +50,7 @@ Identify the page:
 - period_month, period_year: the month the payslip is for (e.g. "תלוש שכר לחודש 09/2026" → 9, 2026).
 - page_index, page_total: page numbering printed on the page ("דף 2 מתוך 2", "עמוד 1 מתוך 2"), if any.
 
-Amounts — current month only, never the cumulative year-to-date columns (מצטבר / מתחילת השנה). Plain numbers in shekels, no thousands separators. Use null when a value is not printed on this page. Never estimate or compute a value from rates; report only what is printed (sums of several printed lines of the same component are fine):
+amounts: a list of {component, amount} — one entry for each component below that is printed on this page, and nothing for a component that is not printed. Current month only, never the cumulative year-to-date columns (מצטבר / מתחילת השנה). Plain numbers in shekels, no thousands separators. Never estimate or compute a value from rates; report only what is printed (sums of several printed lines of the same component are fine). The components:
 - gross_pay: total payments for the month (סה"כ תשלומים / שכר ברוטו). If both "סה"כ תשלומים" and "ברוטו למס הכנסה" appear, use סה"כ תשלומים.
 - net_pay: the final amount paid to the employee (נטו לתשלום).
 - imputed_income: non-cash benefit values (שווי רכב, שווי טלפון, שווי ארוחות, שווי מתנות, זקיפת הפרשות מעביד) — only the part that is included inside gross_pay. If such values are listed separately and not counted in gross_pay, use 0.
@@ -67,7 +67,9 @@ Amounts — current month only, never the cumulative year-to-date columns (מצ�
 
 notes: one short sentence about anything unclear on the page, otherwise null.`
 
-const num = { anyOf: [{ type: 'number' }, { type: 'null' }] }
+// ‏structured outputs מגביל ל-16 שדות עם union (כל nullable הוא union). הסכומים
+// הם 13 רכיבים, ולכן הם רשימה של מה שמודפס — בלי אף שדה nullable — ולא אובייקט
+// שכל רכיב בו "מספר או null". השדות שנשארו nullable: שבעה.
 const int = { anyOf: [{ type: 'integer' }, { type: 'null' }] }
 const str = { anyOf: [{ type: 'string' }, { type: 'null' }] }
 
@@ -94,10 +96,16 @@ export const PAYSLIP_SCHEMA = {
     page_index: int,
     page_total: int,
     amounts: {
-      type: 'object',
-      additionalProperties: false,
-      required: [...AMOUNT_KEYS],
-      properties: Object.fromEntries(AMOUNT_KEYS.map((k) => [k, num])),
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['component', 'amount'],
+        properties: {
+          component: { type: 'string', enum: [...AMOUNT_KEYS] },
+          amount: { type: 'number' },
+        },
+      },
     },
     notes: str,
   },
@@ -135,7 +143,16 @@ export function normalizeReading(raw: unknown): PayslipReading {
   const month = intIn(r.period_month, 1, 12)
   const year = intIn(r.period_year, 2000, 2099)
   const amounts: Partial<Record<AmountKey, number>> = {}
-  const rawAmounts = (r.amounts && typeof r.amounts === 'object' ? r.amounts : {}) as Record<string, unknown>
+  // הסכמה מחזירה רשימה [{component, amount}]; אובייקט {רכיב: סכום} מתקבל גם הוא
+  const rawAmounts: Record<string, unknown> = {}
+  if (Array.isArray(r.amounts)) {
+    for (const e of r.amounts as unknown[]) {
+      const item = (e && typeof e === 'object' ? e : {}) as Record<string, unknown>
+      if (typeof item.component === 'string') rawAmounts[item.component] = item.amount
+    }
+  } else if (r.amounts && typeof r.amounts === 'object') {
+    Object.assign(rawAmounts, r.amounts)
+  }
   if (kind === 'payslip') {
     for (const k of AMOUNT_KEYS) {
       const v = amount(rawAmounts[k])
