@@ -131,4 +131,39 @@ select t_eq('השיוך מנקה את הסימון',
   (select r ->> 'skipped' from jsonb_array_elements(payslips_board(:'batch') -> 'slips') r
     where r ->> 'id' = :'slip2'), 'false');
 
+-- ===== 3. מה שהסקירה מצאה (0221) ==========================================
+
+\echo '--- 3. 0221 ---'
+reset role;
+-- עובד קבלן שהכניסה שלו לא נפתחה
+insert into profiles (id, user_id, user_kind, is_admin, full_name, contractor_id) values
+  ('20000000-0000-0000-0000-0000000070c3', null, 'contractor_user', false, 'בלי כניסה 70',
+   '10000000-0000-0000-0000-0000000070c0');
+update payslips set detected_kind = 'other' where id = :'slip3';
+set role authenticated;
+
+select t70_as('b1');
+select t_expect_fail('אין שיוך לעובד קבלן בלי כניסה',
+  format($$select payslip_assign('%s', '20000000-0000-0000-0000-0000000070c3')$$, :'slip3'));
+select t_eq('והוא אינו ברשימת השיוך',
+  (select count(*)::int from jsonb_array_elements(payslip_assignees()) e
+    where e ->> 'id' = '20000000-0000-0000-0000-0000000070c3'), 0);
+select t_expect_fail('עמוד "לא תלוש" אינו מסומן "ללא שיוך"', format($$select payslip_skip('%s')$$, :'slip3'));
+
+select payslip_batch_create('תלושים 70ב.pdf', 1, '2032-08-01') as batch2 \gset
+reset role;
+set role service_role;
+select payslip_store_reading(:'batch2', 1, '{"kind":"payslip","employee_name":"מישהו 70","amounts":{"gross_pay":5000}}'::jsonb, 'test');
+reset role;
+set role authenticated;
+select t70_as('b1');
+select t_expect_ok('קיבוץ', format($$select payslip_apply_reading('%s')$$, :'batch2'));
+select id as slip4 from payslips where batch_id = :'batch2' \gset
+select t_expect_ok('"ללא שיוך"', format($$select payslip_skip('%s')$$, :'slip4'));
+select t_expect_fail('קיבוץ מחדש נחסם כשיש "ללא שיוך"', format($$select payslip_apply_reading('%s')$$, :'batch2'));
+select t_eq('והסימון נשאר',
+  (select r ->> 'skipped' from jsonb_array_elements(payslips_board(:'batch2') -> 'slips') r), 'true');
+select t_eq('קריאת הסכומים מחדש עדיין עובדת',
+  payslip_refresh_amounts(:'batch2')::text, '{"manual": 0, "updated": 1}');
+
 reset role;

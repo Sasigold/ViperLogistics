@@ -450,7 +450,8 @@ function BatchesCard({ canManage, onAssign }: { canManage: boolean; onAssign: (b
 
   // קובץ שכבר שויכו ממנו תלושים נקרא מחדש רק לסכומים — השיוך והקיבוץ נשארים (0219)
   const read = async (b: PayslipBatchOverview) => {
-    const mode = b.assigned > 0 ? 'amounts' : 'group'
+    // גם "ללא שיוך" הוא החלטה שקיבוץ מחדש היה מוחק (0221)
+    const mode = b.assigned + b.skipped > 0 ? 'amounts' : 'group'
     setReading({ id: b.id, done: 0, total: b.page_count })
     try {
       const r = await readPayslipBatch(
@@ -532,7 +533,7 @@ function BatchesCard({ canManage, onAssign }: { canManage: boolean; onAssign: (b
                         שיוך
                       </Button>
                       <Button size="sm" variant="ghost" disabled={!!reading} onClick={() => void read(b)}>
-                        {b.assigned > 0 ? 'קריאת הסכומים מחדש' : b.read_at ? 'קריאה מחדש' : 'קריאה אוטומטית'}
+                        {b.assigned + b.skipped > 0 ? 'קריאת הסכומים מחדש' : b.read_at ? 'קריאה מחדש' : 'קריאה אוטומטית'}
                       </Button>
                       <IconButton label="הסרת הקובץ" onClick={() => void remove(b)}>
                         <Trash2 size={ICON.md} strokeWidth={STROKE} />

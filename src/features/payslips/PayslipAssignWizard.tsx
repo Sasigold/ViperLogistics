@@ -418,7 +418,8 @@ export function PayslipAssignWizard({ batchId, onClose }: { batchId: string; onC
                     <UserCheck size={ICON.sm} strokeWidth={STROKE} />
                     שיוך והבא
                   </Button>
-                  {!slip.skipped && (
+                  {/* עמוד "לא תלוש" נסגר בהסרה, לא בסימון (0221) */}
+                  {!slip.skipped && slip.detected_kind !== 'other' && (
                     <Button className="w-full" loading={skip.isPending} disabled={busy} onClick={skipAndNext}>
                       ללא שיוך
                     </Button>
