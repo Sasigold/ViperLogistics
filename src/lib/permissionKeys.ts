@@ -169,6 +169,11 @@ export const PERM = {
   FLEET_VIEW_FUEL_CARD: 'fleet.view_fuel_card',
   FLEET_MANAGE_FUEL_CARD: 'fleet.manage_fuel_card',
   FLEET_SETTINGS: 'fleet.settings',
+  /* ‏0218: תלושי שכר. view_own פתוח לכל איש צוות — זה התלוש שלו; שני האחרים
+     מסוכנים: manage רואה את התלושים של כולם, employer_cost את הסכומים. */
+  PAYSLIPS_VIEW_OWN: 'payslips.view_own',
+  PAYSLIPS_MANAGE: 'payslips.manage',
+  PAYSLIPS_EMPLOYER_COST: 'payslips.employer_cost',
   PRICING_VIEW: 'pricing.view',
   PRICING_EDIT: 'pricing.edit',
   PRICING_MANAGE_RULES: 'pricing.manage_rules',

@@ -33,11 +33,11 @@ select t_eq('וערוץ ה-push דלוק מאז 0113/0167',
 -- `task_performed_by_changed`, ו-0165 עשרים-ואחת:
 -- `attendance_correction_requested`, ו-0190 עשרים-ושתיים:
 -- `viperflow_order_changed`, ו-0199 עשרים-ושלוש: `arco_order_received`, ו-0212
--- עשרים-וארבעה: `income_commission_stale`.
+-- עשרים-וארבעה: `income_commission_stale`, ו-0218 עשרים-וחמישה: `payslip_available`.
 -- הספירה נשארת מדויקת ולא הופכת ל-`>= 9`:
 -- קטלוג שגדל בלי שאיש שם לב הוא בדיוק מה שהבדיקה הזו נועדה לתפוס.
-select t_eq('הקטלוג מכיר את עשרים-וארבעה הסוגים הפעילים',
-  (select count(*)::int from notification_types where is_active), 24);
+select t_eq('הקטלוג מכיר את עשרים-וחמישה הסוגים הפעילים',
+  (select count(*)::int from notification_types where is_active), 25);
 
 -- ‏0190: שינוי בהזמנה של ViperFlow הוא עניין של מי שמזיז אירועים, ולכן
 -- הסוג פונה למנהלי מערכת בלבד — ובתוך המערכת הוא מאולץ: התראה שאפשר
@@ -361,9 +361,10 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000007a1
 -- שבעה מאז 0110: חמשת סוגי המשימות (שובצה, בוטל שיבוצה, שובצתי, הוסרתי,
 -- שינוי זמנים) ושני סוגי הנוכחות האישיים. "עובד דיווח משמרת" נשאר מאחורי
 -- required_permission = attendance.approve_entry, שאין לעובד הזה, וסוגי
--- הרכב מאחורי fleet.view.
+-- הרכב מאחורי fleet.view. שמונה מאז 0218: "תלוש שכר חדש" — payslips.view_own
+-- פתוח לכל איש צוות.
 select t_eq('my_notification_settings מחזיר רק סוגים של הקהל שלי',
-  (select count(*)::int from jsonb_array_elements(my_notification_settings())), 7);
+  (select count(*)::int from jsonb_array_elements(my_notification_settings())), 8);
 
 select t_eq('...ובכללם אין את שני הסוגים של המנהל',
   (select count(*)::int from jsonb_array_elements(my_notification_settings()) e

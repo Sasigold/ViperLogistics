@@ -16,6 +16,7 @@ import {
   PartyPopper,
   Percent,
   Plug,
+  Receipt,
   Settings,
   TrendingUp,
   Truck,
@@ -278,6 +279,16 @@ export const NAV_SECTIONS: NavSection[] = [
         perm: PERM.CUSTOMERS_MANAGE_OWN_STAFF,
         audience: forSelfPerformingCustomers,
       },
+      /* ‏0218: התלושים ששויכו לעובד. */
+      {
+        to: '/my/payslips',
+        page: 'my_payslips',
+        label: 'תלושי השכר שלי',
+        shortLabel: 'תלושים',
+        icon: Receipt,
+        perm: PERM.PAYSLIPS_VIEW_OWN,
+        audience: forEmployees,
+      },
       {
         to: '/my/notifications',
         page: 'notifications',
@@ -375,6 +386,15 @@ export const NAV_SECTIONS: NavSection[] = [
         shortLabel: 'תשלומים',
         icon: HandCoins,
         perm: PERM.FINANCE_EVENT_PAYMENTS_VIEW,
+      },
+      /* ‏0218: העלאת התלושים מרואה החשבון, שיוך ועלות מעביד. */
+      {
+        to: '/payslips',
+        page: 'payslips',
+        label: 'תלושי שכר',
+        shortLabel: 'תלושים',
+        icon: Receipt,
+        anyPerm: [PERM.PAYSLIPS_MANAGE, PERM.PAYSLIPS_EMPLOYER_COST],
       },
       /* ‏0207: כמה מזומן יש ביד — כל תשלום שהתקבל במזומן, פחות ההוצאות. */
       {
@@ -491,8 +511,10 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/receipts': 'רישום תקבולים',
   '/payments': 'תשלומי אירועים',
   '/wallet': 'ארנק מזומנים',
+  '/payslips': 'תלושי שכר',
   '/my/schedule': 'משמרות',
   '/my/attendance': 'שעון נוכחות',
+  '/my/payslips': 'תלושי השכר שלי',
   '/my/notifications': 'התראות',
   '/my/staff': 'העובדים שלי',
   '/my/crew': 'הסגל שלי',

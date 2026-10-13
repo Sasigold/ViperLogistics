@@ -2443,3 +2443,100 @@ export interface WarehouseScheduleRow {
   checked: boolean
   updated_at: string | null
 }
+
+/* ===== תלושי שכר (0218) ===== */
+
+/** שורה של `payslip_amounts`. הסכומים כפי שנקראו מהתלוש או הוקלדו; שלושת האחרונים מחושבים במסד. */
+export interface PayslipAmounts {
+  gross_pay: number | null
+  net_pay: number | null
+  imputed_income: number | null
+  income_tax: number | null
+  employee_national_insurance: number | null
+  employee_pension: number | null
+  employee_study_fund: number | null
+  employer_pension: number | null
+  employer_severance: number | null
+  employer_study_fund: number | null
+  employer_national_insurance: number | null
+  employer_other: number | null
+  printed_employer_cost: number | null
+  /** סך הפרשות המעביד (מחושב) */
+  employer_contributions: number
+  /** ברוטו − זקיפות + הפרשות המעביד (מחושב); null כשאין ברוטו */
+  employer_cost: number | null
+  /** ברוטו − נטו (מחושב) */
+  deductions: number | null
+  source: 'reading' | 'manual'
+  updated_at: string
+}
+
+export type PayslipAmountKey = Exclude<
+  keyof PayslipAmounts,
+  'employer_contributions' | 'employer_cost' | 'deductions' | 'source' | 'updated_at'
+>
+
+/** תלוש במסך המנהל — שורה של `payslips_board`. */
+export interface PayslipBoardRow {
+  id: string
+  batch_id: string
+  file_name: string
+  page_count: number
+  page_from: number
+  page_to: number
+  /** 'YYYY-MM-01' */
+  period: string
+  profile_id: string | null
+  full_name: string | null
+  assigned_at: string | null
+  detected_kind: 'payslip' | 'other' | null
+  detected_name: string | null
+  detected_employee_no: string | null
+  detected_period: string | null
+  suggested_profile_id: string | null
+  suggested_name: string | null
+  has_previous: boolean
+  same_month_count: number
+  /** רק עם payslips.employer_cost, ורק כשיש סכומים */
+  amounts: PayslipAmounts | null
+}
+
+export interface PayslipBoardTotals {
+  count: number
+  with_amounts: number
+  gross_pay: number
+  net_pay: number
+  employer_contributions: number
+  employer_cost: number
+}
+
+export interface PayslipBoard {
+  can_manage: boolean
+  can_view_cost: boolean
+  slips: PayslipBoardRow[]
+  totals: PayslipBoardTotals | null
+}
+
+/** קובץ שהועלה — שורה של `payslip_batches_overview`. */
+export interface PayslipBatchOverview {
+  id: string
+  file_name: string
+  page_count: number
+  period: string
+  created_at: string
+  read_at: string | null
+  uploaded_by: string | null
+  slips: number
+  assigned: number
+  read_pages: number
+}
+
+/** תלוש של העובד עצמו — `payslips` דרך RLS. */
+export interface MyPayslip {
+  id: string
+  batch_id: string
+  page_from: number
+  page_to: number
+  period: string
+  assigned_at: string | null
+}

@@ -49,6 +49,8 @@ const LoadHeatmapPage = lazyPage(() => import('../features/reports/LoadHeatmapPa
 const ShiftBoardPage = lazyPage(() => import('../features/attendance/ShiftBoardPage'))
 const EmbedEventPage = lazyPage(() => import('../features/embed/EmbedEventPage'))
 const NotificationPreferencesPage = lazyPage(() => import('../features/notifications/NotificationPreferencesPage'))
+const PayslipsPage = lazyPage(() => import('../features/payslips/PayslipsPage'))
+const MyPayslipsPage = lazyPage(() => import('../features/payslips/MyPayslipsPage'))
 
 /** Shaped like a real screen so the chunk swap doesn't flash an empty page. */
 function PageFallback() {
@@ -188,6 +190,13 @@ export const router = createBrowserRouter([
             handle: { perm: PERM.FINANCE_CASH_WALLET_VIEW, page: 'wallet' },
             element: page(<CashWalletPage />),
           },
+          /* ‏0218: שני קהלים ושני מפתחות — מי שמעלה ומשייך, ומי שרואה עלות
+             מעביד. המסך מציג לכל אחד את החלק שלו, והשרת מסתיר את הסכומים. */
+          {
+            path: '/payslips',
+            handle: { anyPerm: [PERM.PAYSLIPS_MANAGE, PERM.PAYSLIPS_EMPLOYER_COST], page: 'payslips' },
+            element: page(<PayslipsPage />),
+          },
           /* הרשימה והדף אינם אותו מפתח: עובד שטח פותח אירוע שהוא משובץ אליו,
              ואין לו מה לעשות בקטלוג של כולם (0082). */
           { path: '/events', handle: { perm: PERM.EVENTS_LIST, page: 'events' }, element: page(<EventsPage />) },
@@ -243,6 +252,13 @@ export const router = createBrowserRouter([
             path: '/my/attendance',
             handle: { perm: PERM.ATTENDANCE_VIEW_OWN, audience: forEmployees, page: 'my_clock' },
             element: page(<TimeClockPage />),
+          },
+          /* ‏0218: התלושים של העובד עצמו. ‏`forEmployees` כמו השעון — מנהל מערכת
+             שאינו עובד אינו מקבל תלוש. */
+          {
+            path: '/my/payslips',
+            handle: { perm: PERM.PAYSLIPS_VIEW_OWN, audience: forEmployees, page: 'my_payslips' },
+            element: page(<MyPayslipsPage />),
           },
           {
             path: '/my/notifications',
