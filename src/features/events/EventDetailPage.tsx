@@ -587,8 +587,29 @@ export default function EventDetailPage() {
       return
     const { error } = await supabase.rpc('soft_delete', { p_table: 'events', p_id: event.id })
     if (error) return toast.error(errorMessage(error))
-    toast.success('האירוע נמחק')
-    void qc.invalidateQueries({ queryKey: ['events'] })
+    /* מאז 0209 מחיקת אירוע מוחקת גם את משימותיו — הלו״ז, לוח השנה והדשבורד
+       צריכים לשמוע על זה בלשונית הזו ולא לחכות לשידור החי. */
+    const refresh = () =>
+      ['events', 'workboard', 'calendar', 'dashboard', 'tasks'].forEach(
+        (k) => void qc.invalidateQueries({ queryKey: [k] }),
+      )
+    const eventId = event.id
+    toast.success('האירוע נמחק', {
+      undo: has(PERM.EVENTS_RESTORE)
+        ? async () => {
+            const { error: e2 } = await supabase.rpc('soft_delete', {
+              p_table: 'events',
+              p_id: eventId,
+              p_restore: true,
+            })
+            if (e2) return toast.error(errorMessage(e2))
+            refresh()
+            toast.success('האירוע שוחזר')
+            navigate(`/events/${eventId}`)
+          }
+        : undefined,
+    })
+    refresh()
     navigate('/events')
   }
 

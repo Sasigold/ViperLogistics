@@ -395,7 +395,8 @@ export function WorkersTab({
 
   const remove = async (w: ContractorWorker) => {
     if (!(await confirm(`להסיר את ${w.full_name} מהסגל?`, { title: 'הסרת עובד', confirmLabel: 'הסרה' }))) return
-    const { error } = await supabase.from('contractor_workers').update({ deleted_at: new Date().toISOString() }).eq('id', w.id)
+    // ‏soft_delete ולא עדכון ישיר: cw_select מסתיר שורה מחוקה ממי שאינו אדמין (0225)
+    const { error } = await supabase.rpc('soft_delete', { p_table: 'contractor_workers', p_id: w.id })
     if (error) toast.error(errorMessage(error))
     else {
       toast.success('העובד הוסר')

@@ -38,6 +38,7 @@ import {
   useToast,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
+import { ilikeAny, useDebouncedValue } from '../../lib/search'
 import { useAuth } from '../../state/auth'
 import {
   useContractors,
@@ -271,10 +272,18 @@ function useInlineUpdate() {
         .update(patch)
         .eq('id', row.id)
         .eq('updated_at', row.updated_at)
-        .select('id')
+        .select('id, updated_at')
       if (error) throw error
       if (!data || data.length === 0) throw new Error('המשימה עודכנה על ידי משתמש אחר — הנתונים רועננו')
+      return data[0] as { id: string; updated_at: string }
     },
+    /* הגרסה החדשה נכנסת לשורה שבמטמון מיד — עריכה שנייה באותה שורה, לפני
+       שהרענון חזר, יוצאת עם ה-`updated_at` הנכון ולא נדחית כ"עודכנה על ידי
+       משתמש אחר". והערך שנשמר נראה בתא בלי לחכות לרענון. */
+    onSuccess: (saved, { patch }) =>
+      qc.setQueriesData<WorkBoardRow[]>({ queryKey: ['workboard', 'range'] }, (old) =>
+        old?.map((r) => (r.id === saved.id ? ({ ...r, ...patch, updated_at: saved.updated_at } as WorkBoardRow) : r)),
+      ),
     onSettled: () => void qc.invalidateQueries({ queryKey: ['workboard'] }),
     onError: (e) => toast.error(errorMessage(e)),
   })
@@ -452,9 +461,18 @@ export default function WorkBoardPage() {
   const { data: staff = EMPTY } = useStaff(has(PERM.BOARD_VIEW_STAFFING))
   const inline = useInlineUpdate()
 
+  /* החיפוש החופשי נשאל רק אחרי שההקלדה נרגעה, והשורות הקודמות נשארות על
+     המסך בינתיים — בלי זה כל אות החליפה את מפתח השאילתה והלוח כולו הבהב
+     לשלד טעינה. בדפדוף בין חודשים אין placeholder: שורות של חודש אחר אינן
+     תשובה ביניים נכונה. */
+  const searchQ = useDebouncedValue(filters.q)
+  const queryFilters = useMemo(() => ({ ...filters, q: searchQ }), [filters, searchQ])
   const { data: rawRows = EMPTY, isLoading, error: rowsError, refetch: refetchRows } = useQuery({
-    queryKey: ['workboard', 'range', from, to, filters, contractorScheduleOnly],
+    queryKey: ['workboard', 'range', from, to, queryFilters, contractorScheduleOnly],
+    placeholderData: (prev, prevQuery) =>
+      prevQuery?.queryKey[2] === from && prevQuery?.queryKey[3] === to ? prev : undefined,
     queryFn: async () => {
+      const filters = queryFilters
       let q = supabase
         .from('work_board_view')
         .select('*')
@@ -475,10 +493,11 @@ export default function WorkBoardPage() {
       if (filters.customer) q = q.eq('customer_id', filters.customer)
       if (filters.status) q = q.eq('status_id', filters.status)
       if (filters.type) q = q.eq('task_type_id', filters.type)
-      if (filters.q.trim())
-        q = q.or(
-          `title.ilike.%${filters.q}%,end_client_name.ilike.%${filters.q}%,event_number.ilike.%${filters.q}%,location_text.ilike.%${filters.q}%,customer_name.ilike.%${filters.q}%`,
-        )
+      const search = ilikeAny(
+        ['title', 'end_client_name', 'event_number', 'location_text', 'customer_name'],
+        filters.q,
+      )
+      if (search) q = q.or(search)
       const { data, error } = await q
       if (error) throw error
       return data as WorkBoardRow[]

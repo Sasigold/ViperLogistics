@@ -22,6 +22,7 @@ import {
   ExternalLink,
   ICON,
   MapPin,
+  Navigation,
   Package,
   STROKE,
   Timer,
@@ -34,6 +35,10 @@ import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { chipPaint } from '../../lib/colors'
 import { errorMessage } from '../../lib/errors'
+import { navLinks } from '../../lib/navLinks'
+
+const NAV_BTN =
+  'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line bg-surface px-3 type-button text-ink shadow-xs transition-colors hover:bg-hover active:scale-[.98]'
 import { useShiftTasks } from './attendanceQueries'
 import {
   ASSIGNMENT_ROLE_LABELS,
@@ -463,6 +468,7 @@ function TaskDetails({
   const navigate = useNavigate()
   const has = useAuth((s) => s.has)
   const canOpenEvent = !!t.event_id && has(PERM.EVENTS_VIEW)
+  const nav = navLinks(t)
 
   const rows: [string, React.ReactNode][] = [
     ['לקוח במערכת', t.customer_name],
@@ -528,6 +534,21 @@ function TaskDetails({
           </Badge>
         )}
       </div>
+
+      {/* ניווט לאתר האירוע — הדבר הראשון שעובד בדרך לאירוע מחפש. גם למי
+          שמתחיל במחסן: משם הצוות נוסע לאותו אתר. */}
+      {nav && (
+        <div className="grid grid-cols-2 gap-2">
+          <a href={nav.waze} target="_blank" rel="noreferrer" className={NAV_BTN}>
+            <Navigation size={ICON.sm} strokeWidth={STROKE} />
+            Waze
+          </a>
+          <a href={nav.google} target="_blank" rel="noreferrer" className={NAV_BTN}>
+            <MapPin size={ICON.sm} strokeWidth={STROKE} />
+            Google Maps
+          </a>
+        </div>
+      )}
 
       <dl className="surface divide-y divide-line-subtle p-3">
         {rows

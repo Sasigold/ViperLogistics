@@ -479,9 +479,29 @@ export function visibleNavSections(
  * some of them, the next visible destinations fill the gaps rather than leaving
  * the bar half-empty.
  */
+/**
+ * עובד שטח — מי שאין לו דשבורד, רשימת אירועים או פורטל, אבל יש לו שעון נוכחות
+ * (עובד, נהג, עובד קבלן עם התחברות). אצלו "הדבר הראשון" הוא השעון והמשמרות,
+ * לא לוח השנה והלו״ז שמגיעים מהתפקיד: עד עכשיו הוא נחת בלוח השנה, והשעון
+ * ישב במשבצת הרביעית בבר התחתון — הכי רחוק מהאגודל.
+ */
+export const FIELD_HOME = ['/my/attendance', '/my/schedule'] as const
+
+export function isFieldUser(sections: NavSection[]): boolean {
+  const flat = sections.flatMap((s) => s.items)
+  return (
+    flat.some((i) => i.to === FIELD_HOME[0]) &&
+    /* דשבורד, רשימת אירועים או פורטל קבלן — יש לו "בית" משרדי משלו */
+    !flat.some((i) => i.to === '/' || i.to === '/events' || i.to === '/portal')
+  )
+}
+
 export function bottomNavItems(sections: NavSection[], slots = 4): NavItem[] {
   const flat = sections.flatMap((s) => s.items)
-  const chosen = flat.filter((i) => i.primary).slice(0, slots)
+  const first = isFieldUser(sections)
+    ? FIELD_HOME.map((to) => flat.find((i) => i.to === to)).filter((i): i is NavItem => !!i)
+    : []
+  const chosen = [...first, ...flat.filter((i) => i.primary && !first.includes(i))].slice(0, slots)
   if (chosen.length < slots) {
     for (const item of flat) {
       if (chosen.length === slots) break

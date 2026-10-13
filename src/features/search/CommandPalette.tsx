@@ -13,6 +13,7 @@ import {
   User,
 } from '../../components/ui/icons'
 import { EmptyState, Kbd, cx } from '../../components/ui'
+import { useEscapeLayer } from '../../components/ui/escape'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
@@ -37,6 +38,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const has = useAuth((s) => s.has)
   const me = useAuth((s) => s.me)
   const listRef = useRef<HTMLDivElement>(null)
+  /* Escape דרך מחסנית השכבות — גם כשהחיפוש נפתח מעל מגירה פתוחה */
+  useEscapeLayer(open, onClose)
 
   /* ה-RPC רץ על הערך המושהה ולא על כל הקשה — "אולם" הוא חיפוש אחד ולא
      שלושה. האינפוט וה"הקלד לפחות 2 תווים" נשארים על q החי. אותו דפוס
@@ -109,10 +112,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      onClose()
-    } else if (e.key === 'ArrowDown') {
+    if (e.key === 'ArrowDown') {
       e.preventDefault()
       setActive((i) => Math.min(i + 1, groups.flat.length - 1))
     } else if (e.key === 'ArrowUp') {

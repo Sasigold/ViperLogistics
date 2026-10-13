@@ -24,6 +24,11 @@ import type { WidgetProps } from '../dashboardTypes'
 
 const AXIS = { tick: { fontSize: 11, fill: 'var(--vl-text-tertiary)' }, axisLine: false, tickLine: false } as const
 const shekel = (v: number) => fmtMoney(v)
+/* ציר כסף: "₪12.5K" ולא "12k" — וסכום מתחת לאלף אינו "0k" */
+const shekelTick = (v: number) =>
+  Math.abs(v) >= 1000
+    ? `₪${(v / 1000).toLocaleString('he-IL', { maximumFractionDigits: 1 })}K`
+    : `₪${Math.round(v)}`
 
 /* ===== shapes the server sends ============================================ */
 
@@ -326,8 +331,8 @@ export function MarginTrendWidget({ height }: WidgetProps) {
     >
       <ComposedChart data={data ?? []} margin={{ top: 8, right: 8, bottom: 4, left: -12 }}>
         <XAxis dataKey="bucket" {...AXIS} tickFormatter={(v: string) => fmtDate(v)} />
-        <YAxis {...AXIS} width={64} tickFormatter={(v: number) => String(Math.round(v / 1000)) + 'k'} />
-        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
+        <YAxis {...AXIS} width={64} tickFormatter={shekelTick} />
+        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip format={shekel} />} />
         <Legend wrapperStyle={{ fontSize: 11 }} />
         <Bar dataKey="revenue" name="הכנסות" fill="#1fa189" radius={[4, 4, 0, 0]} maxBarSize={28} />
         <Bar dataKey="contractor" name="קבלנים" stackId="cost" fill="#f59e0b" maxBarSize={28} />
@@ -467,7 +472,7 @@ export function PayrollByWorkerWidget({ height }: WidgetProps) {
       <BarChart data={data ?? []} layout="vertical" margin={{ top: 4, right: 12, bottom: 4, left: 4 }}>
         <XAxis type="number" {...AXIS} />
         <YAxis type="category" dataKey="name" width={86} {...AXIS} />
-        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
+        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip format={shekel} />} />
         <Bar dataKey="total" name="שכר" fill="#8b5cf6" radius={[0, 6, 6, 0]} maxBarSize={18} />
       </BarChart>
     </ChartFrame>
@@ -483,7 +488,7 @@ export function CostByContractorWidget({ height }: WidgetProps) {
       <BarChart data={data ?? []} layout="vertical" margin={{ top: 4, right: 12, bottom: 4, left: 4 }}>
         <XAxis type="number" {...AXIS} />
         <YAxis type="category" dataKey="name" width={86} {...AXIS} />
-        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
+        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip format={shekel} />} />
         <Legend wrapperStyle={{ fontSize: 11 }} />
         <Bar dataKey="expected" name="מחויב" fill="#f59e0b" radius={[0, 6, 6, 0]} maxBarSize={14} />
         <Bar dataKey="paid" name="שולם" fill="#22c55e" radius={[0, 6, 6, 0]} maxBarSize={14} />
@@ -500,8 +505,8 @@ export function RevenueTrendWidget({ height }: WidgetProps) {
     <ChartFrame title="מגמת הכנסות" loading={isLoading && !data} empty={!data?.length} height={height}>
       <BarChart data={data ?? []} margin={{ top: 8, right: 8, bottom: 4, left: -12 }}>
         <XAxis dataKey="bucket" {...AXIS} tickFormatter={(v: string) => fmtDate(v)} />
-        <YAxis {...AXIS} width={64} tickFormatter={(v: number) => String(Math.round(v / 1000)) + 'k'} />
-        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
+        <YAxis {...AXIS} width={64} tickFormatter={shekelTick} />
+        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip format={shekel} />} />
         <Bar dataKey="total" name="הכנסות" fill="#1fa189" radius={[6, 6, 0, 0]} maxBarSize={40} />
       </BarChart>
     </ChartFrame>
@@ -520,8 +525,8 @@ export function RevenueByCustomerWidget({ height }: WidgetProps) {
     <ChartFrame title="הכנסות לפי לקוח" loading={isLoading && !data} empty={!data?.length} height={height}>
       <BarChart data={data ?? []} margin={{ top: 4, right: 4, bottom: 4, left: -12 }}>
         <XAxis dataKey="name" {...AXIS} interval={0} angle={-25} textAnchor="end" height={54} />
-        <YAxis {...AXIS} width={64} tickFormatter={(v: number) => String(Math.round(v / 1000)) + 'k'} />
-        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
+        <YAxis {...AXIS} width={64} tickFormatter={shekelTick} />
+        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip format={shekel} />} />
         <Bar dataKey="total" name="הכנסות" radius={[6, 6, 0, 0]} maxBarSize={44}>
           {(data ?? []).map((r, i) => (
             <Cell key={i} fill={r.color} />
@@ -563,8 +568,8 @@ export function PayrollTrendWidget({ height }: WidgetProps) {
     <ChartFrame title="מגמת עלות שכר" loading={isLoading && !data} empty={!data?.length} height={height}>
       <BarChart data={data ?? []} margin={{ top: 8, right: 8, bottom: 4, left: -12 }}>
         <XAxis dataKey="bucket" {...AXIS} tickFormatter={(v: string) => fmtDate(v)} />
-        <YAxis {...AXIS} width={64} tickFormatter={(v: number) => String(Math.round(v / 1000)) + 'k'} />
-        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip />} />
+        <YAxis {...AXIS} width={64} tickFormatter={shekelTick} />
+        <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip format={shekel} />} />
         <Bar dataKey="total" name="שכר" fill="#8b5cf6" radius={[6, 6, 0, 0]} maxBarSize={40} />
       </BarChart>
     </ChartFrame>

@@ -100,7 +100,9 @@
   /* text */
   --vl-text: #101828;
   --vl-text-secondary: #475467;
-  --vl-text-tertiary: #8a93a5;
+  /* ‏4.5:1 על לבן ו-4.6 על הקנבס — #8a93a5 הקודם עמד על 3.1 (WCAG AA נכשל),
+     והוא הצבע של כל כיתוב, רמז ותיאור שורה במערכת */
+  --vl-text-tertiary: #667085;
   --vl-text-inverse: #ffffff;
 
   /* interaction states */
@@ -218,7 +220,8 @@
 
   --vl-text: #e9ecf3;
   --vl-text-secondary: #a3acbd;
-  --vl-text-tertiary: #6f7a8d;
+  /* ‏≥4.8:1 על כל משטחי הכהה (היה 3.6–4.1) */
+  --vl-text-tertiary: #8590a3;
   --vl-text-inverse: #0b0d12;
 
   --vl-hover: rgb(255 255 255 / 0.05);
@@ -678,7 +681,11 @@
   }
 
   /* Touch pointers get no hover, so controls sized for a cursor are too small.
-     Every button-ish control keeps a 40px target on coarse pointers. */
+     Every button-ish control keeps a 40px target on coarse pointers — the
+     comment promised it, but the rule only set touch-action, so the kit's
+     `sm` buttons (32px) and the close ✕ of every modal and drawer stayed
+     small on phones. The box keeps its look; an invisible ::after grows the
+     hit area around it instead, so dense rows don't reflow. */
   @media (pointer: coarse) {
 
     button,
@@ -687,6 +694,15 @@
     select,
     summary {
       touch-action: manipulation;
+    }
+
+    .vl-btn::after {
+      content: '';
+      position: absolute;
+      inset: 50% auto auto 50%;
+      width: max(100%, 40px);
+      height: max(100%, 40px);
+      transform: translate(-50%, -50%);
     }
   }
 

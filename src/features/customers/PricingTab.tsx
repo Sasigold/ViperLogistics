@@ -127,8 +127,10 @@ export default function PricingTab({ customer }: { customer: Customer }) {
     },
     onSuccess: (n) => {
       toast.success(`${n} מחירים חושבו מחדש`)
-      void qc.invalidateQueries({ queryKey: ['workboard'] })
-      void qc.invalidateQueries({ queryKey: ['task_pricing'] })
+      /* מחיר משימה מזין גם את יתרת האירוע, את הדשבורד ואת רווח והפסד */
+      ;['workboard', 'task_pricing', 'events', 'dashboard', 'task_pnl', 'reports_run'].forEach(
+        (k) => void qc.invalidateQueries({ queryKey: [k] }),
+      )
     },
     onError: (e) => toast.error(errorMessage(e)),
   })

@@ -14,6 +14,7 @@ import {
   Select,
   Textarea,
   cx,
+  useConfirm,
   useToast,
 } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
@@ -40,6 +41,7 @@ import { CustomFieldInput, isBlank, toPayloadValue } from './CustomFieldInput'
 import {
   SECTIONS,
   draftFormValues,
+  draftHasContent,
   emptyEventForm,
   eventFormValues,
   incomeValuesFromRows,
@@ -62,6 +64,32 @@ import { errorMessage } from '../../lib/errors'
  * location — pre-filled the next person's new-event form.
  */
 const draftKey = (profileId?: string | null) => `vl-event-draft:${profileId ?? 'anon'}`
+
+/* אחסון שנחסם (גלישה פרטית, הגדרות אתר) זורק — טיוטה שלא נשמרה עדיפה על
+   טופס שקורס לגבול השגיאה */
+const draftStore = {
+  get(k: string): string | null {
+    try {
+      return localStorage.getItem(k)
+    } catch {
+      return null
+    }
+  },
+  set(k: string, v: string) {
+    try {
+      localStorage.setItem(k, v)
+    } catch {
+      /* ignore */
+    }
+  },
+  remove(k: string) {
+    try {
+      localStorage.removeItem(k)
+    } catch {
+      /* ignore */
+    }
+  },
+}
 
 /** The five per-section fields, with the labels reused from the task drawer. */
 const SECTION_LABELS = [
@@ -145,12 +173,17 @@ export function EventFormModal({
 }) {
   const qc = useQueryClient()
   const toast = useToast()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const { me, has, canViewField, canEditField } = useAuth()
   /* A profile carries a customer_id if and only if it belongs to a company —
      `profiles_customer_kind` (0001) enforces the iff — so this is the same test
      the kind check was making, stated as the fact it actually depends on. */
   const boundCustomerId = me?.profile.customer_id ?? null
   const [form, setForm] = useState<EventForm>(emptyEventForm)
+  /** המשתמש שינה משהו מאז הפתיחה — ההזרעות והשלמות האוטומטיות אינן נספרות */
+  const edited = useRef(false)
+  /** אירוע חדש נפתח עם טיוטה שנשמרה קודם ולא נשלחה */
+  const [restoredDraft, setRestoredDraft] = useState(false)
   const [step, setStep] = useState(0)
   const [touched, setTouched] = useState(false)
   /**
@@ -294,7 +327,9 @@ export function EventFormModal({
     const { event: ev, contact: c, supplierIds: ids } = sourcesRef.current
     const next = ev
       ? eventFormValues(ev, c, ids)
-      : draftFormValues(localStorage.getItem(draftKey(me?.profile.id)))
+      : draftFormValues(draftStore.get(draftKey(me?.profile.id)))
+    edited.current = false
+    setRestoredDraft(!ev && draftHasContent(next))
     setForm(next)
     /* המיקום נפתח תמיד במצב חיפוש — גם לאירוע שהוקלד ידנית, שהרי עריכה היא
        בדיוק ההזדמנות לנסות שוב. הקואורדינטות נזרעות ממה שנטען, כדי שמעבר
@@ -348,7 +383,7 @@ export function EventFormModal({
   // auto-save draft for new events
   useEffect(() => {
     if (!open || event) return
-    const t = setTimeout(() => localStorage.setItem(draftKey(me?.profile.id), JSON.stringify(form)), 600)
+    const t = setTimeout(() => draftStore.set(draftKey(me?.profile.id), JSON.stringify(form)), 600)
     return () => clearTimeout(t)
   }, [form, open, event, me?.profile.id])
 
@@ -384,9 +419,14 @@ export function EventFormModal({
     [has, canEditField],
   )
 
-  const set = (patch: Partial<EventForm>) => setForm((f) => ({ ...f, ...patch }))
-  const setCustom = (key: string, v: CustomFormValue) =>
+  const set = (patch: Partial<EventForm>) => {
+    edited.current = true
+    setForm((f) => ({ ...f, ...patch }))
+  }
+  const setCustom = (key: string, v: CustomFormValue) => {
+    edited.current = true
     setForm((f) => ({ ...f, custom: { ...f.custom, [key]: v } }))
+  }
 
   /** Steps with no visible field are dropped entirely rather than shown empty. */
   const steps = useMemo(() => {
@@ -561,7 +601,7 @@ export function EventFormModal({
           description: event ? undefined : 'משימות הקמה ופירוק נוצרו אוטומטית',
         })
       }
-      localStorage.removeItem(draftKey(me?.profile.id))
+      draftStore.remove(draftKey(me?.profile.id))
       void qc.invalidateQueries({ queryKey: ['events'] })
       void qc.invalidateQueries({ queryKey: ['tasks'] })
       void qc.invalidateQueries({ queryKey: ['calendar'] })
@@ -616,10 +656,39 @@ export function EventFormModal({
   const coordsError =
     coordsText.trim() && !parseCoords(coordsText) ? 'צמד קואורדינטות לא תקין' : undefined
 
+  /**
+   * סגירה בלי לשמור. באירוע חדש הטופס כבר נשמר כטיוטה ואין מה לאבד; בעריכה
+   * אין טיוטה — Esc או לחיצה על הרקע זרקו שינויים בלי מילה.
+   */
+  const closeGuarded = async () => {
+    if (
+      event &&
+      edited.current &&
+      !(await confirm('השינויים שעשית באירוע עדיין לא נשמרו.', {
+        title: 'לסגור בלי לשמור?',
+        confirmLabel: 'סגירה בלי שמירה',
+        cancelLabel: 'המשך עריכה',
+      }))
+    )
+      return
+    onClose()
+  }
+
+  const discardDraft = () => {
+    draftStore.remove(draftKey(me?.profile.id))
+    edited.current = false
+    setRestoredDraft(false)
+    setForm(emptyEventForm)
+    setStep(0)
+    setTouched(false)
+    setManualLocation(false)
+    setCoordsText('')
+  }
+
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={() => void closeGuarded()}
       wide
       title={event ? 'עריכת אירוע' : 'אירוע חדש'}
       description={event ? undefined : 'הטופס נשמר אוטומטית כטיוטה עד לשליחה'}
@@ -628,7 +697,7 @@ export function EventFormModal({
           {step > 0 && (
             <Button onClick={() => setStep((s) => s - 1)}>הקודם</Button>
           )}
-          <Button className="ms-auto" onClick={onClose}>
+          <Button className="ms-auto" onClick={() => void closeGuarded()}>
             ביטול
           </Button>
           {!isLast && (
@@ -652,6 +721,16 @@ export function EventFormModal({
         </>
       }
     >
+      {confirmDialog}
+      {/* טיוטה שחזרה מפתיחה קודמת — ואיך מתחילים נקי בלי למחוק שדה-שדה */}
+      {restoredDraft && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-info-border bg-info-subtle px-3 py-2 type-caption text-info-text">
+          <span>שוחזרה טיוטה שלא נשלחה.</span>
+          <Button size="sm" variant="ghost" className="ms-auto" onClick={discardDraft}>
+            התחלה מחדש
+          </Button>
+        </div>
+      )}
       {/* ── stepper ────────────────────────────────────────────────────────
           Each step reports its own completeness so a required field two
           steps back is visible without hunting for it.                    */}
@@ -744,7 +823,8 @@ export function EventFormModal({
               <Input
                 type="date"
                 value={form.event_date}
-                onChange={(e) =>
+                onChange={(e) => {
+                  edited.current = true
                   setForm((f) => {
                     const d = e.target.value
                     const carry = (v: string) => (!v || v === f.event_date ? d : v)
@@ -755,7 +835,7 @@ export function EventFormModal({
                       teardown_date: carry(f.teardown_date),
                     }
                   })
-                }
+                }}
               />
             </Field>
           )}
@@ -995,9 +1075,10 @@ export function EventFormModal({
                     dir="ltr"
                     disabled={locked}
                     value={form.income[c.id] ?? ''}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      edited.current = true
                       setForm((f) => ({ ...f, income: { ...f.income, [c.id]: e.target.value } }))
-                    }
+                    }}
                   />
                 </Field>
               )

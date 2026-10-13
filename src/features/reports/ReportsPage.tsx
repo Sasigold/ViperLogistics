@@ -15,7 +15,7 @@ import {
   useToast,
 } from '../../components/ui'
 import { BarChart3, ChevronDown, Download, FileSpreadsheet, ICON, Printer, STROKE, TrendingUp } from '../../components/ui/icons'
-import { fmtDate } from '../../lib/dates'
+import { fmtDate, toISODate } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 import { PERM } from '../../lib/permissions'
 import { useAuth } from '../../state/auth'
@@ -215,7 +215,7 @@ function ReportsBody({
       <div className="hidden print:block">
         <h1 className="type-heading">{measure?.label_he ?? 'דוח'}</h1>
         <p className="type-caption">
-          {fmtDate(state.range.from)} – {fmtDate(state.range.to)} · הופק {fmtDate(new Date().toISOString().slice(0, 10))}
+          {fmtDate(state.range.from)} – {fmtDate(state.range.to)} · הופק {fmtDate(toISODate(new Date()))}
         </p>
       </div>
 

@@ -13,6 +13,7 @@ import type { ReactNode, MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertTriangle, Check, Info, Undo2, X, XCircle } from 'lucide-react'
 import { Button, IconButton, cx } from './primitives'
+import { useEscapeLayer } from './escape'
 
 /* ===== shared overlay plumbing ============================================ */
 
@@ -68,11 +69,6 @@ function useFocusTrap(active: boolean, onClose: () => void) {
     first?.focus()
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onCloseRef.current()
-        return
-      }
       if (e.key !== 'Tab' || !panel) return
       const nodes = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
         (n) => n.offsetParent !== null || n === document.activeElement,
@@ -94,6 +90,7 @@ function useFocusTrap(active: boolean, onClose: () => void) {
       opener?.focus?.()
     }
   }, [active])
+  useEscapeLayer(active, () => onCloseRef.current())
   return ref
 }
 
@@ -355,23 +352,26 @@ export function Popover({
          it would otherwise read as a click outside */
       if (!ref.current?.contains(t) && !panel.current?.contains(t)) close()
     }
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close()
     const onMove = (e: Event) => {
       /* scrolling the panel's own list must not drag the panel around */
       if (e.target instanceof Node && panel.current?.contains(e.target)) return
       place()
     }
     document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
     window.addEventListener('scroll', onMove, true)
     window.addEventListener('resize', place)
     return () => {
       document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
       window.removeEventListener('scroll', onMove, true)
       window.removeEventListener('resize', place)
     }
   }, [open, close, place])
+
+  /* Escape סוגר רק את התפריט ומחזיר את הפוקוס לכפתור שפתח אותו */
+  useEscapeLayer(open, () => {
+    close()
+    ref.current?.querySelector<HTMLElement>('[aria-haspopup]')?.focus()
+  })
 
   return (
     <div ref={ref} className={cx('relative', className)}>
@@ -489,18 +489,16 @@ export function useContextMenu() {
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) close()
     }
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close()
     document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
     window.addEventListener('scroll', close, true)
     window.addEventListener('resize', close)
     return () => {
       document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
       window.removeEventListener('scroll', close, true)
       window.removeEventListener('resize', close)
     }
   }, [state, close])
+  useEscapeLayer(!!state, close)
 
   const menu = state
     ? createPortal(

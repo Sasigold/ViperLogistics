@@ -1,6 +1,6 @@
 import { Suspense, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { FileSpreadsheet, ICON, Plus, STROKE } from '../../components/ui/icons'
 import {
   Button,
@@ -19,6 +19,7 @@ import {
 } from '../../components/ui'
 import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
+import { ilikeAny, useDebouncedValue } from '../../lib/search'
 import { useAuth } from '../../state/auth'
 import { useCustomFormFields, useCustomers, useStatuses } from '../../lib/queries'
 import { fmtDate, fmtMoney } from '../../lib/dates'
@@ -64,8 +65,11 @@ export default function EventsPage() {
   const { data: statuses = [] } = useStatuses('event')
   const cancelledStatus = statuses.find((s) => s.code === CANCELLED)
 
+  /* נשאל אחרי שההקלדה נרגעה, והרשימה הקודמת נשארת בינתיים על המסך */
+  const searchQ = useDebouncedValue(q)
   const { data: events = [], isLoading, error, refetch } = useQuery({
-    queryKey: ['events', 'list', q, customer, showCancelled, cancelledStatus?.id ?? null],
+    queryKey: ['events', 'list', searchQ, customer, showCancelled, cancelledStatus?.id ?? null],
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       let query = supabase
         .from('events')
@@ -79,7 +83,8 @@ export default function EventsPage() {
          כי `status_id <> x` הוא NULL לאירוע בלי סטטוס — והוא היה נופל. */
       if (!showCancelled && cancelledStatus)
         query = query.or(`status_id.is.null,status_id.neq.${cancelledStatus.id}`)
-      if (q.trim()) query = query.or(`end_client_name.ilike.%${q}%,event_number.ilike.%${q}%,location_text.ilike.%${q}%`)
+      const search = ilikeAny(['end_client_name', 'event_number', 'location_text'], searchQ)
+      if (search) query = query.or(search)
       const { data, error } = await query
       if (error) throw error
       return data as EventListRow[]

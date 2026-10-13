@@ -9,6 +9,7 @@ import type {
 } from 'react'
 import { Check, ChevronDown, PencilLine, Search, X, Loader2 } from 'lucide-react'
 import { cx } from './primitives'
+import { useEscapeLayer } from './escape'
 
 /* ===== shared control surface ============================================= */
 
@@ -465,16 +466,12 @@ function useDismiss(open: boolean, close: () => void) {
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) close()
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close()
-    }
     document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
     }
   }, [open, close])
+  useEscapeLayer(open, close)
   return ref
 }
 
@@ -606,16 +603,15 @@ export function MultiSelect({
       const t = e.target as Node
       if (!triggerRef.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false)
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
     document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
     }
   }, [open])
+  useEscapeLayer(open, () => {
+    setOpen(false)
+    triggerRef.current?.focus()
+  })
 
   const filtered = useMemo(
     () => options.filter((o) => o.label.toLowerCase().includes(q.trim().toLowerCase())),

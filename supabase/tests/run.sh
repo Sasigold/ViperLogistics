@@ -715,6 +715,12 @@ echo "$OUT71"
 OUT="$OUT
 $OUT71"
 
+# ‏72: מחיקה שמנהל שאינו אדמין יכול לעשות (0225). רושמת ומוחקת שורות משלה.
+OUT72=$($PSQL -d vl -f "$HERE/72_deletes_that_managers_can_do.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT72"
+OUT="$OUT
+$OUT72"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"

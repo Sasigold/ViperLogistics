@@ -42,7 +42,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
-import { fmtDate } from '../../lib/dates'
+import { fmtDate, toISODate } from '../../lib/dates'
 import { HIGHLIGHT_CLASS, useDeepLinkHighlight } from '../../lib/deepLink'
 import {
   useAttendanceInvalidate,
@@ -100,6 +100,14 @@ function formatClockDate(iso: string | null | undefined): string {
   }
 }
 
+/** "HH:MM:SS" של הקטע הפתוח + שעות שכבר נסגרו היום → "HH:MM" */
+function addHoursToClock(elapsed: string, hours: number): string {
+  const [h, m] = elapsed.split(':').map(Number)
+  const total = h * 60 + m + Math.round(hours * 60)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`
+}
+
 function getGreeting() {
   const hour = new Date().getHours()
   if (hour >= 5 && hour < 12) return 'בוקר טוב'
@@ -122,6 +130,9 @@ function TimeClock() {
   const has = useAuth((s) => s.has)
   const getPosition = useGeolocation()
   const invalidate = useAttendanceInvalidate()
+  const { confirm, dialog: confirmDialog } = useConfirm()
+  /** הכשל של ההחתמה האחרונה — נשאר מתחת לכפתור עם "נסה שוב", ולא נעלם בטוסט */
+  const [punchError, setPunchError] = useState<string | null>(null)
   const { data: status, isLoading, error: statusError, refetch: refetchStatus } = useMyClockStatus()
   const [note, setNote] = useState('')
   const [showNoteInput, setShowNoteInput] = useState(false)
@@ -174,6 +185,9 @@ function TimeClock() {
   const lastClockInDate = lastEntry?.clock_in_at
     ? formatClockDate(lastEntry.clock_in_at)
     : formatClockDate(new Date().toISOString())
+  /* "היום" רק כשזה באמת היום — משמרת שנפתחה אתמול בלילה ועדיין פתוחה נושאת
+     את התאריך של אתמול */
+  const lastClockInIsToday = lastClockInDate === formatClockDate(new Date().toISOString())
 
   const allToday = open ? [open, ...today.filter((t) => t.id !== open.id)] : today
   /* רשימת ההחתמות שמוצגת למטה. `today` מגיע מהשרת לפי `work_date`, ומשמרת
@@ -202,9 +216,10 @@ function TimeClock() {
     : '--:--'
 
   const totalCompletedHours = completedToday.reduce((acc, curr) => acc + (curr.actual_hours ?? 0), 0)
+  /* בזמן משמרת פתוחה: מה שכבר נסגר היום ועוד הזמן שרץ — ולא רק הקטע הפתוח */
   const todayWorkDuration = open
     ? elapsed
-      ? elapsed.slice(0, 5)
+      ? addHoursToClock(elapsed, completedToday.filter((e) => e.id !== open.id).reduce((a, e) => a + (e.actual_hours ?? 0), 0))
       : '00:00'
     : totalCompletedHours > 0
       ? fmtDuration(totalCompletedHours)
@@ -240,10 +255,15 @@ function TimeClock() {
       if (error) throw error
       return data as { distance_m: number | null }
     },
-    onSuccess: (data, kind) => {
+    onSuccess: async (data, kind) => {
       setNote('')
       setShowNoteInput(false)
+      setPunchError(null)
       invalidate()
+      /* הכפתור נשאר בטעינה עד שהסטטוס החדש חזר — אחרת הוא עוד אומר "כניסה"
+         לרגע, ולחיצה שנייה נדחית בשרת ב"כבר נרשמה כניסה" */
+      await refetchStatus()
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) navigator.vibrate?.(40)
       toast.success(
         kind === 'in' ? 'נרשמה כניסה למשמרת' : 'נרשמה יציאה מהמשמרת',
         data?.distance_m != null ? { description: `${fmtDistance(data.distance_m)} מנקודת הייחוס` } : undefined,
@@ -254,14 +274,26 @@ function TimeClock() {
       // כי השרת חותם now() ושידור מאוחר היה רושם שעה שגויה. הנתיב הנכון
       // הוא דיווח משמרת שלא הוחתמה, לאישור מנהל.
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        toast.error('אין חיבור לרשת — ההחתמה לא נקלטה', {
-          description: 'כשהקליטה תחזור אפשר להחתים שוב, או להשתמש ב"דיווח משמרת שלא הוחתמה".',
-        })
+        setPunchError('אין חיבור לרשת — ההחתמה לא נקלטה. כשהקליטה תחזור אפשר להחתים שוב.')
         return
       }
-      toast.error(errorMessage(e))
+      setPunchError(errorMessage(e))
     },
   })
+
+  /** יציאה מסיימת את המשמרת, וביטול שלה הוא בקשת תיקון לאישור מנהל — שואלים לפני */
+  const doPunch = async () => {
+    if (open) {
+      const ok = await confirm(`לסיים את המשמרת? עבדת עד עכשיו ${todayWorkDuration} שעות היום.`, {
+        title: 'יציאה מהמשמרת',
+        confirmLabel: 'כן, יציאה',
+        cancelLabel: 'עדיין בעבודה',
+      })
+      if (!ok) return
+    }
+    setPunchError(null)
+    punch.mutate(open ? 'out' : 'in')
+  }
 
   if (isLoading) {
     return (
@@ -289,9 +321,7 @@ function TimeClock() {
         <h1 className="text-2xl font-black text-ink tracking-tight flex items-center justify-center gap-1.5">
           {getGreeting()}{firstName ? `, ${firstName}` : ''} <span className="inline-block animate-bounce">👋</span>
         </h1>
-        <p className="text-sm font-medium text-ink-secondary">
-          אנחנו שמחים לראות אותך!
-        </p>
+        <p className="text-sm font-medium text-ink-secondary">{fmtDate(toISODate(new Date()))}</p>
       </div>
 
       {/* כרטיס סטטוס עליון */}
@@ -303,14 +333,14 @@ function TimeClock() {
             {lastClockInTime}
           </span>
           <span className="text-xs text-ink-tertiary font-medium mt-1">
-            {lastClockInDate} היום
+            {lastClockInIsToday ? 'היום' : lastClockInDate}
           </span>
         </div>
 
         {/* סטטוס נוכחי (שמאל ב-RTL) */}
         <div className="flex flex-col items-center justify-center text-center px-2">
           <div className="flex items-center gap-1.5 mb-1.5">
-            <span className={`w-2 h-2 rounded-full ${open ? 'bg-success-subtle0 animate-pulse' : 'bg-ink-tertiary'}`} />
+            <span className={`w-2 h-2 rounded-full ${open ? 'bg-success animate-pulse' : 'bg-ink-tertiary'}`} />
             <span className="text-xs text-ink-tertiary font-medium">סטטוס נוכחי</span>
           </div>
           <span className={`text-lg font-bold ${open ? 'text-success-text' : 'text-ink-secondary'}`}>
@@ -341,7 +371,7 @@ function TimeClock() {
             <button
               type="button"
               disabled={punch.isPending || !has(PERM.ATTENDANCE_CLOCK) || blocked}
-              onClick={() => punch.mutate(open ? 'out' : 'in')}
+              onClick={() => void doPunch()}
               className={`w-56 h-56 rounded-full transition-all duration-200 flex flex-col items-center justify-center text-white select-none shadow-xl ${
                 blocked
                   ? 'bg-ink-tertiary cursor-not-allowed shadow-none'
@@ -356,14 +386,14 @@ function TimeClock() {
                 <LogIn className="w-12 h-12 stroke-[2.2] text-white mb-2" />
               )}
               <span className="text-3xl font-black text-white tracking-wide mb-0.5">
-                {open ? 'יציאה' : 'כניסה'}
+                {blocked ? 'נעול' : open ? 'יציאה' : 'כניסה'}
               </span>
               <span className="text-xs font-medium text-white/80">
                 {blocked
                   ? 'אין משמרת פעילה כרגע'
                   : open
-                    ? 'לחץ לסיום יום העבודה'
-                    : 'לחץ לתחילת יום העבודה'}
+                    ? 'לסיום יום העבודה'
+                    : 'לתחילת יום העבודה'}
               </span>
             </button>
           </div>
@@ -371,11 +401,33 @@ function TimeClock() {
 
         {/* פיל תג תחתון מתחת לכפתור */}
         <div className="mt-4 inline-flex items-center gap-2 bg-surface px-5 py-2 rounded-full border border-line shadow-xs">
-          <span className={`w-2.5 h-2.5 rounded-full ${open ? 'bg-success-subtle0 animate-pulse' : 'bg-ink-tertiary'}`} />
+          <span className={`w-2.5 h-2.5 rounded-full ${open ? 'bg-success animate-pulse' : 'bg-ink-tertiary'}`} />
           <span className={`text-sm font-bold ${open ? 'text-success-text' : 'text-ink-secondary'}`}>
             {open ? 'נמצא בעבודה' : 'מחוץ לעבודה'}
           </span>
         </div>
+
+        {punchError && !punch.isPending && (
+          <div
+            role="alert"
+            className="mt-3 w-full max-w-sm rounded-2xl border border-error-border bg-error-subtle px-4 py-3 text-center text-sm text-error-text"
+          >
+            <div className="flex items-start justify-center gap-1.5 font-semibold">
+              <AlertTriangle size={ICON.sm} strokeWidth={STROKE} className="mt-0.5 shrink-0" />
+              <span>{punchError}</span>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              <Button size="sm" variant="primary" onClick={() => void doPunch()}>
+                נסה שוב
+              </Button>
+              {canSubmit && !open && (
+                <Button size="sm" onClick={() => setReporting(true)}>
+                  דיווח משמרת שלא הוחתמה
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ‏0168: הכפתור נעול, ולכן הוא חייב להגיד למה — ובאותה נשימה לאן
             כן ללכת. ההודעה מגיעה מהשרת, ולכן היא בדיוק זו שההחתמה עצמה
@@ -604,6 +656,7 @@ function TimeClock() {
 
       {/* מודאל דיווח ידני */}
       {reporting && <SelfReportModal status={status} onClose={() => setReporting(false)} />}
+      {confirmDialog}
       {/* ומודאל בקשת התיקון, על ההחתמה שנבחרה */}
       {correcting && <CorrectionModal entry={correcting} onClose={() => setCorrecting(null)} />}
     </div>

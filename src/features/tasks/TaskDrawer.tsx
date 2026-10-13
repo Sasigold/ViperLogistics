@@ -70,7 +70,7 @@ import type {
   TaskRow,
   WorkSite,
 } from '../../types/domain'
-import { fmtDate, warehouseStartDate, warehouseStartsPreviousDay } from '../../lib/dates'
+import { fmtDate, toISODate, warehouseStartDate, warehouseStartsPreviousDay } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 
 interface Assignment {
@@ -289,6 +289,31 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
    * ‏`existing` (האצלה, סגל הקבלן) ממילא מתעדכנים ממנו ולא מה-state.
    */
   const seeded = useRef<string | null>(null)
+  /**
+   * "יש שינויים שלא נשמרו". צילום של הטופס נלקח ברינדור שאחרי ההזרעה, ולא
+   * בתוכה — כך מה שאפקטים אחרים משלימים בעצמם באותו רינדור אינו נספר
+   * כשינוי של המשתמש. סגירה (Esc, רקע, ✕) עם הבדל שואלת לפני שהיא זורקת.
+   */
+  const [seedVersion, setSeedVersion] = useState(0)
+  const baseline = useRef<string | null>(null)
+  const snapshot = JSON.stringify([form, assignments, customerPrice])
+  useEffect(() => {
+    baseline.current = seedVersion ? snapshot : null
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- הצילום נלקח רק כשהטופס הוזרע מחדש
+  }, [seedVersion])
+  const dirty = open && baseline.current != null && baseline.current !== snapshot
+  const closeGuarded = async () => {
+    if (
+      dirty &&
+      !(await confirm('השינויים שעשית במשימה עדיין לא נשמרו.', {
+        title: 'לסגור בלי לשמור?',
+        confirmLabel: 'סגירה בלי שמירה',
+        cancelLabel: 'המשך עריכה',
+      }))
+    )
+      return
+    onClose()
+  }
   const initialRef = useRef(initial)
   initialRef.current = initial
 
@@ -302,6 +327,7 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
     // משימה קיימת מוזרעת רק כשהנתונים שלה הגיעו
     if (taskId && !existing) return
     seeded.current = key
+    setSeedVersion((v) => v + 1)
     setTouched(false)
     setAddContractor('')
     if (taskId && existing) {
@@ -309,7 +335,7 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
       setAssignments(existing.assignments)
       setCustomerPrice(existing.pricing?.price != null ? String(existing.pricing.price) : '')
     } else if (!taskId) {
-      setForm({ task_date: new Date().toISOString().slice(0, 10), worker_count: 0, ...initialRef.current })
+      setForm({ task_date: toISODate(new Date()), worker_count: 0, ...initialRef.current })
       setAssignments([])
       setCustomerPrice('')
     }
@@ -485,11 +511,23 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
     const { error } = await supabase.rpc('soft_delete', { p_table: 'tasks', p_id: taskId })
     if (error) toast.error(errorMessage(error))
     else {
-      toast.success('המשימה נמחקה')
-      void qc.invalidateQueries({ queryKey: ['tasks'] })
-      void qc.invalidateQueries({ queryKey: ['workboard'] })
-      void qc.invalidateQueries({ queryKey: ['calendar'] })
-      void qc.invalidateQueries({ queryKey: ['event_activity'] })
+      const refresh = () =>
+        ['tasks', 'workboard', 'calendar', 'event_activity', 'events', 'dashboard'].forEach(
+          (k) => void qc.invalidateQueries({ queryKey: [k] }),
+        )
+      const id = taskId
+      /* ביטול מיידי במקום "לשחזר מסל המיחזור" — למי שמחזיק את מפתח השחזור */
+      toast.success('המשימה נמחקה', {
+        undo: has(PERM.TASKS_RESTORE)
+          ? async () => {
+              const { error: e2 } = await supabase.rpc('soft_delete', { p_table: 'tasks', p_id: id, p_restore: true })
+              if (e2) return toast.error(errorMessage(e2))
+              refresh()
+              toast.success('המשימה שוחזרה')
+            }
+          : undefined,
+      })
+      refresh()
       onClose()
     }
   }
@@ -548,7 +586,7 @@ function TaskCard({ open, onClose, taskId, initial }: TaskDrawerProps) {
   return (
     <Drawer
       open={open}
-      onClose={onClose}
+      onClose={() => void closeGuarded()}
       /* the drawer is already read-only without the keys — the title should say
          so rather than promise an edit the footer will not offer */
       title={

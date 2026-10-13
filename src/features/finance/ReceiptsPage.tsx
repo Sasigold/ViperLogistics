@@ -34,6 +34,7 @@ import {
 } from '../../components/ui'
 import type { Column } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
+import { invalidateEventPayments } from './eventPaymentQueries'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
@@ -104,10 +105,9 @@ export default function ReceiptsPage() {
     },
   })
 
-  const invalidate = () => {
-    void qc.invalidateQueries({ queryKey: ['receipts'] })
-    void qc.invalidateQueries({ queryKey: ['dashboard'] })
-  }
+  /* תקבול יכול להיות תשלום על אירוע (0205) ובמזומן גם שורה בארנק (0207) —
+     מחיקה או עריכה כאן צריכות לרענן גם את היתרה בכרטיס האירוע ואת הארנק. */
+  const invalidate = () => invalidateEventPayments(qc)
 
   const [modal, setModal] = useState<{ open: boolean; editing: Receipt | null }>({ open: false, editing: null })
 
@@ -120,11 +120,9 @@ export default function ReceiptsPage() {
       }))
     )
       return
-    // מחיקה רכה — עמודת deleted_at, בלי rpc: פוליסת ה-update היא השער
-    const { error } = await supabase
-      .from('receipts')
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', r.id)
+    // מחיקה רכה דרך soft_delete (0225): העדכון הישיר נדחה ב-RLS לכל מי שאינו
+    // אדמין — receipts_read מסתיר שורה מחוקה, והשורה החדשה נבדקת גם מולה
+    const { error } = await supabase.rpc('soft_delete', { p_table: 'receipts', p_id: r.id })
     if (error) return toast.error(errorMessage(error))
     toast.success('התקבול נמחק')
     invalidate()

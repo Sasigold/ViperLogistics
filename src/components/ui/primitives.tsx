@@ -17,7 +17,7 @@ export type BtnVariant = 'primary' | 'secondary' | 'outlined' | 'ghost' | 'dange
 export type BtnSize = 'sm' | 'md' | 'lg'
 
 const BTN_BASE =
-  'relative inline-flex select-none items-center justify-center gap-1.5 rounded-md border type-button whitespace-nowrap ' +
+  'vl-btn relative inline-flex select-none items-center justify-center gap-1.5 rounded-md border type-button whitespace-nowrap ' +
   'transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-[cubic-bezier(.4,0,.2,1)] ' +
   'active:scale-[.98] focus-visible:outline-none focus-visible:focus-ring ' +
   'disabled:pointer-events-none disabled:opacity-55 disabled:active:scale-100'
@@ -56,12 +56,14 @@ export function Button({
   children,
   ...rest
 }: ButtonProps) {
+  /* ‏disabled בא אחרי ה-rest, כדי ש-`disabled={false}` של המסך לא ידרוס כפתור
+     שנמצא בטעינה — אחרת לחיצה שנייה שולחת את השמירה פעמיים. */
   return (
     <button
       className={cx(BTN_BASE, BTN_VARIANTS[variant], BTN_SIZES[size], block && 'w-full', className)}
+      {...rest}
       disabled={loading || rest.disabled}
       aria-busy={loading || undefined}
-      {...rest}
     >
       {loading && <Loader2 size={14} className="animate-spin" aria-hidden />}
       {children}
@@ -98,8 +100,8 @@ export function IconButton({
     <button
       aria-label={label}
       className={cx(BTN_BASE, BTN_VARIANTS[variant], ICON_SIZES[size], 'shrink-0 p-0', className)}
-      disabled={loading || rest.disabled}
       {...rest}
+      disabled={loading || rest.disabled}
     >
       {loading ? <Loader2 size={15} className="animate-spin" aria-hidden /> : children}
     </button>

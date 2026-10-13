@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   draftFormValues,
+  draftHasContent,
   emptyEventForm,
   eventFormValues,
   incomeValuesFromRows,
@@ -200,5 +201,14 @@ describe('draftFormValues', () => {
   it('drops a draft it cannot read instead of throwing', () => {
     expect(() => draftFormValues('{oops')).not.toThrow()
     expect(draftFormValues('{oops')).toEqual(emptyEventForm)
+  })
+})
+
+describe('draftHasContent', () => {
+  it('ignores defaults the form fills by itself', () => {
+    expect(draftHasContent({ ...emptyEventForm, setup_execution_method: 'm1', customer_id: 'c1' })).toBe(false)
+  })
+  it('sees anything the user typed', () => {
+    expect(draftHasContent({ ...emptyEventForm, end_client_name: 'משפחת כהן' })).toBe(true)
   })
 })

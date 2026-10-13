@@ -4,7 +4,7 @@ import { Card, EmptyState, Skeleton } from '../components/ui'
 import { useAuth } from '../state/auth'
 import { PERM } from '../lib/permissions'
 import { lazyPage } from '../lib/lazyPage'
-import { NAV_SECTIONS, navAudience, navItemVisible } from './nav'
+import { FIELD_HOME, isFieldUser, navAudience, visibleNavSections } from './nav'
 
 const DashboardPage = lazyPage(() => import('../features/dashboard/DashboardPage'))
 /* ‏הלקוח מקבל מסך ייעודי ומצומצם, לא את הרשת המשותפת — ראו CustomerDashboard. */
@@ -43,7 +43,10 @@ export default function HomeRoute() {
   }
 
   // `to !== '/'` keeps the dashboard entry from redirecting this route to itself
-  const first = NAV_SECTIONS.flatMap((s) => s.items).find((n) => n.to !== '/' && navItemVisible(n, has, audience))
+  const visible = visibleNavSections(has, audience)
+  // עובד שטח נוחת בשעון הנוכחות, לא בלוח השנה של התפקיד — ראו isFieldUser
+  if (isFieldUser(visible)) return <Navigate to={FIELD_HOME[0]} replace />
+  const first = visible.flatMap((s) => s.items).find((n) => n.to !== '/')
   if (first) return <Navigate to={first.to} replace />
 
   return (
