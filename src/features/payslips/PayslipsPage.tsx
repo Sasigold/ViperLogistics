@@ -25,6 +25,7 @@ import {
   EmptyState,
   ErrorState,
   IconButton,
+  Modal,
   PageHeader,
   Select,
   SkeletonList,
@@ -62,6 +63,7 @@ import {
 import { PayslipAssignWizard } from './PayslipAssignWizard'
 import { PayslipUploadModal } from './PayslipUploadModal'
 import { PayslipAmountsModal } from './PayslipAmountsModal'
+import { NiBracketsCard } from './NiBracketsTab'
 
 /**
  * תלושי שכר (0218) — המסך של מי שמנהל אותם.
@@ -76,6 +78,7 @@ export default function PayslipsPage() {
   const canManage = has(PERM.PAYSLIPS_MANAGE)
   const canCost = has(PERM.PAYSLIPS_EMPLOYER_COST)
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [bracketsOpen, setBracketsOpen] = useState(false)
   const [wizardBatch, setWizardBatch] = useState<string | null>(null)
 
   return (
@@ -84,14 +87,28 @@ export default function PayslipsPage() {
         title="תלושי שכר"
         subtitle="מעלים את קובץ התלושים מרואה החשבון, משייכים כל תלוש לעובד — והעובד רואה אותו אצלו"
         actions={
-          canManage && (
-            <Button variant="primary" onClick={() => setUploadOpen(true)}>
-              <Upload size={ICON.sm} strokeWidth={STROKE} />
-              העלאת קובץ תלושים
-            </Button>
-          )
+          <>
+            {/* המדרגות גם כאן — רואה עלות לא בהכרח רואה את /settings (0219) */}
+            {canCost && (
+              <Button onClick={() => setBracketsOpen(true)}>
+                <Calculator size={ICON.sm} strokeWidth={STROKE} />
+                מדרגות ביטוח לאומי
+              </Button>
+            )}
+            {canManage && (
+              <Button variant="primary" onClick={() => setUploadOpen(true)}>
+                <Upload size={ICON.sm} strokeWidth={STROKE} />
+                העלאת קובץ תלושים
+              </Button>
+            )}
+          </>
         }
       />
+      {bracketsOpen && (
+        <Modal open size="lg" title="מדרגות ביטוח לאומי מעסיק" onClose={() => setBracketsOpen(false)}>
+          <NiBracketsCard />
+        </Modal>
+      )}
 
       {canManage && <PendingCard onAssign={setWizardBatch} />}
       <MonthCard canManage={canManage} canCost={canCost} />
