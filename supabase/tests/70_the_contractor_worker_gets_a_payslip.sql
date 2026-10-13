@@ -116,9 +116,12 @@ select t_eq('סקירת הקבצים: אחד שויך, אחד ללא שיוך, �
      from jsonb_array_elements(payslip_batches_overview()) b where b ->> 'id' = :'batch'), '1/1/3');
 
 select t70_as('a0');
--- ‏0222: "ללא שיוך" אינו נספר — רק התלוש המשויך
-select t_eq('סיכומי החודש אינם סופרים "ללא שיוך"',
-  (payslips_board(:'batch') -> 'totals' ->> 'count')::int, 1);
+-- ‏0222: "ללא שיוך" אינו נספר; 0223: גם לא תלוש של עובד קבלן — נשאר 0
+select t_eq('סיכומי החודש אינם סופרים "ללא שיוך" ולא עובד קבלן',
+  (payslips_board(:'batch') -> 'totals' ->> 'count')::int, 0);
+select t_eq('השורה של עובד הקבלן מסומנת',
+  (select r ->> 'contractor_worker' from jsonb_array_elements(payslips_board(:'batch') -> 'slips') r
+    where r ->> 'id' = :'slip1'), 'true');
 
 select t70_as('b1');
 select t_expect_ok('החזרה לממתינים', format($$select payslip_skip('%s', false)$$, :'slip2'));

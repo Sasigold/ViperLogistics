@@ -17,6 +17,7 @@ import type {
   PayslipBatchOverview,
   PayslipBoard,
   PayslipNiBracket,
+  PayslipNiSet,
 } from '../../types/domain'
 import { PAYSLIP_BUCKET, READ_CHUNK, chunks, pagePath, slipPages } from './payslips'
 import { mergePdfs, splitPages } from './payslipPdf'
@@ -281,40 +282,51 @@ export async function readPayslipBatch(
   return { configured: true, read, failed, grouped: true }
 }
 
-/* ===== מדרגות ביטוח לאומי מעסיק (0219) ===== */
+/* ===== מדרגות ביטוח לאומי מעסיק לפי תקופה (0223) ===== */
 
-export function useNiBrackets() {
+export function useNiSets() {
   const has = useAuth((s) => s.has)
   return useQuery({
-    queryKey: [KEY, 'ni_brackets'],
+    queryKey: [KEY, 'ni_sets'],
     enabled: has(PERM.PAYSLIPS_EMPLOYER_COST),
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('payslip_settings')
-        .select('value')
-        .eq('key', 'employer_ni_brackets')
-        .maybeSingle()
+        .from('payslip_ni_bracket_sets')
+        .select('id, valid_from, valid_to, brackets')
+        .is('deleted_at', null)
+        .order('valid_from', { ascending: false })
       if (error) throw error
-      return ((data?.value as PayslipNiBracket[] | undefined) ?? []).map((b) => ({
-        up_to: b.up_to === null ? null : Number(b.up_to),
-        rate: Number(b.rate),
-      }))
+      return (data ?? []).map((r) => ({
+        ...r,
+        brackets: ((r.brackets as PayslipNiBracket[] | null) ?? []).map((b) => ({
+          up_to: b.up_to === null ? null : Number(b.up_to),
+          rate: Number(b.rate),
+        })),
+      })) as PayslipNiSet[]
     },
   })
 }
 
-/** שמירה מחשבת מחדש את ביטוח הלאומי של כל התלושים; מחזירה כמה. */
-export function useSaveNiBrackets() {
+/** יצירה (id null) או עדכון של תקופה; השרת מחשב מחדש את התלושים שבה. */
+export function useSaveNiSet() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (brackets: PayslipNiBracket[]) => {
-      const { data, error } = await supabase.rpc('payslip_ni_brackets_save', { p_brackets: brackets })
+    mutationFn: async (v: { id: string | null; validFrom: string; validTo: string | null; brackets: PayslipNiBracket[] }) => {
+      const { data, error } = await supabase.rpc('payslip_ni_set_save', {
+        p_id: v.id,
+        p_valid_from: v.validFrom,
+        p_valid_to: v.validTo,
+        p_brackets: v.brackets,
+      })
       if (error) throw error
-      return data as number
+      return data as string
     },
     onSuccess: () => void invalidate(qc),
   })
 }
+
+export const useRemoveNiSet = () =>
+  useRpcMutation((id: string) => supabase.rpc('payslip_ni_set_remove', { p_id: id }))
 
 export function useInvalidatePayslips() {
   const qc = useQueryClient()

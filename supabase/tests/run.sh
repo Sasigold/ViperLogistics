@@ -708,6 +708,13 @@ echo "$OUT70"
 OUT="$OUT
 $OUT70"
 
+# ‏71: למדרגות יש תקופה (0223). פותחת וסוגרת סטים של מדרגות; משאירה אחריה
+# בלי אף סט פעיל, כמו ש-69 מצאה.
+OUT71=$($PSQL -d vl -f "$HERE/71_the_brackets_have_a_term.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT71"
+OUT="$OUT
+$OUT71"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"

@@ -2489,6 +2489,14 @@ export interface PayslipNiBracket {
   rate: number
 }
 
+/** סט מדרגות לתקופה (0223): חודשים 'YYYY-MM-01', תפוגה כוללת; null — בלי תפוגה. */
+export interface PayslipNiSet {
+  id: string
+  valid_from: string
+  valid_to: string | null
+  brackets: PayslipNiBracket[]
+}
+
 /** תלוש במסך המנהל — שורה של `payslips_board`. */
 export interface PayslipBoardRow {
   id: string
@@ -2503,6 +2511,8 @@ export interface PayslipBoardRow {
   full_name: string | null
   /** העובד הוא עובד קבלן — שם הקבלן (0220) */
   contractor_name: string | null
+  /** תלוש של עובד קבלן — אינו בסיכומי החודש (0223) */
+  contractor_worker: boolean
   assigned_at: string | null
   /** סומן "ללא שיוך" (0220): אינו ממתין, ונספר בסיכומים */
   skipped: boolean

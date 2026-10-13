@@ -108,7 +108,7 @@ export function costFlags(a: PayslipAmounts | null | undefined): CostFlag[] {
   if (a.gross_pay !== null && a.taxable_income === null)
     flags.push({ tone: 'warning', text: 'חסר "חייב מ.ה." — ביטוח לאומי מעסיק לא חושב' })
   if (a.taxable_income !== null && a.employer_national_insurance === null)
-    flags.push({ tone: 'warning', text: 'לא הוגדרו מדרגות ביטוח לאומי מעסיק (בהגדרות)' })
+    flags.push({ tone: 'warning', text: 'אין מדרגות ביטוח לאומי לחודש התלוש (בהגדרות)' })
   if (
     a.printed_employer_cost !== null &&
     a.employer_cost !== null &&
@@ -228,4 +228,15 @@ export function bracketLabel(brackets: readonly PayslipNiBracket[], i: number): 
   const b = brackets[i]
   const range = b.up_to === null ? `מעל ${fmt(from)} ₪` : `מ-${fmt(from)} עד ${fmt(b.up_to)} ₪`
   return `${range} — ${fmt(b.rate)}%`
+}
+
+/** 'YYYY-MM-01' → ערך של `<input type="month">`. */
+export const toMonthInput = (period: string | null) => (period ? period.slice(0, 7) : '')
+
+/** `<input type="month">` → 'YYYY-MM-01', או null כשריק. */
+export const fromMonthInput = (v: string) => (/^\d{4}-\d{2}$/.test(v) ? `${v}-01` : null)
+
+/** "ינואר 2026 – יוני 2026", או "מינואר 2026, בלי תפוגה". */
+export function termLabel(from: string, to: string | null): string {
+  return to ? `${periodLabel(from)} – ${periodLabel(to)}` : `מ${periodLabel(from)}, בלי תפוגה`
 }

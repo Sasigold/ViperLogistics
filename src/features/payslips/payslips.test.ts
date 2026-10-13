@@ -5,6 +5,9 @@ import {
   AMOUNT_KEYS,
   READ_CHUNK,
   bracketLabel,
+  fromMonthInput,
+  termLabel,
+  toMonthInput,
   chunks,
   costFlags,
   defaultUploadPeriod,
@@ -105,7 +108,7 @@ describe('costFlags', () => {
   it('יש חייב מ.ה. ואין ביטוח לאומי — אין מדרגות', () => {
     expect(
       costFlags(amounts({ employer_national_insurance: null, printed_employer_cost: null })).map((f) => f.text),
-    ).toEqual(['לא הוגדרו מדרגות ביטוח לאומי מעסיק (בהגדרות)'])
+    ).toEqual(['אין מדרגות ביטוח לאומי לחודש התלוש (בהגדרות)'])
   })
   it('פער מול העלות שבתלוש — מעל שקל', () => {
     expect(costFlags(amounts({ printed_employer_cost: 13500 })).map((f) => f.tone)).toEqual(['warning'])
@@ -164,6 +167,19 @@ describe('מדרגות ביטוח לאומי', () => {
     ]
     expect(bracketLabel(b, 0)).toBe('מ-0 עד 7,000 ₪ — 1%')
     expect(bracketLabel(b, 1)).toBe('מעל 7,000 ₪ — 5%')
+  })
+})
+
+describe('תקופת מדרגות', () => {
+  it('חודש בטופס ובחזרה', () => {
+    expect(toMonthInput('2027-01-01')).toBe('2027-01')
+    expect(toMonthInput(null)).toBe('')
+    expect(fromMonthInput('2027-01')).toBe('2027-01-01')
+    expect(fromMonthInput('')).toBeNull()
+  })
+  it('תיאור', () => {
+    expect(termLabel('2026-01-01', '2026-12-01')).toBe('ינואר 2026 – דצמבר 2026')
+    expect(termLabel('2027-01-01', null)).toBe('מינואר 2027, בלי תפוגה')
   })
 })
 

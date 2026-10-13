@@ -16,6 +16,7 @@
 revoke execute on function payslip_store_reading(uuid, int, jsonb, text) from anon, authenticated, public;
 revoke execute on function app.payslip_amounts_put(uuid, jsonb, text) from anon, authenticated, public;
 revoke execute on function app.payslip_amounts_compute() from anon, authenticated, public;
+revoke execute on function app.payslip_ni_recompute() from anon, authenticated, public;
 
 insert into auth.users (id, email)
 select ('00000000-0000-0000-0000-0000000069' || s)::uuid, 'p69-' || s || '@vl.test'
@@ -61,13 +62,13 @@ set role authenticated;
 select t69_as('b1');
 select t_expect_fail('מנהלת תלושים בלי עלות מעביד אינה קובעת מדרגות',
   $$select payslip_ni_brackets_save('[{"up_to":null,"rate":1}]')$$);
-select t_eq('ואינה רואה אותן', (select count(*)::int from payslip_settings), 0);
+select t_eq('ואינה רואה אותן', (select count(*)::int from payslip_ni_bracket_sets), 0);
 
 select t69_as('d1');
 select t_expect_fail('עובד אינו קובע מדרגות', $$select payslip_ni_brackets_save('[]')$$);
-select t_eq('ואינו רואה אותן', (select count(*)::int from payslip_settings), 0);
+select t_eq('ואינו רואה אותן', (select count(*)::int from payslip_ni_bracket_sets), 0);
 select t_rows('ואינו כותב לטבלה ישירות',
-  $$update payslip_settings set value = '[]'$$, 0);
+  $$update payslip_ni_bracket_sets set brackets = '[]'$$, 0);
 
 select t69_as('c1');
 select t_expect_fail('מדרגה שאינה עולה נדחית',
@@ -82,7 +83,7 @@ select t_expect_fail('לא רשימה — נדחה', $$select payslip_ni_bracket
 select t_expect_ok('רואה העלות קובע מדרגות (מחרוזות של מספרים מתקבלות)',
   $$select payslip_ni_brackets_save('[{"up_to":"7000","rate":"1"},{"up_to":15000,"rate":5}]')$$);
 select t_eq('נשמרות מנורמלות',
-  (select value::text from payslip_settings where key = 'employer_ni_brackets'),
+  (select brackets::text from payslip_ni_bracket_sets where deleted_at is null),
   '[{"rate": 1, "up_to": 7000}, {"rate": 5, "up_to": 15000}]');
 
 -- ===== 3. קריאה מחדש של קובץ ששויך ========================================
