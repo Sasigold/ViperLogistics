@@ -406,15 +406,25 @@ function BatchesCard({ canManage, onAssign }: { canManage: boolean; onAssign: (b
   const invalidate = useInvalidatePayslips()
   const [reading, setReading] = useState<{ id: string; done: number; total: number } | null>(null)
 
+  // קובץ שכבר שויכו ממנו תלושים נקרא מחדש רק לסכומים — השיוך והקיבוץ נשארים (0219)
   const read = async (b: PayslipBatchOverview) => {
+    const mode = b.assigned > 0 ? 'amounts' : 'group'
     setReading({ id: b.id, done: 0, total: b.page_count })
     try {
-      const r = await readPayslipBatch(b.id, slipPages(1, b.page_count), (s) => {
-        if (s.step === 'read') setReading({ id: b.id, done: s.done, total: s.total })
-      })
+      const r = await readPayslipBatch(
+        b.id,
+        slipPages(1, b.page_count),
+        (s) => {
+          if (s.step === 'read') setReading({ id: b.id, done: s.done, total: s.total })
+        },
+        mode,
+      )
       if (!r.configured) toast.info('הקריאה האוטומטית אינה מוגדרת — יש להגדיר את מפתח ה-API של Anthropic')
       else if (r.grouped)
-        toast.success(`נקראו ${r.read} עמודים${r.failed.length ? `, ${r.failed.length} לא נקראו` : ''}`)
+        toast.success(
+          `נקראו ${r.read} עמודים${r.failed.length ? `, ${r.failed.length} לא נקראו` : ''}` +
+            (r.manual ? ` · ${r.manual} תלושים שהוקלדו ביד לא שונו` : ''),
+        )
       else toast.error(r.failed[0]?.error ?? 'אף עמוד לא נקרא')
     } catch (e) {
       toast.error(errorMessage(e))
@@ -479,11 +489,9 @@ function BatchesCard({ canManage, onAssign }: { canManage: boolean; onAssign: (b
                       <Button size="sm" variant="ghost" onClick={() => onAssign(b.id)}>
                         שיוך
                       </Button>
-                      {b.assigned === 0 && (
-                        <Button size="sm" variant="ghost" disabled={!!reading} onClick={() => void read(b)}>
-                          {b.read_at ? 'קריאה מחדש' : 'קריאה אוטומטית'}
-                        </Button>
-                      )}
+                      <Button size="sm" variant="ghost" disabled={!!reading} onClick={() => void read(b)}>
+                        {b.assigned > 0 ? 'קריאת הסכומים מחדש' : b.read_at ? 'קריאה מחדש' : 'קריאה אוטומטית'}
+                      </Button>
                       <IconButton label="הסרת הקובץ" onClick={() => void remove(b)}>
                         <Trash2 size={ICON.md} strokeWidth={STROKE} />
                       </IconButton>
