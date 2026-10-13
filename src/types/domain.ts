@@ -2501,7 +2501,11 @@ export interface PayslipBoardRow {
   period: string
   profile_id: string | null
   full_name: string | null
+  /** העובד הוא עובד קבלן — שם הקבלן (0220) */
+  contractor_name: string | null
   assigned_at: string | null
+  /** סומן "ללא שיוך" (0220): אינו ממתין, ונספר בסיכומים */
+  skipped: boolean
   detected_kind: 'payslip' | 'other' | null
   detected_name: string | null
   detected_employee_no: string | null
@@ -2541,7 +2545,17 @@ export interface PayslipBatchOverview {
   uploaded_by: string | null
   slips: number
   assigned: number
+  /** סומנו "ללא שיוך" (0220) */
+  skipped: number
   read_pages: number
+}
+
+/** מי שאפשר לשייך אליו תלוש — `payslip_assignees()` (0220). */
+export interface PayslipAssignee {
+  id: string
+  full_name: string
+  user_kind: 'staff' | 'contractor_user'
+  contractor_name: string | null
 }
 
 /** תלוש של העובד עצמו — `payslips` דרך RLS. */

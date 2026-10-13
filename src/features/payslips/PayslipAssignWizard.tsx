@@ -27,7 +27,6 @@ import {
   useConfirm,
   useToast,
 } from '../../components/ui'
-import { useStaff } from '../../lib/queries'
 import { errorMessage } from '../../lib/errors'
 import type { PayslipBoardRow } from '../../types/domain'
 import { pageRangeLabel, periodLabel, periodOptions } from './payslips'
@@ -35,18 +34,23 @@ import {
   openSlip,
   useAssignPayslip,
   useMergePayslip,
+  usePayslipAssignees,
   usePayslipsBoard,
   useRemovePayslip,
   useSetPayslipPeriod,
+  useSkipPayslip,
   useSplitPayslip,
 } from './payslipQueries'
 import { useSlipPdfUrl } from './useSlipPdf'
 
-/** הבא בתור: התלוש הראשון אחרי `from` שעוד לא שויך ואינו "לא תלוש", במעגל. */
+/** ממתין לשיוך: לא שויך, לא סומן "ללא שיוך" (0220), ואינו "לא תלוש". */
+const isPending = (r: PayslipBoardRow) => !r.profile_id && !r.skipped && r.detected_kind !== 'other'
+
+/** הבא בתור: התלוש הממתין הראשון אחרי `from`, במעגל. */
 function nextPending(rows: PayslipBoardRow[], from: number): number {
   for (let step = 1; step <= rows.length; step++) {
     const i = (from + step) % rows.length
-    if (!rows[i].profile_id && rows[i].detected_kind !== 'other') return i
+    if (isPending(rows[i])) return i
   }
   return -1
 }
@@ -60,8 +64,12 @@ export function PayslipAssignWizard({ batchId, onClose }: { batchId: string; onC
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
   const { data, isLoading, error, refetch } = usePayslipsBoard({ batchId })
-  const { data: staff = [] } = useStaff()
+  // אנשי צוות ועובדי קבלנים עם משתמש (0220)
+  const { data: staff = [] } = usePayslipAssignees()
+  const staffOnly = staff.filter((p) => p.user_kind === 'staff')
+  const contractorWorkers = staff.filter((p) => p.user_kind === 'contractor_user')
   const assign = useAssignPayslip()
+  const skip = useSkipPayslip()
   const setPeriod = useSetPayslipPeriod()
   const merge = useMergePayslip()
   const split = useSplitPayslip()
@@ -73,7 +81,7 @@ export function PayslipAssignWizard({ batchId, onClose }: { batchId: string; onC
   const index = useMemo(() => {
     const byId = currentId ? rows.findIndex((r) => r.id === currentId) : -1
     if (byId >= 0) return byId
-    const first = rows.findIndex((r) => !r.profile_id && r.detected_kind !== 'other')
+    const first = rows.findIndex(isPending)
     return first >= 0 ? first : rows.length ? 0 : -1
   }, [rows, currentId])
   const slip = index >= 0 ? rows[index] : null
@@ -90,8 +98,9 @@ export function PayslipAssignWizard({ batchId, onClose }: { batchId: string; onC
   const months = useMemo(() => periodOptions(new Date()), [])
 
   const pdf = useSlipPdfUrl(slip)
-  const busy = assign.isPending || setPeriod.isPending || merge.isPending || split.isPending || remove.isPending
-  const pending = rows.filter((r) => !r.profile_id && r.detected_kind !== 'other').length
+  const busy =
+    assign.isPending || setPeriod.isPending || merge.isPending || split.isPending || remove.isPending || skip.isPending
+  const pending = rows.filter(isPending).length
 
   const goTo = (i: number) => {
     if (i >= 0 && i < rows.length) setCurrentId(rows[i].id)
@@ -116,6 +125,27 @@ export function PayslipAssignWizard({ batchId, onClose }: { batchId: string; onC
   const unassign = () => {
     if (!slip) return
     assign.mutate({ id: slip.id, profileId: null }, { onError: fail })
+  }
+
+  // "ללא שיוך" (0220): התלוש יורד מהממתינים, ואף עובד אינו רואה אותו
+  const skipAndNext = () => {
+    if (!slip) return
+    const next = nextPending(rows, index)
+    skip.mutate(
+      { id: slip.id, skip: true },
+      {
+        onSuccess: () => {
+          toast.success('סומן ללא שיוך')
+          if (next >= 0 && rows[next].id !== slip.id) goTo(next)
+        },
+        onError: fail,
+      },
+    )
+  }
+
+  const unskip = () => {
+    if (!slip) return
+    skip.mutate({ id: slip.id, skip: false }, { onError: fail })
   }
 
   const mergePrev = async () => {
@@ -206,7 +236,7 @@ export function PayslipAssignWizard({ batchId, onClose }: { batchId: string; onC
                     ? 'border-primary bg-primary-subtle text-primary-text'
                     : r.profile_id
                       ? 'border-success-border bg-success-subtle text-success-text'
-                      : r.detected_kind === 'other'
+                      : r.skipped || r.detected_kind === 'other'
                         ? 'border-line-subtle bg-subtle text-ink-tertiary'
                         : 'border-line hover:bg-subtle',
                 )}
@@ -316,11 +346,21 @@ export function PayslipAssignWizard({ batchId, onClose }: { batchId: string; onC
                   }
                 >
                   <option value="">בחירת עובד…</option>
-                  {staff.map((p) => (
+                  {staffOnly.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.full_name}
                     </option>
                   ))}
+                  {contractorWorkers.length > 0 && (
+                    <optgroup label="עובדי קבלנים">
+                      {contractorWorkers.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.full_name}
+                          {p.contractor_name ? ` — ${p.contractor_name}` : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </Select>
               </Field>
 
@@ -343,7 +383,8 @@ export function PayslipAssignWizard({ batchId, onClose }: { batchId: string; onC
                 <div className="space-y-2 rounded-xl border border-success-border bg-success-subtle px-3 py-2.5">
                   <p className="flex items-center gap-1.5 type-body font-semibold text-success-text">
                     <UserCheck size={ICON.md} strokeWidth={STROKE} />
-                    שויך ל{slip.full_name} — מוצג לו
+                    שויך ל{slip.full_name}
+                    {slip.contractor_name ? ` (${slip.contractor_name})` : ''} — מוצג לו
                   </p>
                   {slip.same_month_count > 0 && (
                     <p className="flex items-center gap-1.5 type-caption text-warning-text">
@@ -356,16 +397,34 @@ export function PayslipAssignWizard({ batchId, onClose }: { batchId: string; onC
                   </Button>
                 </div>
               ) : (
-                <Button
-                  variant="primary"
-                  className="w-full"
-                  loading={assign.isPending || setPeriod.isPending}
-                  disabled={!profileId || busy}
-                  onClick={() => void assignAndNext()}
-                >
-                  <UserCheck size={ICON.sm} strokeWidth={STROKE} />
-                  שיוך והבא
-                </Button>
+                <div className="space-y-2">
+                  {slip.skipped && (
+                    <div className="space-y-1.5 rounded-xl border border-line-subtle bg-subtle px-3 py-2.5">
+                      <p className="type-body font-semibold text-ink-secondary">
+                        סומן ״ללא שיוך״ — לא ממתין, ואף עובד אינו רואה אותו
+                      </p>
+                      <Button size="sm" variant="ghost" disabled={busy} onClick={unskip}>
+                        החזרה לממתינים
+                      </Button>
+                    </div>
+                  )}
+                  <Button
+                    variant="primary"
+                    className="w-full"
+                    loading={assign.isPending || setPeriod.isPending}
+                    disabled={!profileId || busy}
+                    onClick={() => void assignAndNext()}
+                  >
+                    <UserCheck size={ICON.sm} strokeWidth={STROKE} />
+                    שיוך והבא
+                  </Button>
+                  {/* עמוד "לא תלוש" נסגר בהסרה, לא בסימון (0221) */}
+                  {!slip.skipped && slip.detected_kind !== 'other' && (
+                    <Button className="w-full" loading={skip.isPending} disabled={busy} onClick={skipAndNext}>
+                      ללא שיוך
+                    </Button>
+                  )}
+                </div>
               )}
 
               <div className="flex flex-wrap gap-1.5 border-t border-line-subtle pt-3">

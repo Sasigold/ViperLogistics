@@ -120,6 +120,9 @@ export default function PayslipsPage() {
   )
 }
 
+/** שם בעל התלוש לתצוגה: העובד, ובתלוש "ללא שיוך" — השם שנקרא ממנו. */
+const slipOwner = (r: PayslipBoardRow) => r.full_name ?? r.detected_name ?? 'תלוש ללא שם'
+
 /* ===== ממתינים לשיוך ===== */
 
 function PendingCard({ onAssign }: { onAssign: (batchId: string) => void }) {
@@ -198,11 +201,15 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
   const rows = useMemo(
     () =>
       (data?.slips ?? [])
+        // רק משויכים: "ללא שיוך" אינו בטבלה ואינו בסיכומים (0222)
         .filter((r) => r.profile_id)
-        .sort((a, b) => (a.full_name ?? '').localeCompare(b.full_name ?? '', 'he')),
+        .sort((a, b) => slipOwner(a).localeCompare(slipOwner(b), 'he')),
     [data?.slips],
   )
-  const waiting = (data?.slips ?? []).filter((r) => !r.profile_id && r.detected_kind !== 'other').length
+  const waiting = (data?.slips ?? []).filter(
+    (r) => !r.profile_id && !r.skipped && r.detected_kind !== 'other',
+  ).length
+  const skippedCount = (data?.slips ?? []).filter((r) => !r.profile_id && r.skipped).length
   const showCost = canCost && !!data?.can_view_cost
   const t = data?.totals
   const amountsSlip = amountsFor ? (data?.slips.find((r) => r.id === amountsFor) ?? null) : null
@@ -218,7 +225,7 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
   }
 
   const removeSlip = async (r: PayslipBoardRow) => {
-    const ok = await confirm(`להסיר את התלוש של ${r.full_name} ל${periodLabel(r.period)}? הוא ייעלם גם אצלו.`, {
+    const ok = await confirm(`להסיר את התלוש של ${slipOwner(r)} ל${periodLabel(r.period)}? הוא ייעלם גם אצלו.`, {
       title: 'הסרת תלוש',
       confirmLabel: 'הסרה',
     })
@@ -291,6 +298,13 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
           </p>
         )}
 
+        {skippedCount > 0 && (
+          <p className="type-caption text-ink-tertiary">
+            {skippedCount} תלושים ל{periodLabel(period)} סומנו ״ללא שיוך״ — אינם בטבלה ובסיכומים (אפשר לשייך אותם מאשף
+            השיוך של הקובץ)
+          </p>
+        )}
+
         {data && rows.length === 0 && <EmptyState compact art="table" title="אין תלושים משויכים לחודש הזה" />}
 
         {rows.length > 0 && (
@@ -316,7 +330,12 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
                   return (
                     <tr key={r.id}>
                       <td className="py-2 pe-3">
-                        <p className="font-semibold">{r.full_name}</p>
+                        <p className="font-semibold">
+                          {slipOwner(r)}
+                          {r.contractor_name && (
+                            <span className="font-normal text-ink-tertiary"> · {r.contractor_name}</span>
+                          )}
+                        </p>
                         <p className="type-caption text-ink-tertiary">
                           {pageRangeLabel(r.page_from, r.page_to)} · {r.file_name}
                           {r.same_month_count > 0 && (
@@ -425,7 +444,8 @@ function BatchesCard({ canManage, onAssign }: { canManage: boolean; onAssign: (b
 
   // קובץ שכבר שויכו ממנו תלושים נקרא מחדש רק לסכומים — השיוך והקיבוץ נשארים (0219)
   const read = async (b: PayslipBatchOverview) => {
-    const mode = b.assigned > 0 ? 'amounts' : 'group'
+    // גם "ללא שיוך" הוא החלטה שקיבוץ מחדש היה מוחק (0221)
+    const mode = b.assigned + b.skipped > 0 ? 'amounts' : 'group'
     setReading({ id: b.id, done: 0, total: b.page_count })
     try {
       const r = await readPayslipBatch(
@@ -493,8 +513,8 @@ function BatchesCard({ canManage, onAssign }: { canManage: boolean; onAssign: (b
                     {b.read_at ? ' · נקרא אוטומטית' : ''}
                   </p>
                 </div>
-                <Badge tone={b.assigned >= b.slips && b.slips > 0 ? 'success' : 'warning'}>
-                  {b.assigned}/{b.slips} שויכו
+                <Badge tone={b.assigned + b.skipped >= b.slips && b.slips > 0 ? 'success' : 'warning'}>
+                  {b.assigned}/{b.slips} שויכו{b.skipped ? ` · ${b.skipped} ללא שיוך` : ''}
                 </Badge>
                 {reading?.id === b.id ? (
                   <span className="type-caption text-ink-tertiary tabular-nums">
@@ -507,7 +527,7 @@ function BatchesCard({ canManage, onAssign }: { canManage: boolean; onAssign: (b
                         שיוך
                       </Button>
                       <Button size="sm" variant="ghost" disabled={!!reading} onClick={() => void read(b)}>
-                        {b.assigned > 0 ? 'קריאת הסכומים מחדש' : b.read_at ? 'קריאה מחדש' : 'קריאה אוטומטית'}
+                        {b.assigned + b.skipped > 0 ? 'קריאת הסכומים מחדש' : b.read_at ? 'קריאה מחדש' : 'קריאה אוטומטית'}
                       </Button>
                       <IconButton label="הסרת הקובץ" onClick={() => void remove(b)}>
                         <Trash2 size={ICON.md} strokeWidth={STROKE} />
