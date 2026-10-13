@@ -421,8 +421,8 @@ begin
       allowed_mime_types = excluded.allowed_mime_types
   $sql$;
 
-  -- create בלי drop: הפוליסות חדשות, והכלי שמחיל מיגרציות בייצור עוצר על
-  -- כל DROP (CLAUDE.md §1).
+  -- create בלבד, בלי להסיר קודם: הפוליסות חדשות, והכלי שמחיל מיגרציות
+  -- בייצור עוצר על כל פקודת הסרה (CLAUDE.md §1).
   begin
     if not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects'
                      and policyname = 'payslips_objects_read') then
