@@ -701,6 +701,13 @@ echo "$OUT69"
 OUT="$OUT
 $OUT69"
 
+# ‏70: תלוש לעובד קבלן ו"ללא שיוך" (0220). קבלן, לקוח ופרופילים משלה; משאירה
+# אחריה התראת `payslip_available` אחת לעובד הקבלן.
+OUT70=$($PSQL -d vl -f "$HERE/70_the_contractor_worker_gets_a_payslip.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT70"
+OUT="$OUT
+$OUT70"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"

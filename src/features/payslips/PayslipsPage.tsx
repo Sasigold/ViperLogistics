@@ -58,6 +58,7 @@ import {
   usePayslipBatches,
   usePayslipsBoard,
   useRemovePayslip,
+  useSkipPayslip,
   useRemovePayslipBatch,
 } from './payslipQueries'
 import { PayslipAssignWizard } from './PayslipAssignWizard'
@@ -119,6 +120,9 @@ export default function PayslipsPage() {
     </div>
   )
 }
+
+/** שם בעל התלוש לתצוגה: העובד, ובתלוש "ללא שיוך" — השם שנקרא ממנו. */
+const slipOwner = (r: PayslipBoardRow) => r.full_name ?? r.detected_name ?? 'תלוש ללא שם'
 
 /* ===== ממתינים לשיוך ===== */
 
@@ -193,16 +197,20 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
   const [amountsFor, setAmountsFor] = useState<string | null>(null)
   const { data, isLoading, error, refetch } = usePayslipsBoard({ period })
   const assign = useAssignPayslip()
+  const skip = useSkipPayslip()
   const remove = useRemovePayslip()
 
   const rows = useMemo(
     () =>
       (data?.slips ?? [])
-        .filter((r) => r.profile_id)
-        .sort((a, b) => (a.full_name ?? '').localeCompare(b.full_name ?? '', 'he')),
+        // משויכים, וגם מה שסומן "ללא שיוך" (0220) — גם הוא תלוש ששולם
+        .filter((r) => r.profile_id || r.skipped)
+        .sort((a, b) => slipOwner(a).localeCompare(slipOwner(b), 'he')),
     [data?.slips],
   )
-  const waiting = (data?.slips ?? []).filter((r) => !r.profile_id && r.detected_kind !== 'other').length
+  const waiting = (data?.slips ?? []).filter(
+    (r) => !r.profile_id && !r.skipped && r.detected_kind !== 'other',
+  ).length
   const showCost = canCost && !!data?.can_view_cost
   const t = data?.totals
   const amountsSlip = amountsFor ? (data?.slips.find((r) => r.id === amountsFor) ?? null) : null
@@ -210,6 +218,10 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
   const fail = (e: unknown) => toast.error(errorMessage(e))
 
   const unassign = async (r: PayslipBoardRow) => {
+    if (r.skipped) {
+      skip.mutate({ id: r.id, skip: false }, { onError: fail })
+      return
+    }
     const ok = await confirm(`לבטל את השיוך של התלוש ל${r.full_name}? הוא יחזור לרשימת הממתינים.`, {
       title: 'ביטול שיוך',
       confirmLabel: 'ביטול השיוך',
@@ -218,7 +230,7 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
   }
 
   const removeSlip = async (r: PayslipBoardRow) => {
-    const ok = await confirm(`להסיר את התלוש של ${r.full_name} ל${periodLabel(r.period)}? הוא ייעלם גם אצלו.`, {
+    const ok = await confirm(`להסיר את התלוש של ${slipOwner(r)} ל${periodLabel(r.period)}? הוא ייעלם גם אצלו.`, {
       title: 'הסרת תלוש',
       confirmLabel: 'הסרה',
     })
@@ -316,7 +328,17 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
                   return (
                     <tr key={r.id}>
                       <td className="py-2 pe-3">
-                        <p className="font-semibold">{r.full_name}</p>
+                        <p className="font-semibold">
+                          {slipOwner(r)}
+                          {r.contractor_name && (
+                            <span className="font-normal text-ink-tertiary"> · {r.contractor_name}</span>
+                          )}
+                          {r.skipped && (
+                            <Badge tone="neutral" className="ms-1.5">
+                              ללא שיוך
+                            </Badge>
+                          )}
+                        </p>
                         <p className="type-caption text-ink-tertiary">
                           {pageRangeLabel(r.page_from, r.page_to)} · {r.file_name}
                           {r.same_month_count > 0 && (
@@ -368,7 +390,10 @@ function MonthCard({ canManage, canCost }: { canManage: boolean; canCost: boolea
                           )}
                           {canManage && (
                             <>
-                              <IconButton label="ביטול השיוך" onClick={() => void unassign(r)}>
+                              <IconButton
+                                label={r.skipped ? 'החזרה לממתינים' : 'ביטול השיוך'}
+                                onClick={() => void unassign(r)}
+                              >
                                 <X size={ICON.md} strokeWidth={STROKE} />
                               </IconButton>
                               <IconButton label="הסרת התלוש" onClick={() => void removeSlip(r)}>
@@ -493,8 +518,8 @@ function BatchesCard({ canManage, onAssign }: { canManage: boolean; onAssign: (b
                     {b.read_at ? ' · נקרא אוטומטית' : ''}
                   </p>
                 </div>
-                <Badge tone={b.assigned >= b.slips && b.slips > 0 ? 'success' : 'warning'}>
-                  {b.assigned}/{b.slips} שויכו
+                <Badge tone={b.assigned + b.skipped >= b.slips && b.slips > 0 ? 'success' : 'warning'}>
+                  {b.assigned}/{b.slips} שויכו{b.skipped ? ` · ${b.skipped} ללא שיוך` : ''}
                 </Badge>
                 {reading?.id === b.id ? (
                   <span className="type-caption text-ink-tertiary tabular-nums">

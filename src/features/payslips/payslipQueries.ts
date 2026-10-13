@@ -13,6 +13,7 @@ import { PERM } from '../../lib/permissions'
 import type {
   MyPayslip,
   PayslipAmountKey,
+  PayslipAssignee,
   PayslipBatchOverview,
   PayslipBoard,
   PayslipNiBracket,
@@ -108,6 +109,25 @@ export const useMergePayslip = () =>
   useRpcMutation((id: string) => supabase.rpc('payslip_merge_previous', { p_payslip_id: id }))
 
 export const useSplitPayslip = () => useRpcMutation((id: string) => supabase.rpc('payslip_split', { p_payslip_id: id }))
+
+/** "ללא שיוך" (0220): skip=false מחזיר את התלוש לממתינים. */
+export const useSkipPayslip = () =>
+  useRpcMutation((v: { id: string; skip: boolean }) =>
+    supabase.rpc('payslip_skip', { p_payslip_id: v.id, p_skip: v.skip }),
+  )
+
+/** אנשי צוות ועובדי קבלנים עם משתמש — מהשרת (0220). */
+export function usePayslipAssignees(enabled = true) {
+  return useQuery({
+    queryKey: [KEY, 'assignees'],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('payslip_assignees')
+      if (error) throw error
+      return data as PayslipAssignee[]
+    },
+  })
+}
 
 export const useRemovePayslip = () =>
   useRpcMutation((id: string) => supabase.rpc('payslip_remove', { p_payslip_id: id }))
