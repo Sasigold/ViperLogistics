@@ -125,7 +125,7 @@ create trigger payslip_amounts_compute before insert or update
   on payslip_amounts for each row execute function app.payslip_amounts_compute();
 
 -- השורות הקיימות: בלי זקיפות, והביטוח הלאומי מחושב (עוד אין להן "חייב מ.ה.").
-update payslip_amounts set imputed_income = null;
+update payslip_amounts set imputed_income = null where payslip_id is not null;
 
 -- ===== 4. שמירת המדרגות ====================================================
 
@@ -184,7 +184,7 @@ begin
     updated_at = now();
 
   -- הטריגר מחשב מחדש בכל עדכון
-  update payslip_amounts set employer_national_insurance = null;
+  update payslip_amounts set employer_national_insurance = null where payslip_id is not null;
   get diagnostics n = row_count;
   return n;
 end $$;

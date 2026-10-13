@@ -165,7 +165,7 @@ export function normalizeReading(raw: unknown): PayslipReading {
   const year = intIn(r.period_year, 2000, 2099)
   const amounts: Partial<Record<AmountKey, number>> = {}
   // הסכמה מחזירה רשימה [{component, amount}]; אובייקט {רכיב: סכום} מתקבל גם הוא.
-  // רכיב שחוזר ברשימה מצטבר, חוץ מסכום יחיד (ברוטו, נטו, עלות מודפסת) — שם האחרון קובע.
+  // רכיב שחוזר ברשימה מצטבר, חוץ מסכום יחיד (ברוטו, נטו, חייב מ.ה., עלות מודפסת) — שם האחרון קובע.
   const known = new Set<string>(AMOUNT_KEYS)
   if (kind === 'payslip' && Array.isArray(r.amounts)) {
     for (const e of r.amounts as unknown[]) {
