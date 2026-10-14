@@ -5,7 +5,7 @@ import { fmtSpan, laneOf, oldestOverdueSeconds, onTimePct } from './warRoom'
 
 /**
  * שורת המדדים של משימות הניהול (0232): פתוחות, באיחור (והוותיקה שבהן),
- * להיום, עמידה ביעדים ב-30 יום, והושלמו השבוע. הכול נגזר מהלוח
+ * להיום, עמידה ביעדים ב-30 יום, והושלמו ב-7 הימים האחרונים. הכול נגזר מהלוח
  * (`missions_board`) ומהסטטיסטיקה (`missions_stats`) שהשרת מחזיר.
  */
 export function TasksSummary({
@@ -44,7 +44,7 @@ export function TasksSummary({
         tone="#16a34a"
         hint={stats?.done_30 ? `${stats.on_time_30} מתוך ${stats.done_30} הושלמו בזמן` : 'עוד לא הושלמו משימות'}
       />
-      <StatCard icon={icon(CheckCheck)} label="הושלמו השבוע" value={doneWeek ?? '—'} tone="#0891b2" />
+      <StatCard icon={icon(CheckCheck)} label="הושלמו · 7 ימים" value={doneWeek ?? '—'} tone="#0891b2" />
     </div>
   )
 }
