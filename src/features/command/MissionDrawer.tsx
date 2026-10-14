@@ -46,6 +46,8 @@ export function MissionDrawer({
   const [steps, setSteps] = useState<StepDraft[]>(mission?.steps.map((s) => ({ ...s })) ?? [])
   const [newStep, setNewStep] = useState('')
 
+  /* ‏0228: משימה שבוצעה קפואה בניקוד שלה — השרת שומר את הבעלים, היעד והעדיפות */
+  const frozen = mission?.status === 'done'
   const postpones = mission && mission.status === 'open' && due && new Date(due) > new Date(mission.due_at)
 
   const addStep = () => {
@@ -104,10 +106,10 @@ export function MissionDrawer({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="תאריך ושעת יעד" required>
-            <Input type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
+            <Input type="datetime-local" value={due} disabled={frozen} onChange={(e) => setDue(e.target.value)} />
           </Field>
           <Field label="אחראי">
-            <Select value={owner} onChange={(e) => setOwner(e.target.value)}>
+            <Select value={owner} disabled={frozen} onChange={(e) => setOwner(e.target.value)}>
               {admins.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.full_name}
@@ -118,11 +120,17 @@ export function MissionDrawer({
           </Field>
         </div>
 
+        {frozen && (
+          <p className="rounded-lg bg-subtle px-3 py-2 type-caption text-ink-secondary">
+            המשימה בוצעה, והנקודות נקבעו. כדי לשנות יעד, אחראי או עדיפות — קודם "החזרה לפתוחות".
+          </p>
+        )}
+
         <Field label="עדיפות">
           <SegmentedControl
             block
             value={String(priority) as '1'}
-            onChange={(k) => setPriority(Number(k) as 1 | 2 | 3 | 4)}
+            onChange={(k) => !frozen && setPriority(Number(k) as 1 | 2 | 3 | 4)}
             items={PRIORITIES.map((p) => ({ key: String(p.value) as '1', label: p.label }))}
           />
         </Field>

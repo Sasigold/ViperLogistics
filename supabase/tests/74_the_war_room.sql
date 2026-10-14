@@ -197,6 +197,32 @@ select set_config('request.jwt.claim.sub', '', false);
 select t_eq('הסרה רכה — השורה עדיין במסד',
   (select deleted_at is not null from admin_missions where id = '74000000-0000-0000-0000-000000000001'), true);
 
+-- ===== 7. 0228: מופע חוזר אחד, ומשימה שבוצעה קפואה =======================
+
+\echo '--- 0228 ---'
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select t_expect_ok('ביטול הסיום של המשימה החוזרת', $$ select mission_reopen('74000000-0000-0000-0000-000000000002') $$);
+select t_eq('סגירה שנייה אינה מולידה מופע נוסף',
+  (mission_complete('74000000-0000-0000-0000-000000000002') ->> 'next_id'), null);
+select t_eq('יש בדיוק מופע חי אחד אחריה',
+  (select count(*)::int from admin_missions
+    where previous_id = '74000000-0000-0000-0000-000000000002' and deleted_at is null), 1);
+
+select t_expect_ok('סגירה, ואז עריכה שמנסה להעביר ולהזיז', $$
+  select mission_complete((select id from m74 where k = 'cams')) $$);
+select t_expect_ok('העריכה עצמה עוברת', $$
+  select mission_save((select id from m74 where k = 'cams'), jsonb_build_object(
+    'title', 'מצלמות — הותקנו', 'due_at', now() + interval '30 days', 'priority', 4,
+    'owner_id', '20000000-0000-0000-0000-000000000001')) $$);
+select t_eq('השם השתנה; הבעלים, היעד והעדיפות — לא',
+  (select title || '|' || (owner_id = '20000000-0000-0000-0000-0000000074a1')::text || '|'
+          || (due_at < now() + interval '3 days')::text || '|' || priority
+     from admin_missions where id = (select id from m74 where k = 'cams')),
+  'מצלמות — הותקנו|true|true|1');
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+
 -- ===== ניקוי ===============================================================
 
 delete from notifications where recipient_id = '20000000-0000-0000-0000-0000000074a1';
