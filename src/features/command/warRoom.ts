@@ -1,9 +1,6 @@
 /**
- * משימות ניהול (0227) — הלוגיקה הטהורה של המסך.
- *
- * המספרים עצמם (רמת האיום, החוב, הנקודות, הרצף) מגיעים מהשרת. מה שכאן הוא
- * איך מציגים אותם: לאיזה נתיב משימה שייכת, איך נקראת ספירה לאחור, איזו דרגה
- * שווה כמה XP, ומה אומר הדף בכל רמת איום.
+ * משימות ניהול (0227, 0232) — הלוגיקה הטהורה של המסך: לאיזה נתיב משימה
+ * שייכת, איך נקרא זמן עד היעד, ואיך נבנים המדדים והגרפים מהשרת.
  */
 import type { Mission, MissionDay } from '../../types/domain'
 
@@ -16,7 +13,7 @@ export const LANES: readonly { key: Lane; label: string }[] = [
   { key: 'today', label: 'היום' },
   { key: 'week', label: 'השבוע' },
   { key: 'later', label: 'בהמשך' },
-  { key: 'done', label: 'בוצע' },
+  { key: 'done', label: 'הושלמו' },
 ]
 
 const dayStart = (ms: number) => {
@@ -48,137 +45,50 @@ export function groupByLane(missions: readonly Mission[], nowMs: number): Record
   return out
 }
 
-/* ===== ספירה לאחור ======================================================= */
+/* ===== זמן עד היעד ======================================================= */
 
-export interface Span {
-  days: number
-  hours: number
-  minutes: number
-  seconds: number
-}
+const MIN = 60
+const HOUR = 3600
 
-export function splitSeconds(total: number): Span {
-  const s = Math.max(0, Math.floor(total))
-  return {
-    days: Math.floor(s / 86400),
-    hours: Math.floor((s % 86400) / 3600),
-    minutes: Math.floor((s % 3600) / 60),
-    seconds: s % 60,
-  }
-}
-
-const pad = (n: number) => String(n).padStart(2, '0')
-
-/** "2 ימים 4 שע׳", "3:12:05", "12 דק׳" — קצר, לכרטיס */
+/** "40 דק׳", "3 שע׳ 12 דק׳", "יום", "3 ימים" — לכרטיס, בדיוק של דקה */
 export function fmtSpan(seconds: number): string {
-  const { days, hours, minutes, seconds: s } = splitSeconds(seconds)
-  if (days >= 1) return `${days === 1 ? 'יום' : `${days} ימים`}${hours ? ` ${hours} שע׳` : ''}`
-  if (hours >= 1) return `${hours}:${pad(minutes)}:${pad(s)}`
-  return `${minutes}:${pad(s)}`
+  const s = Math.max(0, Math.floor(seconds))
+  const days = Math.floor(s / 86400)
+  const hours = Math.floor((s % 86400) / HOUR)
+  const minutes = Math.floor((s % HOUR) / MIN)
+  if (days >= 2) return `${days} ימים`
+  if (days === 1) return hours ? `יום ו-${hours} שע׳` : 'יום'
+  if (hours >= 1) return minutes ? `${hours} שע׳ ${minutes} דק׳` : `${hours} שע׳`
+  return `${Math.max(1, minutes)} דק׳`
 }
 
 export interface Countdown {
   text: string
   overdue: boolean
   /** פחות משעה ליעד */
-  urgent: boolean
+  soon: boolean
 }
 
 export function countdown(dueIso: string, nowMs: number): Countdown {
   const diff = (Date.parse(dueIso) - nowMs) / 1000
-  if (diff < 0) return { text: `באיחור ${fmtSpan(-diff)}`, overdue: true, urgent: false }
-  return { text: `עוד ${fmtSpan(diff)}`, overdue: false, urgent: diff < 3600 }
+  if (diff < 0) return { text: `באיחור של ${fmtSpan(-diff)}`, overdue: true, soon: false }
+  return { text: `בעוד ${fmtSpan(diff)}`, overdue: false, soon: diff < HOUR }
 }
 
-/** שעון החוב: "3 ימים 04:12:55" */
-export function fmtDebt(seconds: number): string {
-  const { days, hours, minutes, seconds: s } = splitSeconds(seconds)
-  const clock = `${pad(hours)}:${pad(minutes)}:${pad(s)}`
-  if (days === 0) return clock
-  return `${days === 1 ? 'יום' : `${days} ימים`} ${clock}`
+/** כמה זמן מאחרת המשימה הוותיקה שבאיחור (שניות); null — אין באיחור */
+export function oldestOverdueSeconds(missions: readonly Pick<Mission, 'status' | 'due_at'>[], nowMs: number): number | null {
+  let oldest: number | null = null
+  for (const m of missions) {
+    if (m.status !== 'open') continue
+    const due = Date.parse(m.due_at)
+    if (due < nowMs && (oldest === null || due < oldest)) oldest = due
+  }
+  return oldest === null ? null : (nowMs - oldest) / 1000
 }
 
-/**
- * החוב עכשיו, משעון השרת: מה שהשרת ספר ברגע הקריאה, ועוד הזמן שעבר מאז
- * כפול מספר המשימות שבאיחור — כל אחת מוסיפה שנייה בכל שנייה.
- */
-export function liveDebt(board: { debt_seconds: number; overdue: number }, elapsedMs: number): number {
-  return board.debt_seconds + (board.overdue * Math.max(0, elapsedMs)) / 1000
-}
-
-/* ===== רמת האיום ========================================================= */
-
-export type Defcon = 1 | 2 | 3 | 4 | 5
-
-export interface DefconLook {
-  name: string
-  /** צבע הסרגל והכותרת */
-  color: string
-  /** משפטים שהדף אומר ברמה הזו */
-  lines: readonly string[]
-}
-
-export const DEFCON: Record<Defcon, DefconLook> = {
-  5: {
-    name: 'שליטה מלאה',
-    color: '#10b981',
-    lines: ['השולחן נקי. ככה נראית שליטה.', 'אין איחורים. תמשיך ככה — זה בדיוק המצב.', 'אפס חוב. המכונה עובדת.'],
-  },
-  4: {
-    name: 'ערנות',
-    color: '#eab308',
-    lines: ['יש משימות שהיעד שלהן היום. היום, לא מחר.', 'היום עוד לא נגמר — אבל הוא כן ייגמר.', 'סגור את של היום לפני שהן מאדימות.'],
-  },
-  3: {
-    name: 'אזהרה',
-    color: '#f97316',
-    lines: ['משהו כבר מאחר. זה מתחיל ככה.', 'משימה אחת באיחור היא חריגה. שתיים הן הרגל.', 'השעון לא מחכה. גם המשימה לא.'],
-  },
-  2: {
-    name: 'סכנה',
-    color: '#ef4444',
-    lines: ['המשימות מצטברות. כל שעה שעוברת נספרת.', 'החוב גדל בזמן שאתה קורא את זה.', 'זה כבר לא "אחר כך". זה עכשיו.'],
-  },
-  1: {
-    name: 'קריסה',
-    color: '#dc2626',
-    lines: ['⛔ המשימות לא שוכחות. גם אתה לא.', '⛔ המצלמות לא יתקינו את עצמן.', '⛔ כל דקה כאן היא דקה שהעסק חשוף.'],
-  },
-}
-
-/** משפט יציב לאורך הביקור — מתחלף רק כשהמצב משתנה */
-export function defconLine(level: Defcon, seed: number): string {
-  const lines = DEFCON[level].lines
-  return lines[Math.abs(Math.floor(seed)) % lines.length]
-}
-
-/* ===== דרגות ============================================================= */
-
-export const LEVELS: readonly { title: string; xp: number }[] = [
-  { title: 'טירון', xp: 0 },
-  { title: 'מבצעי', xp: 300 },
-  { title: 'מפקד', xp: 1000 },
-  { title: 'אלוף', xp: 2500 },
-  { title: 'מכונה', xp: 5000 },
-  { title: 'אגדה', xp: 10000 },
-]
-
-export interface LevelInfo {
-  index: number
-  title: string
-  /** הדרגה הבאה, אם יש */
-  next: { title: string; xp: number } | null
-  /** 0..1 בדרך לדרגה הבאה */
-  progress: number
-}
-
-export function levelOf(xp: number): LevelInfo {
-  let index = 0
-  for (let i = 0; i < LEVELS.length; i++) if (xp >= LEVELS[i].xp) index = i
-  const cur = LEVELS[index]
-  const next = LEVELS[index + 1] ?? null
-  const progress = next ? Math.min(1, Math.max(0, (xp - cur.xp) / (next.xp - cur.xp))) : 1
-  return { index, title: cur.title, next, progress }
+/** אחוז העמידה ביעדים; null — אין משימות שהושלמו בטווח */
+export function onTimePct(done: number, onTime: number): number | null {
+  return done > 0 ? Math.round((100 * onTime) / done) : null
 }
 
 /* ===== עדיפות וחזרה ====================================================== */
@@ -197,16 +107,7 @@ export const RECURRENCE_LABELS = {
   monthly: 'כל חודש',
 } as const
 
-/** הנקודות שהמשימה שווה אם תיסגר עכשיו — בבואה של `app.mission_points`, לתצוגה בלבד. */
-export function pointsIfDoneNow(m: Pick<Mission, 'priority' | 'due_at' | 'postpone_count'>, nowMs: number): number {
-  const base = ({ 1: 100, 2: 60, 3: 40, 4: 25 } as const)[m.priority]
-  const due = Date.parse(m.due_at)
-  let pts: number
-  if (nowMs <= due - DAY) pts = Math.round(base * 1.5)
-  else if (nowMs <= due) pts = base
-  else pts = Math.round(base * 0.5 * Math.max(0, 1 - (nowMs - due) / (72 * 3600_000)))
-  return Math.max(0, pts - 10 * m.postpone_count)
-}
+const pad = (n: number) => String(n).padStart(2, '0')
 
 /** Date → ערך של `datetime-local` בשעון המכשיר */
 export const toLocalInput = (d: Date) =>

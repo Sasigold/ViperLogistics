@@ -1,4 +1,4 @@
-import { Area, AreaChart, Bar, BarChart, Cell, ComposedChart, Legend, Line, ReferenceLine, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
+import { Area, Bar, BarChart, Cell, ComposedChart, Legend, Line, ReferenceLine, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import { Card, CardBody, CardHeader, Tooltip, cx } from '../../components/ui'
 import { fmtDate } from '../../lib/dates'
 import { ChartFrame } from '../dashboard/parts/ChartFrame'
@@ -19,8 +19,8 @@ const HEAT = [
 ]
 
 /**
- * הגרפים: ירידת המשימות הפתוחות, מפת חום של מה שנסגר, אחוז בזמן לפי שבוע,
- * והחוב לאורך זמן. כל המספרים מהשרת (`missions_stats`).
+ * הגרפים: פתוחות מול באיחור, עמידה ביעדים לפי שבוע, ומפת הפעילות של 12
+ * שבועות. כל המספרים מהשרת (`missions_stats`).
  */
 export function StatsPanel({ stats, loading }: { stats: MissionsStats | undefined; loading: boolean }) {
   const daily = stats?.daily ?? []
@@ -55,31 +55,10 @@ export function StatsPanel({ stats, loading }: { stats: MissionsStats | undefine
           </ComposedChart>
         </ChartFrame>
 
-        <ChartFrame
-          title="החוב לאורך זמן"
-          subtitle="סך שעות האיחור שהצטברו בסוף כל יום — המטרה: קו שטוח על האפס"
-          loading={loading}
-          empty={!anything}
-          emptyTitle="עוד אין היסטוריה"
-        >
-          <AreaChart data={last30} margin={{ top: 8, right: 8, bottom: 4, left: -16 }}>
-            <XAxis dataKey="day" {...AXIS} tickFormatter={shortDay} minTickGap={16} />
-            <YAxis {...AXIS} width={48} tickFormatter={(v: number) => `${v}ש׳`} />
-            <RTooltip content={<ChartTooltip format={(v) => `${v} שעות`} />} />
-            <Area
-              dataKey="debt_hours"
-              name="חוב"
-              type="monotone"
-              fill="color-mix(in srgb, var(--vl-error) 18%, transparent)"
-              stroke="var(--vl-error)"
-              strokeWidth={2}
-            />
-          </AreaChart>
-        </ChartFrame>
 
         <ChartFrame
-          title="בזמן, שבוע אחר שבוע"
-          subtitle={`אחוז המשימות שנסגרו עד היעד · היעד: 90% · ${stats?.done_total ?? 0} בוצעו, ${stats?.early_total ?? 0} מהן יום ומעלה לפני היעד`}
+          title="עמידה ביעדים, שבוע אחר שבוע"
+          subtitle={`אחוז המשימות שהושלמו עד היעד · יעד: 90% · ${stats?.done_total ?? 0} הושלמו בסך הכול`}
           loading={loading}
           empty={!weeks.some((w) => w.done)}
           emptyTitle="עוד לא נסגרו משימות"
@@ -89,7 +68,7 @@ export function StatsPanel({ stats, loading }: { stats: MissionsStats | undefine
             <YAxis {...AXIS} domain={[0, 100]} width={40} tickFormatter={(v: number) => `${v}%`} />
             <RTooltip cursor={{ fill: 'var(--vl-hover)' }} content={<ChartTooltip format={(v) => `${v}%`} />} />
             <ReferenceLine y={90} stroke="var(--vl-success)" strokeDasharray="4 4" />
-            <Bar dataKey="pct" name="בזמן" radius={[4, 4, 0, 0]} maxBarSize={28}>
+            <Bar dataKey="pct" name="עמידה ביעדים" radius={[4, 4, 0, 0]} maxBarSize={28}>
               {weeks.map((w) => (
                 <Cell
                   key={w.week}
@@ -101,7 +80,7 @@ export function StatsPanel({ stats, loading }: { stats: MissionsStats | undefine
         </ChartFrame>
 
         <Card>
-          <CardHeader title="12 שבועות" subtitle="כל ריבוע הוא יום · כהה יותר = יותר משימות נסגרו · מסגרת אדומה = היום נגמר באיחור" />
+          <CardHeader title="פעילות · 12 שבועות" subtitle="כל ריבוע הוא יום · כהה יותר = יותר משימות הושלמו · מסגרת אדומה = היום הסתיים עם משימות באיחור" />
           <CardBody>
             {loading ? null : <Heatmap daily={daily.slice(-84)} />}
           </CardBody>

@@ -166,10 +166,7 @@ export {
   // אינטגרציות (0176) — החיבור עצמו
   Plug,
   // משימות ניהול (0227)
-  Siren,
-  Trophy,
-  Volume2,
-  VolumeX,
+  ListChecks,
   AlarmClock,
   Crosshair,
 } from 'lucide-react'

@@ -12,7 +12,7 @@ import {
 } from '../../components/ui/icons'
 import { Avatar, IconButton, MenuItem, MenuSeparator, Popover, cx } from '../../components/ui'
 import type { Mission } from '../../types/domain'
-import { PRIORITIES, RECURRENCE_LABELS, countdown, pointsIfDoneNow } from './warRoom'
+import { PRIORITIES, RECURRENCE_LABELS, countdown } from './warRoom'
 
 export interface MissionActions {
   onComplete: (m: Mission, el: HTMLElement) => void
@@ -31,8 +31,8 @@ const SNOOZES = [
 ]
 
 /**
- * כרטיס משימה. הספירה לאחור חיה (`nowMs` מתקתק בדף), באיחור הכרטיס זוהר
- * באדום, ופחות משעה ליעד — רועד. ליד כפתור הסיום: כמה נקודות היא שווה עכשיו.
+ * כרטיס משימה: כמה זמן נשאר עד היעד (או כמה עבר ממנו), עדיפות, חזרה, צעדים
+ * ואחראי. משימה שעברה את היעד מסומנת במסגרת אדומה.
  */
 export const MissionCard = memo(function MissionCard({
   mission: m,
@@ -51,16 +51,17 @@ export const MissionCard = memo(function MissionCard({
   const cd = countdown(m.due_at, nowMs)
   const prio = PRIORITIES.find((p) => p.value === m.priority)!
   const stepsDone = m.steps.filter((s) => s.done).length
-  const worth = done ? m.points : pointsIfDoneNow(m, nowMs)
 
   return (
     <article
       id={`mission-${m.id}`}
       className={cx(
         'group relative rounded-xl border bg-surface p-3 transition-shadow',
-        done ? 'border-line-subtle opacity-75' : 'border-line shadow-xs hover:shadow-md',
-        !done && cd.overdue && 'wr-overdue border-error-border',
-        !done && cd.urgent && 'wr-urgent',
+        done
+          ? 'border-line-subtle opacity-75'
+          : cd.overdue
+            ? 'border-error-border bg-[color-mix(in_srgb,var(--vl-error)_4%,var(--vl-surface))] shadow-xs hover:shadow-md'
+            : 'border-line shadow-xs hover:shadow-md',
         highlight && 'ring-2 ring-primary',
       )}
     >
@@ -99,12 +100,14 @@ export const MissionCard = memo(function MissionCard({
 
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 type-caption">
             {done ? (
-              <span className="font-semibold text-success-text">+{m.points} XP</span>
+              <span className="font-semibold text-success-text">
+                הושלמה{m.done_at ? ` · ${new Date(m.done_at).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}` : ''}
+              </span>
             ) : (
               <span
                 className={cx(
                   'tabular font-bold',
-                  cd.overdue ? 'text-error-text' : cd.urgent ? 'text-warning-text' : 'text-ink-secondary',
+                  cd.overdue ? 'text-error-text' : cd.soon ? 'text-warning-text' : 'text-ink-secondary',
                 )}
               >
                 {cd.text}
@@ -116,10 +119,9 @@ export const MissionCard = memo(function MissionCard({
             {m.recurrence !== 'none' && <span className="text-ink-tertiary">↻ {RECURRENCE_LABELS[m.recurrence]}</span>}
             {m.postpone_count > 0 && (
               <span className="text-warning-text" title="כמה פעמים היעד נדחה">
-                נדחתה ×{m.postpone_count}
+                {m.postpone_count === 1 ? 'נדחתה פעם אחת' : `נדחתה ${m.postpone_count} פעמים`}
               </span>
             )}
-            {!done && <span className="text-ink-tertiary">שווה {worth} XP</span>}
           </div>
 
           {m.steps.length > 0 && (
@@ -178,7 +180,7 @@ export const MissionCard = memo(function MissionCard({
                           icon={<AlarmClock size={ICON.sm} />}
                           onClick={run(() => actions.onSnooze(m, s.minutes))}
                         >
-                          לדחות ב{s.label} (−10 XP)
+                          לדחות ב{s.label}
                         </MenuItem>
                       ))}
                       <MenuSeparator />
