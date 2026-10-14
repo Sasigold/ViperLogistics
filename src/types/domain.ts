@@ -2605,19 +2605,15 @@ export interface Mission {
   status: 'open' | 'done'
   done_at: string | null
   postpone_count: number
-  points: number
   created_at: string
   steps: MissionStep[]
 }
 
-/** `missions_board(p_owner)` — הלוח ומצב הרוח שלו. */
+/** `missions_board(p_owner)` — הלוח. */
 export interface MissionsBoard {
-  /** שעון השרת — הספירה לאחור נמדדת ממנו */
+  /** שעון השרת — הזמן עד היעד נמדד ממנו */
   now: string
-  /** 5 שליטה מלאה … 1 קריסה */
-  defcon: 1 | 2 | 3 | 4 | 5
   overdue: number
-  debt_seconds: number
   admins: { id: string; full_name: string }[]
   missions: Mission[]
 }
@@ -2628,28 +2624,19 @@ export interface MissionDay {
   on_time: number
   open: number
   overdue: number
-  debt_hours: number
 }
 
 /** `missions_stats(p_owner, p_days)`. */
 export interface MissionsStats {
-  xp_total: number
-  xp_week: number
   done_total: number
   done_30: number
   on_time_30: number
   early_total: number
-  streak: number
-  best_streak: number
   daily: MissionDay[]
 }
 
-/** מה ש-`mission_complete` מחזירה — לאנימציית התגמול. */
+/** מה ש-`mission_complete` מחזירה. */
 export interface MissionCompleteResult {
-  points: number
   on_time: boolean
-  early: boolean
-  xp_before: number
-  xp_after: number
   next_id: string | null
 }

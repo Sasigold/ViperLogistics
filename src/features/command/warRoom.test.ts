@@ -2,15 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { parseQuickAdd } from './quickAdd'
 import {
   countdown,
-  defconLine,
-  fmtDebt,
   fmtSpan,
   groupByLane,
   heatLevel,
   laneOf,
-  levelOf,
-  liveDebt,
-  pointsIfDoneNow,
+  oldestOverdueSeconds,
+  onTimePct,
   weeklyOnTime,
 } from './warRoom'
 import type { Mission } from '../../types/domain'
@@ -84,7 +81,6 @@ const m = (over: Partial<Mission>): Mission => ({
   status: 'open',
   done_at: null,
   postpone_count: 0,
-  points: 0,
   created_at: NOW.toISOString(),
   steps: [],
   ...over,
@@ -92,7 +88,7 @@ const m = (over: Partial<Mission>): Mission => ({
 
 describe('נתיבים', () => {
   const t = NOW.getTime()
-  it('באיחור / היום / השבוע / בהמשך / בוצע', () => {
+  it('באיחור / היום / השבוע / בהמשך / הושלמו', () => {
     expect(laneOf(m({ due_at: new Date(t - 1000).toISOString() }), t)).toBe('overdue')
     expect(laneOf(m({ due_at: new Date(2026, 9, 14, 23, 0).toISOString() }), t)).toBe('today')
     expect(laneOf(m({ due_at: new Date(2026, 9, 16).toISOString() }), t)).toBe('week')
@@ -113,45 +109,45 @@ describe('נתיבים', () => {
   })
 })
 
-describe('ספירה לאחור וחוב', () => {
-  it('fmtSpan', () => {
-    expect(fmtSpan(59)).toBe('0:59')
-    expect(fmtSpan(3 * 3600 + 12 * 60 + 5)).toBe('3:12:05')
-    expect(fmtSpan(86400 + 4 * 3600)).toBe('יום 4 שע׳')
-    expect(fmtSpan(3 * 86400)).toBe('3 ימים')
+describe('זמן עד היעד ומדדים', () => {
+  it('fmtSpan — בדיוק של דקה', () => {
+    expect(fmtSpan(20)).toBe('1 דק׳')
+    expect(fmtSpan(40 * 60)).toBe('40 דק׳')
+    expect(fmtSpan(3 * 3600 + 12 * 60 + 5)).toBe('3 שע׳ 12 דק׳')
+    expect(fmtSpan(2 * 3600)).toBe('2 שע׳')
+    expect(fmtSpan(86400 + 4 * 3600)).toBe('יום ו-4 שע׳')
+    expect(fmtSpan(3 * 86400 + 5)).toBe('3 ימים')
   })
 
   it('countdown', () => {
     const t = NOW.getTime()
-    expect(countdown(new Date(t + 1800_000).toISOString(), t)).toEqual({ text: 'עוד 30:00', overdue: false, urgent: true })
-    expect(countdown(new Date(t - 2 * 86400_000).toISOString(), t).overdue).toBe(true)
+    expect(countdown(new Date(t + 1800_000).toISOString(), t)).toEqual({ text: 'בעוד 30 דק׳', overdue: false, soon: true })
+    expect(countdown(new Date(t - 2 * 86400_000).toISOString(), t)).toEqual({
+      text: 'באיחור של 2 ימים',
+      overdue: true,
+      soon: false,
+    })
   })
 
-  it('fmtDebt ו-liveDebt', () => {
-    expect(fmtDebt(3 * 86400 + 4 * 3600 + 12 * 60 + 55)).toBe('3 ימים 04:12:55')
-    expect(fmtDebt(65)).toBe('00:01:05')
-    expect(liveDebt({ debt_seconds: 100, overdue: 3 }, 10_000)).toBe(130)
-  })
-})
-
-describe('דרגות, נקודות ורמת איום', () => {
-  it('levelOf', () => {
-    expect(levelOf(0)).toMatchObject({ index: 0, title: 'טירון', progress: 0 })
-    expect(levelOf(650)).toMatchObject({ index: 1, title: 'מבצעי', progress: 0.5 })
-    expect(levelOf(20000)).toMatchObject({ title: 'אגדה', next: null, progress: 1 })
-  })
-
-  it('pointsIfDoneNow — אותו כלל של app.mission_points', () => {
+  it('oldestOverdueSeconds — רק פתוחות שעברו את היעד', () => {
     const t = NOW.getTime()
-    expect(pointsIfDoneNow({ priority: 1, due_at: new Date(t + 25 * 3600_000).toISOString(), postpone_count: 0 }, t)).toBe(150)
-    expect(pointsIfDoneNow({ priority: 2, due_at: new Date(t + 3600_000).toISOString(), postpone_count: 2 }, t)).toBe(40)
-    expect(pointsIfDoneNow({ priority: 1, due_at: new Date(t - 36 * 3600_000).toISOString(), postpone_count: 0 }, t)).toBe(25)
-    expect(pointsIfDoneNow({ priority: 1, due_at: new Date(t - 96 * 3600_000).toISOString(), postpone_count: 3 }, t)).toBe(0)
+    expect(oldestOverdueSeconds([], t)).toBeNull()
+    expect(
+      oldestOverdueSeconds(
+        [
+          { status: 'open', due_at: new Date(t - 3600_000).toISOString() },
+          { status: 'open', due_at: new Date(t - 7200_000).toISOString() },
+          { status: 'done', due_at: new Date(t - 9 * 3600_000).toISOString() },
+          { status: 'open', due_at: new Date(t + 3600_000).toISOString() },
+        ],
+        t,
+      ),
+    ).toBe(7200)
   })
 
-  it('defconLine יציב', () => {
-    expect(defconLine(1, 4)).toBe(defconLine(1, 4))
-    expect(typeof defconLine(5, 0)).toBe('string')
+  it('onTimePct', () => {
+    expect(onTimePct(0, 0)).toBeNull()
+    expect(onTimePct(12, 11)).toBe(92)
   })
 })
 

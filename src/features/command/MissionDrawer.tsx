@@ -46,7 +46,7 @@ export function MissionDrawer({
   const [steps, setSteps] = useState<StepDraft[]>(mission?.steps.map((s) => ({ ...s })) ?? [])
   const [newStep, setNewStep] = useState('')
 
-  /* ‏0228: משימה שבוצעה קפואה בניקוד שלה — השרת שומר את הבעלים, היעד והעדיפות */
+  /* ‏0228: במשימה שהושלמה השרת שומר את הבעלים, היעד והעדיפות */
   const frozen = mission?.status === 'done'
   const postpones = mission && mission.status === 'open' && due && new Date(due) > new Date(mission.due_at)
 
@@ -73,7 +73,7 @@ export function MissionDrawer({
           steps: [...steps, ...(newStep.trim() ? [{ title: newStep.trim(), done: false }] : [])],
         },
       })
-      toast.success(mission ? 'המשימה עודכנה' : 'המשימה נוספה. השעון התחיל לתקתק.')
+      toast.success(mission ? 'המשימה עודכנה' : 'המשימה נוספה')
       onClose()
     } catch (e) {
       toast.error(actionError('השמירה', e))
@@ -87,7 +87,7 @@ export function MissionDrawer({
       title={mission ? 'עריכת משימה' : 'משימה חדשה'}
       footer={
         <div className="flex w-full items-center justify-between gap-2">
-          <span className="type-caption text-warning-text">{postpones ? 'הזזת היעד קדימה נספרת כדחייה (−10 XP)' : ''}</span>
+          <span className="type-caption text-warning-text">{postpones ? 'הזזת היעד קדימה תירשם כדחייה' : ''}</span>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={onClose}>
               ביטול
@@ -122,7 +122,7 @@ export function MissionDrawer({
 
         {frozen && (
           <p className="rounded-lg bg-subtle px-3 py-2 type-caption text-ink-secondary">
-            המשימה בוצעה, והנקודות נקבעו. כדי לשנות יעד, אחראי או עדיפות — קודם "החזרה לפתוחות".
+            המשימה הושלמה. כדי לשנות יעד, אחראי או עדיפות, יש להחזיר אותה לפתוחות קודם.
           </p>
         )}
 
