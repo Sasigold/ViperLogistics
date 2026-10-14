@@ -4,7 +4,7 @@ import { fmtDate } from '../../lib/dates'
 import { ChartFrame } from '../dashboard/parts/ChartFrame'
 import { ChartTooltip } from '../dashboard/parts/ChartTooltip'
 import type { MissionsStats } from '../../types/domain'
-import { ACHIEVEMENTS, heatLevel, weeklyOnTime } from './warRoom'
+import { heatLevel, weeklyOnTime } from './warRoom'
 
 const AXIS = { tick: { fontSize: 11, fill: 'var(--vl-text-tertiary)' }, axisLine: false, tickLine: false } as const
 const shortDay = (d: string) => fmtDate(d).slice(0, 5)
@@ -20,13 +20,12 @@ const HEAT = [
 
 /**
  * הגרפים: ירידת המשימות הפתוחות, מפת חום של מה שנסגר, אחוז בזמן לפי שבוע,
- * והחוב לאורך זמן — ומתחתם ההישגים. כל המספרים מהשרת (`missions_stats`).
+ * והחוב לאורך זמן. כל המספרים מהשרת (`missions_stats`).
  */
 export function StatsPanel({ stats, loading }: { stats: MissionsStats | undefined; loading: boolean }) {
   const daily = stats?.daily ?? []
   const last30 = daily.slice(-30)
   const weeks = weeklyOnTime(daily).slice(-12)
-  const earned = new Map((stats?.achievements ?? []).map((a) => [a.key, a.earned_at]))
   const anything = daily.some((d) => d.open || d.done)
 
   return (
@@ -80,7 +79,7 @@ export function StatsPanel({ stats, loading }: { stats: MissionsStats | undefine
 
         <ChartFrame
           title="בזמן, שבוע אחר שבוע"
-          subtitle="אחוז המשימות שנסגרו עד היעד · היעד: 90%"
+          subtitle={`אחוז המשימות שנסגרו עד היעד · היעד: 90% · ${stats?.done_total ?? 0} בוצעו, ${stats?.early_total ?? 0} מהן יום ומעלה לפני היעד`}
           loading={loading}
           empty={!weeks.some((w) => w.done)}
           emptyTitle="עוד לא נסגרו משימות"
@@ -108,37 +107,6 @@ export function StatsPanel({ stats, loading }: { stats: MissionsStats | undefine
           </CardBody>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader
-          title="הישגים"
-          subtitle={`${earned.size} מתוך ${ACHIEVEMENTS.length} · ${stats?.done_total ?? 0} משימות בוצעו, ${stats?.early_total ?? 0} מהן יום ומעלה לפני היעד`}
-        />
-        <CardBody>
-          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-            {ACHIEVEMENTS.map((a) => {
-              const at = earned.get(a.key)
-              return (
-                <li
-                  key={a.key}
-                  className={cx(
-                    'flex items-center gap-2 rounded-xl border px-3 py-2',
-                    at ? 'border-warning-border bg-warning-subtle' : 'border-line-subtle bg-subtle opacity-60',
-                  )}
-                >
-                  <span className={cx('text-2xl', !at && 'grayscale')} aria-hidden>
-                    {at ? a.emoji : '🔒'}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate type-caption font-bold text-ink">{a.label}</p>
-                    <p className="truncate type-caption text-ink-tertiary">{at ? fmtDate(at) : a.hint}</p>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        </CardBody>
-      </Card>
     </div>
   )
 }

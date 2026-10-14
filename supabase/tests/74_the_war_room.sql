@@ -2,8 +2,8 @@
 \pset format unaligned
 
 -- ===========================================================================
--- ‏74: חדר המלחמה (0227) — משימות של מנהלי המערכת: רק מנהלים, נקודות, דחיות,
--- רמת האיום, משימה חוזרת, הישגים, ותזכורות שנשלחות פעם אחת.
+-- ‏74: חדר המלחמה (0227–0229) — משימות של מנהלי המערכת: רק מנהלים, נקודות,
+-- דחיות, רמת האיום, משימה חוזרת, וסיכום הבוקר שיוצא פעם אחת ביום.
 --
 -- הזמנים יחסיים ל-now(); המשימות של הסוויטה נמחקות בסופה.
 -- ===========================================================================
@@ -12,7 +12,8 @@
 revoke execute on function app.mission_defcon(uuid) from anon, authenticated, public;
 revoke execute on function app.mission_daily(uuid, int) from anon, authenticated, public;
 revoke execute on function app.mission_streak(uuid) from anon, authenticated, public;
-revoke execute on function app.mission_award(uuid) from anon, authenticated, public;
+revoke execute on function app.missions_digest(date) from anon, authenticated, public;
+revoke execute on function missions_sweep() from anon, authenticated, public;
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000074a1', 'c74-admin-b@vl.test');
@@ -133,34 +134,44 @@ select t_eq('הרצף נשבר היום', (missions_stats('20000000-0000-0000-00
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
--- ===== 5. תזכורות פעם אחת ==================================================
+-- ===== 5. סיכום הבוקר, פעם ביום (0229) ====================================
 
-\echo '--- הסריקה ---'
+\echo '--- סיכום הבוקר ---'
 insert into admin_missions (id, title, owner_id, due_at, created_at) values
-  ('74000000-0000-0000-0000-000000000003', 'בעוד חצי שעה', '20000000-0000-0000-0000-0000000074a1',
-   now() + interval '30 minutes', now() - interval '2 days');
+  ('74000000-0000-0000-0000-000000000003', 'עוד היום', '20000000-0000-0000-0000-0000000074a1',
+   least(now() + interval '30 minutes', app.mission_day_end(app.mission_today()) - interval '1 second'),
+   now() - interval '2 days');
+select t_eq('סיכום אחד — רק למנהל שיש לו מה לסגור',
+  app.missions_digest(app.mission_today()), 1);
+select t_eq('הכותרת סופרת באיחור ולהיום',
+  (select title from notifications
+    where recipient_id = '20000000-0000-0000-0000-0000000074a1' and type = 'mission_daily_digest'),
+  '🚨 2 באיחור · 1 להיום');
+select t_eq('והוא פותח את חדר המלחמה',
+  (select link from notifications
+    where recipient_id = '20000000-0000-0000-0000-0000000074a1' and type = 'mission_daily_digest'),
+  '/command');
+select t_eq('הרצה שנייה באותו יום אינה שולחת', app.missions_digest(app.mission_today()), 0);
 select missions_sweep() is not null;
-select t_eq('"באיחור" לכל אחת משתי המשימות שעברו',
+select t_eq('וגם התזמון אינו שולח שוב',
   (select count(*)::int from notifications
-    where recipient_id = '20000000-0000-0000-0000-0000000074a1' and type = 'mission_overdue'), 2);
-select t_eq('"שעה ליעד" אחת, בלי "מחר" באותה סריקה',
-  (select count(*)::int from notifications
-    where recipient_id = '20000000-0000-0000-0000-0000000074a1' and type = 'mission_due_soon'), 1);
-select missions_sweep() is not null;
-select t_eq('סריקה שנייה אינה שולחת שוב',
+    where recipient_id = '20000000-0000-0000-0000-0000000074a1' and type = 'mission_daily_digest'), 1);
+select t_eq('אין יותר התראה לכל משימה',
   (select count(*)::int from notifications
     where recipient_id = '20000000-0000-0000-0000-0000000074a1'
-      and type in ('mission_overdue', 'mission_due_soon', 'mission_daily_digest')),
-  (select 3 + case when extract(hour from now() at time zone 'Asia/Jerusalem') >= 8 then 1 else 0 end));
+      and type in ('mission_overdue', 'mission_due_soon')), 0);
+select t_eq('ושני הסוגים האלה פרשו',
+  (select count(*)::int from notification_types
+    where key in ('mission_overdue', 'mission_due_soon') and not is_active), 2);
 
-update admin_missions set due_at = now() - interval '1 hour'
- where id = '74000000-0000-0000-0000-000000000001';
-select missions_sweep() is not null;
-select t_eq('יעד שזז מקבל "באיחור" חדש',
-  (select count(*)::int from notifications
-    where recipient_id = '20000000-0000-0000-0000-0000000074a1' and type = 'mission_overdue'), 3);
+set role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+select t_expect_fail('גם מנהל מערכת אינו מריץ את הסריקה מהדפדפן', $$ select missions_sweep() $$);
+select t_expect_fail('ולא את הסיכום', $$ select app.missions_digest(current_date) $$);
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
 
--- ===== 6. סיום, חזרה, הישגים ===============================================
+-- ===== 6. סיום וחזרה ===============================================
 
 \echo '--- סיום ---'
 update admin_missions set recurrence = 'weekly' where id = '74000000-0000-0000-0000-000000000002';
@@ -172,9 +183,8 @@ select t_eq('סיום מוקדם של P1 שנדחה פעם — 150 פחות 10',
   (mission_complete((select id from m74 where k = 'cams')) ->> 'points')::int, 140);
 select t_eq('המשימה בוצעה בידי המנהל הראשון, הנקודות למנהל השני',
   (missions_stats('20000000-0000-0000-0000-0000000074a1', 7) ->> 'xp_total')::int, 140);
-select t_eq('ו"דם ראשון" למנהל השני',
-  (select count(*)::int from admin_achievements
-    where profile_id = '20000000-0000-0000-0000-0000000074a1' and key = 'first_blood'), 1);
+select t_eq('ובלי הישגים בסטטיסטיקה (0229)',
+  missions_stats('20000000-0000-0000-0000-0000000074a1', 7) ? 'achievements', false);
 select t_expect_fail('אי אפשר לסיים פעמיים', $$ select mission_complete((select id from m74 where k = 'cams')) $$);
 
 update m74 set id = (mission_complete('74000000-0000-0000-0000-000000000002') ->> 'next_id')::uuid where k = 'done';
@@ -226,6 +236,5 @@ select set_config('request.jwt.claim.sub', '', false);
 -- ===== ניקוי ===============================================================
 
 delete from notifications where recipient_id = '20000000-0000-0000-0000-0000000074a1';
-delete from admin_achievements where profile_id = '20000000-0000-0000-0000-0000000074a1';
 delete from admin_missions where owner_id = '20000000-0000-0000-0000-0000000074a1';
 update profiles set is_active = false where id = '20000000-0000-0000-0000-0000000074a1';

@@ -181,22 +181,6 @@ export function levelOf(xp: number): LevelInfo {
   return { index, title: cur.title, next, progress }
 }
 
-/* ===== הישגים ============================================================ */
-
-export const ACHIEVEMENTS: readonly { key: string; emoji: string; label: string; hint: string }[] = [
-  { key: 'first_blood', emoji: '🩸', label: 'דם ראשון', hint: 'המשימה הראשונה שבוצעה' },
-  { key: 'on_time_10', emoji: '🎯', label: 'צלף', hint: '10 משימות בזמן' },
-  { key: 'early_bird_10', emoji: '🐦', label: 'ציפור מוקדמת', hint: '10 משימות יום ומעלה לפני היעד' },
-  { key: 'five_in_a_day', emoji: '⚡', label: 'יום מטורף', hint: '5 משימות ביום אחד' },
-  { key: 'inbox_zero', emoji: '🧘', label: 'Inbox Zero', hint: 'אף משימה פתוחה' },
-  { key: 'no_snooze_20', emoji: '🚫', label: 'בלי נודניק', hint: '20 משימות ברצף בלי לדחות' },
-  { key: 'streak_7', emoji: '🔥', label: 'שבוע נקי', hint: '7 ימים רצופים בלי איחור' },
-  { key: 'streak_30', emoji: '🌋', label: 'חודש נקי', hint: '30 ימים רצופים בלי איחור' },
-  { key: 'century', emoji: '💯', label: 'מאה', hint: '100 משימות שבוצעו' },
-]
-
-export const achievementOf = (key: string) => ACHIEVEMENTS.find((a) => a.key === key)
-
 /* ===== עדיפות וחזרה ====================================================== */
 
 export const PRIORITIES: readonly { value: 1 | 2 | 3 | 4; label: string; color: string }[] = [

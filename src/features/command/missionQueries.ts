@@ -39,14 +39,6 @@ export function useMissionsStats(owner: string | null, days = 84, enabled = true
   })
 }
 
-/**
- * הסריקה של התזכורות. התזמון החיצוני (`mission-sweep`) הוא העיקר; מנהל
- * שפותח את הדף מריץ אותה גם הוא, כדי שהתזכורות לא יחכו לתזמון.
- */
-export async function runMissionsSweep(): Promise<void> {
-  await supabase.rpc('missions_sweep')
-}
-
 export interface MissionInput {
   title: string
   description: string | null

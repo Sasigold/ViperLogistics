@@ -2641,7 +2641,6 @@ export interface MissionsStats {
   early_total: number
   streak: number
   best_streak: number
-  achievements: { key: string; earned_at: string }[]
   daily: MissionDay[]
 }
 
@@ -2652,6 +2651,5 @@ export interface MissionCompleteResult {
   early: boolean
   xp_before: number
   xp_after: number
-  achievements: string[]
   next_id: string | null
 }
