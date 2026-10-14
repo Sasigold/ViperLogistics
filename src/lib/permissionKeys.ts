@@ -13,7 +13,7 @@
  */
 
 export const PERM = {
-  /* ‏0227: חדר המלחמה. `applies_to` ריק — אין שכבה שמעניקה אותו, ולכן רק מנהל
+  /* ‏0227: משימות ניהול. `applies_to` ריק — אין שכבה שמעניקה אותו, ולכן רק מנהל
      מערכת (ש-`app.has` עונה לו "כן" לפני כל בדיקה) מחזיק בו. */
   COMMAND_VIEW: 'command.view',
   ATTENDANCE_VIEW_OWN: 'attendance.view_own',

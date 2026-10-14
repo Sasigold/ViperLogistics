@@ -5,7 +5,7 @@ import { DEFCON, defconLine, fmtDebt, levelOf } from './warRoom'
 import type { Defcon } from './warRoom'
 
 /**
- * הכותרת של חדר המלחמה: מד האיום (5 עד 1), שעון החוב שרץ, המשפט של הרמה,
+ * הכותרת של משימות הניהול: מד האיום (5 עד 1), שעון החוב שרץ, המשפט של הרמה,
  * ושורת המדדים — פתוחות, באיחור, בזמן, רצף ו-XP עם טבעת הדרגה.
  */
 export function WarHeader({

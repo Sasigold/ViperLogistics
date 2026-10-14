@@ -2580,7 +2580,7 @@ export interface MyPayslip {
   assigned_at: string | null
 }
 
-/* ===== חדר המלחמה (0227) ================================================= */
+/* ===== משימות ניהול (0227) ================================================= */
 
 export type MissionRecurrence = 'none' | 'daily' | 'weekly' | 'monthly'
 

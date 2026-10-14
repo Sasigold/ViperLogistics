@@ -68,7 +68,7 @@ function floatXp(el: HTMLElement | null, points: number, gold: boolean) {
 }
 
 /**
- * חדר המלחמה (0227) — המשימות של מנהלי המערכת.
+ * משימות ניהול (0227) — המשימות של מנהלי המערכת.
  *
  * כל הדף משנה מצב לפי רמת האיום שהשרת מחשב: ירוק ורגוע כשאין איחורים,
  * וינייטה אדומה, פס התראה רץ וסירנה כשהם מצטברים. סיום משימה = קונפטי,
@@ -265,7 +265,7 @@ export default function CommandPage() {
         title={
           <span className="inline-flex items-center gap-2">
             <Siren size={ICON.xl} strokeWidth={STROKE} className={cx(data && data.defcon <= 2 ? 'text-error' : 'text-ink-tertiary')} />
-            חדר המלחמה
+            משימות ניהול
           </span>
         }
         subtitle="המשימות של מנהלי המערכת. יעד שעובר — מאדים. משימה שנסגרת בזמן — שווה נקודות."

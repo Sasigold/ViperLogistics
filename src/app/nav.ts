@@ -121,7 +121,7 @@ export const forSelfPerformingCustomers = (a: NavAudience) => a.isSelfPerforming
 export const forWarehouseSchedule = (a: NavAudience) => a.hasWarehouseSchedule
 
 /**
- * חדר המלחמה (0227) — של מנהלי המערכת בלבד. המפתח `command.view` כבר אינו
+ * משימות ניהול (0227) — של מנהלי המערכת בלבד. המפתח `command.view` כבר אינו
  * ניתן לאיש אחר (`applies_to` ריק); הגדר הזו אומרת את אותו דבר במפורש.
  */
 export const forAdmins = (a: NavAudience) => a.isAdmin
@@ -186,7 +186,7 @@ export const NAV_SECTIONS: NavSection[] = [
       {
         to: '/command',
         page: 'command',
-        label: 'חדר המלחמה',
+        label: 'משימות ניהול',
         shortLabel: 'משימות',
         icon: Siren,
         perm: PERM.COMMAND_VIEW,
@@ -537,7 +537,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/calendar': 'לוח שנה',
   '/board': 'לו״ז עבודה',
   '/warehouse': 'לו״ז מחסן',
-  '/command': 'חדר המלחמה',
+  '/command': 'משימות ניהול',
   '/events': 'אירועים',
   '/customers': 'לקוחות',
   '/users': 'עובדים',
