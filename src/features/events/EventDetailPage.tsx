@@ -68,6 +68,7 @@ import { CustomerSignatureModal } from './CustomerSignatureModal'
 import { useEventSpecs } from './specQueries'
 import { useSetEventSyncLock, useViperflowLink } from './furnitureQueries'
 import { EventPaymentsCard } from '../finance/EventPaymentsCard'
+import { EventWarehouseCard } from '../warehouse/EventWarehouseCard'
 import { crewPeople, crewSize } from '../tasks/crew'
 import { useCrewVisibility } from '../tasks/crewVisibility'
 import { sumAddons, useEventPriceAddons } from '../pricing/addonQueries'
@@ -98,7 +99,7 @@ export default function EventDetailPage() {
       const [e, contact, sup] = await Promise.all([
         supabase
           .from('events')
-          .select('*, customers(name, color, performed_by_enabled, quote_enabled, event_payments_enabled), statuses(name, color)')
+          .select('*, customers(name, color, performed_by_enabled, quote_enabled, event_payments_enabled, warehouse_schedule_enabled), statuses(name, color)')
           .eq('id', id)
           .single(),
         supabase.from('event_contacts').select('*').eq('event_id', id).maybeSingle(),
@@ -279,6 +280,8 @@ export default function EventDetailPage() {
   /* ‏0205: תשלומים על האירוע — אותו דפוס, דגל פר-לקוח ולא שם. השרת עונה
      גם הוא `enabled: false` ללקוח שהמודול סגור לו; כאן זה רק חוסך שאילתה. */
   const showPayments = !!data?.event.customers?.event_payments_enabled && has(PERM.FINANCE_EVENT_PAYMENTS_VIEW)
+  /* ‏0226: הכנה והחזרה במחסן, למי שרואה את לו״ז המחסן של הלקוח הזה */
+  const showWarehouse = !!data?.event.customers?.warehouse_schedule_enabled && has(PERM.WAREHOUSE_VIEW)
   const canSetPerformedBy = !!me?.profile.is_admin || has(PERM.TASKS_EDIT) || isCustomerUser
   const setPerformedBy = useMutation({
     mutationFn: async ({ taskId, value }: { taskId: string; value: PerformedBy }) => {
@@ -988,6 +991,8 @@ export default function EventDetailPage() {
           </div>
 
           {showPayments && <EventPaymentsCard eventId={event.id} />}
+
+          {showWarehouse && <EventWarehouseCard eventId={event.id} />}
 
           {/* Redesigned Tasks Section */}
           <div className="space-y-4">

@@ -721,6 +721,13 @@ echo "$OUT72"
 OUT="$OUT
 $OUT72"
 
+# ‏73: לו״ז המחסן נגזר מהשטח (0226). לקוחות, אירועים ופרופילים משלה
+# ב-current_date + 1200; משאירה אחריה שורות לו״ז מחסן.
+OUT73=$($PSQL -d vl -f "$HERE/73_the_warehouse_follows_the_field.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT73"
+OUT="$OUT
+$OUT73"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
