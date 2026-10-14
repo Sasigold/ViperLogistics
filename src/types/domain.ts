@@ -697,6 +697,7 @@ export interface EventRow {
     performed_by_enabled?: boolean
     quote_enabled?: boolean
     event_payments_enabled?: boolean
+    warehouse_schedule_enabled?: boolean
   }
   statuses?: { name: string; color: string } | null
 }
@@ -2431,7 +2432,8 @@ export interface WarehouseScheduleRow {
   event_number: string | null
   end_client_name: string | null
   event_date: string
-  /** התאריך האפקטיבי: מה שהמחסן קבע, או יום ההקמה/הפירוק, או יום האירוע */
+  /** התאריך האפקטיבי: מה שהמחסן קבע, או הנגזר (0226): הכנה = הקמה − 3 ימים,
+   *  החזרה = יום סיום הפירוק אם הסתיים עד 10:00, אחרת למחרת */
   task_date: string
   /** האם התאריך נקבע ביד (ולא נגזר) */
   date_is_manual: boolean

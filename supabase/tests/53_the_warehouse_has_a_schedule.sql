@@ -49,7 +49,8 @@ insert into events (id, customer_id, event_number, event_date, end_client_name, 
    '53002', current_date + 810, 'קצה אחר 53',
    (select id from statuses where entity = 'event' and code = 'pending' and deleted_at is null));
 
--- ההקמה יום לפני האירוע והפירוק יום אחריו — ההכנה וההחזרה נגזרות מהם.
+-- ההקמה יום לפני האירוע והפירוק יום אחריו — ההכנה וההחזרה נגזרות מהם
+-- (0226: ההכנה 3 ימים לפני ההקמה; לפירוק בלי שעה ההחזרה למחרת).
 update tasks set task_date = current_date + 809
  where event_id = '30000000-0000-0000-0000-00000000053a'
    and task_type_id = (select id from task_types where code = 'setup' limit 1);
@@ -94,7 +95,7 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000053a3
 select t_eq('הכנה והחזרה של האירוע של ארקו',
   (select string_agg(kind::text || '@' || (task_date - current_date)::text, ',' order by kind)
      from warehouse_schedule(current_date + 800, current_date + 820)),
-  'prep@809,return@811');
+  'prep@806,return@812');
 select t_eq('עם מספר התעודה ושם הלקוח',
   (select event_number || '/' || end_client_name
      from warehouse_schedule(current_date + 800, current_date + 820) where kind = 'prep'),
@@ -139,7 +140,7 @@ select t_expect_ok('ושלושת הסימונים', $$
     '{"final_approved":true,"event_ready":true,"checked":true}')$$);
 select t_expect_ok('ויום משלו להחזרה', $$
   select warehouse_task_save('30000000-0000-0000-0000-00000000053a', 'return',
-    jsonb_build_object('task_date', (current_date + 812)::text))$$);
+    jsonb_build_object('task_date', (current_date + 813)::text))$$);
 select t_expect_fail('שדה שאינו קיים נדחה', $$
   select warehouse_task_save('30000000-0000-0000-0000-00000000053a', 'prep', '{"price":1}')$$);
 select t_eq('העדכון נקרא בלו״ז',
@@ -150,7 +151,7 @@ select t_eq('העדכון נקרא בלו״ז',
 select t_eq('וההחזרה זזה ליום שנקבע',
   (select (task_date - current_date)::text || '/' || date_is_manual::text
      from warehouse_schedule(current_date + 800, current_date + 820) where kind = 'return'),
-  '812/true');
+  '813/true');
 select t_eq('ורואה את השורות בטבלה עצמה',
   (select count(*)::int from warehouse_tasks where event_id = '30000000-0000-0000-0000-00000000053a'), 2);
 select t_rows('אבל אינו כותב לטבלה ישירות',
@@ -163,10 +164,10 @@ set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000053a2', false);
 select t_expect_ok('מנהל ארקו מנקה את היום', $$
   select warehouse_task_save('30000000-0000-0000-0000-00000000053a', 'return', '{"task_date":null}')$$);
-select t_eq('וההחזרה חוזרת ליום הפירוק',
+select t_eq('וההחזרה חוזרת ליום הנגזר',
   (select (task_date - current_date)::text || '/' || date_is_manual::text
      from warehouse_schedule(current_date + 800, current_date + 820) where kind = 'return'),
-  '811/false');
+  '812/false');
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000053a5', false);
 select t_expect_fail('צופה אינו כותב', $$
   select warehouse_task_save('30000000-0000-0000-0000-00000000053a', 'prep', '{"notes":"x"}')$$);
