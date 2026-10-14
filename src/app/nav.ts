@@ -416,6 +416,15 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Receipt,
         anyPerm: [PERM.PAYSLIPS_MANAGE, PERM.PAYSLIPS_EMPLOYER_COST],
       },
+      /* ‏0233: חשבוניות ספקים — סריקה, תיקייה לחודש וייצוא לרואה החשבון. */
+      {
+        to: '/invoices',
+        page: 'invoices',
+        label: 'חשבוניות',
+        icon: FileText,
+        perm: PERM.INVOICES_MANAGE,
+        audience: forAdmins,
+      },
       /* ‏0207: כמה מזומן יש ביד — כל תשלום שהתקבל במזומן, פחות ההוצאות. */
       {
         to: '/wallet',
@@ -553,6 +562,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/payments': 'תשלומי אירועים',
   '/wallet': 'ארנק מזומנים',
   '/payslips': 'תלושי שכר',
+  '/invoices': 'חשבוניות',
   '/my/schedule': 'משמרות',
   '/my/attendance': 'שעון נוכחות',
   '/my/payslips': 'תלושי השכר שלי',

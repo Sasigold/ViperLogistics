@@ -177,6 +177,8 @@ export const PERM = {
   PAYSLIPS_VIEW_OWN: 'payslips.view_own',
   PAYSLIPS_MANAGE: 'payslips.manage',
   PAYSLIPS_EMPLOYER_COST: 'payslips.employer_cost',
+  /* ‏0233: חשבוניות ספקים — מנהלי מערכת בלבד (applies_to ריק, כמו command.view). */
+  INVOICES_MANAGE: 'invoices.manage',
   PRICING_VIEW: 'pricing.view',
   PRICING_EDIT: 'pricing.edit',
   PRICING_MANAGE_RULES: 'pricing.manage_rules',

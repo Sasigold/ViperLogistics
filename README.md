@@ -2861,17 +2861,20 @@ npm test            # שניהם
 ## מבנה
 
 ```
-supabase/migrations/   # 0001..0232 — סכמה, זריעה, RLS, RPCs, הרשאות, תמחור,
+supabase/migrations/   # 0001..0233 — סכמה, זריעה, RLS, RPCs, הרשאות, תמחור,
                        # נוכחות, דשבורד, דוחות, התראות, הכנסות, רווחיות משימה,
                        # מפרט אירוע (Storage), צי רכב, מפת עומסים,
-                       # החיבור ל-ViperFlow, תשלומי אירועים, תלושי שכר
+                       # החיבור ל-ViperFlow, תשלומי אירועים, תלושי שכר,
+                       # חשבוניות ספקים (docs/INVOICES.md)
 supabase/functions/    # admin-users (ניהול חשבונות), geocode-proxy (Google Places, נסיגה ל-OSM),
                        # notify-dispatch (משלוח התראות),
                        # fleet-expiry-sweep (סריקת תוקף מסמכי רכב),
                        # viperflow-webhook (קליטת אירועים מ-ViperFlow — --no-verify-jwt),
                        # viperflow-sync (משיכה יזומה מה-API שלהם),
                        # viperflow-spec (המפרט החי — תמונות מהקטלוג שלהם)
-                       # payslip-read (קריאת תלושי שכר ב-Claude)
+                       # payslip-read (קריאת תלושי שכר ב-Claude),
+                       # invoice-read (קריאת חשבוניות ב-Claude),
+                       # invoice-gmail (חיבור Gmail ומשיכת חשבוניות — --no-verify-jwt)
 src/features/          # מודול לכל פיצ'ר: calendar, workboard, events, customers,
                        # users, contractors, vehicles, portal, attendance,
                        # settings, notifications, integrations, search...
