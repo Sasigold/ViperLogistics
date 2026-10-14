@@ -2640,3 +2640,121 @@ export interface MissionCompleteResult {
   on_time: boolean
   next_id: string | null
 }
+
+/* ===== חשבוניות ספקים (0233) ===== */
+
+export type InvoiceDocType = 'tax_invoice' | 'tax_invoice_receipt' | 'receipt' | 'credit' | 'other'
+export type InvoiceCategory =
+  | 'subcontractors'
+  | 'equipment'
+  | 'vehicle'
+  | 'fuel'
+  | 'rent'
+  | 'utilities'
+  | 'communication'
+  | 'software'
+  | 'office'
+  | 'food'
+  | 'professional'
+  | 'marketing'
+  | 'insurance'
+  | 'travel'
+  | 'maintenance'
+  | 'other'
+
+export interface InvoiceLine {
+  line_no: number
+  description: string
+  quantity: number | null
+  unit_price: number | null
+  total: number | null
+}
+
+/** שורה מ-`invoices_board` (app.invoice_json) */
+export interface Invoice {
+  id: string
+  source: 'upload' | 'camera' | 'gmail'
+  file_name: string
+  file_path: string
+  read_status: 'pending' | 'done' | 'failed'
+  read_error: string | null
+  read_at: string | null
+  doc_type: InvoiceDocType
+  vendor_name: string | null
+  vendor_tax_id: string | null
+  invoice_number: string | null
+  issue_date: string | null
+  period: string
+  currency: string
+  amount_before_vat: number | null
+  vat_amount: number | null
+  total_amount: number | null
+  category: InvoiceCategory
+  description: string | null
+  recipient_name: string | null
+  recipient_tax_id: string | null
+  company_id: string | null
+  company_name: string | null
+  notes: string | null
+  reviewed_at: string | null
+  gmail_from: string | null
+  gmail_subject: string | null
+  gmail_date: string | null
+  created_at: string
+  duplicate: boolean
+  lines: InvoiceLine[]
+}
+
+export interface InvoiceTotals {
+  count: number
+  before_vat: number
+  vat: number
+  total: number
+  foreign: number
+  unread: number
+  unreviewed: number
+  missing_total: number
+}
+
+export interface InvoiceMonth {
+  period: string
+  count: number
+  total: number
+  vat: number
+  unreviewed: number
+}
+
+export interface InvoicesBoard {
+  period: string
+  invoices: Invoice[]
+  totals: InvoiceTotals
+  categories: { category: InvoiceCategory; count: number; total: number; vat: number }[]
+  months: InvoiceMonth[]
+}
+
+export interface InvoiceCompany {
+  id: string
+  name: string
+  tax_id: string | null
+  aliases: string[]
+  active: boolean
+}
+
+export interface InvoiceGmailAccount {
+  id: string
+  email: string
+  active: boolean
+  query_extra: string
+  connected_at: string
+  synced_until: string | null
+  last_run_at: string | null
+  last_error: string | null
+  connected: boolean
+  messages: number
+  imported: number
+}
+
+export interface InvoiceGmailStatus {
+  accounts: InvoiceGmailAccount[]
+  companies: number
+}

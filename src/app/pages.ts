@@ -67,6 +67,12 @@ export const PAGES = [
   { key: 'payments', label: 'תשלומי אירועים', section: 'נתונים' },
   { key: 'wallet', label: 'ארנק מזומנים', section: 'נתונים' },
   { key: 'payslips', label: 'תלושי שכר', section: 'נתונים', hint: 'העלאה מרואה החשבון, שיוך לעובדים ועלות מעביד' },
+  {
+    key: 'invoices',
+    label: 'חשבוניות',
+    section: 'נתונים',
+    hint: 'חשבוניות ספקים: סריקה, תיקייה לכל חודש, ייצוא לרואה החשבון וחיבור Gmail. למנהלי מערכת בלבד',
+  },
   { key: 'settings', label: 'הגדרות', section: 'מערכת' },
   { key: 'integrations', label: 'אינטגרציות', section: 'מערכת' },
 ] as const satisfies readonly PageDef[]

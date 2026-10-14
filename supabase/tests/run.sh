@@ -735,6 +735,13 @@ echo "$OUT74"
 OUT="$OUT
 $OUT74"
 
+# ‏75: חשבוניות (0233). חברה, חשבוניות וחשבון Gmail משלה בחודשי 2031;
+# מסירה אחריה (soft delete) את החשבוניות ואת החברה.
+OUT75=$($PSQL -d vl -f "$HERE/75_invoices.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT75"
+OUT="$OUT
+$OUT75"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"

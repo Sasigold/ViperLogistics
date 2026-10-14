@@ -52,6 +52,7 @@ const NotificationPreferencesPage = lazyPage(() => import('../features/notificat
 const PayslipsPage = lazyPage(() => import('../features/payslips/PayslipsPage'))
 const CommandPage = lazyPage(() => import('../features/command/CommandPage'))
 const MyPayslipsPage = lazyPage(() => import('../features/payslips/MyPayslipsPage'))
+const InvoicesPage = lazyPage(() => import('../features/invoices/InvoicesPage'))
 
 /** Shaped like a real screen so the chunk swap doesn't flash an empty page. */
 function PageFallback() {
@@ -203,6 +204,12 @@ export const router = createBrowserRouter([
             path: '/payslips',
             handle: { anyPerm: [PERM.PAYSLIPS_MANAGE, PERM.PAYSLIPS_EMPLOYER_COST], page: 'payslips' },
             element: page(<PayslipsPage />),
+          },
+          /* ‏0233: חשבוניות ספקים — מנהלי מערכת בלבד. */
+          {
+            path: '/invoices',
+            handle: { perm: PERM.INVOICES_MANAGE, audience: forAdmins, page: 'invoices' },
+            element: page(<InvoicesPage />),
           },
           /* הרשימה והדף אינם אותו מפתח: עובד שטח פותח אירוע שהוא משובץ אליו,
              ואין לו מה לעשות בקטלוג של כולם (0082). */

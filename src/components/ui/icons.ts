@@ -169,5 +169,9 @@ export {
   ListChecks,
   AlarmClock,
   Crosshair,
+  // חשבוניות (0233)
+  Camera,
+  Folder,
+  FolderOpen,
 } from 'lucide-react'
 
