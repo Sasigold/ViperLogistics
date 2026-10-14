@@ -28,7 +28,7 @@ export const PAGES = [
   { key: 'dashboard', label: 'דשבורד', section: 'תפעול' },
   {
     key: 'command',
-    label: 'חדר המלחמה',
+    label: 'משימות ניהול',
     section: 'תפעול',
     hint: 'המשימות של מנהלי המערכת — יעדים, תזכורות ומד איום. למנהלי מערכת בלבד',
   },

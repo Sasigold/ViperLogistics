@@ -3,7 +3,7 @@ import { useAuth } from '../../state/auth'
 import { useMissionsBoard } from './missionQueries'
 
 /**
- * התג האדום ליד "חדר המלחמה" בתפריט — כמה מהמשימות שלי באיחור. אותה שאילתה
+ * התג האדום ליד "משימות ניהול" בתפריט — כמה מהמשימות שלי באיחור. אותה שאילתה
  * של הלוח ("שלי"), כך שהדף והתג אינם מתווכחים זה עם זה.
  */
 export function CommandNavBadge({ compact }: { compact?: boolean }) {

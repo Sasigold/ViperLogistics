@@ -1,5 +1,5 @@
 /**
- * חדר המלחמה (0227) — הלוגיקה הטהורה של המסך.
+ * משימות ניהול (0227) — הלוגיקה הטהורה של המסך.
  *
  * המספרים עצמם (רמת האיום, החוב, הנקודות, הרצף) מגיעים מהשרת. מה שכאן הוא
  * איך מציגים אותם: לאיזה נתיב משימה שייכת, איך נקראת ספירה לאחור, איזו דרגה
@@ -180,22 +180,6 @@ export function levelOf(xp: number): LevelInfo {
   const progress = next ? Math.min(1, Math.max(0, (xp - cur.xp) / (next.xp - cur.xp))) : 1
   return { index, title: cur.title, next, progress }
 }
-
-/* ===== הישגים ============================================================ */
-
-export const ACHIEVEMENTS: readonly { key: string; emoji: string; label: string; hint: string }[] = [
-  { key: 'first_blood', emoji: '🩸', label: 'דם ראשון', hint: 'המשימה הראשונה שבוצעה' },
-  { key: 'on_time_10', emoji: '🎯', label: 'צלף', hint: '10 משימות בזמן' },
-  { key: 'early_bird_10', emoji: '🐦', label: 'ציפור מוקדמת', hint: '10 משימות יום ומעלה לפני היעד' },
-  { key: 'five_in_a_day', emoji: '⚡', label: 'יום מטורף', hint: '5 משימות ביום אחד' },
-  { key: 'inbox_zero', emoji: '🧘', label: 'Inbox Zero', hint: 'אף משימה פתוחה' },
-  { key: 'no_snooze_20', emoji: '🚫', label: 'בלי נודניק', hint: '20 משימות ברצף בלי לדחות' },
-  { key: 'streak_7', emoji: '🔥', label: 'שבוע נקי', hint: '7 ימים רצופים בלי איחור' },
-  { key: 'streak_30', emoji: '🌋', label: 'חודש נקי', hint: '30 ימים רצופים בלי איחור' },
-  { key: 'century', emoji: '💯', label: 'מאה', hint: '100 משימות שבוצעו' },
-]
-
-export const achievementOf = (key: string) => ACHIEVEMENTS.find((a) => a.key === key)
 
 /* ===== עדיפות וחזרה ====================================================== */
 

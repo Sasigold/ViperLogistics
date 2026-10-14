@@ -26,7 +26,6 @@ import { MissionCard } from './MissionCard'
 import type { MissionActions } from './MissionCard'
 import { MissionDrawer } from './MissionDrawer'
 import {
-  runMissionsSweep,
   useCompleteMission,
   useMissionsBoard,
   useMissionsStats,
@@ -40,7 +39,7 @@ import { parseQuickAdd } from './quickAdd'
 import { isMuted, playDing, playFanfare, playSiren, playSnooze, setMuted } from './sfx'
 import { StatsPanel } from './StatsPanel'
 import { WarHeader } from './WarHeader'
-import { LANES, achievementOf, groupByLane, levelOf, liveDebt } from './warRoom'
+import { LANES, groupByLane, levelOf, liveDebt } from './warRoom'
 import type { Lane } from './warRoom'
 import './command.css'
 
@@ -69,11 +68,11 @@ function floatXp(el: HTMLElement | null, points: number, gold: boolean) {
 }
 
 /**
- * חדר המלחמה (0227) — המשימות של מנהלי המערכת.
+ * משימות ניהול (0227) — המשימות של מנהלי המערכת.
  *
  * כל הדף משנה מצב לפי רמת האיום שהשרת מחשב: ירוק ורגוע כשאין איחורים,
  * וינייטה אדומה, פס התראה רץ וסירנה כשהם מצטברים. סיום משימה = קונפטי,
- * צליל, נקודות, ולפעמים דרגה או הישג.
+ * צליל, נקודות, ולפעמים דרגה חדשה.
  */
 export default function CommandPage() {
   const me = useAuth((s) => s.me)
@@ -114,11 +113,6 @@ export default function CommandPage() {
   const skew = data ? Date.parse(data.now) - data.fetchedAt : 0
   const nowMs = tick + skew
   const debt = data ? liveDebt(data, tick - data.fetchedAt) : 0
-
-  /* ===== התזכורות: הדף מריץ את הסריקה בכניסה ========================= */
-  useEffect(() => {
-    if (meId) void runMissionsSweep().catch(() => undefined)
-  }, [meId])
 
   /* ===== קריסה: סירנה ורעידה, פעם אחת בביקור ========================== */
   const [shake, setShake] = useState(false)
@@ -185,10 +179,6 @@ export default function CommandPage() {
                 confetti({ count: 260, gold: true })
               }, 700)
             }
-            r.achievements.forEach((key, i) => {
-              const a = achievementOf(key)
-              if (a) setTimeout(() => toast.success(`${a.emoji} הישג חדש: ${a.label} — ${a.hint}`), 900 + i * 600)
-            })
             if (r.next_id) toast.info('המופע הבא של המשימה החוזרת נוצר')
           },
           onError: (e) => toast.error(actionError('הסימון', e)),
@@ -275,7 +265,7 @@ export default function CommandPage() {
         title={
           <span className="inline-flex items-center gap-2">
             <Siren size={ICON.xl} strokeWidth={STROKE} className={cx(data && data.defcon <= 2 ? 'text-error' : 'text-ink-tertiary')} />
-            חדר המלחמה
+            משימות ניהול
           </span>
         }
         subtitle="המשימות של מנהלי המערכת. יעד שעובר — מאדים. משימה שנסגרת בזמן — שווה נקודות."
@@ -348,7 +338,7 @@ export default function CommandPage() {
           <Tabs
             items={[
               { key: 'board', label: `לוח (${openCount})` },
-              { key: 'stats', label: 'סטטיסטיקה והישגים' },
+              { key: 'stats', label: 'סטטיסטיקה' },
             ]}
             value={tab}
             onChange={setTab}

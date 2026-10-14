@@ -156,7 +156,7 @@ export const router = createBrowserRouter([
             handle: { perm: PERM.WAREHOUSE_VIEW, audience: forWarehouseSchedule, page: 'warehouse' },
             element: page(<WarehouseSchedulePage />),
           },
-          /* ‏0227: חדר המלחמה — מנהלי מערכת בלבד; השרת שואל `app.is_admin()`. */
+          /* ‏0227: משימות ניהול — מנהלי מערכת בלבד; השרת שואל `app.is_admin()`. */
           {
             path: '/command',
             handle: { perm: PERM.COMMAND_VIEW, audience: forAdmins, page: 'command' },
