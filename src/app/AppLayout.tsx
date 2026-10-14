@@ -23,6 +23,7 @@ import { NotificationsBell } from '../features/notifications/NotificationsBell'
 import { usePushNavigation, usePushSync } from '../features/notifications/pushQueries'
 import { useRealtimeSync } from '../features/sync/useRealtimeSync'
 import { CommandPalette } from '../features/search/CommandPalette'
+import { CommandNavBadge } from '../features/command/CommandNavBadge'
 import { NAV_SECTIONS, ROUTE_LABELS, bottomNavItems, navAudience, navItemVisible, visibleNavSections } from './nav'
 import type { NavItem, NavSection } from './nav'
 import { PageTitleProvider, useCurrentPageTitle } from './breadcrumbs'
@@ -117,7 +118,7 @@ export default function AppLayout() {
                 <p className={cx('px-3 pb-1.5 type-overline', collapsed && 'lg:hidden')}>{section.title}</p>
                 {collapsed && <div className="mx-auto mb-2 hidden h-px w-6 bg-line-subtle lg:block" aria-hidden />}
                 <ul className="space-y-0.5">
-                  {section.items.map(({ to, label, icon: Icon, end }) => {
+                  {section.items.map(({ to, label, icon: Icon, end, badge }) => {
                     const link = (
                       <NavLink
                         to={to}
@@ -145,6 +146,7 @@ export default function AppLayout() {
                             />
                             <Icon size={ICON.md} strokeWidth={STROKE} className="shrink-0" />
                             <span className={cx('truncate', collapsed && 'lg:hidden')}>{label}</span>
+                            {badge === 'command' && <CommandNavBadge compact={collapsed} />}
                           </>
                         )}
                       </NavLink>
@@ -373,7 +375,7 @@ function BottomNav({ sections, onMore }: { sections: NavSection[]; onMore: () =>
 }
 
 function BottomNavLink({ item }: { item: NavItem }) {
-  const { to, label, shortLabel, icon: Icon, end } = item
+  const { to, label, shortLabel, icon: Icon, end, badge } = item
   return (
     <NavLink
       to={to}
@@ -396,6 +398,7 @@ function BottomNavLink({ item }: { item: NavItem }) {
             )}
           />
           <Icon size={ICON.lg} strokeWidth={isActive ? 2.25 : STROKE} aria-hidden />
+          {badge === 'command' && <CommandNavBadge compact />}
           <span className="max-w-full truncate type-caption font-medium leading-none">
             {shortLabel ?? label}
           </span>

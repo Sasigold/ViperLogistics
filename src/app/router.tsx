@@ -7,7 +7,7 @@ import LoginPage from '../features/auth/LoginPage'
 import ResetPasswordPage from '../features/auth/ResetPasswordPage'
 import { RequireAuth } from '../features/auth/guards'
 import { PERM } from '../lib/permissions'
-import { forContractors, forEmployees, forSelfPerformingCustomers, forWarehouseSchedule } from './nav'
+import { forAdmins, forContractors, forEmployees, forSelfPerformingCustomers, forWarehouseSchedule } from './nav'
 import { lazyPage } from '../lib/lazyPage'
 import { ErrorBoundary, Skeleton } from '../components/ui'
 
@@ -50,6 +50,7 @@ const ShiftBoardPage = lazyPage(() => import('../features/attendance/ShiftBoardP
 const EmbedEventPage = lazyPage(() => import('../features/embed/EmbedEventPage'))
 const NotificationPreferencesPage = lazyPage(() => import('../features/notifications/NotificationPreferencesPage'))
 const PayslipsPage = lazyPage(() => import('../features/payslips/PayslipsPage'))
+const CommandPage = lazyPage(() => import('../features/command/CommandPage'))
 const MyPayslipsPage = lazyPage(() => import('../features/payslips/MyPayslipsPage'))
 
 /** Shaped like a real screen so the chunk swap doesn't flash an empty page. */
@@ -154,6 +155,12 @@ export const router = createBrowserRouter([
             path: '/warehouse',
             handle: { perm: PERM.WAREHOUSE_VIEW, audience: forWarehouseSchedule, page: 'warehouse' },
             element: page(<WarehouseSchedulePage />),
+          },
+          /* ‏0227: חדר המלחמה — מנהלי מערכת בלבד; השרת שואל `app.is_admin()`. */
+          {
+            path: '/command',
+            handle: { perm: PERM.COMMAND_VIEW, audience: forAdmins, page: 'command' },
+            element: page(<CommandPage />),
           },
           { path: '/reports', handle: { perm: PERM.REPORTS_VIEW, page: 'reports' }, element: page(<ReportsPage />) },
           {

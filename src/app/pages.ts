@@ -27,6 +27,12 @@ export interface PageDef {
 export const PAGES = [
   { key: 'dashboard', label: 'דשבורד', section: 'תפעול' },
   {
+    key: 'command',
+    label: 'חדר המלחמה',
+    section: 'תפעול',
+    hint: 'המשימות של מנהלי המערכת — יעדים, תזכורות ומד איום. למנהלי מערכת בלבד',
+  },
+  {
     key: 'portal',
     label: 'כספים ותשלומים',
     section: 'תפעול',

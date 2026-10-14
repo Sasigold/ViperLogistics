@@ -2579,3 +2579,79 @@ export interface MyPayslip {
   period: string
   assigned_at: string | null
 }
+
+/* ===== חדר המלחמה (0227) ================================================= */
+
+export type MissionRecurrence = 'none' | 'daily' | 'weekly' | 'monthly'
+
+export interface MissionStep {
+  id: string
+  title: string
+  done: boolean
+}
+
+/** משימה של מנהל מערכת — שורה ב-`missions_board`. */
+export interface Mission {
+  id: string
+  title: string
+  description: string | null
+  owner_id: string
+  owner_name: string
+  created_by: string | null
+  due_at: string
+  /** 1 = הכי דחוף */
+  priority: 1 | 2 | 3 | 4
+  recurrence: MissionRecurrence
+  status: 'open' | 'done'
+  done_at: string | null
+  postpone_count: number
+  points: number
+  created_at: string
+  steps: MissionStep[]
+}
+
+/** `missions_board(p_owner)` — הלוח ומצב הרוח שלו. */
+export interface MissionsBoard {
+  /** שעון השרת — הספירה לאחור נמדדת ממנו */
+  now: string
+  /** 5 שליטה מלאה … 1 קריסה */
+  defcon: 1 | 2 | 3 | 4 | 5
+  overdue: number
+  debt_seconds: number
+  admins: { id: string; full_name: string }[]
+  missions: Mission[]
+}
+
+export interface MissionDay {
+  day: string
+  done: number
+  on_time: number
+  open: number
+  overdue: number
+  debt_hours: number
+}
+
+/** `missions_stats(p_owner, p_days)`. */
+export interface MissionsStats {
+  xp_total: number
+  xp_week: number
+  done_total: number
+  done_30: number
+  on_time_30: number
+  early_total: number
+  streak: number
+  best_streak: number
+  achievements: { key: string; earned_at: string }[]
+  daily: MissionDay[]
+}
+
+/** מה ש-`mission_complete` מחזירה — לאנימציית התגמול. */
+export interface MissionCompleteResult {
+  points: number
+  on_time: boolean
+  early: boolean
+  xp_before: number
+  xp_after: number
+  achievements: string[]
+  next_id: string | null
+}

@@ -728,6 +728,13 @@ echo "$OUT73"
 OUT="$OUT
 $OUT73"
 
+# ‏74: חדר המלחמה (0227). מנהל מערכת שני משלה, משימות יחסיות ל-now();
+# מנקה אחריה את המשימות וההתראות שלה.
+OUT74=$($PSQL -d vl -f "$HERE/74_the_war_room.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT74"
+OUT="$OUT
+$OUT74"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"

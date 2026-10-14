@@ -33,11 +33,12 @@ select t_eq('וערוץ ה-push דלוק מאז 0113/0167',
 -- `task_performed_by_changed`, ו-0165 עשרים-ואחת:
 -- `attendance_correction_requested`, ו-0190 עשרים-ושתיים:
 -- `viperflow_order_changed`, ו-0199 עשרים-ושלוש: `arco_order_received`, ו-0212
--- עשרים-וארבעה: `income_commission_stale`, ו-0218 עשרים-וחמישה: `payslip_available`.
+-- עשרים-וארבעה: `income_commission_stale`, ו-0218 עשרים-וחמישה: `payslip_available`, ו-0227
+-- עשרים-ותשעה: ארבעת הסוגים של חדר המלחמה (`mission_*`).
 -- הספירה נשארת מדויקת ולא הופכת ל-`>= 9`:
 -- קטלוג שגדל בלי שאיש שם לב הוא בדיוק מה שהבדיקה הזו נועדה לתפוס.
-select t_eq('הקטלוג מכיר את עשרים-וחמישה הסוגים הפעילים',
-  (select count(*)::int from notification_types where is_active), 25);
+select t_eq('הקטלוג מכיר את עשרים-ותשעה הסוגים הפעילים',
+  (select count(*)::int from notification_types where is_active), 29);
 
 -- ‏0190: שינוי בהזמנה של ViperFlow הוא עניין של מי שמזיז אירועים, ולכן
 -- הסוג פונה למנהלי מערכת בלבד — ובתוך המערכת הוא מאולץ: התראה שאפשר

@@ -165,5 +165,12 @@ export {
   Link2,
   // אינטגרציות (0176) — החיבור עצמו
   Plug,
+  // חדר המלחמה (0227)
+  Siren,
+  Trophy,
+  Volume2,
+  VolumeX,
+  AlarmClock,
+  Crosshair,
 } from 'lucide-react'
 

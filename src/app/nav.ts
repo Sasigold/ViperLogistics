@@ -18,6 +18,7 @@ import {
   Plug,
   Receipt,
   Settings,
+  Siren,
   TrendingUp,
   Truck,
   Users,
@@ -119,6 +120,12 @@ export const forSelfPerformingCustomers = (a: NavAudience) => a.isSelfPerforming
  */
 export const forWarehouseSchedule = (a: NavAudience) => a.hasWarehouseSchedule
 
+/**
+ * חדר המלחמה (0227) — של מנהלי המערכת בלבד. המפתח `command.view` כבר אינו
+ * ניתן לאיש אחר (`applies_to` ריק); הגדר הזו אומרת את אותו דבר במפורש.
+ */
+export const forAdmins = (a: NavAudience) => a.isAdmin
+
 export interface NavItem {
   to: string
   /** הדף שהרשומה מובילה אליו (0215) — מה שהבעלים מסתיר או מציג */
@@ -146,6 +153,8 @@ export interface NavItem {
    */
   audience?: (a: NavAudience) => boolean
   end?: boolean
+  /** מונה ליד הרשומה — מה שהוא סופר מוכרע ב-AppLayout (0227: 'command' = משימות באיחור) */
+  badge?: 'command'
   /** competes for one of the four slots in the mobile bottom bar */
   primary?: boolean
 }
@@ -172,6 +181,17 @@ export const NAV_SECTIONS: NavSection[] = [
         perm: PERM.DASHBOARD_VIEW,
         end: true,
         primary: true,
+      },
+      /* ‏0227: המשימות של מנהלי המערכת. התג האדום — כמה מהן באיחור. */
+      {
+        to: '/command',
+        page: 'command',
+        label: 'חדר המלחמה',
+        shortLabel: 'משימות',
+        icon: Siren,
+        perm: PERM.COMMAND_VIEW,
+        audience: forAdmins,
+        badge: 'command',
       },
       /* הסיכום הכספי של הקבלן — הדשבורד שלו, ולכן הוא יושב לצד הדשבורד ולא
          בסקשן הנתונים. הוא גם הרשומה הראשונה שמנהל קבלן רואה, ולכן `/` מפנה
@@ -517,6 +537,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/calendar': 'לוח שנה',
   '/board': 'לו״ז עבודה',
   '/warehouse': 'לו״ז מחסן',
+  '/command': 'חדר המלחמה',
   '/events': 'אירועים',
   '/customers': 'לקוחות',
   '/users': 'עובדים',
