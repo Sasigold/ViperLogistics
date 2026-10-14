@@ -183,6 +183,9 @@ select t_eq('סיום מוקדם של P1 שנדחה פעם — 150 פחות 10',
   (mission_complete((select id from m74 where k = 'cams')) ->> 'points')::int, 140);
 select t_eq('המשימה בוצעה בידי המנהל הראשון, הנקודות למנהל השני',
   (missions_stats('20000000-0000-0000-0000-0000000074a1', 7) ->> 'xp_total')::int, 140);
+select t_eq('ובסיום — מערך הישגים ריק, לדפים פתוחים מהגרסה הקודמת (0231)',
+  (mission_complete(mission_save(null, jsonb_build_object(
+     'title', 'תאימות 0231', 'due_at', now() + interval '2 days'))) -> 'achievements')::text, '[]');
 select t_eq('ובלי הישגים בסטטיסטיקה (0229)',
   missions_stats('20000000-0000-0000-0000-0000000074a1', 7) ? 'achievements', false);
 select t_expect_fail('אי אפשר לסיים פעמיים', $$ select mission_complete((select id from m74 where k = 'cams')) $$);
@@ -236,5 +239,5 @@ select set_config('request.jwt.claim.sub', '', false);
 -- ===== ניקוי ===============================================================
 
 delete from notifications where recipient_id = '20000000-0000-0000-0000-0000000074a1';
-delete from admin_missions where owner_id = '20000000-0000-0000-0000-0000000074a1';
+delete from admin_missions where owner_id = '20000000-0000-0000-0000-0000000074a1' or title = 'תאימות 0231';
 update profiles set is_active = false where id = '20000000-0000-0000-0000-0000000074a1';
