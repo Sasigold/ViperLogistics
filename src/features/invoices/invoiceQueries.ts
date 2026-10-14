@@ -129,7 +129,8 @@ export async function uploadInvoice(
     .from(INVOICE_BUCKET)
     .upload(r.path!, new Blob([pdf as BlobPart], { type: 'application/pdf' }), {
       contentType: 'application/pdf',
-      upsert: true,
+      // נתיב חדש תמיד; upsert היה דורש גם פוליסת update על הדלי, ואין כזו
+      upsert: false,
     })
   if (upErr) {
     await supabase.rpc('invoice_remove', { p_id: r.id })
