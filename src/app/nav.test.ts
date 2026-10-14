@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { PERM } from '../lib/permissions'
-import { ANY_AUDIENCE, bottomNavItems, navItemVisible, pagePerms, pagePermitted, visibleNavSections } from './nav'
+import {
+  ANY_AUDIENCE,
+  bottomNavItems,
+  isFieldUser,
+  navItemVisible,
+  pagePerms,
+  pagePermitted,
+  visibleNavSections,
+} from './nav'
 import type { NavAudience, NavItem } from './nav'
 
 /**
@@ -407,5 +415,20 @@ describe('bottomNavItems', () => {
     const items = bottomNavItems(visibleNavSections(hasFrom(CONTRACTOR_MANAGER)))
     expect(items).toHaveLength(4)
     expect(new Set(items.map((i) => i.to)).size).toBe(4)
+  })
+
+  it('לעובד שטח: השעון והמשמרות במשבצות הראשונות', () => {
+    const sections = visibleNavSections(hasFrom(STAFF_WORKER))
+    expect(isFieldUser(sections)).toBe(true)
+    expect(bottomNavItems(sections).map((i) => i.to).slice(0, 2)).toEqual(['/my/attendance', '/my/schedule'])
+  })
+
+  it('מנהל קבלן נשאר על הפורטל שלו', () => {
+    expect(isFieldUser(visibleNavSections(hasFrom(CONTRACTOR_MANAGER)))).toBe(false)
+  })
+
+  it('מי שרואה דשבורד או אירועים אינו עובד שטח', () => {
+    expect(isFieldUser(visibleNavSections(hasFrom([...STAFF_WORKER, PERM.EVENTS_LIST])))).toBe(false)
+    expect(isFieldUser(visibleNavSections(hasFrom([...STAFF_WORKER, PERM.DASHBOARD_VIEW])))).toBe(false)
   })
 })

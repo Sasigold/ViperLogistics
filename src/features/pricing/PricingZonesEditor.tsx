@@ -130,12 +130,11 @@ export function PricingZonesEditor({ customerId }: { customerId: string | null }
     onError: (e) => toast.error(errorMessage(e)),
   })
 
-  // עדכון ישיר ולא soft_delete: הפוליסה pz_write כבר דורשת
-  // pricing.manage_rules, ו-soft_delete הייתה מחייבת להוסיף את הטבלה לרשימה
-  // שבתוכה — פונקציה שכבר הוגדרה מחדש שלוש פעמים לאורך המיגרציות.
+  // ‏0225: דרך soft_delete. העדכון הישיר שהיה כאן נדחה ב-RLS לכל מי שאינו
+  // אדמין — השורה המחוקה כבר אינה עוברת את pz_select.
   const remove = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('pricing_zones').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+      const { error } = await supabase.rpc('soft_delete', { p_table: 'pricing_zones', p_id: id })
       if (error) throw error
     },
     onSuccess: () => {

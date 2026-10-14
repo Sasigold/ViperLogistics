@@ -25,6 +25,7 @@ import { useWarehouses } from '../attendance/attendanceQueries'
 import { useAuth } from '../../state/auth'
 import { PERM } from '../../lib/permissions'
 import { errorMessage } from '../../lib/errors'
+import { toISODate } from '../../lib/dates'
 import { shortAddress } from '../../lib/address'
 import {
   EVENTS_SHEET,
@@ -253,7 +254,7 @@ export function ExcelDialog({ open, onClose }: { open: boolean; onClose: () => v
           { name: EVENTS_SHEET, columns: eventCols, rows: eventRows },
           { name: TASKS_SHEET, columns: TASK_COLUMNS, rows: taskRows },
         ],
-        `events-${new Date().toISOString().slice(0, 10)}.xlsx`,
+        `events-${toISODate(new Date())}.xlsx`,
       )
     } catch (e) {
       toast.error(errorMessage(e))

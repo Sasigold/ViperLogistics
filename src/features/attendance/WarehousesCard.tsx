@@ -74,10 +74,8 @@ export function WarehousesCard() {
 
   const remove = async (w: Warehouse) => {
     if (!(await confirm(`למחוק את ${w.name}?`, { title: 'מחיקת מחסן', confirmLabel: 'מחיקה' }))) return
-    const { error } = await supabase
-      .from('warehouses')
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', w.id)
+    // ‏0225: דרך soft_delete — עדכון ישיר נדחה ב-RLS לכל מי שאינו אדמין
+    const { error } = await supabase.rpc('soft_delete', { p_table: 'warehouses', p_id: w.id })
     if (error) toast.error(errorMessage(error))
     else {
       toast.success('המחסן נמחק')

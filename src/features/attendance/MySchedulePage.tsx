@@ -5,6 +5,7 @@ import heLocale from '@fullcalendar/core/locales/he'
 import type { DatesSetArg, DayHeaderContentArg, EventContentArg } from '@fullcalendar/core'
 import { addDays, startOfWeek } from 'date-fns'
 import { Card, ErrorState, Spinner } from '../../components/ui'
+import { CalendarClock, ICON, STROKE } from '../../components/ui/icons'
 import { PERM } from '../../lib/permissions'
 import { RequirePermission } from '../auth/guards'
 import { toISODate } from '../../lib/dates'
@@ -73,6 +74,16 @@ function MySchedule() {
         {error != null && shifts.length === 0 && (
           <div className="absolute inset-0 z-10 grid place-items-center bg-surface/90">
             <ErrorState error={error} onRetry={() => void refetch()} />
+          </div>
+        )}
+        {/* שבוע ריק נראה כמו לוח שלא נטען — אומרים את זה במילים, בלי לחסום
+            את הגרירה לשבוע הבא */}
+        {!isLoading && error == null && shifts.length === 0 && (
+          <div className="pointer-events-none absolute inset-x-0 top-1/3 z-10 flex justify-center px-4">
+            <div className="flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 type-body text-ink-secondary shadow-sm">
+              <CalendarClock size={ICON.sm} strokeWidth={STROKE} />
+              אין משמרות בשבוע הזה · החלק לשבוע אחר
+            </div>
           </div>
         )}
         <div

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Checkbox, Popover, StatusPill, Tooltip, cx } from '../../components/ui'
 import { fmtDate, fmtHours, fmtTime, warehouseStartDate, warehouseStartsPreviousDay } from '../../lib/dates'
@@ -555,8 +555,41 @@ function truckNames(row: WorkBoardRow): string[] {
  * `truck_id`, which is what pricing, attendance and the shift board read.
  */
 function TruckCell({ row, canEdit, patch, lookups }: CellContext) {
-  const selected = row.truck_ids ?? (row.truck_id ? [row.truck_id] : [])
-  const names = truckNames(row)
+  const saved = row.truck_ids ?? (row.truck_id ? [row.truck_id] : [])
+  /**
+   * הבורר נשאר פתוח כי מסמנים בו שתיים-שלוש משאיות ברצף. כל סימון נכתב
+   * קודם כאן, והכתיבה לשרת יוצאת פעם אחת כשהסימונים נרגעים — קודם כל סימון
+   * יצא לבד מהשורה שהוצגה, השני נדחה כ"עודכנה על ידי משתמש אחר" והסימון
+   * שלו אבד.
+   */
+  const [pending, setPending] = useState<string[] | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const latest = useRef({ row, patch })
+  latest.current = { row, patch }
+  const settle = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const flush = (ids: string[]) => {
+    timer.current = null
+    latest.current.patch(latest.current.row, { truck_ids: ids })
+    /* כתיבה שנכשלה (הטוסט כבר אמר למה) לא תחזיר את השורה עם הבחירה —
+       אחרי כמה שניות התא חוזר להציג את מה שבאמת שמור */
+    settle.current = setTimeout(() => setPending(null), 4000)
+  }
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current)
+      if (settle.current) clearTimeout(settle.current)
+    },
+    [],
+  )
+  /* כשהשורה חוזרת מהשרת עם מה שנשלח, הבחירה המקומית מתמזגת בה */
+  const savedKey = saved.join(',')
+  useEffect(() => {
+    if (pending && !timer.current && pending.join(',') === savedKey) setPending(null)
+  }, [pending, savedKey])
+  const selected = pending ?? saved
+  const names = pending
+    ? pending.map((id) => lookups.trucksFor(row.customer_id).find((t) => t.id === id)?.name ?? '').filter(Boolean)
+    : truckNames(row)
   const label = names.join(', ') || row.truck_free_text || ''
   const view = label ? <Clip>{label}</Clip> : <Muted />
 
@@ -577,9 +610,13 @@ function TruckCell({ row, canEdit, patch, lookups }: CellContext) {
             .map((t) => ({ id: t.id, label: t.name, checked: selected.includes(t.id) })),
         },
       ]}
-      onToggle={(_g, id, on) =>
-        patch(row, { truck_ids: on ? [...selected, id] : selected.filter((x) => x !== id) })
-      }
+      onToggle={(_g, id, on) => {
+        const next = on ? [...selected, id] : selected.filter((x) => x !== id)
+        setPending(next)
+        if (timer.current) clearTimeout(timer.current)
+        if (settle.current) clearTimeout(settle.current)
+        timer.current = setTimeout(() => flush(next), 600)
+      }}
     />
   )
 }

@@ -93,6 +93,7 @@ export {
   TrendingDown,
   // domain
   MapPin,
+  Navigation,
   Phone,
   Mail,
   User,

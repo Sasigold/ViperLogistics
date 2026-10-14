@@ -167,6 +167,16 @@ export function incomeValuesFromRows(rows: { category_id: string; amount: number
  * ה-JSON.parse רץ בתוך אפקט, ולכן זריקה ממנו הגיעה עד ל-ErrorBoundary ורוקנה
  * את העמוד. טיוטה שאי אפשר לקרוא נזרקת, והטופס נפתח ריק.
  */
+/**
+ * האם בטיוטה יש משהו שמשתמש הקליד — ולא רק ברירות מחדל שהטופס משלים בעצמו
+ * (אופן ביצוע, לקוח קשור). רק אז שווה להגיד "שוחזרה טיוטה".
+ */
+export function draftHasContent(f: EventForm): boolean {
+  return [f.end_client_name, f.event_number, f.event_date, f.location_text, f.notes, f.contact_name, f.contact_phone].some(
+    (v) => !!v?.trim(),
+  )
+}
+
 export function draftFormValues(raw: string | null): EventForm {
   if (!raw) return emptyEventForm
   try {

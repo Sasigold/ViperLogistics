@@ -29,6 +29,14 @@ export const GEO_MESSAGES: Record<Exclude<GeoReading['status'], 'ok'>, string> =
 const SOFT_TIMEOUT_MS = 4_000
 
 /**
+ * תקרה לקריאה שההחתמה *כן* מחכה לה (כשנדרש מיקום). אותה בעיה של חלון
+ * הרשאה שלא נענה — בלי מרוץ, עובד שפספס את החלון ראה ספינר על הכפתור לנצח
+ * והכפתור נשאר נעול. 25 שניות מספיקות לחלון ההרשאה ולנעילת GPS ראשונה;
+ * אחריהן הוא מקבל "לא הצלחנו לאתר" וכפתור לנסות שוב.
+ */
+const STRICT_TIMEOUT_MS = 25_000
+
+/**
  * ‏`soft` — קריאה שאינה חוסמת את ההחתמה.
  *
  * ‏0159 קבע שכשאין מול מה לאמת, אין דרישת מיקום: העובד לא נדרש לחכות לנעילת
@@ -57,7 +65,7 @@ export function useGeolocation() {
           done = true
           resolve(r)
         }
-        if (soft) setTimeout(() => settle({ status: 'timeout' }), SOFT_TIMEOUT_MS)
+        setTimeout(() => settle({ status: 'timeout' }), soft ? SOFT_TIMEOUT_MS : STRICT_TIMEOUT_MS)
         navigator.geolocation.getCurrentPosition(
           (p) =>
             settle({

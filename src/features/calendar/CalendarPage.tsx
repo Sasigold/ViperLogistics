@@ -40,6 +40,7 @@ import {
   Tooltip,
   cx,
   useContextMenu,
+  useConfirm,
   usePrompt,
   useToast,
 } from '../../components/ui'
@@ -169,6 +170,7 @@ function loadCalendarState(): CalendarState | null {
 export default function CalendarPage() {
   const qc = useQueryClient()
   const toast = useToast()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const navigate = useNavigate()
   const { me, has, canCreateEvent } = useAuth()
   const { openMenu, menu } = useContextMenu()
@@ -417,21 +419,38 @@ export default function CalendarPage() {
      * the keys they are given, so nothing else on the event moves with it. The
      * column trigger still runs, so `events.change_date` is still required.
      */
-    mutationFn: async ({ id, date }: { id: string; date: string; undo?: string; message?: string }) => {
+    mutationFn: async ({
+      id,
+      date,
+      blocks,
+    }: {
+      id: string
+      date: string
+      /** ‏setup_date / teardown_date — רק כשנבחר להזיז גם את המשימות */
+      blocks?: Record<string, string>
+      undo?: string
+      undoBlocks?: Record<string, string>
+      message?: string
+    }) => {
       const { error } = await supabase.rpc('update_event', {
         p_event_id: id,
-        payload: { event_date: date },
+        payload: { event_date: date, ...blocks },
       })
       if (error) throw error
     },
     onSuccess: (_d, vars) => {
       toast.success(vars.message ?? 'האירוע עודכן', {
         undo: vars.undo
-          ? () => moveEvent.mutate({ id: vars.id, date: vars.undo!, message: 'השינוי בוטל' })
+          ? () =>
+              moveEvent.mutate({ id: vars.id, date: vars.undo!, blocks: vars.undoBlocks, message: 'השינוי בוטל' })
           : undefined,
       })
       void qc.invalidateQueries({ queryKey: ['calendar'] })
       void qc.invalidateQueries({ queryKey: ['events'] })
+      if (vars.blocks) {
+        void qc.invalidateQueries({ queryKey: ['workboard'] })
+        void qc.invalidateQueries({ queryKey: ['tasks'] })
+      }
     },
     onError: (e) => {
       toast.error(errorMessage(e))
@@ -450,9 +469,50 @@ export default function CalendarPage() {
       if (!d) return
       const ev = arg.event.extendedProps.event as CalEvent
       const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      moveEvent.mutate({ id: arg.event.id, date, undo: ev.event_date, message: `הועבר ל-${fmtDate(date)}` })
+      const id = arg.event.id
+      void (async () => {
+        /**
+         * ‏`update_event` מזיז רק את תאריך האירוע — ההקמה והפירוק נשארו ביום
+         * הישן, והצוות נשאר משובץ אליו בזמן שההודעה אמרה "הועבר". כאן שואלים:
+         * אם יש להן תאריך, הן זזות באותו מספר ימים, באותה קריאה (המפתחות
+         * ‏`setup_date`/`teardown_date` של הטופס, 0136). נשלחים רק מפתחות של
+         * משימה שקיימת — מפתח של משימה שנמחקה היה יוצר אותה מחדש.
+         */
+        const shift = Math.round((Date.parse(date) - Date.parse(ev.event_date)) / 86_400_000)
+        const { data: tasks } = await supabase
+          .from('tasks')
+          .select('task_date, task_types!inner(code)')
+          .eq('event_id', id)
+          .is('deleted_at', null)
+          .in('task_types.code', ['setup', 'teardown'])
+        const blocks: Record<string, string> = {}
+        const undoBlocks: Record<string, string> = {}
+        for (const t of (tasks ?? []) as unknown as { task_date: string | null; task_types: { code: string } }[]) {
+          if (!t.task_date || shift === 0) continue
+          const k = `${t.task_types.code}_date`
+          if (k in blocks) continue
+          blocks[k] = toISODate(new Date(Date.parse(t.task_date) + shift * 86_400_000 + 43_200_000))
+          undoBlocks[k] = t.task_date
+        }
+        let moveTasks = false
+        if (Object.keys(blocks).length > 0) {
+          const days = Math.abs(shift) === 1 ? 'ביום אחד' : `ב-${Math.abs(shift)} ימים`
+          moveTasks = await confirm(
+            `להזיז גם את משימות ההקמה והפירוק של האירוע ${days} ${shift > 0 ? 'קדימה' : 'אחורה'}? הצוות המשובץ עובר איתן.`,
+            { title: 'הזזת אירוע', tone: 'primary', confirmLabel: 'הזז גם את המשימות', cancelLabel: 'רק את האירוע' },
+          )
+        }
+        moveEvent.mutate({
+          id,
+          date,
+          blocks: moveTasks ? blocks : undefined,
+          undo: ev.event_date,
+          undoBlocks: moveTasks ? undoBlocks : undefined,
+          message: moveTasks ? `האירוע והמשימות הועברו ל-${fmtDate(date)}` : `הועבר ל-${fmtDate(date)}`,
+        })
+      })()
     },
-    [canEdit, moveEvent, toast],
+    [canEdit, moveEvent, toast, confirm],
   )
 
   /* ── saved filters ────────────────────────────────────────────────────── */
@@ -1129,6 +1189,7 @@ export default function CalendarPage() {
       )}
 
       <EventFormModal open={eventModal} onClose={() => setEventModal(false)} />
+      {confirmDialog}
     </div>
   )
 }

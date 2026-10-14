@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Navigate, useLocation } from 'react-router'
-import { AlertCircle, ICON, STROKE } from '../../components/ui/icons'
+import { AlertCircle, Eye, EyeOff, ICON, STROKE } from '../../components/ui/icons'
 import { Button, Field, Input } from '../../components/ui'
 import { supabase } from '../../lib/supabase'
 import { errorMessage } from '../../lib/errors'
@@ -10,6 +10,7 @@ export default function LoginPage() {
   const { session, booted } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(false)
@@ -91,16 +92,30 @@ export default function LoginPage() {
               />
             </Field>
             <Field label="סיסמה" required>
-              <Input
-                type="password"
-                dir="ltr"
-                inputSize="lg"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                invalid={!!error}
-                required
-              />
+              {/* בטלפון קל לטעות בהקלדה — אפשר לראות מה הוקלד. העטיפה ב-ltr
+                  כמו השדה, כדי שהכפתור והריפוד יהיו באותו צד */}
+              <div dir="ltr" className="relative">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  dir="ltr"
+                  inputSize="lg"
+                  className="pe-11"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  invalid={!!error}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'הסתרת הסיסמה' : 'הצגת הסיסמה'}
+                  aria-pressed={showPassword}
+                  className="absolute inset-y-0 end-0 flex w-11 items-center justify-center rounded-md text-ink-tertiary hover:text-ink focus-visible:outline-none focus-visible:focus-ring"
+                >
+                  {showPassword ? <EyeOff size={ICON.md} strokeWidth={STROKE} /> : <Eye size={ICON.md} strokeWidth={STROKE} />}
+                </button>
+              </div>
             </Field>
 
             {error && (

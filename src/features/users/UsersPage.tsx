@@ -470,9 +470,24 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
       // staff roles
       /* ‏'admin' אינו כאן בכוונה: מנהל מערכת שנפתח כסוג משלו אינו עובד,
          ותפקיד צוות היה מכניס אותו לרוסטר לוח המשמרות ולרשימות השיבוץ. */
-      await supabase.from('staff_roles').delete().eq('profile_id', profileId)
-      if (form.user_type === 'staff' && form.roles.length) {
-        const { error } = await supabase.from('staff_roles').insert(form.roles.map((role) => ({ profile_id: profileId, role })))
+      /* הפרש ולא "מחק הכול והכנס מחדש": מחיקה שהצליחה והכנסה שנכשלה השאירו
+         נהג או ראש צוות בלי תפקידים — וההודעה עוד אמרה "נשמר". עכשיו נוגעים
+         רק במה שהשתנה, וכל שגיאה עוצרת את השמירה. */
+      const { data: currentRoles, error: rolesErr } = await supabase
+        .from('staff_roles')
+        .select('role')
+        .eq('profile_id', profileId)
+      if (rolesErr) throw rolesErr
+      const want = form.user_type === 'staff' ? form.roles : []
+      const have = (currentRoles ?? []).map((r) => r.role as string)
+      const toAdd = want.filter((r) => !have.includes(r))
+      const toDrop = have.filter((r) => !(want as string[]).includes(r))
+      if (toAdd.length) {
+        const { error } = await supabase.from('staff_roles').insert(toAdd.map((role) => ({ profile_id: profileId, role })))
+        if (error) throw error
+      }
+      if (toDrop.length) {
+        const { error } = await supabase.from('staff_roles').delete().eq('profile_id', profileId).in('role', toDrop)
         if (error) throw error
       }
 
@@ -489,11 +504,12 @@ function UserDrawer({ open, profile, onClose }: { open: boolean; profile: Profil
           .not('permission_roles.user_kind', 'is', null)
           .neq('permission_roles.user_kind', kind)
         if (strays?.length) {
-          await supabase
+          const { error } = await supabase
             .from('profile_roles')
             .delete()
             .eq('profile_id', profileId)
             .in('role_id', strays.map((s) => s.role_id))
+          if (error) throw error
         }
         return { dropped: strays?.length ?? 0 }
       }
