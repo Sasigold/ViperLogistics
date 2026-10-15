@@ -742,6 +742,13 @@ echo "$OUT75"
 OUT="$OUT
 $OUT75"
 
+# ‏76: הלקוח רואה את עובדי הקבלן בלו״ז (0234). לקוחות, קבלן ומשימה משלה
+# ב-current_date + 1260; משאירה אחריה את הנתונים שלה.
+OUT76=$($PSQL -d vl -f "$HERE/76_the_customer_sees_the_contractor_crew.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT76"
+OUT="$OUT
+$OUT76"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"

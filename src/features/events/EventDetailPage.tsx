@@ -280,8 +280,12 @@ export default function EventDetailPage() {
   /* ‏0205: תשלומים על האירוע — אותו דפוס, דגל פר-לקוח ולא שם. השרת עונה
      גם הוא `enabled: false` ללקוח שהמודול סגור לו; כאן זה רק חוסך שאילתה. */
   const showPayments = !!data?.event.customers?.event_payments_enabled && has(PERM.FINANCE_EVENT_PAYMENTS_VIEW)
-  /* ‏0226: הכנה והחזרה במחסן, למי שרואה את לו״ז המחסן של הלקוח הזה */
-  const showWarehouse = !!data?.event.customers?.warehouse_schedule_enabled && has(PERM.WAREHOUSE_VIEW)
+  /* ‏0226: הכנה והחזרה במחסן, למי שרואה את לו״ז המחסן של הלקוח הזה.
+     לא אצל מנהל מערכת (בקשת בעל המערכת): המחסן הוא של הלקוח (ארקו), ובדף
+     האירוע זה רעש למשרד. אדמין מחזיק כל מפתח, ולכן ההכרעה כאן ולא במפתח;
+     ‏`/warehouse` עצמו נשאר פתוח לו. */
+  const showWarehouse =
+    !!data?.event.customers?.warehouse_schedule_enabled && has(PERM.WAREHOUSE_VIEW) && !me?.profile.is_admin
   const canSetPerformedBy = !!me?.profile.is_admin || has(PERM.TASKS_EDIT) || isCustomerUser
   const setPerformedBy = useMutation({
     mutationFn: async ({ taskId, value }: { taskId: string; value: PerformedBy }) => {
