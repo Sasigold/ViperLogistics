@@ -16,7 +16,8 @@
 --   * ‏**הלו״ז** (`work_board_view`) — עובד שטח, בלי `contractors.view` ובלי
 --     `customers.view`, רואה את שמות עובדי הקבלן והלקוח ואת ראש הצוות של הקבלן.
 --   * ‏**ולא יותר** — הטבלאות עצמן, עם הטלפון ות״ז, נשארות סגורות לו, ומה
---     שהלקוח לא ראה עד היום (את עובדי הקבלן) הוא לא רואה גם עכשיו.
+--     שהלקוח לא ראה עד היום (את עובדי הקבלן) הוא לא רואה גם עכשיו. (0234 הפך
+--     את זה: לקוח עם `board.view_staffing` רואה את שמם, לא את הטבלה.)
 -- ===========================================================================
 
 insert into auth.users (id, email) values
@@ -170,22 +171,28 @@ select t_eq('וכך גם טבלת עובדי הלקוח',
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
--- ===== 3. מה שהלקוח לא ראה, הוא לא רואה גם עכשיו ==========================
+-- ===== 3. הלקוח: גם עובדי הקבלן (0234), ולא הטבלה ========================
 
-\echo '--- הלקוח: הסגל שלו כן, עובדי הקבלן לא ---'
+\echo '--- הלקוח: הסגל שלו ועובדי הקבלן ---'
 set role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000056a3', false);
 
 select t_eq('הלקוח רואה את המשימה בלו״ז',
   (select count(*)::int from work_board_view where id = '62000000-0000-0000-0000-000000056001'), 1);
 
-select t_eq('אך לא את עובדי הקבלן',
-  (select contractor_worker_list from work_board_view
-    where id = '62000000-0000-0000-0000-000000056001'), null::jsonb);
+select t_eq('ואת עובדי הקבלן בשמם (0234)',
+  (select string_agg(w ->> 'name', ',' order by w ->> 'name')
+     from work_board_view v, jsonb_array_elements(v.contractor_worker_list) w
+    where v.id = '62000000-0000-0000-0000-000000056001'),
+  'עובד קבלן 56,ראש צוות קבלן 56');
 
-select t_eq('ולא את ראש הצוות של הקבלן',
+select t_eq('ואת ראש הצוות של הקבלן',
   (select team_lead_name from work_board_view
-    where id = '62000000-0000-0000-0000-000000056001'), null::text);
+    where id = '62000000-0000-0000-0000-000000056001'), 'ראש צוות קבלן 56');
+
+select t_eq('אך טבלת עובדי הקבלן עצמה נשארת סגורה לו',
+  (select count(*)::int from contractor_workers
+    where contractor_id = '40000000-0000-0000-0000-00000000056a'), 0);
 
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
