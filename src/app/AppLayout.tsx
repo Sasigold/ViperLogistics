@@ -16,7 +16,7 @@ import {
   WifiOff,
   X,
 } from '../components/ui/icons'
-import { Avatar, Divider, IconButton, Kbd, MenuItem, MenuSeparator, Popover, Tooltip, cx } from '../components/ui'
+import { Avatar, Divider, IconButton, Kbd, MenuItem, MenuSeparator, Popover, cx } from '../components/ui'
 import { useAuth } from '../state/auth'
 import { RouteGate } from '../features/auth/guards'
 import { NotificationsBell } from '../features/notifications/NotificationsBell'
@@ -27,6 +27,7 @@ import { CommandNavBadge } from '../features/command/CommandNavBadge'
 import { NAV_SECTIONS, ROUTE_LABELS, bottomNavItems, navAudience, navItemVisible, visibleNavSections } from './nav'
 import type { NavItem, NavSection } from './nav'
 import { PageTitleProvider, useCurrentPageTitle } from './breadcrumbs'
+import { SidebarNav } from './SidebarNav'
 import { useOnline } from '../lib/useOnline'
 
 const COLLAPSE_KEY = 'vl-nav-collapsed'
@@ -112,61 +113,7 @@ export default function AppLayout() {
             </IconButton>
           </div>
 
-          <nav className="min-h-0 flex-1 space-y-4 overflow-y-auto px-2 pb-3" aria-label="ניווט ראשי">
-            {sections.map((section) => (
-              <div key={section.title}>
-                <p className={cx('px-3 pb-1.5 type-overline', collapsed && 'lg:hidden')}>{section.title}</p>
-                {collapsed && <div className="mx-auto mb-2 hidden h-px w-6 bg-line-subtle lg:block" aria-hidden />}
-                <ul className="space-y-0.5">
-                  {section.items.map(({ to, label, icon: Icon, end, badge }) => {
-                    const link = (
-                      <NavLink
-                        to={to}
-                        end={end}
-                        className={({ isActive }) =>
-                          cx(
-                            'group relative flex items-center gap-2.5 rounded-lg px-3 py-2 type-button transition-colors duration-150',
-                            'focus-visible:outline-none focus-visible:focus-ring',
-                            collapsed && 'lg:justify-center lg:px-0',
-                            isActive
-                              ? 'bg-selected text-primary-text'
-                              : 'text-ink-secondary hover:bg-hover hover:text-ink',
-                          )
-                        }
-                      >
-                        {({ isActive }) => (
-                          <>
-                            {/* active rail on the inline-start edge */}
-                            <span
-                              aria-hidden
-                              className={cx(
-                                'absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-primary transition-opacity duration-150',
-                                isActive ? 'opacity-100' : 'opacity-0',
-                              )}
-                            />
-                            <Icon size={ICON.md} strokeWidth={STROKE} className="shrink-0" />
-                            <span className={cx('truncate', collapsed && 'lg:hidden')}>{label}</span>
-                            {badge === 'command' && <CommandNavBadge compact={collapsed} />}
-                          </>
-                        )}
-                      </NavLink>
-                    )
-                    return (
-                      <li key={to}>
-                        {collapsed ? (
-                          <Tooltip content={label} placement="end">
-                            {link}
-                          </Tooltip>
-                        ) : (
-                          link
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            ))}
-          </nav>
+          <SidebarNav sections={sections} collapsed={collapsed} />
 
           <div className="hidden shrink-0 border-t border-line-subtle p-2 lg:block">
             <button

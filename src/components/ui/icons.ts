@@ -173,5 +173,14 @@ export {
   Camera,
   Folder,
   FolderOpen,
+  // תפריט הצד (קבוצות מתקפלות) — אייקון אחד לכל דף, ואייקון לכל קבוצה
+  ContactRound,
+  UsersRound,
+  Landmark,
+  ScrollText,
+  ReceiptText,
+  FileClock,
+  CalendarRange,
+  ListTodo,
 } from 'lucide-react'
 

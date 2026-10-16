@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { PERM } from '../lib/permissions'
 import {
   ANY_AUDIENCE,
+  NAV_SECTIONS,
+  activeNavSection,
   bottomNavItems,
+  filterNavItems,
+  navNeedsFolding,
   isFieldUser,
   navItemVisible,
   pagePerms,
@@ -430,5 +434,41 @@ describe('bottomNavItems', () => {
   it('מי שרואה דשבורד או אירועים אינו עובד שטח', () => {
     expect(isFieldUser(visibleNavSections(hasFrom([...STAFF_WORKER, PERM.EVENTS_LIST])))).toBe(false)
     expect(isFieldUser(visibleNavSections(hasFrom([...STAFF_WORKER, PERM.DASHBOARD_VIEW])))).toBe(false)
+  })
+})
+
+describe('קבוצות מתקפלות', () => {
+  const all = visibleNavSections(() => true)
+
+  it('מנהל מערכת שהוא גם עובד: אין קבוצה מקופלת של יותר מחמש רשומות', () => {
+    for (const s of NAV_SECTIONS.filter((x) => !x.placement)) {
+      const shown = visibleNavSections(adminHas, adminAudience(true), [s])[0]?.items ?? []
+      expect(shown.length, s.title).toBeLessThanOrEqual(5)
+    }
+  })
+
+  it('לכל קבוצה מקופלת יש אייקון, ומזהים לא חוזרים', () => {
+    for (const s of NAV_SECTIONS.filter((x) => !x.placement)) expect(s.icon, s.title).toBeTruthy()
+    expect(new Set(NAV_SECTIONS.map((s) => s.id)).size).toBe(NAV_SECTIONS.length)
+  })
+
+  it('הקבוצה הפעילה — ההתאמה הארוכה מנצחת, ופירוט שייך לרשימה', () => {
+    expect(activeNavSection(all, '/')).toBe('home')
+    expect(activeNavSection(all, '/reports/load')).toBe('reports')
+    expect(activeNavSection(all, '/events/abc')).toBe('ops')
+    expect(activeNavSection(all, '/payments')).toBe('money')
+    expect(activeNavSection(all, '/nowhere')).toBeNull()
+  })
+
+  it('תפריט קצר אינו מתקפל; תפריט מלא כן', () => {
+    expect(navNeedsFolding(all)).toBe(true)
+    expect(navNeedsFolding(visibleNavSections(hasFrom(STAFF_WORKER)))).toBe(false)
+    expect(navNeedsFolding(visibleNavSections(hasFrom(CONTRACTOR_MANAGER)))).toBe(false)
+  })
+
+  it('החיפוש מוצא לפי שם רשומה או שם קבוצה', () => {
+    expect(filterNavItems(all, 'רווח').map((i) => i.to)).toEqual(['/reports/task-pnl', '/reports/profitability'])
+    expect(filterNavItems(all, 'כספים').map((i) => i.to)).toContain('/wallet')
+    expect(filterNavItems(all, '  ')).toEqual([])
   })
 })

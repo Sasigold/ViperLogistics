@@ -5,23 +5,28 @@ import {
   Building2,
   Calendar,
   CalendarClock,
-  CalendarDays,
+  CalendarRange,
   ClipboardList,
   Clock,
-  FileText,
+  ContactRound,
+  FileClock,
   Flame,
   HandCoins,
   HardHat,
+  Landmark,
   LayoutDashboard,
-  ListChecks,
+  ListTodo,
   PartyPopper,
   Percent,
   Plug,
-  Receipt,
+  ReceiptText,
+  ScrollText,
   Settings,
+  Timer,
   TrendingUp,
   Truck,
-  Users,
+  User,
+  UsersRound,
   Wallet,
   Warehouse,
 } from '../components/ui/icons'
@@ -159,19 +164,37 @@ export interface NavItem {
   primary?: boolean
 }
 
+/** גוון הקבוצה — אחד מצבעי האירועים (`--vl-ev-N`), כדי שיתפקד גם במצב כהה */
+export type NavTone = 0 | 1 | 4 | 5 | 7 | 11
+
 export interface NavSection {
+  /** מפתח יציב — לזיכרון הקבוצות הפתוחות; הכותרת יכולה להשתנות */
+  id: string
   title: string
+  /** אייקון הקבוצה בכותרת שנפתחת ונסגרת */
+  icon?: NavItem['icon']
+  tone?: NavTone
+  /**
+   * 'top' — בלי כותרת ובלי קיפול, בראש התפריט (הבית);
+   * 'footer' — בתחתית, מתחת לקבוצות (הגדרות, שנפתחות לעיתים רחוקות).
+   * חסר = קבוצה שנפתחת ונסגרת.
+   */
+  placement?: 'top' | 'footer'
   items: NavItem[]
 }
 
 /**
- * Grouping the nine destinations into three named sections turns a flat list
- * into something scannable — you look for a *kind* of screen first, then the
- * screen. Order within each section follows how often the screen is opened.
+ * הקבוצות נקבעות לפי *מה מחפשים* — מסך תפעולי, אדם או משאב, צוות, כסף או
+ * דוח — ולא לפי "נתונים" כללי: עד עכשיו 16 מסכים ישבו תחת כותרת אחת. כל קבוצה
+ * עד חמש רשומות, והתפריט מראה פתוחה רק את הקבוצה של הדף הנוכחי (AppLayout).
+ * בתוך קבוצה הסדר הוא לפי תדירות הפתיחה. קבוצה שהתרוקנה בסינון נעלמת, ולכן
+ * עובד שטח או קבלן עדיין רואים תפריט קצר.
  */
 export const NAV_SECTIONS: NavSection[] = [
   {
-    title: 'תפעול',
+    id: 'home',
+    title: 'ראשי',
+    placement: 'top',
     items: [
       {
         to: '/',
@@ -188,23 +211,31 @@ export const NAV_SECTIONS: NavSection[] = [
         page: 'command',
         label: 'משימות ניהול',
         shortLabel: 'משימות',
-        icon: ListChecks,
+        icon: ListTodo,
         perm: PERM.COMMAND_VIEW,
         audience: forAdmins,
         badge: 'command',
       },
       /* הסיכום הכספי של הקבלן — הדשבורד שלו, ולכן הוא יושב לצד הדשבורד ולא
-         בסקשן הנתונים. הוא גם הרשומה הראשונה שמנהל קבלן רואה, ולכן `/` מפנה
+         בקבוצת הכספים. הוא גם הרשומה הראשונה שמנהל קבלן רואה, ולכן `/` מפנה
          אליו מעצמו דרך HomeRoute. */
       {
         to: '/portal',
         page: 'portal',
         label: 'כספים ותשלומים',
         shortLabel: 'כספים',
-        icon: Banknote,
+        icon: Landmark,
         perm: PERM.PORTAL_VIEW,
         primary: true,
       },
+    ],
+  },
+  {
+    id: 'ops',
+    title: 'תפעול',
+    icon: ClipboardList,
+    tone: 0,
+    items: [
       { to: '/calendar', page: 'calendar', label: 'לוח שנה', icon: Calendar, perm: PERM.CALENDAR_VIEW, primary: true },
       {
         to: '/board',
@@ -215,6 +246,7 @@ export const NAV_SECTIONS: NavSection[] = [
         perm: PERM.BOARD_VIEW,
         primary: true,
       },
+      { to: '/events', page: 'events', label: 'אירועים', icon: PartyPopper, perm: PERM.EVENTS_LIST, primary: true },
       /* ‏0196: הכנה והחזרה במחסן לכל אירוע. בלי `primary`, כדי שלא ידחוק את
          "אירועים" מהבר התחתון של מנהל הלקוח; ליוזר "מחסן", שזה המסך היחיד
          שלו, הבר ממלא את עצמו ממה שנשאר גלוי ממילא. */
@@ -230,9 +262,12 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    // הסקשן הזה הוא היחיד שעובד מן השורה — ועובד קבלן שקיבל התחברות —
-    // רואה בכלל, ולכן הוא יושב לפני הנתונים ולא אחריהם.
-    title: 'הנוכחות שלי',
+    // הקבוצה הזו היא היחידה שעובד מן השורה — ועובד קבלן שקיבל התחברות —
+    // רואה בכלל, ולכן היא יושבת לפני האנשים והכסף ולא אחריהם.
+    id: 'mine',
+    title: 'אישי',
+    icon: User,
+    tone: 11,
     items: [
       {
         to: '/my/schedule',
@@ -252,30 +287,30 @@ export const NAV_SECTIONS: NavSection[] = [
         perm: PERM.ATTENDANCE_VIEW_OWN,
         audience: forEmployees,
       },
-      /* אותו מסך של "דוח נוכחות" שלמטה, מצומצם לשורות של המשתמש עצמו — השרת
-         כבר מחזיר רק אותן. מי שמחזיק view_all מגיע אליו דרך הרשומה בסקשן
-         "נתונים", ומנהל קבלן דרך "נוכחות הסגל שלי" שמתחתיה; אצל שניהם הרשומה
-         הזאת נעלמת במקום להכפיל את היעד תחת כותרת צרה מדי. עובד קבלן אינו
-         מחזיק אף אחד מהשניים (המודול portal סגור לו), ולכן הוא רואה אותה. */
+      /* אותו מסך של "דוח נוכחות" שבקבוצת הצוות, מצומצם לשורות של המשתמש עצמו —
+         השרת כבר מחזיר רק אותן. מי שמחזיק view_all מגיע אליו דרך הרשומה
+         בקבוצת הצוות, ומנהל קבלן דרך "נוכחות הסגל שלי" שמתחתיה; אצל שניהם
+         הרשומה הזאת נעלמת במקום להכפיל את היעד תחת כותרת צרה מדי. עובד קבלן
+         אינו מחזיק אף אחד מהשניים (המודול portal סגור לו), ולכן הוא רואה אותה. */
       {
         to: '/attendance',
         page: 'attendance',
         label: 'דוח הנוכחות שלי',
         shortLabel: 'דוח',
-        icon: FileText,
+        icon: FileClock,
         perm: PERM.ATTENDANCE_VIEW_OWN,
         hiddenBy: [PERM.ATTENDANCE_VIEW_ALL, PERM.PORTAL_ATTENDANCE],
         audience: forEmployees,
       },
       /* הצד השני של אותה הכרעה: הסגל של הקבלן. `attendance_report` כבר תוחם
          אותו לקבלן של הקורא, ולכן זה אותו מסך בהיקף אחר — ומוסתר ממי שמחזיק
-         view_all, שרואה את הרשומה הרחבה יותר ב"נתונים". */
+         view_all, שרואה את הרשומה הרחבה יותר בקבוצת הצוות. */
       {
         to: '/attendance',
         page: 'attendance',
         label: 'נוכחות הסגל שלי',
         shortLabel: 'נוכחות',
-        icon: Clock,
+        icon: Timer,
         perm: PERM.PORTAL_ATTENDANCE,
         hiddenBy: [PERM.ATTENDANCE_VIEW_ALL],
       },
@@ -286,7 +321,7 @@ export const NAV_SECTIONS: NavSection[] = [
         to: '/my/staff',
         page: 'my_staff',
         label: 'העובדים שלי',
-        icon: Users,
+        icon: UsersRound,
         perm: PERM.PORTAL_MANAGE_WORKERS,
         audience: forContractors,
       },
@@ -295,7 +330,7 @@ export const NAV_SECTIONS: NavSection[] = [
         to: '/my/crew',
         page: 'my_crew',
         label: 'הסגל שלי',
-        icon: Users,
+        icon: UsersRound,
         perm: PERM.CUSTOMERS_MANAGE_OWN_STAFF,
         audience: forSelfPerformingCustomers,
       },
@@ -305,7 +340,7 @@ export const NAV_SECTIONS: NavSection[] = [
         page: 'my_payslips',
         label: 'תלושי השכר שלי',
         shortLabel: 'תלושים',
-        icon: Receipt,
+        icon: ScrollText,
         perm: PERM.PAYSLIPS_VIEW_OWN,
         audience: forEmployees,
       },
@@ -319,11 +354,13 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    title: 'נתונים',
+    id: 'resources',
+    title: 'לקוחות ומשאבים',
+    icon: Building2,
+    tone: 1,
     items: [
-      { to: '/events', page: 'events', label: 'אירועים', icon: PartyPopper, perm: PERM.EVENTS_LIST, primary: true },
       { to: '/customers', page: 'customers', label: 'לקוחות', icon: Building2, perm: PERM.CUSTOMERS_VIEW },
-      { to: '/users', page: 'users', label: 'עובדים', icon: Users, perm: PERM.USERS_VIEW },
+      { to: '/users', page: 'users', label: 'עובדים', icon: ContactRound, perm: PERM.USERS_VIEW },
       { to: '/contractors', page: 'contractors', label: 'קבלנים', icon: HardHat, perm: PERM.CONTRACTORS_VIEW },
       {
         to: '/vehicles',
@@ -333,15 +370,23 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Truck,
         perm: PERM.FLEET_VIEW,
       },
+    ],
+  },
+  {
+    id: 'crew',
+    title: 'צוות ונוכחות',
+    icon: UsersRound,
+    tone: 4,
+    items: [
       /* shortLabel 'שיבוץ' ולא 'משמרות': מי שרואה את הרשומה הזאת רואה במקביל
-         גם את "משמרות" שלמעלה, ושתי רשומות באותו שם הן שתי רשומות שאי אפשר
-         לבחור ביניהן. */
+         גם את "משמרות" שבקבוצה האישית, ושתי רשומות באותו שם הן שתי רשומות
+         שאי אפשר לבחור ביניהן. */
       {
         to: '/shifts',
         page: 'shifts',
         label: 'לוח משמרות צוות',
         shortLabel: 'שיבוץ',
-        icon: CalendarDays,
+        icon: CalendarRange,
         anyPerm: [PERM.ATTENDANCE_VIEW_ALL, PERM.PORTAL_ATTENDANCE],
       },
       {
@@ -349,9 +394,70 @@ export const NAV_SECTIONS: NavSection[] = [
         page: 'attendance',
         label: 'דוח נוכחות',
         shortLabel: 'נוכחות',
-        icon: Clock,
+        icon: Timer,
         perm: PERM.ATTENDANCE_VIEW_ALL,
       },
+      /* ‏0218: העלאת התלושים מרואה החשבון, שיוך ועלות מעביד. */
+      {
+        to: '/payslips',
+        page: 'payslips',
+        label: 'תלושי שכר',
+        shortLabel: 'תלושים',
+        icon: ScrollText,
+        anyPerm: [PERM.PAYSLIPS_MANAGE, PERM.PAYSLIPS_EMPLOYER_COST],
+      },
+    ],
+  },
+  {
+    id: 'money',
+    title: 'כספים',
+    icon: Wallet,
+    tone: 5,
+    items: [
+      /* ‏0205: לא לשונית של "תקבולים" — השאלה כאן היא על אירועים ("מה שולם
+         מהאירועים של החודש"), ושם על כסף שנכנס ("מה נכנס החודש"). */
+      {
+        to: '/payments',
+        page: 'payments',
+        label: 'תשלומי אירועים',
+        shortLabel: 'תשלומים',
+        icon: HandCoins,
+        perm: PERM.FINANCE_EVENT_PAYMENTS_VIEW,
+      },
+      {
+        to: '/receipts',
+        page: 'receipts',
+        label: 'רישום תקבולים',
+        shortLabel: 'תקבולים',
+        icon: Banknote,
+        perm: PERM.FINANCE_RECEIPTS_VIEW,
+      },
+      /* ‏0207: כמה מזומן יש ביד — כל תשלום שהתקבל במזומן, פחות ההוצאות. */
+      {
+        to: '/wallet',
+        page: 'wallet',
+        label: 'ארנק מזומנים',
+        shortLabel: 'ארנק',
+        icon: Wallet,
+        perm: PERM.FINANCE_CASH_WALLET_VIEW,
+      },
+      /* ‏0233: חשבוניות ספקים — סריקה, תיקייה לחודש וייצוא לרואה החשבון. */
+      {
+        to: '/invoices',
+        page: 'invoices',
+        label: 'חשבוניות',
+        icon: ReceiptText,
+        perm: PERM.INVOICES_MANAGE,
+        audience: forAdmins,
+      },
+    ],
+  },
+  {
+    id: 'reports',
+    title: 'דוחות',
+    icon: BarChart3,
+    tone: 7,
+    items: [
       {
         to: '/reports',
         page: 'reports',
@@ -359,6 +465,9 @@ export const NAV_SECTIONS: NavSection[] = [
         shortLabel: 'דוחות',
         icon: BarChart3,
         perm: PERM.REPORTS_VIEW,
+        /* שלוש הרשומות שאחריה יושבות מתחת לנתיב שלה — בלי `end` היא נצבעת
+           פעילה גם כשפתוחה מפת העומסים */
+        end: true,
       },
       /* מפת העומסים יושבת ראשונה בין הדוחות (0173): היא השאלה שנשאלת לפני
          שמקבלים עבודה נוספת, ולא אחרי שהחודש נגמר. */
@@ -371,7 +480,7 @@ export const NAV_SECTIONS: NavSection[] = [
         perm: PERM.REPORTS_LOAD,
       },
       /* שני דפי הרווחיות הם יעדים ולא לשוניות של "דוחות": הם המסכים שנפתחים
-         הכי הרבה בסקשן הזה, והדרך היחידה אליהם הייתה שני קישורים בתוך שורת
+         הכי הרבה בקבוצה הזו, והדרך היחידה אליהם הייתה שני קישורים בתוך שורת
          התבניות של /reports — מקום שצריך לדעת עליו כדי למצוא אותו. */
       {
         to: '/reports/task-pnl',
@@ -389,55 +498,12 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: TrendingUp,
         perm: PERM.REPORTS_VIEW,
       },
-      {
-        to: '/receipts',
-        page: 'receipts',
-        label: 'רישום תקבולים',
-        shortLabel: 'תקבולים',
-        icon: Banknote,
-        perm: PERM.FINANCE_RECEIPTS_VIEW,
-      },
-      /* ‏0205: לא לשונית של "תקבולים" — השאלה כאן היא על אירועים ("מה שולם
-         מהאירועים של החודש"), ושם על כסף שנכנס ("מה נכנס החודש"). */
-      {
-        to: '/payments',
-        page: 'payments',
-        label: 'תשלומי אירועים',
-        shortLabel: 'תשלומים',
-        icon: HandCoins,
-        perm: PERM.FINANCE_EVENT_PAYMENTS_VIEW,
-      },
-      /* ‏0218: העלאת התלושים מרואה החשבון, שיוך ועלות מעביד. */
-      {
-        to: '/payslips',
-        page: 'payslips',
-        label: 'תלושי שכר',
-        shortLabel: 'תלושים',
-        icon: Receipt,
-        anyPerm: [PERM.PAYSLIPS_MANAGE, PERM.PAYSLIPS_EMPLOYER_COST],
-      },
-      /* ‏0233: חשבוניות ספקים — סריקה, תיקייה לחודש וייצוא לרואה החשבון. */
-      {
-        to: '/invoices',
-        page: 'invoices',
-        label: 'חשבוניות',
-        icon: FileText,
-        perm: PERM.INVOICES_MANAGE,
-        audience: forAdmins,
-      },
-      /* ‏0207: כמה מזומן יש ביד — כל תשלום שהתקבל במזומן, פחות ההוצאות. */
-      {
-        to: '/wallet',
-        page: 'wallet',
-        label: 'ארנק מזומנים',
-        shortLabel: 'ארנק',
-        icon: Wallet,
-        perm: PERM.FINANCE_CASH_WALLET_VIEW,
-      },
     ],
   },
   {
+    id: 'system',
     title: 'מערכת',
+    placement: 'footer',
     items: [
       { to: '/settings', page: 'settings', label: 'הגדרות', icon: Settings, perm: PERM.SETTINGS_VIEW },
       {
@@ -572,4 +638,36 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/settings': 'הגדרות',
   '/integrations': 'אינטגרציות',
   '/portal': 'כספים ותשלומים',
+}
+
+/**
+ * הקבוצה של הדף הנוכחי — היא נפתחת מעצמה בתפריט. ההתאמה הארוכה ביותר
+ * מנצחת, כדי ש-/reports/load ייחשב למפת העומסים ולא ל"דוחות", ופירוט
+ * (/events/123) שייך לרשימה שמעליו.
+ */
+export function activeNavSection(sections: NavSection[], pathname: string): string | null {
+  let best: { id: string; len: number } | null = null
+  for (const s of sections)
+    for (const i of s.items) {
+      const hit = i.to === '/' ? pathname === '/' : pathname === i.to || pathname.startsWith(i.to + '/')
+      if (hit && (!best || i.to.length > best.len)) best = { id: s.id, len: i.to.length }
+    }
+  return best?.id ?? null
+}
+
+/**
+ * תפריט קצר — עובד שטח, קבלן, משתמש מחסן — מוצג פתוח כולו: לקפל קבוצה של
+ * שתי רשומות רק מוסיף לחיצה. הקיפול מתחיל כשיש יותר ממה שנכנס במבט אחד.
+ */
+export const NAV_FOLD_FROM = 10
+
+export function navNeedsFolding(sections: NavSection[]): boolean {
+  return sections.filter((s) => !s.placement).reduce((n, s) => n + s.items.length, 0) >= NAV_FOLD_FROM
+}
+
+/** החיפוש בתפריט — לפי שם הרשומה או שם הקבוצה שלה. */
+export function filterNavItems(sections: NavSection[], query: string): NavItem[] {
+  const q = query.trim()
+  if (!q) return []
+  return sections.flatMap((s) => s.items.filter((i) => i.label.includes(q) || s.title.includes(q)))
 }
