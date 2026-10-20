@@ -272,6 +272,16 @@ select t_eq('וממנה חזרה',
       and entity_id = '61000000-0000-0000-0000-000000029001'
       and title = 'המשימה עברה: ארקו ← וייפר') >= 1, true);
 
+-- ‏0235: ההתראה מובילה לדף האירוע ונוקבת בו
+select t_eq('ההתראה על המעבר מובילה לדף האירוע',
+  (select bool_and(link = '/events/30000000-0000-0000-0000-00000000029a') from notifications
+    where type = 'task_performed_by_changed'
+      and entity_id = '61000000-0000-0000-0000-000000029001'), true);
+select t_eq('וגוף ההתראה נוקב באירוע',
+  (select bool_and(body like 'לקוח קצה 29 · EV-29 · %') from notifications
+    where type = 'task_performed_by_changed'
+      and entity_id = '61000000-0000-0000-0000-000000029001'), true);
+
 select t_eq('והיומן רשם את השינוי בעברית',
   (select new_value from event_activity
     where event_id = '30000000-0000-0000-0000-00000000029a'
