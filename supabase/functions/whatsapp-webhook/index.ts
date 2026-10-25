@@ -366,18 +366,25 @@ async function processOne(msg: InboundMessage, deadline: number): Promise<void> 
     return
   }
 
-  // קבוצה: המשתתפים נבדקים מחדש כל שעה
+  // קבוצה: הרשימה מ-Green API מתרעננת כל שעה; מי מהם מקושר ומורשה — בכל הודעה,
+  // כדי שניתוק או הרשאה שהוסרה יחסמו את הקבוצה מיד ולא בעוד שעה
   let participants = facts.chat?.participants ?? []
   if (msg.isGroup) {
     if (!facts.chat?.active) {
       await setStatus(msg.idMessage, 'ignored', { reason: 'unbound' })
       return
     }
-    let ok = facts.chat.participantsOk
+    let ok: boolean
     if (stale(facts.chat.checkedAt, PARTICIPANTS_MAX_AGE_MS)) {
       const r = await refreshParticipants(msg.chatId, msg.botWid)
       ok = r.ok
       participants = r.participants
+    } else {
+      ok = await service(async (tx) => {
+        const [r] = await tx`select app.wa_participants_ok(${tx.json(participants as never)}, ${msg.botWid}) as ok`
+        if (r.ok !== true) await tx`update wa_chats set participants_ok = false where chat_id = ${msg.chatId}`
+        return r.ok === true
+      })
     }
     if (!ok) {
       await doBlocked(msg, { ...facts, chat: { ...facts.chat, participantsOk: false, checkedAt: new Date().toISOString() } })
