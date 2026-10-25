@@ -126,7 +126,7 @@ export type Command =
 /** רווחים מכווצים, בלי סימני פיסוק בקצוות, אותיות לטיניות קטנות. */
 export function normalize(text: string): string {
   return text
-    .replace(/[‎‏‪-‮]/g, '')
+    .replace(/[\u200E\u200F\u202A-\u202E]/g, '') // סימני כיוון (LRM/RLM, LRE…RLO)
     .trim()
     .replace(/\s+/g, ' ')
     .replace(/^[.,!?:;"'״׳\s]+|[.,!?:;"'״׳\s]+$/g, '')

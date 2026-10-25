@@ -6,6 +6,7 @@ import {
   fmtTime,
   israelNow,
   isIsoDate,
+  normalize,
   parseCommand,
   parseIncoming,
   periodRange,
@@ -139,6 +140,13 @@ describe('parseCommand', () => {
     expect(parseCommand('כן אבל לשעה 9')).toBeNull()
     expect(parseCommand('לא, לשעה 9')).toBeNull()
     expect(parseCommand('')).toBeNull()
+  })
+
+  it('ignores direction marks, and only them', () => {
+    // וואטסאפ מוסיף לפעמים RLM/LRM סביב טקסט מעורב
+    expect(parseCommand('‏כן‎')).toEqual({ type: 'confirm' })
+    expect(parseCommand('‫קוד 123456‬')).toEqual({ type: 'link', code: '123456' })
+    expect(normalize('כן - תבצע')).toBe('כן - תבצע')
   })
 })
 
