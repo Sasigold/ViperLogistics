@@ -87,6 +87,14 @@ describe('parseIncoming', () => {
     expect(e.kind).toBe('edited')
   })
 
+  it('recognises a voice note', () => {
+    const m = parseIncoming({
+      ...groupText(''),
+      messageData: { typeMessage: 'audioMessage', fileMessageData: { downloadUrl: 'https://x/a.ogg', mimeType: 'audio/ogg' } },
+    })!
+    expect(m.kind).toBe('audio')
+  })
+
   it('reads a private chat and an @lid sender', () => {
     const m = parseIncoming({
       ...base,

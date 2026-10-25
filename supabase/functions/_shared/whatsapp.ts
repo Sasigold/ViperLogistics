@@ -6,7 +6,7 @@
 // Viper One, או לאף אחד), פיצול תשובה ארוכה, והטווחים "היום / השבוע / החודש"
 // בשעון ישראל — השרת רץ ב-UTC, ולכן כל טווח נבנה כאן ונשלח במפורש.
 
-export type WaKind = 'text' | 'file' | 'reaction' | 'edited' | 'other'
+export type WaKind = 'text' | 'file' | 'audio' | 'reaction' | 'edited' | 'other'
 
 export interface WaFile {
   url: string
@@ -82,6 +82,9 @@ export function parseIncoming(body: unknown): InboundMessage | null {
       file = url ? { url, mime: str(f.mimeType), name: str(f.fileName) } : null
       break
     }
+    case 'audioMessage':
+      kind = 'audio'
+      break
     case 'reactionMessage':
       kind = 'reaction'
       text = str(ext.text)

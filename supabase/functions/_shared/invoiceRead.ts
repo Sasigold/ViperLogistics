@@ -69,9 +69,12 @@ export async function readInvoicePdf(
   return { reading: normalizeInvoice(parsed), model: msg.model }
 }
 
-/** תמונה (JPEG/PNG) כעמוד PDF אחד בגודל התמונה, מוקטן ל-A4 בקירוב. */
+/**
+ * תמונה (JPEG/PNG) כעמוד PDF אחד בגודל התמונה, מוקטן ל-A4 בקירוב. בלי חותמת
+ * זמן במטא-דאטה, כך שאותה תמונה נותנת תמיד אותו קובץ — ואותו sha256 (0236).
+ */
 export async function imageToPdf(bytes: Uint8Array, mime: 'image/jpeg' | 'image/png'): Promise<Uint8Array> {
-  const doc = await PDFDocument.create()
+  const doc = await PDFDocument.create({ updateMetadata: false })
   const img = mime === 'image/png' ? await doc.embedPng(bytes) : await doc.embedJpg(bytes)
   const scale = Math.min(1, 842 / Math.max(img.width, img.height))
   const w = img.width * scale

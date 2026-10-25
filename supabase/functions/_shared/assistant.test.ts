@@ -156,7 +156,7 @@ describe('preview lines', () => {
     const line = lineTaskTimes('הקמה', label,
       { date: '2026-11-12', onsite: '08:00:00', warehouse: null, hours: 6 },
       { date: '2026-11-12', onsite: '10:00', warehouse: null, hours: 6 }, today, 4)
-    expect(line).toBe('• *הקמה* · כהן · שיא עיצובים · #1234 · יום ה׳ 12/11: שטח 08:00 · 6 ש׳ ← שטח 10:00 · 6 ש׳\n  (4 בצוות יקבלו התראה על השינוי)')
+    expect(line).toBe('• *הקמה* · כהן · שיא עיצובים · #1234 · יום ה׳ 12/11: שטח 08:00 · 6 ש׳ ← שטח 10:00 · 6 ש׳\n  (4 אנשי צוות יקבלו התראה על השינוי)')
   })
 
   it('shows the date when it moves', () => {

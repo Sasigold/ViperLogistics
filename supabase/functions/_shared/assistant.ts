@@ -433,8 +433,10 @@ const timesText = (x: TaskTimes, today: string, showDate: boolean) =>
 /** "• הקמה · כהן · …: מחסן 07:00 · שטח 08:00 ← שטח 10:00" */
 export function lineTaskTimes(typeName: string, label: string, before: TaskTimes, after: TaskTimes, today: string, notified: number): string {
   const dateMoved = before.date !== after.date
-  const base = `• *${typeName}* · ${label}: ${timesText(before, today, dateMoved)} ← ${timesText(after, today, dateMoved)}`
-  return notified > 0 ? `${base}\n  (${notified} בצוות יקבלו התראה על השינוי)` : base
+  const head = label ? `• *${typeName}* · ${label}` : `• *${typeName}*`
+  const base = `${head}: ${timesText(before, today, dateMoved)} ← ${timesText(after, today, dateMoved)}`
+  if (notified <= 0) return base
+  return `${base}\n  (${notified === 1 ? 'איש צוות אחד יקבל' : `${notified} אנשי צוות יקבלו`} התראה על השינוי)`
 }
 
 export function lineMoveEvent(label: string, from: string, to: string, today: string): string {
