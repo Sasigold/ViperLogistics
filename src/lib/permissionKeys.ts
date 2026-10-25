@@ -179,6 +179,9 @@ export const PERM = {
   PAYSLIPS_EMPLOYER_COST: 'payslips.employer_cost',
   /* ‏0233: חשבוניות ספקים — מנהלי מערכת בלבד (applies_to ריק, כמו command.view). */
   INVOICES_MANAGE: 'invoices.manage',
+  /* ‏0236: עוזר הוואטסאפ — צוות בלבד, כבוי כברירת מחדל. הבוט פועל בהרשאות של מי
+     שכותב, ולכן המפתח רק פותח את הערוץ; מה שמותר בו נקבע בשאר המפתחות. */
+  ASSISTANT_WHATSAPP: 'assistant.whatsapp',
   PRICING_VIEW: 'pricing.view',
   PRICING_EDIT: 'pricing.edit',
   PRICING_MANAGE_RULES: 'pricing.manage_rules',

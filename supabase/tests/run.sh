@@ -749,6 +749,13 @@ echo "$OUT76"
 OUT="$OUT
 $OUT76"
 
+# ‏77: עוזר הוואטסאפ (0236). משתמשים, לקוח ואירוע משלה ב-current_date + 1300,
+# קישורים ושיחה פרטית מדומה; משאירה אחריה את הנתונים שלה.
+OUT77=$($PSQL -d vl -f "$HERE/77_whatsapp_assistant.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT77"
+OUT="$OUT
+$OUT77"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"

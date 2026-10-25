@@ -2758,3 +2758,54 @@ export interface InvoiceGmailStatus {
   accounts: InvoiceGmailAccount[]
   companies: number
 }
+
+/* ===== עוזר הוואטסאפ (0236) ============================================== */
+
+/** מספר וואטסאפ שמחובר לפרופיל */
+export interface WaLink {
+  id: string
+  profile_id: string
+  /** "9725…@c.us" או "…@lid" */
+  wa_id: string
+  display_name: string | null
+  linked_at: string
+  profiles?: { full_name: string } | null
+}
+
+/** מספר הבוט, מ-app_settings ‏whatsapp.bot (נכתב בפונקציית הקצה) */
+export interface WaBot {
+  wid?: string
+  phone?: string
+}
+
+export interface WaLinkCode {
+  code: string
+  expires_at: string
+  bot: WaBot
+}
+
+/** קבוצה שהעוזר מחובר אליה */
+export interface WaChat {
+  chat_id: string
+  is_group: boolean
+  name: string | null
+  active: boolean
+  bound_at: string
+  participants_ok: boolean
+  participants_checked_at: string | null
+  bound_by_profile?: { full_name: string } | null
+}
+
+export type WaMessageStatus = 'received' | 'queued' | 'processing' | 'answered' | 'ignored' | 'failed' | 'sent'
+
+export interface WaMessage {
+  id: string
+  direction: 'in' | 'out'
+  chat_id: string
+  profile_id: string | null
+  body: string | null
+  status: WaMessageStatus
+  error: string | null
+  created_at: string
+  profiles?: { full_name: string } | null
+}

@@ -56,6 +56,7 @@ import {
   useViperflowStatus,
   useViperflowSync,
 } from './viperflowQueries'
+import { WhatsAppAdminCard } from '../whatsapp/WhatsAppAdminCard'
 import type {
   ViperflowConnectionStatus,
   ViperflowLogisticsPriceSource,
@@ -142,6 +143,8 @@ export default function IntegrationsPage() {
         ))}
 
         {canManage && <ConnectionForm existing={connections} />}
+
+        <WhatsAppAdminCard />
 
         <Card>
           <CardHeader
