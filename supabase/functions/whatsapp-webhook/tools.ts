@@ -209,6 +209,19 @@ async function eventRow(tx: Tx, id: string): Promise<EventRow> {
   return r as unknown as EventRow
 }
 
+/** בקבוצה: לכל משתתף יש כל אחד מהמפתחות (`app.wa_participants_hold` בודקת "לפחות אחד", ולכן פעם לכל מפתח) */
+async function groupHoldsAll(ctx: ToolCtx, keys: readonly string[]): Promise<boolean> {
+  return await service(async (tx) => {
+    for (const k of keys) {
+      const [r] = await tx`select app.wa_participants_hold(${tx.json(ctx.chat.participants as never)}, ${ctx.chat.botWid}, array[${k}]::text[]) as ok`
+      if (r.ok !== true) return false
+    }
+    return true
+  })
+}
+
+const PROFIT_KEYS = ['dashboard.margin', 'dashboard.payroll', 'dashboard.contractor_cost', 'pricing.revenue'] as const
+
 // ===== שאלות ===============================================================
 
 const READ: Record<string, (ctx: ToolCtx, i: Input) => Promise<unknown>> = {
@@ -313,8 +326,11 @@ const READ: Record<string, (ctx: ToolCtx, i: Input) => Promise<unknown>> = {
 
   async finance_summary(ctx, i) {
     const r = range(ctx, i, 'this_month', 400)
+    // כרטיס הרווח דורש את ארבעת המפתחות (dashboard_sections, 0213) — בקבוצה, אצל כל משתתף
+    const profitShown = !ctx.chat.isGroup || (await groupHoldsAll(ctx, PROFIT_KEYS))
     const out = await asUser(ctx.uid, 'read', async (tx) => {
       const [a] = await tx`select dashboard_stats(${r.from}::date, ${r.to}::date) -> 'revenue' as revenue`
+      if (!profitShown) return { revenue: a.revenue as Record<string, unknown> | null, profit: null }
       const [b] = await tx`
         select dashboard_sections(array['finance.profit_summary'], ${r.from}::date, ${r.to}::date, '{}'::jsonb)
                -> 'finance.profit_summary' as profit`
@@ -343,7 +359,7 @@ const READ: Record<string, (ctx: ToolCtx, i: Input) => Promise<unknown>> = {
             excludes_overhead: pr.excludes_overhead,
             unrated_shifts: pr.unrated_shifts,
           }
-        : 'not available to this user',
+        : profitShown ? 'not available to this user' : 'not shown in this group (not every member may see profit) — ask in a private chat',
       link: link(ctx, '/'),
     }
   },
@@ -421,7 +437,8 @@ const READ: Record<string, (ctx: ToolCtx, i: Input) => Promise<unknown>> = {
         income: x.income,
         expenses: x.expenses,
         closing: x.closing,
-        latest_entries: entries.slice(-15).map((e) => ({
+        // cash_wallet מחזירה מהחדש לישן (0207)
+        latest_entries: entries.slice(0, 15).map((e) => ({
           date: e.date, amount: e.amount, label: e.label, note: e.note, event: e.event_name ?? e.event_number ?? null,
         })),
         link: link(ctx, '/wallet'),
