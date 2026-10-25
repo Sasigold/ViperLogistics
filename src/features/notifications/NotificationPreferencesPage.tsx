@@ -20,6 +20,7 @@ import { errorMessage } from '../../lib/errors'
 import { describeDevice, pushBlockedReason, pushSupported } from '../../lib/push'
 import { CHANNELS, useMyDevices, useMyNotificationSettings, usePushConfig } from './notificationQueries'
 import { useDisablePush, useEnablePush, useForgetDevice } from './pushQueries'
+import { WhatsAppLinkCard } from '../whatsapp/WhatsAppLinkCard'
 import type { NotificationChannel, NotificationSetting } from '../../types/domain'
 
 /**
@@ -95,6 +96,7 @@ function Preferences() {
       )}
 
       <PushDevicesCard />
+      <WhatsAppLinkCard />
 
       {groups.map((g) => (
         <Card key={g.name} className="max-w-3xl">

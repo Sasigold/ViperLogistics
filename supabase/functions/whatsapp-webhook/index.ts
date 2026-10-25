@@ -49,7 +49,8 @@ const logError = (where: string) => (e: unknown) => console.error(`whatsapp-webh
 function authorized(req: Request): boolean {
   const secret = Deno.env.get('WHATSAPP_WEBHOOK_SECRET') ?? ''
   if (!secret) return false
-  const header = (req.headers.get('authorization') ?? '').replace(/^(Bearer|Basic)\s+/i, '').trim()
+  // ‏Green API שולח את מה שהוגדר בשדה Webhook URL token, עם או בלי "Bearer"
+  const header = (req.headers.get('authorization') ?? '').replace(/^((Bearer|Basic)\s+)+/i, '').trim()
   // ‏?token= נתמך רק כגיבוי; ה-URL נשמר ביומנים, ולכן עדיף ה-header
   const query = new URL(req.url).searchParams.get('token') ?? ''
   return (!!header && timingSafeEqual(header, secret)) || (!!query && timingSafeEqual(query, secret))
