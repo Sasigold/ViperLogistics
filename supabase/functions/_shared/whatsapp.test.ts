@@ -143,9 +143,10 @@ describe('parseCommand', () => {
   })
 
   it('ignores direction marks, and only them', () => {
-    // וואטסאפ מוסיף לפעמים RLM/LRM סביב טקסט מעורב
-    expect(parseCommand('‏כן‎')).toEqual({ type: 'confirm' })
-    expect(parseCommand('‫קוד 123456‬')).toEqual({ type: 'link', code: '123456' })
+    // וואטסאפ מוסיף לפעמים RLM/LRM, הטבעות או בידודים סביב טקסט מעורב
+    expect(parseCommand('\u200Fכן\u200E')).toEqual({ type: 'confirm' })
+    expect(parseCommand('\u202Bקוד 123456\u202C')).toEqual({ type: 'link', code: '123456' })
+    expect(parseCommand('\u2068אשר\u2069')).toEqual({ type: 'confirm' })
     expect(normalize('כן - תבצע')).toBe('כן - תבצע')
   })
 })
