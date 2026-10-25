@@ -13,7 +13,7 @@
 import { addDays, fmtDay, fmtMoney, fmtTime, HE_DAYS, isIsoDate, weekdayOf } from './whatsapp.ts'
 
 /** ברירת המחדל. `ASSISTANT_MODEL` בסודות הפונקציה מחליף אותה. */
-export const ASSISTANT_MODEL = 'claude-opus-5-5'
+export const ASSISTANT_MODEL = 'claude-sonnet-5-5'
 
 /** כמה סבבי כלים בהודעה אחת לכל היותר */
 export const MAX_ROUNDS = 8

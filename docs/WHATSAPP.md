@@ -76,7 +76,7 @@
    | `GREENAPI_API_URL` | רשות: ה-apiUrl שמופיע בקונסולה, אם הוא לא `https://api.green-api.com` |
    | `WHATSAPP_FORWARD_URL` | רשות, מומלץ: כתובת ה-webhook **הנוכחית** שמופיעה ב-Green API (של Viper One, כולל `?token=`) |
    | `APP_URL` | רשות: ברירת המחדל `https://viper-logistics.vercel.app` (לקישורים בתשובות) |
-   | `ASSISTANT_MODEL`, `ASSISTANT_EFFORT` | רשות: ברירת המחדל `claude-opus-5-5` ו-`medium` |
+   | `ASSISTANT_MODEL`, `ASSISTANT_EFFORT` | רשות: ברירת המחדל `claude-sonnet-5-5` ו-`medium` |
 
    `ANTHROPIC_API_KEY` כבר מוגדר (`payslip-read`, `invoice-read`).
 4. **Green API → Settings:**
@@ -108,6 +108,6 @@ Viper One מקבל מכאן כל הודעה נכנסת שאינה שלנו, בי
 
 ## עלות
 
-`claude-opus-5-5` — $4 / $20 למיליון טוקנים (קלט / פלט), $0.20 למה שבמטמון. הודעה רגילה היא 2–4
-קריאות, בערך $0.03–$0.10. `ASSISTANT_MODEL=claude-sonnet-5-5` מוריד לחצי בערך. תקרה: 60 הודעות
+ברירת המחדל `claude-sonnet-5-5` (בחירת הבעלים: זול מ-Opus בערך בחצי). הודעה רגילה היא 2–4 קריאות,
+בערך $0.02–$0.05. `ASSISTANT_MODEL=claude-opus-5-5` בסודות הפונקציה מחזיר את Opus. תקרה: 60 הודעות
 לשעה למשתמש.
