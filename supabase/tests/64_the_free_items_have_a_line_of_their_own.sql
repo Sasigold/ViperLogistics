@@ -186,9 +186,9 @@ grant select on ev64 to authenticated;
 
 -- ישן: 1000 × 0.9 = 900 · חדש: 600 × 0.9 = 540 · כיסאות: 500 × 0.9 = 450
 -- · חופשיים: (400 + 100) × 0.9 = 450 — הרכיב אינו נספר
-select t_eq('ישן 900, חדש 540, כיסאות 450, חופשיים 450, הובלה 2000',
+select t_eq('ישן 900, חדש 540, כיסאות 450, חופשיים 450',
   t64_income(),
-  'furniture_chairs=450.00,furniture_custom=450.00,furniture_new=540.00,furniture_old=900.00,trucking=2000.00');
+  'furniture_chairs=450.00,furniture_custom=450.00,furniture_new=540.00,furniture_old=900.00');
 
 select t_eq('סך הריהוט לא זז: 2340 = (1000 + 600 + 500 + 400 + 100) × 0.9',
   (select sum(ei.amount) from event_income ei join income_categories ic on ic.id = ei.category_id
@@ -265,7 +265,7 @@ select t_eq('העדכון הוחל', t64_ingest('64-bigger-stage', 9, 900), 'pro
 
 select t_eq('חופשיים 900 — הישן לא זז',
   t64_income(),
-  'furniture_chairs=450.00,furniture_custom=900.00,furniture_new=540.00,furniture_old=900.00,trucking=2000.00');
+  'furniture_chairs=450.00,furniture_custom=900.00,furniture_new=540.00,furniture_old=900.00');
 
 select t_eq('העמלה עצמה לא זזה, והבסיס עדיין 450',
   (select commission_amount || ':' || commission_basis from event_income
@@ -310,7 +310,7 @@ select t_eq('העדכון הוחל', t64_ingest('64-both-move', 10, 400, 1000), 
 
 select t_eq('כיסאות 900, חופשיים 450',
   t64_income(),
-  'furniture_chairs=900.00,furniture_custom=450.00,furniture_new=540.00,furniture_old=900.00,trucking=2000.00');
+  'furniture_chairs=900.00,furniture_custom=450.00,furniture_new=540.00,furniture_old=900.00');
 
 select t_eq('שתי התראות חדשות — אחת לכל קטגוריה',
   (select count(*) filter (where body like '%— כיסאות: 900.00 ₪ (העמלה 30.00 ₪ נקבעה על 450.00 ₪)%')
@@ -349,7 +349,7 @@ select set_config('request.jwt.claim.sub', '', false);
 
 select t_eq('והסכומים חזרו למה שההזמנה אומרת',
   t64_income(),
-  'furniture_chairs=900.00,furniture_custom=450.00,furniture_new=540.00,furniture_old=900.00,trucking=2000.00');
+  'furniture_chairs=900.00,furniture_custom=450.00,furniture_new=540.00,furniture_old=900.00');
 
 
 \echo '--- 6. כיבוי ללקוח — חזרה לישן, בלי "ההזמנה השתנתה" ---'
@@ -366,7 +366,7 @@ select t_eq('אותה הזמנה, משלוח חדש', t64_ingest('64-custom-off'
 -- ישן: (1000 + 400 + 100) × 0.9 = 1350
 select t_eq('הפריטים החופשיים חזרו לישן, ושורתם ירדה',
   t64_income(),
-  'furniture_chairs=900.00,furniture_new=540.00,furniture_old=1350.00,trucking=2000.00');
+  'furniture_chairs=900.00,furniture_new=540.00,furniture_old=1350.00');
 
 select t_eq('והיומן אומר שהעמלה הידנית עליהם בוטלה',
   (select count(*)::int from event_activity
@@ -388,7 +388,7 @@ select t_eq('אותה הזמנה, משלוח חדש', t64_ingest('64-custom-on',
 
 select t_eq('הפריטים החופשיים שוב בשורה משלהם',
   t64_income(),
-  'furniture_chairs=900.00,furniture_custom=450.00,furniture_new=540.00,furniture_old=900.00,trucking=2000.00');
+  'furniture_chairs=900.00,furniture_custom=450.00,furniture_new=540.00,furniture_old=900.00');
 
 select t_eq('בלי עמלה — היא ירדה עם השורה',
   (select commission_amount is null from event_income

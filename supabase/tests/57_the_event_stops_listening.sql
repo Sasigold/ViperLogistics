@@ -146,7 +146,7 @@ create temporary table ev57 as
 grant select on ev57 to authenticated;
 
 select t_eq('נוצר אירוע אחד', (select count(*)::int from ev57), 1);
-select t_eq('שתי משאיות', (select truck_count from events where id = (select event_id from ev57)), 2);
+select t_eq('שתי משאיות בהזמנה (בקישור — 0237)', (select truck_quantity from viperflow_links where event_id = (select event_id from ev57)), 2::numeric);
 
 create temporary table before57 as select t57_state() as state;
 
@@ -246,11 +246,10 @@ select t_eq('הקישור אינו נעול עוד',
   true);
 
 -- המשלוח האחרון לפי חותמת ההזמנה הוא העדכון (03/01), לא הביטול (02/01).
-select t_eq('העדכון האחרון הוחל: שלוש משאיות',
-  (select truck_count from events where id = (select event_id from ev57)), 3);
-select t_eq('ושישה עובדים בשתי המשימות',
-  (select string_agg(distinct worker_count::text, ',') from tasks
-    where event_id = (select event_id from ev57) and deleted_at is null),
+select t_eq('העדכון האחרון הוחל: שלוש משאיות בהזמנה',
+  (select truck_quantity from viperflow_links where event_id = (select event_id from ev57)), 3::numeric);
+select t_eq('ושישה עובדים בהזמנה',
+  (select worker_quantity::int::text from viperflow_links where event_id = (select event_id from ev57)),
   '6');
 select t_eq('ו-150 כיסאות במפרט',
   (select quantity from viperflow_order_items
@@ -274,8 +273,8 @@ select t_eq('ומשלוח חדש מוחל כרגיל',
                   '2031-05-14T09:30:00.000Z'),
      jsonb_build_object('connection_id', (select connection_id from vf57))) ->> 'status'),
   'processed');
-select t_eq('ארבע משאיות',
-  (select truck_count from events where id = (select event_id from ev57)), 4);
+select t_eq('ארבע משאיות בהזמנה',
+  (select truck_quantity from viperflow_links where event_id = (select event_id from ev57)), 4::numeric);
 
 
 \echo '--- 5. שחרור בלי שהגיע דבר — אין מה להשלים ---'
@@ -289,5 +288,5 @@ select t_eq('וחידוש מיד — בלי השלמה',
 reset role;
 select set_config('request.jwt.claim.sub', '', false);
 
-select t_eq('ארבע משאיות עדיין',
-  (select truck_count from events where id = (select event_id from ev57)), 4);
+select t_eq('ארבע משאיות בהזמנה עדיין',
+  (select truck_quantity from viperflow_links where event_id = (select event_id from ev57)), 4::numeric);

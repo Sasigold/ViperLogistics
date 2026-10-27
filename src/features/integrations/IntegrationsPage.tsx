@@ -57,10 +57,7 @@ import {
   useViperflowSync,
 } from './viperflowQueries'
 import { WhatsAppAdminCard } from '../whatsapp/WhatsAppAdminCard'
-import type {
-  ViperflowConnectionStatus,
-  ViperflowLogisticsPriceSource,
-} from '../../types/domain'
+import type { ViperflowConnectionStatus } from '../../types/domain'
 
 const STATUS_TONE: Record<string, { label: string; color: string }> = {
   processed: { label: 'הוחל', color: '#16a34a' },
@@ -226,26 +223,10 @@ function ConnectionCard({
     }
   }
 
-  /* ‏0187: האם מחיר ההקמה והפירוק מסונכרן. שאלה של כסף, ולכן היא נשאלת
-     במסך ואינה קבורה במיגרציה. */
-  async function setLogisticsPrice(next: ViperflowLogisticsPriceSource) {
-    try {
-      await save.mutateAsync({
-        customerId: connection.customer_id,
-        label: connection.label,
-        isActive: connection.is_active,
-        notes: connection.notes,
-        connectionId: connection.id,
-        logisticsPrice: next,
-      })
-      toast.success('סנכרון מחיר ההקמה והפירוק עודכן')
-    } catch (e) {
-      toast.error(errorMessage(e))
-    }
-  }
-
   /* ‏0192: אילו שורות בהזמנה הן הובלה ואילו הן הצוות. הקטלוג של ViperFlow
-     אינו שלנו ושמות משתנים שם — ולכן זו הגדרה, לא מחרוזת בקוד. */
+     אינו שלנו ושמות משתנים שם — ולכן זו הגדרה, לא מחרוזת בקוד. מאז 0237
+     הן קובעות רק את הכיתוב שמתחת לרשימת הריהוט: הכמויות והכסף אינם
+     מסונכרנים, ולכן גם בורר מקור המחיר (0187) ירד. */
   async function setLineNames(which: 'trucking' | 'crew', raw: string) {
     const names = raw
       .split(',')
@@ -364,7 +345,7 @@ function ConnectionCard({
           <div className="grid gap-3 sm:grid-cols-2">
             <Field
               label="שורות ההובלה"
-              hint="מופרדות בפסיק. מהן נספרת כמות המשאיות, וסכומן נכתב לסעיף ההכנסה ״הובלות״. שורה ששמה אינו ברשימה — כמו ״תוספת״ — אינה נספרת"
+              hint="מופרדות בפסיק. מהן נספרת כמות המשאיות שבכיתוב מתחת לרשימת הריהוט. שורה ששמה אינו ברשימה — כמו ״תוספת״ — אינה נספרת"
             >
               <Input
                 inputSize="sm"
@@ -375,7 +356,7 @@ function ConnectionCard({
             </Field>
             <Field
               label="שורות הצוות"
-              hint="מופרדות בפסיק. מהן נספרת כמות העובדים, וסכומן מתחלק בשתיים — מחצית להקמה ומחצית לפירוק. שורת פיקוח אינה ברשימה"
+              hint="מופרדות בפסיק. מהן נספרת כמות העובדים שבכיתוב מתחת לרשימת הריהוט. שורת פיקוח אינה ברשימה"
             >
               <Input
                 inputSize="sm"
@@ -396,20 +377,10 @@ function ConnectionCard({
                 disabled={save.isPending}
               />
             </Field>
-            <Field
-              label="מחיר ההקמה והפירוק"
-              hint="מחיר שנכתב מההזמנה נעול מפני מחשבון התמחור, ומתעדכן בכל שינוי בהזמנה"
-              className="sm:col-span-2"
-            >
-              <Select
-                value={connection.logistics_price_source}
-                onChange={(e) => void setLogisticsPrice(e.target.value as ViperflowLogisticsPriceSource)}
-                disabled={save.isPending}
-              >
-                <option value="crew">מסכום שורות הצוות, מחצית לכל משימה</option>
-                <option value="none">אל תסנכרן מחיר</option>
-              </Select>
-            </Field>
+            <p className="rounded-lg bg-subtle px-3 py-2 type-caption text-ink-secondary sm:col-span-2">
+              הובלות ולוגיסטיקה אינן מסונכרנות: כמות המשאיות, כמות העובדים, מחיר ההקמה והפירוק
+              וסעיף ההכנסה ״הובלות״ נקבעים במשרד, ושינוי שלהם בהזמנה אינו נוגע באירוע.
+            </p>
           </div>
         )}
 

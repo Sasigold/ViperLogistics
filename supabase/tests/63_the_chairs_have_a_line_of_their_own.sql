@@ -169,9 +169,9 @@ create temporary table ev63 as
 grant select on ev63 to authenticated;
 
 -- ישן: שולחן 1000 → 900 · חדש: אין (הכיסא החדש הוא כיסא) · כיסאות: (500 + 300) × 0.9 = 720
-select t_eq('ישן 900, חדש 0, כיסאות 720, הובלה 2000',
+select t_eq('ישן 900, חדש 0, כיסאות 720',
   t63_income(),
-  'furniture_chairs=720.00,furniture_new=0.00,furniture_old=900.00,trucking=2000.00');
+  'furniture_chairs=720.00,furniture_new=0.00,furniture_old=900.00');
 
 select t_eq('סך הריהוט לא זז: 1620 = (1000 + 500 + 300) × 0.9',
   (select sum(ei.amount) from event_income ei join income_categories ic on ic.id = ei.category_id
@@ -272,7 +272,7 @@ select set_config('request.jwt.claim.sub', '', false);
 
 select t_eq('והסכומים לא זזו',
   t63_income(),
-  'furniture_chairs=720.00,furniture_new=0.00,furniture_old=900.00,trucking=2000.00');
+  'furniture_chairs=720.00,furniture_new=0.00,furniture_old=900.00');
 
 
 \echo '--- 5. המפרט משתנה אחרי קביעת העמלה ---'
@@ -292,7 +292,7 @@ select t_eq('העדכון הוחל',
 
 select t_eq('כיסאות 1170 — הישן לא זז',
   t63_income(),
-  'furniture_chairs=1170.00,furniture_new=0.00,furniture_old=900.00,trucking=2000.00');
+  'furniture_chairs=1170.00,furniture_new=0.00,furniture_old=900.00');
 
 select t_eq('העמלה עצמה לא זזה, והבסיס עדיין 720',
   (select commission_amount || ':' || commission_basis from event_income
@@ -378,7 +378,7 @@ select set_config('request.jwt.claim.sub', '', false);
 
 select t_eq('העריכה נשמרה',
   t63_income(),
-  'furniture_chairs=2000.00,furniture_new=0.00,furniture_old=5000.00,trucking=2000.00');
+  'furniture_chairs=2000.00,furniture_new=0.00,furniture_old=5000.00');
 
 select t_eq('עריכה ידנית אינה שולחת התראה על העמלה',
   (select count(*)::int from notifications
@@ -407,7 +407,7 @@ select set_config('request.jwt.claim.sub', '', false);
 
 select t_eq('הסכומים חזרו למה שההזמנה אומרת',
   t63_income(),
-  'furniture_chairs=1170.00,furniture_new=0.00,furniture_old=900.00,trucking=2000.00');
+  'furniture_chairs=1170.00,furniture_new=0.00,furniture_old=900.00');
 
 select t_eq('העמלה נשארה, והיא שוב על הבסיס',
   (select commission_amount || ':' || (commission_basis = amount) from event_income
@@ -450,7 +450,7 @@ select t_eq('מעטפה בלי עץ הקטגוריות הוחלה',
 -- ישן: (1000 + 300) × 0.9 = 1170 · חדש: 1000 × 0.9 = 900 · אין שורת כיסאות — סך הריהוט 2070 כמו קודם
 select t_eq('אותו כסף לא נספר פעמיים — שורת הכיסאות ירדה',
   t63_income(),
-  'furniture_new=900.00,furniture_old=1170.00,trucking=2000.00');
+  'furniture_new=900.00,furniture_old=1170.00');
 
 select t_eq('והיומן אומר שהעמלה הידנית בוטלה',
   (select count(*)::int from event_activity
@@ -502,7 +502,7 @@ select t_eq('מעטפה מלאה מחזירה את הכיסאות',
   'processed');
 select t_eq('כיסאות 1170 בשורה משלהם',
   t63_income(),
-  'furniture_chairs=1170.00,furniture_new=0.00,furniture_old=900.00,trucking=2000.00');
+  'furniture_chairs=1170.00,furniture_new=0.00,furniture_old=900.00');
 
 delete from customer_income_splits
  where customer_id = '10000000-0000-0000-0000-000000000063'
@@ -515,7 +515,7 @@ select t_eq('בלי הכיסאות אצל הלקוח — המעטפה הבאה',
   'processed');
 select t_eq('הכיסאות חזרו לישן ולחדש, ולא נעלמו',
   t63_income(),
-  'furniture_new=900.00,furniture_old=1170.00,trucking=2000.00');
+  'furniture_new=900.00,furniture_old=1170.00');
 
 
 \echo '--- 11. רשימת כיסאות ריקה — אין פיצול, והעמלה הישנה אינה נספרת ---'
@@ -548,7 +548,7 @@ select t_eq('המעטפה הבאה אחרי הריקון',
   'processed');
 select t_eq('אין שורת כיסאות — ולכן אין עליה עמלה שתיספר במגיע',
   t63_income(),
-  'furniture_new=900.00,furniture_old=1170.00,trucking=2000.00');
+  'furniture_new=900.00,furniture_old=1170.00');
 
 
 \echo '--- 12. עד שנקבעה עמלה — האחוז, גם בדשבורד ---'

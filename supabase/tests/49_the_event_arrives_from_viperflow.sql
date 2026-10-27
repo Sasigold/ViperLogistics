@@ -205,8 +205,8 @@ select t_eq('תאריך האירוע הוא תאריך ההזמנה',
 select t_eq('המיקום עבר',
   (select location_text from events where id = (select event_id from ev49)),
   'אולם הדקל, ראשון לציון');
-select t_eq('כמות המשאיות נגזרה משורת ההובלה',
-  (select truck_count from events where id = (select event_id from ev49)), 2);
+select t_eq('כמות המשאיות אינה נכתבת מההזמנה (0237)',
+  (select truck_count from events where id = (select event_id from ev49)), null::int);
 select t_eq('האירוע נפתח על סטטוס ברירת המחדל',
   (select s.code from events e join statuses s on s.id = e.status_id
     where e.id = (select event_id from ev49)), 'pending');
@@ -232,13 +232,13 @@ select t_eq('שעת ההגעה למחסן אינה מגיעה מ-ViperFlow',
   null::time);
 -- ‏0192: ארבעה, לא שלושה-עשר. שורת "פיקוח הקמה ופירוק" נושאת כמות 9 ואותו
 -- ‏`line_type`, ושמה אינו ברשימת הצוות — ולכן היא אינה עובד.
-select t_eq('כמות העובדים נגזרה משורת "סידור ואיסוף" בלבד',
+select t_eq('וגם כמות העובדים — המשימה נולדת עם 0 (0237)',
   (select t.worker_count from tasks t join task_types tt on tt.id = t.task_type_id
     where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
-  4);
+  0);
 -- ושתיים, לא עשר: "תוספת" היא `truck` ששמה אינו ברשימת ההובלה.
-select t_eq('וכמות המשאיות משורת "הובלה" בלבד',
-  (select truck_count from events where id = (select event_id from ev49)), 2);
+select t_eq('שורת "הובלה" נספרת עדיין לקישור בלבד — 2, בלי "תוספת"',
+  (select truck_quantity from viperflow_links where event_id = (select event_id from ev49)), 2::numeric);
 select t_eq('הפירוק ביום ההחזרה ובשעה שלו',
   (select t.task_date::text || ' ' || t.onsite_start_time::text
      from tasks t join task_types tt on tt.id = t.task_type_id
@@ -248,20 +248,20 @@ select t_eq('הפירוק ביום ההחזרה ובשעה שלו',
 -- ‏0192: **שורת "סידור ואיסוף"** היא שמתחלקת בין שתי המשימות — היא העבודה,
 -- וחציה בהקמה וחציה בפירוק. ‏4 × 500 = 2,000, ולכן 1,000 לכל אחת. ההובלה
 -- אינה כאן כלל: היא סעיף הכנסה, ונבדקת ב-§3א.
-select t_eq('מחיר ההקמה הוא מחצית מסידור ואיסוף',
+select t_eq('מחיר ההקמה אינו נכתב מסידור ואיסוף (0237)',
   (select tp.price from tasks t join task_types tt on tt.id = t.task_type_id
      join task_pricing tp on tp.task_id = t.id
     where t.event_id = (select event_id from ev49) and tt.code = 'setup'),
-  1000::numeric);
-select t_eq('והפירוק מקבל את המחצית השנייה',
+  null::numeric);
+select t_eq('וגם לא מחיר הפירוק',
   (select tp.price from tasks t join task_types tt on tt.id = t.task_type_id
      join task_pricing tp on tp.task_id = t.id
     where t.event_id = (select event_id from ev49) and tt.code = 'teardown'),
-  1000::numeric);
+  null::numeric);
 -- ידני, ולכן `app.recalc_task_price` אינה דורסת אותו בשינוי השעה הבא.
-select t_eq('והוא נעול מפני מנוע התמחור',
+select t_eq('ואין מחיר ידני מההזמנה על משימות האירוע',
   (select bool_and(tp.is_manual) from tasks t join task_pricing tp on tp.task_id = t.id
-    where t.event_id = (select event_id from ev49)), true);
+    where t.event_id = (select event_id from ev49)), null::boolean);
 -- ההבטחה שלא נשברה: שום סכום אחר מהמעטפה אינו הופך למחיר — לא ההובלה
 -- (2,500), לא הפיקוח (6,993) ולא "תוספת" (5,120).
 select t_eq('ושום מחיר אחר לא נכתב על משימות האירוע',
@@ -297,18 +297,18 @@ select t_eq('ואחוז ויפר צולם מחלוקת הלקוח',
   70::numeric);
 -- ‏0192: ההובלה היא סעיף הכנסה, לא מחיר משימה. ‏2 × 1,250 = 2,500, ובלי
 -- "תוספת" (5,120) שגם היא `truck` — ובלי הנחה, שאינה חלה על הובלה.
-select t_eq('וההובלה נכתבה לסעיף "הובלות"',
+select t_eq('וההובלה אינה נכתבת לסעיף "הובלות" (0237)',
   (select ei.amount from event_income ei
      join income_categories ic on ic.id = ei.category_id
-    where ei.event_id = (select event_id from ev49) and ic.viperflow_income_source = 'trucking'),
-  2500::numeric);
-select t_eq('שלוש שורות הכנסה, ולא אחת לכל שורת ריהוט',
-  (select count(*)::int from event_income where event_id = (select event_id from ev49)), 3);
-select t_eq('והיומן אומר את שלושת הסכומים',
+    where ei.event_id = (select event_id from ev49) and ic.name = 'הובלות'),
+  null::numeric);
+select t_eq('שתי שורות הכנסה — ישן וחדש, ולא אחת לכל שורת ריהוט',
+  (select count(*)::int from event_income where event_id = (select event_id from ev49)), 2);
+select t_eq('והיומן אומר את שני סכומי הריהוט, בלי הובלות',
   (select count(*)::int from event_activity
     where event_id = (select event_id from ev49) and kind = 'synced'
       and note like '%ריהוט ישן 1,200.00 ₪%' and note like '%ריהוט חדש 3,100.00 ₪%'
-      and note like '%הובלות 2,500.00 ₪%'), 1);
+      and note not like '%הובלות%'), 1);
 
 -- ומעטפה שהקצה לא הספיק להעשיר אינה מנחשת: בלי הדגל אין דעה, ולכן אין
 -- כתיבה — לא אפס, ולא מה שהיה קודם.
@@ -334,15 +334,14 @@ select t_eq('ואין לה שורת הכנסת ריהוט',
     where ic.viperflow_income_source in ('furniture_old', 'furniture_new')
       and ei.event_id = (select l.event_id from viperflow_links l
                           where l.order_id = '99999999-4444-4444-4444-000000000349')), 0);
--- אבל ההובלה כן: היא שורת הזמנה ולא שאלה על הקטלוג, ולכן `products:read`
--- אינו תנאי לה. ‏2 × 1,250 גם כאן.
-select t_eq('וההובלה כן נכתבת — היא אינה תלויה בקטלוג',
+-- ‏0237: ההובלה אינה נכתבת כלל — גם לא כשהקטלוג לא נקרא.
+select t_eq('ובלי קטלוג גם אין הובלות (0237)',
   (select ei.amount from event_income ei
      join income_categories ic on ic.id = ei.category_id
-    where ic.viperflow_income_source = 'trucking'
+    where ic.name = 'הובלות'
       and ei.event_id = (select l.event_id from viperflow_links l
                           where l.order_id = '99999999-4444-4444-4444-000000000349')),
-  2500::numeric);
+  null::numeric);
 
 
 \echo '--- 4. רשימת הריהוט, ובלי מחירים ---'
@@ -420,26 +419,26 @@ select t_eq('העדכון הוחל',
      jsonb_build_object('connection_id', (select connection_id from vf49))) ->> 'status'),
   'processed');
 
--- ── שלושת הדברים שכן נכתבים ─────────────────────────────────────────────
-select t_eq('כמות המשאיות התעדכנה',
-  (select truck_count from events where id = (select event_id from ev49)), 3);
-select t_eq('כמות העובדים בהקמה התעדכנה',
+-- ── מאז 0237 גם הכמויות והלוגיסטיקה אינן נכתבות; הריהוט כן ──────────────
+select t_eq('כמות המשאיות לא התעדכנה מההזמנה (0237)',
+  (select truck_count from events where id = (select event_id from ev49)), null::int);
+select t_eq('וכמות העובדים בהקמה לא התעדכנה',
   (select t.worker_count from tasks t join task_types tt on tt.id = t.task_type_id
-    where t.event_id = (select event_id from ev49) and tt.code = 'setup'), 6);
-select t_eq('וגם בפירוק',
+    where t.event_id = (select event_id from ev49) and tt.code = 'setup'), 0);
+select t_eq('וגם לא בפירוק',
   (select t.worker_count from tasks t join task_types tt on tt.id = t.task_type_id
-    where t.event_id = (select event_id from ev49) and tt.code = 'teardown'), 6);
+    where t.event_id = (select event_id from ev49) and tt.code = 'teardown'), 0);
 -- ‏6 × 500 = 3,000, ומחצית לכל משימה. הפיקוח (6,993) עדיין בחוץ.
-select t_eq('והמחיר נגזר מחדש משורת הצוות',
+select t_eq('והמחיר לא נגזר משורת הצוות',
   (select array_agg(distinct tp.price) from tasks t join task_pricing tp on tp.task_id = t.id
     where t.event_id = (select event_id from ev49)),
-  array[1500]::numeric[]);
+  null::numeric[]);
 -- ‏3 × 1,250 = 3,750, ובלי "תוספת".
-select t_eq('וההובלות התעדכנו לפי שורת ההובלה',
+select t_eq('וההובלות לא נכתבו',
   (select ei.amount from event_income ei
      join income_categories ic on ic.id = ei.category_id
-    where ei.event_id = (select event_id from ev49) and ic.viperflow_income_source = 'trucking'),
-  3750::numeric);
+    where ei.event_id = (select event_id from ev49) and ic.name = 'הובלות'),
+  null::numeric);
 select t_eq('והכנסות הריהוט התעדכנו עם הכמות החדשה',
   (select ei.amount from event_income ei
      join income_categories ic on ic.id = ei.category_id
@@ -501,14 +500,14 @@ select t_eq('המפרט נאמר כ"השתנה מפרט" ולא כרשימה',
   (select body like '%השתנה מפרט%' and body not like '%כיסא נפוליאון%' from n49), true);
 select t_eq('והשעה שזזה מפורטת — מה שהיה ומה שעכשיו',
   (select body like '%ההקמה: 02/10/2026 00:00 (היה 01/10/2026 08:00)%' from n49), true);
-select t_eq('וכמות המשאיות',
-  (select body like '%כמות משאיות: 3 (היה 2)%' from n49), true);
-select t_eq('וכמות העובדים',
-  (select body like '%כמות עובדים: 6 (היה 4)%' from n49), true);
-select t_eq('ומחיר ההקמה והפירוק בשקלים',
-  (select body like '%מחיר הקמה ופירוק: 3,000.00 ₪ (היה 2,000.00 ₪)%' from n49), true);
-select t_eq('וההובלות בנפרד ממנו',
-  (select body like '%הובלות: 3,750.00 ₪ (היה 2,500.00 ₪)%' from n49), true);
+select t_eq('כמות המשאיות אינה בהתראה — היא אינה מסונכרנת',
+  (select body like '%כמות משאיות%' from n49), false);
+select t_eq('וגם לא כמות העובדים',
+  (select body like '%כמות עובדים%' from n49), false);
+select t_eq('ולא מחיר ההקמה והפירוק',
+  (select body like '%מחיר הקמה ופירוק%' from n49), false);
+select t_eq('ולא ההובלות',
+  (select body like '%הובלות%' from n49), false);
 select t_eq('והסטטוס בעברית, ולא בקוד שלהם',
   (select body like '%סטטוס ההזמנה: מאושרת (היה טיוטה)%' from n49), true);
 select t_eq('והכנסת הריהוט החדש',
@@ -524,7 +523,7 @@ select t_eq('והשם של מי שהשתנה אצלו נמצא בגוף',
 select t_eq('ואותן שורות נכתבו ביומן',
   (select count(*)::int from event_activity
     where event_id = (select event_id from ev49) and kind = 'synced'
-      and note like '%השתנה מפרט%' and note like '%כמות משאיות: 3 (היה 2)%'), 1);
+      and note like '%השתנה מפרט%' and note like '%ההקמה: 02/10/2026 00:00 (היה 01/10/2026 08:00)%'), 1);
 
 drop table n49;
 
@@ -544,8 +543,8 @@ select t_eq('מעטפה עם חותמת ישנה נדחית כ-stale',
 select t_eq('הכמות לא חזרה אחורה',
   (select quantity from viperflow_order_items
     where event_id = (select event_id from ev49) and name = 'כיסא נפוליאון'), 120::numeric);
-select t_eq('וכמות המשאיות לא חזרה אחורה',
-  (select truck_count from events where id = (select event_id from ev49)), 3);
+select t_eq('וכמות המשאיות שבקישור לא חזרה אחורה',
+  (select truck_quantity from viperflow_links where event_id = (select event_id from ev49)), 3::numeric);
 select t_eq('והמשלוח נרשם כלא-רלוונטי ולא כנכשל',
   (select status from viperflow_deliveries where event_id = 'evt_' || repeat('c', 32)), 'ignored');
 -- מעטפה שנעצרה בשומר לא הגיעה עד ההשוואה, ולכן גם לא עד ההתראה.
@@ -571,12 +570,12 @@ select t_eq('אותה מעטפה עם force מוחלת',
 select t_eq('והריהוט הוחלף',
   (select quantity from viperflow_order_items
     where event_id = (select event_id from ev49) and name = 'כיסא נפוליאון'), 7::numeric);
-select t_eq('וכמות המשאיות חזרה לשתיים',
-  (select truck_count from events where id = (select event_id from ev49)), 2);
-select t_eq('והמחיר חזר למחצית של 2,000',
+select t_eq('וכמות המשאיות שבקישור חזרה לשתיים',
+  (select truck_quantity from viperflow_links where event_id = (select event_id from ev49)), 2::numeric);
+select t_eq('ו-force אינו כותב מחיר משימה',
   (select array_agg(distinct tp.price) from tasks t join task_pricing tp on tp.task_id = t.id
     where t.event_id = (select event_id from ev49)),
-  array[1000]::numeric[]);
+  null::numeric[]);
 -- ‏force עוקף את השומר ואת האי-כפילות, ואינו עוקף את הבעלות: הוא אומר
 -- "המצב אצלנו שגוי", והמצב שיכול להיות שגוי הוא מה שאנחנו כותבים. השעה
 -- אינה כזו מאז 0190 — היא של המשרד, ו-force אינו מנהל.
@@ -820,16 +819,16 @@ select t_eq('וריהוט חדש אחריה',
     where ei.event_id = (select event_id from ev49) and ic.viperflow_income_source = 'furniture_new'),
   2790::numeric);
 -- ‏2 × 1,250 = 2,500 במלואם: הנחת ההזמנה אינה חלה על ההובלה, וכך זה אצלם.
-select t_eq('וההובלות נשארו מלאות — ההנחה אינה נוגעת בהן',
+select t_eq('וגם עם הנחה אין הובלות',
   (select ei.amount from event_income ei
      join income_categories ic on ic.id = ei.category_id
-    where ei.event_id = (select event_id from ev49) and ic.viperflow_income_source = 'trucking'),
-  2500::numeric);
+    where ei.event_id = (select event_id from ev49) and ic.name = 'הובלות'),
+  null::numeric);
 -- ‏4 × 500 = 2,000, מחצית לכל משימה — גם הוא בלי הנחה.
-select t_eq('וגם מחיר המשימה לא הונח',
+select t_eq('ולא מחיר משימה',
   (select array_agg(distinct tp.price) from tasks t join task_pricing tp on tp.task_id = t.id
     where t.event_id = (select event_id from ev49)),
-  array[1000]::numeric[]);
+  null::numeric[]);
 select t_eq('וההתראה אומרת שההנחה השתנתה',
   (select count(*)::int from notifications
     where recipient_id = '20000000-0000-0000-0000-0000000049a1'
@@ -886,16 +885,16 @@ select t_eq('הוחל עם סנכרון מחיר כבוי',
   'processed');
 -- כיבוי אינו מחיקה: מחיר שכבר נכתב הוא מספר שהמשרד עובד לפיו, ושינוי של
 -- הגדרה אינו מוחק אותו. הוא פשוט מפסיק להתעדכן.
-select t_eq('המחיר שכבר נכתב נשאר, ואינו מתאפס',
+select t_eq('המתג אינו משנה דבר — אין מחיר משימה מההזמנה',
   (select array_agg(distinct tp.price) from tasks t join task_pricing tp on tp.task_id = t.id
     where t.event_id = (select event_id from ev49)),
-  array[1000]::numeric[]);
+  null::numeric[]);
 -- ההכנסות אינן תלויות במתג הזה — הוא על מחיר המשימה בלבד.
-select t_eq('וההובלות ממשיכות להתעדכן',
+select t_eq('ואין הובלות',
   (select ei.amount from event_income ei
      join income_categories ic on ic.id = ei.category_id
-    where ei.event_id = (select event_id from ev49) and ic.viperflow_income_source = 'trucking'),
-  2500::numeric);
+    where ei.event_id = (select event_id from ev49) and ic.name = 'הובלות'),
+  null::numeric);
 
 update viperflow_connections set logistics_price_source = 'crew'
  where id = (select connection_id from vf49);
@@ -925,13 +924,13 @@ select t_eq('הוחל אחרי שהשם נוסף',
                   t49_items(120), 25),
      jsonb_build_object('connection_id', (select connection_id from vf49))) ->> 'status'),
   'processed');
-select t_eq('הרשימה היא שקובעת, ולא הקוד',
-  (select truck_count from events where id = (select event_id from ev49)), 10);
-select t_eq('וגם הסכום',
+select t_eq('הרשימה היא שקובעת את הספירה שבקישור, ולא הקוד',
+  (select truck_quantity from viperflow_links where event_id = (select event_id from ev49)), 10::numeric);
+select t_eq('אבל הסכום אינו נכתב (0237)',
   (select ei.amount from event_income ei
      join income_categories ic on ic.id = ei.category_id
-    where ei.event_id = (select event_id from ev49) and ic.viperflow_income_source = 'trucking'),
-  7620::numeric);
+    where ei.event_id = (select event_id from ev49) and ic.name = 'הובלות'),
+  null::numeric);
 
 
 drop function t49_envelope(text, text, text, text, text, text, jsonb, numeric);

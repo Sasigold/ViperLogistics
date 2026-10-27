@@ -756,6 +756,13 @@ echo "$OUT77"
 OUT="$OUT
 $OUT77"
 
+# ‏78: הובלות ולוגיסטיקה אינן מסונכרנות מ-ViperFlow (0237). לקוח, חיבור והזמנה
+# משלה ב-2031-08-15; משאירה אחריה את הנתונים שלה.
+OUT78=$($PSQL -d vl -f "$HERE/78_the_logistics_stays_ours.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT78"
+OUT="$OUT
+$OUT78"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
