@@ -1,10 +1,12 @@
-import { Suspense } from 'react'
+import { Suspense, useEffect } from 'react'
 import { Navigate } from 'react-router'
 import { Card, EmptyState, Skeleton } from '../components/ui'
 import { useAuth } from '../state/auth'
 import { PERM } from '../lib/permissions'
 import { lazyPage } from '../lib/lazyPage'
 import { FIELD_HOME, isFieldUser, navAudience, visibleNavSections } from './nav'
+import { START_PATH, landingPending, markLanded, resolveLanding } from './homePref'
+import { useHomePref } from './useHomePref'
 
 const DashboardPage = lazyPage(() => import('../features/dashboard/DashboardPage'))
 /* ‏הלקוח מקבל מסך ייעודי ומצומצם, לא את הרשת המשותפת — ראו CustomerDashboard. */
@@ -26,9 +28,20 @@ const CustomerDashboard = lazyPage(() => import('../features/dashboard/CustomerD
 export default function HomeRoute() {
   const has = useAuth((s) => s.has)
   const me = useAuth((s) => s.me)
+  const pref = useHomePref()
+  // הנחיתה האישית חלה רק בכניסה לאפליקציה; אחרי זה `/` הוא שוב הדשבורד
+  const pending = landingPending()
+  useEffect(() => {
+    if (me) markLanded()
+  }, [me])
 
   if (!me) return <Skeleton className="h-32 w-full" />
   const audience = navAudience(me)
+  if (pending) {
+    // לפני הדשבורד: מי שבחר דף נחיתה אחר לא מעמיס את הדשבורד בכלל
+    const landing = resolveLanding(pref, visibleNavSections(has, audience))
+    if (landing) return <Navigate to={landing} replace />
+  }
   // ‏0215: דשבורד שהבעלים הסתיר הוא כמו דשבורד שאין עליו הרשאה — הבית שולח
   // ליעד הראשון בתפריט שנשאר גלוי.
   if (has(PERM.DASHBOARD_VIEW) && !audience.hiddenPages?.has('dashboard')) {
@@ -46,7 +59,8 @@ export default function HomeRoute() {
   const visible = visibleNavSections(has, audience)
   // עובד שטח נוחת בשעון הנוכחות, לא בלוח השנה של התפקיד — ראו isFieldUser
   if (isFieldUser(visible)) return <Navigate to={FIELD_HOME[0]} replace />
-  const first = visible.flatMap((s) => s.items).find((n) => n.to !== '/')
+  // דף הפתיחה אינו "היעד הראשון" — אלא אם המשתמש בחר בו (למעלה)
+  const first = visible.flatMap((s) => s.items).find((n) => n.to !== '/' && n.to !== START_PATH)
   if (first) return <Navigate to={first.to} replace />
 
   return (

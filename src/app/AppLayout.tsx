@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ChevronLeft,
   ICON,
+  LayoutGrid,
   LogOut,
   Menu,
   Moon,
@@ -28,6 +29,8 @@ import { NAV_SECTIONS, ROUTE_LABELS, bottomNavItems, navAudience, navItemVisible
 import type { NavItem, NavSection } from './nav'
 import { PageTitleProvider, useCurrentPageTitle } from './breadcrumbs'
 import { SidebarNav } from './SidebarNav'
+import { HomePrefModal } from './HomePrefModal'
+import { markLanded, resetLanding } from './homePref'
 import { useOnline } from '../lib/useOnline'
 
 const COLLAPSE_KEY = 'vl-nav-collapsed'
@@ -43,6 +46,7 @@ export default function AppLayout() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1')
+  const [homePrefOpen, setHomePrefOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -58,6 +62,12 @@ export default function AppLayout() {
 
   useEffect(() => localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0'), [collapsed])
   useEffect(() => setMobileNav(false), [location.pathname])
+  // כניסה ישירה למסך אחר (קישור, התראה) היא הנחיתה — `/` לא יפנה אחר כך.
+  // יציאה מה-shell (התנתקות) מחזירה את הנחיתה לכניסה הבאה. ראו homePref.ts.
+  useEffect(() => {
+    markLanded()
+    return resetLanding
+  }, [])
 
   // Ctrl/Cmd+K anywhere opens the palette
   useEffect(() => {
@@ -232,6 +242,15 @@ export default function AppLayout() {
                     >
                       {theme === 'light' ? 'מצב כהה' : 'מצב בהיר'}
                     </MenuItem>
+                    <MenuItem
+                      icon={<LayoutGrid size={ICON.sm} />}
+                      onClick={() => {
+                        setHomePrefOpen(true)
+                        close()
+                      }}
+                    >
+                      דף הבית שלי
+                    </MenuItem>
                     <MenuItem icon={<LogOut size={ICON.sm} />} danger onClick={() => void signOut()}>
                       התנתקות
                     </MenuItem>
@@ -276,6 +295,7 @@ export default function AppLayout() {
         <BottomNav sections={sections} onMore={() => setMobileNav(true)} />
 
         <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
+        <HomePrefModal open={homePrefOpen} onClose={() => setHomePrefOpen(false)} />
       </div>
     </PageTitleProvider>
   )

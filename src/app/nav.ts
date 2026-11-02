@@ -15,6 +15,7 @@ import {
   HardHat,
   Landmark,
   LayoutDashboard,
+  LayoutGrid,
   ListTodo,
   PartyPopper,
   Percent,
@@ -35,6 +36,7 @@ import { PERM } from '../lib/permissions'
 import type { MyPermissions } from '../types/domain'
 import { hiddenPagesOf } from './pages'
 import type { PageKey } from './pages'
+import { START_PATH } from './homePref'
 
 /**
  * מי המשתמש *הוא*, להבדיל ממה שמותר לו.
@@ -139,8 +141,10 @@ export interface NavItem {
   /** shorter label for the mobile bottom bar, where a slot is ~4rem wide */
   shortLabel?: string
   icon: ComponentType<{ size?: number | string; strokeWidth?: number | string; className?: string }>
-  /** registry key checked with `has(perm)` — omit only when `anyPerm` is given */
+  /** registry key checked with `has(perm)` — omit only when `anyPerm` or `open` is given */
   perm?: string
+  /** רשומה שאינה תלויה במפתח — דף הפתיחה, שאין בו נתונים. עדיין כפופה ל-`audience` ולהסתרת דפים. */
+  open?: true
   /**
    * For a destination that two audiences reach through two different keys, the
    * way `/shifts` is the roster to a shift coordinator and the contractor's own
@@ -216,6 +220,9 @@ export const NAV_SECTIONS: NavSection[] = [
         audience: forAdmins,
         badge: 'command',
       },
+      /* דף הפתיחה: כפתורים למסכים שבחרת, בלי שום שאילתה — חלופה קלה לדשבורד
+         כדף נחיתה (ראו homePref.ts). פתוח לכולם, וכמו כל דף אפשר להסתיר אותו. */
+      { to: START_PATH, page: 'start', label: 'דף הפתיחה', shortLabel: 'פתיחה', icon: LayoutGrid, open: true },
       /* הסיכום הכספי של הקבלן — הדשבורד שלו, ולכן הוא יושב לצד הדשבורד ולא
          בקבוצת הכספים. הוא גם הרשומה הראשונה שמנהל קבלן רואה, ולכן `/` מפנה
          אליו מעצמו דרך HomeRoute. */
@@ -527,7 +534,7 @@ export function navItemVisible(
   has: (perm: string) => boolean,
   audience: NavAudience = ANY_AUDIENCE,
 ): boolean {
-  const held = item.anyPerm ? item.anyPerm.some(has) : has(item.perm!)
+  const held = item.open || (item.anyPerm ? item.anyPerm.some(has) : has(item.perm!))
   return (
     held &&
     !item.hiddenBy?.some(has) &&
@@ -548,7 +555,7 @@ export function pageEntries(page: string, sections = NAV_SECTIONS): NavItem[] {
  */
 export function pagePermitted(page: string, has: (perm: string) => boolean, sections = NAV_SECTIONS): boolean {
   return pageEntries(page, sections).some(
-    (i) => (i.anyPerm ? i.anyPerm.some(has) : has(i.perm!)) && !i.hiddenBy?.some(has),
+    (i) => (i.open || (i.anyPerm ? i.anyPerm.some(has) : has(i.perm!))) && !i.hiddenBy?.some(has),
   )
 }
 
@@ -563,9 +570,12 @@ export function visibleNavSections(
   audience: NavAudience = ANY_AUDIENCE,
   sections = NAV_SECTIONS,
 ): NavSection[] {
-  return sections
-    .map((s) => ({ ...s, items: s.items.filter((n) => navItemVisible(n, has, audience)) }))
-    .filter((s) => s.items.length > 0)
+  const filtered = sections.map((s) => ({ ...s, items: s.items.filter((n) => navItemVisible(n, has, audience)) }))
+  // דף פתיחה עם כפתור אחד הוא רעש: מי שיש לו פחות משני מסכים אחרים לא רואה אותו
+  const others = new Set(filtered.flatMap((s) => s.items.map((i) => i.to)).filter((to) => to !== START_PATH))
+  const withStart =
+    others.size >= 2 ? filtered : filtered.map((s) => ({ ...s, items: s.items.filter((i) => i.to !== START_PATH) }))
+  return withStart.filter((s) => s.items.length > 0)
 }
 
 /**
@@ -600,7 +610,8 @@ export function bottomNavItems(sections: NavSection[], slots = 4): NavItem[] {
   if (chosen.length < slots) {
     for (const item of flat) {
       if (chosen.length === slots) break
-      if (!chosen.includes(item)) chosen.push(item)
+      // דף הפתיחה אינו ממלא משבצת: בתפריט קצר הוא היה דוחק מסך של ממש
+      if (!chosen.includes(item) && item.to !== START_PATH) chosen.push(item)
     }
   }
   return chosen
@@ -609,6 +620,7 @@ export function bottomNavItems(sections: NavSection[], slots = 4): NavItem[] {
 /** Static crumb labels; detail screens add their own via `usePageTitle`. */
 export const ROUTE_LABELS: Record<string, string> = {
   '/': 'דשבורד',
+  [START_PATH]: 'דף הפתיחה',
   '/calendar': 'לוח שנה',
   '/board': 'לו״ז עבודה',
   '/warehouse': 'לו״ז מחסן',
