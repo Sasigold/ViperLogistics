@@ -164,9 +164,10 @@ export function RouteGate({ children }: { children: ReactNode }) {
     }
     return <NoPermissionCard />
   }
-  if (handle.open) return <>{children}</>
   const audience = navAudience(me)
+  // דף מוסתר נחסם גם כשהנתיב פתוח (דף הפתיחה); `/` אינו מכריז על דף ומחליט בעצמו
   if (handle.page && audience.hiddenPages?.has(handle.page)) return <PageHiddenCard />
+  if (handle.open) return <>{children}</>
   const held = handle.anyPerm ? handle.anyPerm.some(has) : has(handle.perm!)
   const ok = held && (handle.audience?.(audience) ?? true)
   return ok ? <>{children}</> : <NoPermissionCard />

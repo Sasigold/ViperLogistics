@@ -19,6 +19,7 @@ import { ErrorBoundary, Skeleton } from '../components/ui'
  * The shell (layout, auth guard, login) stays eager: it is needed on the very
  * first paint, so splitting it would only add a round trip.
  */
+const StartPage = lazyPage(() => import('./StartPage'))
 const CalendarPage = lazyPage(() => import('../features/calendar/CalendarPage'))
 const WorkBoardPage = lazyPage(() => import('../features/workboard/WorkBoardPage'))
 const WarehouseSchedulePage = lazyPage(() => import('../features/warehouse/WarehouseSchedulePage'))
@@ -124,6 +125,8 @@ export const router = createBrowserRouter([
              provide by accident, and which two screens had already lost.
              `open` marks a route that decides for itself. */
           { path: '/', handle: { open: true }, element: page(<HomeRoute />) },
+          /* דף הפתיחה — כפתורים בלבד, בלי נתונים (homePref.ts) */
+          { path: '/start', handle: { open: true, page: 'start' }, element: page(<StartPage />) },
           /* דף הכספים של הקבלן. עד 0071 הוא היה shell שלם מחוץ ל-AppLayout,
              עם ארבע לשוניות שהחזיקו את לוח השנה, הלו״ז, הסגל והנוכחות שלו;
              כל אחת מהן היא עכשיו נתיב של ממש, וכאן נשאר מה שהוא באמת —

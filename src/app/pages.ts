@@ -27,6 +27,12 @@ export interface PageDef {
 export const PAGES = [
   { key: 'dashboard', label: 'דשבורד', section: 'ראשי' },
   {
+    key: 'start',
+    label: 'דף הפתיחה',
+    section: 'ראשי',
+    hint: 'כפתורים למסכים שהמשתמש בחר, בלי טעינת נתונים — חלופה קלה לדשבורד כדף נחיתה',
+  },
+  {
     key: 'command',
     label: 'משימות ניהול',
     section: 'ראשי',
