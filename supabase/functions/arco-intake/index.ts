@@ -2,6 +2,8 @@
 //
 //   POST /functions/v1/arco-intake/event   פתיחת הזמנה → אירוע + משימות + מחיר
 //   POST /functions/v1/arco-intake/spec    מפרט חדש    → גרסה ברשימת המפרטים
+//                                          (התשובה כוללת `event`: מספר, לקוח
+//                                          סופי, תאריך, מיקום — להודעת הוואטסאפ)
 //
 // חייבת להיפרס עם `--no-verify-jwt`: המודול ב-Make נושא סוד משותף משלנו ולא
 // ‏JWT של Supabase, ושער ה-JWT היה עונה 401 לפני שהקוד כאן רץ בכלל.
@@ -63,6 +65,27 @@ async function geocode(query: string): Promise<Record<string, unknown>> {
   }
 }
 
+/**
+ * פרטי האירוע שהמפרט נרשם עליו — בשביל הודעת הוואטסאפ של התרחיש.
+ *
+ * עד עכשיו התרחיש שלף אותם בעצמו מ-`/rest/v1/events` עם מפתח service_role
+ * שישב בגלוי בתוך Make — מפתח שעוקף את כל ה-RLS בשביל ארבעה שדות. עכשיו
+ * הם חוזרים כאן, והמפתח יוצא מ-Make. האירוע הוא זה שהמסד מצא (`event_id`:
+ * הלקוח של החיבור + מספר ההזמנה), לא "האחרון עם המספר הזה" מכל לקוח.
+ * אין אירוע (המפרט הקדים את ההזמנה) או שהשאילתה נכשלה → `null`; ההודעה
+ * פשוט יוצאת בלי הפרטים, כמו קודם.
+ */
+async function specEvent(eventId: unknown): Promise<Record<string, unknown> | null> {
+  if (typeof eventId !== 'string' || eventId === '') return null
+  const { data, error } = await createClient(SUPABASE_URL, SERVICE_KEY)
+    .from('events')
+    .select('event_number, end_client_name, event_date, location_text')
+    .eq('id', eventId)
+    .maybeSingle()
+  if (error) console.error('arco spec: event lookup failed', error)
+  return (data as Record<string, unknown> | null) ?? null
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'method not allowed' }), {
@@ -110,7 +133,8 @@ Deno.serve(async (req) => {
       console.error('arco_ingest_spec failed', error)
       return json({ error: 'ingest unavailable' }, 503)
     }
-    return json(data)
+    const result = (data ?? {}) as Record<string, unknown>
+    return json({ ...result, event: await specEvent(result.event_id) })
   }
 
   const payload = pick(body, EVENT_KEYS)
