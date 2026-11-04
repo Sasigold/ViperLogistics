@@ -756,6 +756,13 @@ echo "$OUT77"
 OUT="$OUT
 $OUT77"
 
+# ‏78: ההרשאות נטענות בזמן (0237). משווה את get_my_permissions ל-app.has
+# ולפונקציות השדות לכל פרופיל פעיל; פרופיל משלה, משאירה אותו אחריה.
+OUT78=$($PSQL -d vl -f "$HERE/78_the_permissions_load_in_time.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT78"
+OUT="$OUT
+$OUT78"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
