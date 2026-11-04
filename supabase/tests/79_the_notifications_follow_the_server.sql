@@ -25,8 +25,8 @@ select set_config('app.notify_dispatch_secret', '', false);
 select t_eq('בלי הגדרה: אין כתובת', app.server_setting('notify_dispatch_url'), null::text);
 select t_eq('בלי הגדרה: אין סוד', get_notify_dispatch_secret(), null::text);
 
-select set_config('app.notify_dispatch_url', 'https://vps.example/functions/v1/notify-dispatch', false);
-select set_config('app.notify_dispatch_secret', 's79', false);
+select from (select set_config('app.notify_dispatch_url', 'https://vps.example/functions/v1/notify-dispatch', false)) x;
+select from (select set_config('app.notify_dispatch_secret', 's79', false)) x;
 select t_eq('הכתובת מה-GUC', app.server_setting('notify_dispatch_url'),
   'https://vps.example/functions/v1/notify-dispatch');
 select t_eq('הסוד מה-GUC', get_notify_dispatch_secret(), 's79');
@@ -34,9 +34,10 @@ select t_eq('הסוד מה-GUC', get_notify_dispatch_secret(), 's79');
 -- בלי pg_net הטריגר שותק — יצירת שורת שליחה לא נופלת
 select t_expect_ok('הטריגר אינו מפיל הוספת שורת שליחה',
   $q$ with n as (insert into notifications (recipient_id, type, title)
-                  select id, 'event_created', 'בדיקה 79' from profiles limit 1 returning id)
-      insert into notification_deliveries (notification_id, channel, address, status)
-      select id, 'email', 'c79@vl.test', 'skipped' from n $q$);
+                  select id, 'event_created', 'בדיקה 79' from profiles limit 1
+                  returning id, recipient_id)
+      insert into notification_deliveries (notification_id, recipient_id, channel, address, status)
+      select id, recipient_id, 'email', 'c79@vl.test', 'skipped' from n $q$);
 
 \echo '--- מי רשאי ---'
 set role authenticated;
