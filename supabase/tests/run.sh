@@ -763,6 +763,12 @@ echo "$OUT78"
 OUT="$OUT
 $OUT78"
 
+# ‏79: ההתראות הולכות אחרי השרת (0238). כתובת וסוד מה-GUC, הרשאות; בלי נתונים.
+OUT79=$($PSQL -d vl -f "$HERE/79_the_notifications_follow_the_server.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT79"
+OUT="$OUT
+$OUT79"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
