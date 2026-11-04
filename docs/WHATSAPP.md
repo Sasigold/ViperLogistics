@@ -80,7 +80,7 @@
 
    `ANTHROPIC_API_KEY` כבר מוגדר (`payslip-read`, `invoice-read`).
 4. **Green API → Settings:**
-   - Webhook URL: `https://qdrbhwxnijjmprtzxfai.supabase.co/functions/v1/whatsapp-webhook`
+   - Webhook URL: `<URL>/functions/v1/whatsapp-webhook` (הכתובת של השרת, `docs/SELF_HOSTING.md`)
    - Webhook URL token: הערך של `WHATSAPP_WEBHOOK_SECRET` (עם `Bearer ` לפניו או בלי — שניהם עובדים)
    - Incoming messages: Yes.
    - כדאי לוודא שהמסלול של Green API אינו מגביל את מספר הצ'אטים — צ'אט הקישור הפרטי נספר.
