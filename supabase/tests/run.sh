@@ -769,6 +769,13 @@ echo "$OUT79"
 OUT="$OUT
 $OUT79"
 
+# ‏80: בדיקת ההרשאה מתוכננת פעם אחת (0239). משווה את גרסאות ה-plpgsql לגרסאות
+# ה-SQL הקודמות לכל צורת הרשאות; בלי נתונים, מסירה את ההעתקים אחריה.
+OUT80=$($PSQL -d vl -f "$HERE/80_the_permission_check_is_planned_once.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT80"
+OUT="$OUT
+$OUT80"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
