@@ -32,7 +32,7 @@
 לבדוק שמשהו נכנס: `select md5(prosrc) from pg_proc where proname = '<function>';`
 והשוואה ל-md5 שכתוב ב-PR.
 
-מיגרציות שחייבות להיות בשרת (נוספו אחרי המעבר): **0237** (טעינת ההרשאות),
+מצב (5.11.2026): 0237, 0238, 0239 כבר בשרת, וההתראות יוצאות. מיגרציות שחייבות להיות בשרת (נוספו אחרי המעבר): **0237** (טעינת ההרשאות),
 **0238** (ההתראות), **0239** (מהירות בדיקת ההרשאות — לו״ז עבודה ושאר המסכים).
 
 ## 3. ההתראות (push ומייל)
@@ -46,8 +46,8 @@
 ב-SQL Editor של השרת (מחליפים את הערכים):
 
 ```sql
--- הכתובת: עדיף הכתובת הפנימית של docker (בלי DNS ו-TLS)
-select vault.create_secret('http://kong:8000/functions/v1/notify-dispatch', 'notify_dispatch_url');
+-- הכתובת: הכתובת הפנימית של docker (בשרת שלנו שער ה-API נקרא api-gw)
+select vault.create_secret('http://api-gw:8000/functions/v1/notify-dispatch', 'notify_dispatch_url');
 -- סוד חדש וארוך, כל מחרוזת אקראית
 select vault.create_secret('<סוד אקראי ארוך>', 'notify_dispatch_secret');
 ```
@@ -57,7 +57,7 @@ select vault.create_secret('<סוד אקראי ארוך>', 'notify_dispatch_secr
 
 ```sql
 select vault.update_secret(id, '<ערך חדש>') from vault.secrets where name = 'notify_dispatch_secret';
-select vault.update_secret(id, 'http://kong:8000/functions/v1/notify-dispatch') from vault.secrets where name = 'notify_dispatch_url';
+select vault.update_secret(id, 'http://api-gw:8000/functions/v1/notify-dispatch') from vault.secrets where name = 'notify_dispatch_url';
 ```
 
 (בלי Vault אפשר גם: `alter database postgres set app.notify_dispatch_url = '…';` ו-
