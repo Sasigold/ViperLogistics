@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import {
   AlertTriangle,
   Download,
+  Eye,
   FileText,
   ICON,
   Paperclip,
@@ -37,9 +38,11 @@ import type { Vehicle, VehicleDocumentStatus } from '../../types/domain'
 import {
   useRemoveVehicleDocument,
   useSaveVehicleDocument,
+  useVehicleDocSignedUrl,
   useVehicleDocuments,
   vehicleDocDownloadUrl,
 } from './vehicleQueries'
+import { FilePreviewModal } from './FilePreviewModal'
 import type { DocumentDraft } from './vehicleQueries'
 import {
   DATE_MAX,
@@ -69,6 +72,9 @@ export function VehicleDocumentsTab({ vehicle }: { vehicle: Vehicle }) {
   const { data: kinds = [] } = useVehicleDocumentKinds()
   const { data: docs = [], isLoading } = useVehicleDocuments(vehicle.id)
   const remove = useRemoveVehicleDocument(vehicle.id)
+
+  const [preview, setPreview] = useState<VehicleDocumentStatus | null>(null)
+  const previewUrl = useVehicleDocSignedUrl(preview)
 
   const [modal, setModal] = useState<{ open: boolean; editing: VehicleDocumentStatus | null }>({
     open: false,
@@ -162,6 +168,11 @@ export function VehicleDocumentsTab({ vehicle }: { vehicle: Vehicle }) {
                     </p>
                   </div>
                   {d.storage_path && (
+                    <IconButton label={`צפייה ב${d.file_name ?? d.kind_name}`} size="sm" onClick={() => setPreview(d)}>
+                      <Eye size={ICON.sm} strokeWidth={STROKE} />
+                    </IconButton>
+                  )}
+                  {d.storage_path && (
                     <IconButton label={`הורדת ${d.file_name ?? d.kind_name}`} size="sm" onClick={() => void download(d)}>
                       <Download size={ICON.sm} strokeWidth={STROKE} />
                     </IconButton>
@@ -197,6 +208,17 @@ export function VehicleDocumentsTab({ vehicle }: { vehicle: Vehicle }) {
           )}
         </CardBody>
       </Card>
+
+      <FilePreviewModal
+        open={!!preview}
+        onClose={() => setPreview(null)}
+        title={preview?.kind_name ?? ''}
+        url={previewUrl.data}
+        loading={previewUrl.isLoading}
+        mimeType={preview?.mime_type}
+        fileName={preview?.file_name}
+        onDownload={preview ? () => void download(preview) : undefined}
+      />
 
       <DocumentModal
         vehicle={vehicle}

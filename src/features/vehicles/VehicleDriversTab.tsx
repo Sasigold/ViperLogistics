@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import {
   AlertTriangle,
-  ExternalLink,
+  Eye,
   ICON,
   IdCard,
   Paperclip,
@@ -56,8 +56,10 @@ import {
   formatBytes,
   fullYearsSince,
   isSaneDate,
+  previewKind,
   validateDocFile,
 } from './vehicles'
+import { FilePreviewModal } from './FilePreviewModal'
 
 /**
  * הנהג של הרכב — הצמדה פעילה אחת, ומאחוריה היסטוריה.
@@ -196,6 +198,7 @@ function DriverLicenseCard({
   const { data: license, isLoading } = useDriverLicense(profileId, canView)
   const { data: fileUrl } = useDriverLicenseFileUrl(canView ? license : null)
   const [editOpen, setEditOpen] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   if (!canView) return null
 
@@ -203,7 +206,7 @@ function DriverLicenseCard({
   const state = license ? docState(license.expires_at, LICENSE_ALERT_DAYS) : null
   const age = fullYearsSince(license?.birth_date)
   const years = fullYearsSince(license?.first_issued_at)
-  const isImage = !!license?.mime_type?.startsWith('image/') && license.mime_type !== 'image/heic' && license.mime_type !== 'image/heif'
+  const isImage = previewKind(license?.mime_type, license?.file_name) === 'image'
 
   return (
     <Card>
@@ -229,23 +232,18 @@ function DriverLicenseCard({
           <div className="flex flex-wrap items-start gap-4">
             {fileUrl &&
               (isImage ? (
-                <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                <button type="button" className="shrink-0" onClick={() => setPreviewOpen(true)} aria-label="צפייה ברישיון">
                   <img
                     src={fileUrl}
                     alt={`רישיון הנהיגה של ${driverName ?? 'הנהג'}`}
                     className="h-28 w-44 rounded-lg border border-line-subtle object-cover"
                   />
-                </a>
+                </button>
               ) : (
-                <a
-                  href={fileUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 type-caption text-accent hover:underline"
-                >
-                  <ExternalLink size={ICON.xs} strokeWidth={STROKE} />
-                  {license.file_name ?? 'פתיחת הקובץ'}
-                </a>
+                <Button size="sm" onClick={() => setPreviewOpen(true)}>
+                  <Eye size={ICON.sm} strokeWidth={STROKE} />
+                  צפייה ברישיון
+                </Button>
               ))}
             <dl className="grid min-w-0 flex-1 grid-cols-2 gap-x-4 gap-y-2 type-body sm:grid-cols-3">
               <div>
@@ -293,6 +291,15 @@ function DriverLicenseCard({
           </div>
         )}
       </CardBody>
+
+      <FilePreviewModal
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        title={`רישיון נהיגה${driverName ? ` · ${driverName}` : ''}`}
+        url={fileUrl}
+        mimeType={license?.mime_type}
+        fileName={license?.file_name}
+      />
 
       {canManage && (
         <LicenseModal

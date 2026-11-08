@@ -12,6 +12,7 @@ import {
   formatBytes,
   formatPlate,
   normalizePlate,
+  previewKind,
   suggestExpiry,
   validateDocFile,
   vehicleModelLine,
@@ -250,5 +251,17 @@ describe('driverInsuranceIssues', () => {
 describe('licenseStoragePath', () => {
   it('תחת drivers/<profile>', () => {
     expect(licenseStoragePath('p1', 'רישיון.JPG', 'u1')).toBe('drivers/p1/u1.jpg')
+  })
+})
+
+describe('previewKind', () => {
+  it('PDF ותמונה מוצגים, HEIC לא', () => {
+    expect(previewKind('application/pdf', 'a.pdf')).toBe('pdf')
+    expect(previewKind(null, 'scan.PDF')).toBe('pdf')
+    expect(previewKind('image/jpeg', 'a.jpg')).toBe('image')
+    expect(previewKind(null, 'a.png')).toBe('image')
+    expect(previewKind('image/heic', 'a.heic')).toBe('other')
+    expect(previewKind('', 'IMG_1.HEIC')).toBe('other')
+    expect(previewKind('application/zip', 'a.zip')).toBe('other')
   })
 })
