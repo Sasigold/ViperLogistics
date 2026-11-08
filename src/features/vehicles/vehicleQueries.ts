@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import type {
+  DriverLicense,
   FleetExpirySummary,
   Vehicle,
   VehicleDocument,
@@ -16,7 +17,7 @@ import type {
   VehicleDriverAssignment,
   VehicleFuelCard,
 } from '../../types/domain'
-import { docStoragePath } from './vehicles'
+import { docStoragePath, licenseStoragePath } from './vehicles'
 
 export const VEHICLE_DOC_BUCKET = 'vehicle-docs'
 
@@ -257,6 +258,98 @@ export function useEndDriver(vehicleId: string) {
       if (error) throw error
     },
     onSuccess: () => invalidateVehicle(qc, vehicleId),
+  })
+}
+
+/* ===== רישיון הנהג (0240) ================================================ */
+
+/** הרישיון החי של נהג. null = לא נרשם רישיון. */
+export function useDriverLicense(profileId: string | null | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['driver_license', profileId],
+    enabled: !!profileId && enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('driver_licenses')
+        .select('*')
+        .eq('profile_id', profileId!)
+        .is('deleted_at', null)
+        .maybeSingle()
+      if (error) throw error
+      return (data ?? null) as DriverLicense | null
+    },
+  })
+}
+
+export function useDriverLicenseFileUrl(license: Pick<DriverLicense, 'id' | 'storage_path'> | null | undefined) {
+  return useQuery({
+    queryKey: ['driver_license_url', license?.id, license?.storage_path],
+    enabled: !!license?.storage_path,
+    staleTime: (SIGNED_URL_TTL_SECONDS - 300) * 1000,
+    gcTime: SIGNED_URL_TTL_SECONDS * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase.storage
+        .from(VEHICLE_DOC_BUCKET)
+        .createSignedUrl(license!.storage_path!, SIGNED_URL_TTL_SECONDS)
+      if (error) throw error
+      return data.signedUrl
+    },
+  })
+}
+
+export interface LicenseDraft {
+  license_number: string
+  license_classes: string
+  first_issued_at: string
+  expires_at: string
+  birth_date: string
+  note: string
+  file?: File | null
+}
+
+/** שמירה — אותה תבנית העלאה-ואז-שורה של useSaveVehicleDocument, עם ניקוי בכישלון. */
+export function useSaveDriverLicense(profileId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ draft, existing }: { draft: LicenseDraft; existing: DriverLicense | null }) => {
+      const row: Record<string, unknown> = {
+        profile_id: profileId,
+        license_number: draft.license_number.trim() || null,
+        license_classes: draft.license_classes.trim() || null,
+        first_issued_at: draft.first_issued_at || null,
+        expires_at: draft.expires_at || null,
+        birth_date: draft.birth_date || null,
+        note: draft.note.trim() || null,
+      }
+
+      let uploaded: string | null = null
+      if (draft.file) {
+        const path = licenseStoragePath(profileId, draft.file.name, crypto.randomUUID())
+        const { error: upErr } = await supabase.storage.from(VEHICLE_DOC_BUCKET).upload(path, draft.file, {
+          contentType: draft.file.type || undefined,
+          upsert: false,
+        })
+        if (upErr) throw upErr
+        uploaded = path
+        row.storage_path = path
+        row.file_name = draft.file.name
+        row.mime_type = draft.file.type || null
+        row.size_bytes = draft.file.size
+      }
+
+      const { error } = existing
+        ? await supabase.from('driver_licenses').update(row).eq('id', existing.id)
+        : await supabase.from('driver_licenses').insert(row)
+
+      if (error) {
+        if (uploaded) await supabase.storage.from(VEHICLE_DOC_BUCKET).remove([uploaded])
+        throw error
+      }
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['driver_license', profileId] })
+      void qc.invalidateQueries({ queryKey: ['driver_license_url'] })
+    },
   })
 }
 

@@ -7,11 +7,13 @@
  * אינה אבטחה; היא נימוס, וגם מה שמאפשר להציג צבע בלי הלוך-חזור נוסף.
  */
 import type {
+  DriverLicense,
   Vehicle,
   VehicleCategory,
   VehicleDocumentState,
   VehicleFuelType,
   VehicleGearbox,
+  VehicleInsuranceCoverage,
   VehicleOwnership,
   VehicleStatus,
 } from '../../types/domain'
@@ -219,4 +221,83 @@ export function suggestExpiry(issuedAt: string, validMonths: number | null): str
   if (d.getDate() !== day) d.setDate(0)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/* ===== תאריכים סבירים (0240) ============================================== */
+
+/**
+ * הגבולות שהמסד אוכף במסמכים וברישיונות (0240 §2–3). שדה date בדפדפן מקבל
+ * שנה בת 6 ספרות; `min`/`max` על השדה מגבילים את ההקלדה, והבדיקה כאן היא מה
+ * שמונע שליחה של מה שבכל זאת נכנס.
+ */
+export const DATE_MIN = '1900-01-01'
+export const DATE_MAX = '2200-12-31'
+
+/** ריק = תקין (השדה אינו חובה). אחרת — תאריך בתבנית yyyy-mm-dd בטווח. */
+export function isSaneDate(value: string | null | undefined): boolean {
+  if (!value) return true
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const d = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return false
+  return value >= DATE_MIN && value <= DATE_MAX
+}
+
+/* ===== ביטוח ============================================================== */
+
+export const INSURANCE_COVERAGE_LABELS: Record<VehicleInsuranceCoverage, string> = {
+  comprehensive: 'חובה + מקיף',
+  third_party: 'חובה + צד ג׳',
+  mandatory_only: 'חובה בלבד',
+}
+
+/** שנים שלמות מהתאריך ועד היום (גיל, ותק). null כשאין תאריך תקין. */
+export function fullYearsSince(date: string | null | undefined, today: Date = new Date()): number | null {
+  if (!date || !isSaneDate(date)) return null
+  const d = new Date(`${date}T00:00:00`)
+  let years = today.getFullYear() - d.getFullYear()
+  const beforeAnniversary =
+    today.getMonth() < d.getMonth() || (today.getMonth() === d.getMonth() && today.getDate() < d.getDate())
+  if (beforeAnniversary) years -= 1
+  return years
+}
+
+/**
+ * מה לא מתאים בין הנהג לפוליסה ולרישיון שלו — משפטים להצגה, ריק = הכול
+ * תקין. זו התראה בלבד: ההצמדה אינה נחסמת, כי הפוליסה היא מסמך חיצוני
+ * שהמערכת אינה הסמכות עליו.
+ */
+export function driverInsuranceIssues(
+  license: Pick<DriverLicense, 'birth_date' | 'first_issued_at' | 'expires_at'> | null | undefined,
+  vehicle: Pick<Vehicle, 'insurance_min_driver_age' | 'insurance_min_license_years'>,
+  today: Date = new Date(),
+): string[] {
+  const issues: string[] = []
+  const minAge = vehicle.insurance_min_driver_age
+  const minYears = vehicle.insurance_min_license_years
+
+  if (!license) {
+    if (minAge != null || minYears != null) issues.push('אין רישיון נהיגה רשום לנהג — אי אפשר לבדוק גיל וותק מול הביטוח')
+    return issues
+  }
+
+  if (license.expires_at && daysUntil(license.expires_at, today) < 0) issues.push('רישיון הנהיגה פג תוקף')
+
+  if (minAge != null) {
+    const age = fullYearsSince(license.birth_date, today)
+    if (age == null) issues.push(`הביטוח מתיר נהג מגיל ${minAge} — חסר תאריך לידה ברישיון`)
+    else if (age < minAge) issues.push(`הנהג בן ${age} — הביטוח מתיר נהג מגיל ${minAge}`)
+  }
+
+  if (minYears != null) {
+    const years = fullYearsSince(license.first_issued_at, today)
+    if (years == null) issues.push(`הביטוח דורש ותק של ${minYears} שנים — חסר תאריך הוצאת רישיון`)
+    else if (years < minYears) issues.push(`ותק הנהג ${years} שנים — הביטוח דורש ${minYears}`)
+  }
+
+  return issues
+}
+
+/** נתיב קובץ הרישיון בדלי: 'drivers/<profile>/<uuid>.<ext>' (0240 §4). */
+export function licenseStoragePath(profileId: string, fileName: string, uuid: string): string {
+  return `drivers/${docStoragePath(profileId, fileName, uuid)}`
 }

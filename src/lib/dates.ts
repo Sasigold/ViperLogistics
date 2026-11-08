@@ -1,10 +1,20 @@
 import { addDays, format, parseISO } from 'date-fns'
 import { he } from 'date-fns/locale'
 
+/**
+ * תאריך שאינו ניתן לפענוח (שנה בת 5 ספרות שהוקלדה בשדה date — "20255-01-01")
+ * מוצג כפי שהוא. `format` של date-fns זורק RangeError על Invalid Date, וזה
+ * מה שהפיל את דף הרכב כשמסמך נשמר עם שנה כזו (0240).
+ */
+function safeFormat(d: string | Date, pattern: string): string {
+  const date = typeof d === 'string' ? parseISO(d) : d
+  if (Number.isNaN(date.getTime())) return typeof d === 'string' ? d : ''
+  return format(date, pattern, { locale: he })
+}
+
 export function fmtDate(d: string | Date | null | undefined): string {
   if (!d) return ''
-  const date = typeof d === 'string' ? parseISO(d) : d
-  return format(date, 'dd/MM/yyyy', { locale: he })
+  return safeFormat(d, 'dd/MM/yyyy')
 }
 
 /**
@@ -36,8 +46,7 @@ export function fmtWeekdayShort(d: string | Date | null | undefined): string {
 
 export function fmtDateLong(d: string | Date | null | undefined): string {
   if (!d) return ''
-  const date = typeof d === 'string' ? parseISO(d) : d
-  return format(date, 'EEEE, d בMMMM yyyy', { locale: he })
+  return safeFormat(d, 'EEEE, d בMMMM yyyy')
 }
 
 /** 'HH:MM[:SS]' -> 'HH:MM' */
@@ -64,7 +73,7 @@ export function fmtHours(h: number | null | undefined): string {
 
 export function fmtDateTime(d: string | null | undefined): string {
   if (!d) return ''
-  return format(parseISO(d), 'dd/MM/yyyy HH:mm', { locale: he })
+  return safeFormat(d, 'dd/MM/yyyy HH:mm')
 }
 
 export function fmtMoney(n: number | null | undefined): string {

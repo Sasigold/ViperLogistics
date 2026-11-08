@@ -64,6 +64,11 @@ describe('fmtDate', () => {
     expect(fmtDate(undefined)).toBe('')
     expect(fmtDate('')).toBe('')
   })
+
+  it('shows an unparseable date as typed instead of throwing (0240)', () => {
+    // שדה date בדפדפן מקבל שנה בת 5 ספרות; date-fns זרק עליה RangeError.
+    expect(fmtDate('20255-01-01')).toBe('20255-01-01')
+  })
 })
 
 describe('toISODate', () => {

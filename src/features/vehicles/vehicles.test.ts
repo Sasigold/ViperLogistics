@@ -4,7 +4,11 @@ import {
   daysUntil,
   docState,
   docStoragePath,
+  driverInsuranceIssues,
   expiryLabel,
+  fullYearsSince,
+  isSaneDate,
+  licenseStoragePath,
   formatBytes,
   formatPlate,
   normalizePlate,
@@ -191,5 +195,60 @@ describe('formatBytes', () => {
     expect(formatBytes(2048)).toBe('2 KB')
     expect(formatBytes(3 * 1024 * 1024)).toBe('3.0 MB')
     expect(formatBytes(null)).toBe('')
+  })
+})
+
+describe('isSaneDate', () => {
+  it('ריק תקין, ושנה בת 5 ספרות אינה', () => {
+    expect(isSaneDate('')).toBe(true)
+    expect(isSaneDate(null)).toBe(true)
+    expect(isSaneDate('2026-03-15')).toBe(true)
+    expect(isSaneDate('20255-01-01')).toBe(false)
+    expect(isSaneDate('0202-01-01')).toBe(false)
+    expect(isSaneDate('2026-13-01')).toBe(false)
+  })
+})
+
+describe('fullYearsSince', () => {
+  it('סופר שנים שלמות עד יום השנה', () => {
+    expect(fullYearsSince('2000-03-15', TODAY)).toBe(26)
+    expect(fullYearsSince('2000-03-16', TODAY)).toBe(25)
+    expect(fullYearsSince(null, TODAY)).toBeNull()
+    expect(fullYearsSince('20255-01-01', TODAY)).toBeNull()
+  })
+})
+
+describe('driverInsuranceIssues', () => {
+  const policy = { insurance_min_driver_age: 24, insurance_min_license_years: 2 }
+  const ok = { birth_date: '1990-01-01', first_issued_at: '2010-01-01', expires_at: '2030-01-01' }
+
+  it('נהג שעומד בתנאים — אין הערות', () => {
+    expect(driverInsuranceIssues(ok, policy, TODAY)).toEqual([])
+  })
+
+  it('צעיר מדי וחדש מדי', () => {
+    const issues = driverInsuranceIssues(
+      { birth_date: '2004-06-01', first_issued_at: '2025-06-01', expires_at: null },
+      policy,
+      TODAY,
+    )
+    expect(issues).toEqual(['הנהג בן 21 — הביטוח מתיר נהג מגיל 24', 'ותק הנהג 0 שנים — הביטוח דורש 2'])
+  })
+
+  it('רישיון שפג ותאריכים חסרים', () => {
+    const issues = driverInsuranceIssues({ birth_date: null, first_issued_at: null, expires_at: '2026-03-14' }, policy, TODAY)
+    expect(issues[0]).toBe('רישיון הנהיגה פג תוקף')
+    expect(issues).toHaveLength(3)
+  })
+
+  it('בלי רישיון: הערה רק כשהפוליסה מגבילה', () => {
+    expect(driverInsuranceIssues(null, policy, TODAY)).toHaveLength(1)
+    expect(driverInsuranceIssues(null, { insurance_min_driver_age: null, insurance_min_license_years: null }, TODAY)).toEqual([])
+  })
+})
+
+describe('licenseStoragePath', () => {
+  it('תחת drivers/<profile>', () => {
+    expect(licenseStoragePath('p1', 'רישיון.JPG', 'u1')).toBe('drivers/p1/u1.jpg')
   })
 })

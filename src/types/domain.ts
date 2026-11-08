@@ -499,7 +499,39 @@ export interface Vehicle {
   current_driver_id: string | null
   current_driver_name: string | null
   notes: string | null
+  /** קוד הרכב (קודן / אימובילייזר) — 0240. */
+  vehicle_code: string | null
+  insurance_company: string | null
+  insurance_policy_number: string | null
+  insurance_coverage: VehicleInsuranceCoverage | null
+  insurance_agent: string | null
+  insurance_agent_phone: string | null
+  /** הגיל המינימלי של נהג לפי הפוליסה. */
+  insurance_min_driver_age: number | null
+  /** הוותק המינימלי בשנים מהוצאת הרישיון הראשון. */
+  insurance_min_license_years: number | null
+  insurance_notes: string | null
   /** אין `is_active` — `status` הוא התשובה היחידה על זמינות (0089 §2). */
+  deleted_at: string | null
+}
+
+export type VehicleInsuranceCoverage = 'comprehensive' | 'third_party' | 'mandatory_only'
+
+/** רישיון הנהיגה של נהג — שורה חיה אחת לכל פרופיל (0240). */
+export interface DriverLicense {
+  id: string
+  profile_id: string
+  license_number: string | null
+  license_classes: string | null
+  /** הוצאת הרישיון הראשון — ממנו נגזר הוותק. */
+  first_issued_at: string | null
+  expires_at: string | null
+  birth_date: string | null
+  storage_path: string | null
+  file_name: string | null
+  mime_type: string | null
+  size_bytes: number | null
+  note: string | null
   deleted_at: string | null
 }
 
