@@ -301,3 +301,21 @@ export function driverInsuranceIssues(
 export function licenseStoragePath(profileId: string, fileName: string, uuid: string): string {
   return `drivers/${docStoragePath(profileId, fileName, uuid)}`
 }
+
+/* ===== צפייה בקובץ ======================================================== */
+
+/**
+ * איך להציג קובץ סרוק בדפדפן. HEIC/HEIF (צילום מאייפון) אינם מוצגים ברוב
+ * הדפדפנים, ולכן הם 'other' — פתיחה בלשונית או הורדה.
+ */
+export function previewKind(
+  mimeType: string | null | undefined,
+  fileName: string | null | undefined,
+): 'image' | 'pdf' | 'other' {
+  const mime = (mimeType ?? '').toLowerCase()
+  const ext = (fileName ?? '').split('.').pop()?.toLowerCase() ?? ''
+  if (mime === 'application/pdf' || (!mime && ext === 'pdf')) return 'pdf'
+  if (mime === 'image/heic' || mime === 'image/heif' || ext === 'heic' || ext === 'heif') return 'other'
+  if (mime.startsWith('image/') || (!mime && ['jpg', 'jpeg', 'png', 'webp'].includes(ext))) return 'image'
+  return 'other'
+}
