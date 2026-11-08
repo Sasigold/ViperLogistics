@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
+  Eye,
+  EyeOff,
   FileText,
   Fuel,
   ICON,
+  KeyRound,
   STROKE,
   Shield,
   Trash2,
@@ -18,6 +21,7 @@ import {
   CardHeader,
   ErrorState,
   Field,
+  IconButton,
   Input,
   PageHeader,
   Select,
@@ -36,12 +40,21 @@ import { RequirePermission } from '../auth/guards'
 import { usePageTitle } from '../../app/breadcrumbs'
 import { useTrucks, useVehicles } from '../../lib/queries'
 import { errorMessage } from '../../lib/errors'
-import type { Vehicle, VehicleCategory, VehicleFuelType, VehicleGearbox, VehicleOwnership, VehicleStatus } from '../../types/domain'
+import type {
+  Vehicle,
+  VehicleCategory,
+  VehicleFuelType,
+  VehicleGearbox,
+  VehicleInsuranceCoverage,
+  VehicleOwnership,
+  VehicleStatus,
+} from '../../types/domain'
 import { useCreateTruckForVehicle, useLinkTruck, useVehicle } from './vehicleQueries'
 import { VehicleDocumentsTab } from './VehicleDocumentsTab'
 import { VehicleDriversTab } from './VehicleDriversTab'
 import { VehicleFuelCardTab } from './VehicleFuelCardTab'
 import {
+  INSURANCE_COVERAGE_LABELS,
   LICENSE_CLASSES,
   VEHICLE_CATEGORY_LABELS,
   VEHICLE_FUEL_LABELS,
@@ -140,6 +153,8 @@ const EDITABLE = [
   'color', 'license_class', 'fuel_type', 'gearbox', 'seats', 'gross_weight_kg', 'payload_kg',
   'ownership', 'leasing_company', 'leasing_monthly_cost', 'leasing_end_date',
   'purchase_date', 'purchase_price', 'odometer_km', 'odometer_read_at', 'notes',
+  'vehicle_code', 'insurance_company', 'insurance_policy_number', 'insurance_coverage', 'insurance_agent',
+  'insurance_agent_phone', 'insurance_min_driver_age', 'insurance_min_license_years', 'insurance_notes',
 ] as const
 
 function DetailsTab({ vehicle }: { vehicle: Vehicle }) {
@@ -151,6 +166,7 @@ function DetailsTab({ vehicle }: { vehicle: Vehicle }) {
   const canEdit = has(PERM.FLEET_EDIT)
 
   const [form, setForm] = useState(vehicle)
+  const [showCode, setShowCode] = useState(false)
   useEffect(() => setForm(vehicle), [vehicle])
 
   const dirty = useMemo(() => EDITABLE.some((k) => form[k] !== vehicle[k]), [form, vehicle])
@@ -249,6 +265,112 @@ function DetailsTab({ vehicle }: { vehicle: Vehicle }) {
           </Field>
           <Field label="צבע">
             <Input disabled={!canEdit} value={form.color ?? ''} onChange={(e) => setForm((f) => ({ ...f, color: str(e.target.value) }))} />
+          </Field>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="קוד הרכב וביטוח"
+          subtitle="הקודן של הרכב, והפוליסה — כולל מי רשאי לנהוג לפיה"
+          icon={<KeyRound size={ICON.md} strokeWidth={STROKE} />}
+        />
+        <CardBody className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="קוד הרכב" hint="קודן / אימובילייזר">
+            <div className="flex items-center gap-1.5">
+              <Input
+                dir="ltr"
+                autoComplete="off"
+                className="tabular"
+                type={showCode || !form.vehicle_code ? 'text' : 'password'}
+                disabled={!canEdit}
+                value={form.vehicle_code ?? ''}
+                onChange={(e) => setForm((f) => ({ ...f, vehicle_code: str(e.target.value) }))}
+              />
+              {form.vehicle_code && (
+                <IconButton label={showCode ? 'הסתרת הקוד' : 'הצגת הקוד'} size="sm" onClick={() => setShowCode((v) => !v)}>
+                  {showCode ? <EyeOff size={ICON.sm} strokeWidth={STROKE} /> : <Eye size={ICON.sm} strokeWidth={STROKE} />}
+                </IconButton>
+              )}
+            </div>
+          </Field>
+          <Field label="חברת הביטוח">
+            <Input
+              disabled={!canEdit}
+              value={form.insurance_company ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, insurance_company: str(e.target.value) }))}
+            />
+          </Field>
+          <Field label="מספר פוליסה">
+            <Input
+              dir="ltr"
+              disabled={!canEdit}
+              value={form.insurance_policy_number ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, insurance_policy_number: str(e.target.value) }))}
+            />
+          </Field>
+          <Field label="סוג כיסוי">
+            <Select
+              disabled={!canEdit}
+              value={form.insurance_coverage ?? ''}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, insurance_coverage: (e.target.value || null) as VehicleInsuranceCoverage | null }))
+              }
+            >
+              <option value="">—</option>
+              {(Object.keys(INSURANCE_COVERAGE_LABELS) as VehicleInsuranceCoverage[]).map((k) => (
+                <option key={k} value={k}>
+                  {INSURANCE_COVERAGE_LABELS[k]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="גיל מינימלי לנהג" hint="לפי הפוליסה">
+            <Input
+              type="number"
+              min={16}
+              max={99}
+              dir="ltr"
+              disabled={!canEdit}
+              value={form.insurance_min_driver_age ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, insurance_min_driver_age: num(e.target.value) }))}
+            />
+          </Field>
+          <Field label="ותק מינימלי (שנים)" hint="מהוצאת הרישיון הראשון">
+            <Input
+              type="number"
+              min={0}
+              max={60}
+              dir="ltr"
+              disabled={!canEdit}
+              value={form.insurance_min_license_years ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, insurance_min_license_years: num(e.target.value) }))}
+            />
+          </Field>
+          <Field label="סוכן הביטוח">
+            <Input
+              disabled={!canEdit}
+              value={form.insurance_agent ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, insurance_agent: str(e.target.value) }))}
+            />
+          </Field>
+          <Field label="טלפון הסוכן">
+            <Input
+              type="tel"
+              dir="ltr"
+              disabled={!canEdit}
+              value={form.insurance_agent_phone ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, insurance_agent_phone: str(e.target.value) }))}
+            />
+          </Field>
+          <Field label="הערות לביטוח" className="sm:col-span-2 lg:col-span-3" hint="תוקף הפוליסה והקובץ הסרוק — בלשונית מסמכים">
+            <Textarea
+              autoGrow
+              rows={2}
+              disabled={!canEdit}
+              value={form.insurance_notes ?? ''}
+              onChange={(e) => setForm((f) => ({ ...f, insurance_notes: str(e.target.value) }))}
+            />
           </Field>
         </CardBody>
       </Card>

@@ -1,6 +1,17 @@
 import { useMemo, useState } from 'react'
 import { format } from 'date-fns'
-import { ICON, STROKE, User, UserCheck, UserPlus } from '../../components/ui/icons'
+import {
+  AlertTriangle,
+  ExternalLink,
+  ICON,
+  IdCard,
+  Paperclip,
+  Pencil,
+  STROKE,
+  User,
+  UserCheck,
+  UserPlus,
+} from '../../components/ui/icons'
 import {
   Button,
   Card,
@@ -23,7 +34,30 @@ import { useStaff } from '../../lib/queries'
 import { errorMessage } from '../../lib/errors'
 import { fmtDate } from '../../lib/dates'
 import type { Vehicle } from '../../types/domain'
-import { useAssignDriver, useEndDriver, useVehicleDrivers } from './vehicleQueries'
+import type { DriverLicense } from '../../types/domain'
+import {
+  useAssignDriver,
+  useDriverLicense,
+  useDriverLicenseFileUrl,
+  useEndDriver,
+  useSaveDriverLicense,
+  useVehicleDrivers,
+} from './vehicleQueries'
+import type { LicenseDraft } from './vehicleQueries'
+import {
+  DATE_MAX,
+  DATE_MIN,
+  DOC_STATE_COLORS,
+  DOC_STATE_LABELS,
+  VEHICLE_DOC_ACCEPT,
+  docState,
+  driverInsuranceIssues,
+  expiryLabel,
+  formatBytes,
+  fullYearsSince,
+  isSaneDate,
+  validateDocFile,
+} from './vehicles'
 
 /**
  * הנהג של הרכב — הצמדה פעילה אחת, ומאחוריה היסטוריה.
@@ -105,6 +139,8 @@ export function VehicleDriversTab({ vehicle }: { vehicle: Vehicle }) {
         </CardBody>
       </Card>
 
+      {current && <DriverLicenseCard vehicle={vehicle} profileId={current.profile_id} driverName={current.driver_name} />}
+
       <Card>
         <CardHeader title="היסטוריית נהגים" subtitle="מי נהג ברכב, ומתי עד מתי" />
         <CardBody padded={false}>
@@ -133,6 +169,280 @@ export function VehicleDriversTab({ vehicle }: { vehicle: Vehicle }) {
 
       <AssignDriverModal vehicle={vehicle} open={assignOpen} onClose={() => setAssignOpen(false)} hasCurrent={!!current} />
     </div>
+  )
+}
+
+/* ===== רישיון הנהיגה (0240) ============================================== */
+
+/** ימי התראה לפני פקיעת הרישיון — אותו סדר גודל של מסמכי הרכב. */
+const LICENSE_ALERT_DAYS = 30
+
+/**
+ * רישיון הנהג המוצמד: צילום, תוקף, גיל וותק — ומולם תנאי הביטוח של הרכב.
+ * הרישיון שייך לנהג ולא לרכב, ולכן עריכה כאן מתעדכנת בכל רכב שהוא נוהג בו.
+ */
+function DriverLicenseCard({
+  vehicle,
+  profileId,
+  driverName,
+}: {
+  vehicle: Vehicle
+  profileId: string
+  driverName: string | null
+}) {
+  const { has } = useAuth()
+  const canView = has(PERM.FLEET_DOCS_VIEW)
+  const canManage = has(PERM.FLEET_DRIVERS_MANAGE)
+  const { data: license, isLoading } = useDriverLicense(profileId, canView)
+  const { data: fileUrl } = useDriverLicenseFileUrl(canView ? license : null)
+  const [editOpen, setEditOpen] = useState(false)
+
+  if (!canView) return null
+
+  const issues = isLoading ? [] : driverInsuranceIssues(license, vehicle)
+  const state = license ? docState(license.expires_at, LICENSE_ALERT_DAYS) : null
+  const age = fullYearsSince(license?.birth_date)
+  const years = fullYearsSince(license?.first_issued_at)
+  const isImage = !!license?.mime_type?.startsWith('image/') && license.mime_type !== 'image/heic' && license.mime_type !== 'image/heif'
+
+  return (
+    <Card>
+      <CardHeader
+        title="רישיון נהיגה"
+        subtitle={driverName ?? undefined}
+        icon={<IdCard size={ICON.md} strokeWidth={STROKE} />}
+        actions={
+          canManage && (
+            <Button size="sm" onClick={() => setEditOpen(true)}>
+              <Pencil size={ICON.sm} strokeWidth={STROKE} />
+              {license ? 'עדכון רישיון' : 'הוספת רישיון'}
+            </Button>
+          )
+        }
+      />
+      <CardBody className="space-y-3">
+        {isLoading ? (
+          <Skeleton className="h-16 w-full" />
+        ) : !license ? (
+          <p className="type-body text-ink-tertiary">לא נרשם רישיון נהיגה לנהג הזה.</p>
+        ) : (
+          <div className="flex flex-wrap items-start gap-4">
+            {fileUrl &&
+              (isImage ? (
+                <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                  <img
+                    src={fileUrl}
+                    alt={`רישיון הנהיגה של ${driverName ?? 'הנהג'}`}
+                    className="h-28 w-44 rounded-lg border border-line-subtle object-cover"
+                  />
+                </a>
+              ) : (
+                <a
+                  href={fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 type-caption text-accent hover:underline"
+                >
+                  <ExternalLink size={ICON.xs} strokeWidth={STROKE} />
+                  {license.file_name ?? 'פתיחת הקובץ'}
+                </a>
+              ))}
+            <dl className="grid min-w-0 flex-1 grid-cols-2 gap-x-4 gap-y-2 type-body sm:grid-cols-3">
+              <div>
+                <dt className="type-caption text-ink-tertiary">תוקף</dt>
+                <dd className="flex flex-wrap items-center gap-1.5">
+                  {license.expires_at ? fmtDate(license.expires_at) : '—'}
+                  {state && <StatusPill color={DOC_STATE_COLORS[state]}>{DOC_STATE_LABELS[state]}</StatusPill>}
+                </dd>
+                {license.expires_at && <dd className="type-caption text-ink-tertiary">{expiryLabel(license.expires_at)}</dd>}
+              </div>
+              <div>
+                <dt className="type-caption text-ink-tertiary">מספר רישיון</dt>
+                <dd dir="ltr" className="text-start tabular">{license.license_number ?? '—'}</dd>
+              </div>
+              <div>
+                <dt className="type-caption text-ink-tertiary">דרגות</dt>
+                <dd dir="ltr" className="text-start">{license.license_classes ?? '—'}</dd>
+              </div>
+              <div>
+                <dt className="type-caption text-ink-tertiary">גיל</dt>
+                <dd>{age == null ? '—' : `${age}`}</dd>
+              </div>
+              <div>
+                <dt className="type-caption text-ink-tertiary">ותק</dt>
+                <dd>{years == null ? '—' : `${years} שנים (מ-${fmtDate(license.first_issued_at)})`}</dd>
+              </div>
+              {license.note && (
+                <div className="col-span-2 sm:col-span-3">
+                  <dt className="type-caption text-ink-tertiary">הערה</dt>
+                  <dd>{license.note}</dd>
+                </div>
+              )}
+            </dl>
+          </div>
+        )}
+
+        {issues.length > 0 && (
+          <div className="flex items-start gap-2 rounded-lg bg-warning/10 p-3 type-body text-warning">
+            <AlertTriangle size={ICON.sm} strokeWidth={STROKE} className="mt-0.5 shrink-0" />
+            <ul className="space-y-0.5">
+              {issues.map((i) => (
+                <li key={i}>{i}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </CardBody>
+
+      {canManage && (
+        <LicenseModal
+          open={editOpen}
+          onClose={() => setEditOpen(false)}
+          profileId={profileId}
+          driverName={driverName}
+          license={license ?? null}
+        />
+      )}
+    </Card>
+  )
+}
+
+function LicenseModal({
+  open,
+  onClose,
+  profileId,
+  driverName,
+  license,
+}: {
+  open: boolean
+  onClose: () => void
+  profileId: string
+  driverName: string | null
+  license: DriverLicense | null
+}) {
+  const toast = useToast()
+  const save = useSaveDriverLicense(profileId)
+  const [draft, setDraft] = useState<LicenseDraft>({
+    license_number: '',
+    license_classes: '',
+    first_issued_at: '',
+    expires_at: '',
+    birth_date: '',
+    note: '',
+    file: null,
+  })
+  const [fileError, setFileError] = useState<string | null>(null)
+  const [openedFor, setOpenedFor] = useState(false)
+  if (open !== openedFor) {
+    setOpenedFor(open)
+    setFileError(null)
+    if (open)
+      setDraft({
+        license_number: license?.license_number ?? '',
+        license_classes: license?.license_classes ?? '',
+        first_issued_at: license?.first_issued_at ?? '',
+        expires_at: license?.expires_at ?? '',
+        birth_date: license?.birth_date ?? '',
+        note: license?.note ?? '',
+        file: null,
+      })
+  }
+
+  const badDate = [draft.first_issued_at, draft.expires_at, draft.birth_date].some((d) => !isSaneDate(d))
+  const valid = !fileError && !badDate
+
+  const pickFile = (file: File | null) => {
+    if (!file) {
+      setFileError(null)
+      return setDraft((d) => ({ ...d, file: null }))
+    }
+    const err = validateDocFile(file)
+    setFileError(err)
+    setDraft((d) => ({ ...d, file: err ? null : file }))
+  }
+
+  const dateField = (key: 'first_issued_at' | 'expires_at' | 'birth_date', label: string, hint?: string) => (
+    <Field label={label} hint={hint} error={isSaneDate(draft[key]) ? undefined : 'תאריך לא תקין — בדקו את השנה'}>
+      <Input
+        type="date"
+        min={DATE_MIN}
+        max={DATE_MAX}
+        value={draft[key]}
+        onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+      />
+    </Field>
+  )
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`רישיון נהיגה${driverName ? ` · ${driverName}` : ''}`}
+      description="הרישיון שייך לנהג — הוא יוצג בכל רכב שהנהג מוצמד אליו"
+      footer={
+        <>
+          <Button className="ms-auto" onClick={onClose}>
+            ביטול
+          </Button>
+          <Button
+            variant="primary"
+            loading={save.isPending}
+            disabled={!valid}
+            onClick={() =>
+              save.mutate(
+                { draft, existing: license },
+                {
+                  onSuccess: () => {
+                    toast.success('הרישיון נשמר')
+                    onClose()
+                  },
+                  onError: (e) => toast.error(errorMessage(e)),
+                },
+              )
+            }
+          >
+            שמירה
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="מספר רישיון">
+          <Input
+            data-autofocus
+            dir="ltr"
+            value={draft.license_number}
+            onChange={(e) => setDraft((d) => ({ ...d, license_number: e.target.value }))}
+          />
+        </Field>
+        <Field label="דרגות" hint="למשל B, C1">
+          <Input dir="ltr" value={draft.license_classes} onChange={(e) => setDraft((d) => ({ ...d, license_classes: e.target.value }))} />
+        </Field>
+        {dateField('expires_at', 'תוקף הרישיון')}
+        {dateField('first_issued_at', 'הוצאת רישיון ראשון', 'ממנו נגזר הוותק')}
+        {dateField('birth_date', 'תאריך לידה', 'ממנו נגזר הגיל')}
+        <Field
+          label="צילום הרישיון"
+          error={fileError ?? undefined}
+          hint={
+            license?.file_name && !draft.file
+              ? `כרגע: ${license.file_name}${license.size_bytes ? ` · ${formatBytes(license.size_bytes)}` : ''}`
+              : 'תמונה או PDF, עד 25MB'
+          }
+        >
+          <Input type="file" accept={VEHICLE_DOC_ACCEPT} onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
+        </Field>
+        {draft.file && (
+          <p className="flex items-center gap-2 type-caption text-ink-tertiary sm:col-span-2">
+            <Paperclip size={ICON.xs} strokeWidth={STROKE} />
+            {draft.file.name} · {formatBytes(draft.file.size)}
+          </p>
+        )}
+        <Field label="הערה" className="sm:col-span-2">
+          <Textarea autoGrow rows={2} value={draft.note} onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))} />
+        </Field>
+      </div>
+    </Modal>
   )
 }
 

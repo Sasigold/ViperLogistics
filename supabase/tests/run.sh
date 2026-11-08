@@ -776,6 +776,13 @@ echo "$OUT80"
 OUT="$OUT
 $OUT80"
 
+# ‏81: קוד הרכב, ביטוח ורישיון נהג (0240). RLS על driver_licenses, נתיב
+# הרישיונות בדלי, ותאריכים עם שנה בת 5 ספרות נדחים.
+OUT81=$($PSQL -d vl -f "$HERE/81_vehicle_code_insurance_driver_license.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT81"
+OUT="$OUT
+$OUT81"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"

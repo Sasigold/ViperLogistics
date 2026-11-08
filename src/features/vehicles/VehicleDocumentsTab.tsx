@@ -42,11 +42,14 @@ import {
 } from './vehicleQueries'
 import type { DocumentDraft } from './vehicleQueries'
 import {
+  DATE_MAX,
+  DATE_MIN,
   DOC_STATE_COLORS,
   DOC_STATE_LABELS,
   VEHICLE_DOC_ACCEPT,
   expiryLabel,
   formatBytes,
+  isSaneDate,
   suggestExpiry,
   validateDocFile,
 } from './vehicles'
@@ -259,7 +262,9 @@ function DocumentModal({
   }
 
   const kind = kinds.find((k) => k.id === draft.kind_id)
-  const valid = draft.kind_id !== '' && !fileError
+  const badIssued = !isSaneDate(draft.issued_at)
+  const badExpires = !isSaneDate(draft.expires_at)
+  const valid = draft.kind_id !== '' && !fileError && !badIssued && !badExpires
 
   /* בחירת סוג ותאריך הוצאה ממלאת את הפקיעה לפי `default_valid_months`
      שבקטלוג. זו הצעה בלבד — המשתמש יכול לדרוס אותה. */
@@ -331,15 +336,18 @@ function DocumentModal({
             onChange={(e) => setDraft((d) => ({ ...d, document_number: e.target.value }))}
           />
         </Field>
-        <Field label="תאריך הוצאה">
-          <Input type="date" value={draft.issued_at} onChange={(e) => setIssued(e.target.value)} />
+        <Field label="תאריך הוצאה" error={badIssued ? 'תאריך לא תקין — בדקו את השנה' : undefined}>
+          <Input type="date" min={DATE_MIN} max={DATE_MAX} value={draft.issued_at} onChange={(e) => setIssued(e.target.value)} />
         </Field>
         <Field
           label="תאריך פקיעה"
           hint={kind ? `התראה ${kind.alert_days} ימים לפני` : undefined}
+          error={badExpires ? 'תאריך לא תקין — בדקו את השנה' : undefined}
         >
           <Input
             type="date"
+            min={DATE_MIN}
+            max={DATE_MAX}
             value={draft.expires_at}
             onChange={(e) => setDraft((d) => ({ ...d, expires_at: e.target.value }))}
           />
