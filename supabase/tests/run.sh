@@ -41,6 +41,20 @@ for f in "$ROOT"/supabase/migrations/*.sql; do
 done
 echo "all $(ls "$ROOT"/supabase/migrations/*.sql | wc -l) migrations applied"
 
+# ההרשאות כפי שהמיגרציות השאירו אותן, *לפני* ש-01_seed מעניק ל-authenticated
+# הרצה על כל פונקציה ב-public וב-app. ‏82 (מסך הקיר, 0202) קוראת ממנה.
+$PSQL -v ON_ERROR_STOP=1 -d vl >/dev/null <<'SQL'
+create schema t_pre_seed;
+create table t_pre_seed.function_acl as
+select n.nspname as schema, p.proname as name,
+       pg_get_function_identity_arguments(p.oid) as args,
+       has_function_privilege('anon', p.oid, 'execute')          as anon,
+       has_function_privilege('authenticated', p.oid, 'execute') as authenticated,
+       has_function_privilege('service_role', p.oid, 'execute')  as service_role
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname in ('public', 'app');
+SQL
+
 $PSQL -v ON_ERROR_STOP=1 -d vl -f "$HERE/01_seed.sql" >/dev/null
 
 echo
@@ -782,6 +796,26 @@ OUT81=$($PSQL -d vl -f "$HERE/81_vehicle_code_insurance_driver_license.sql" 2>&1
 echo "$OUT81"
 OUT="$OUT
 $OUT81"
+
+# ‏82/83: מסך הקיר (0202/0203) — הועברו מהענף claude/wall-feed-crew, שכבר בפרודקשן.
+# 82 יושבת ביולי ארבע שנים קדימה, 83 ב-current_date + 900; שתיהן כותבות סוד ל-Vault
+# ומשאירות נתונים אחריהן.
+OUT82=$($PSQL -d vl -f "$HERE/82_wall_feed.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT82"
+OUT="$OUT
+$OUT82"
+
+OUT83=$($PSQL -d vl -f "$HERE/83_wall_crew_names.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT83"
+OUT="$OUT
+$OUT83"
+
+# ‏84: מסך הקיר רואה את העבודה ואת הרווח (0241). לו״ז מחסן, משימות ניהול, איחור
+# בהחתמה וסיימו לאחרונה ב-current_date + 1400; הרווח של הקיר מול הסקשן של הדשבורד.
+OUT84=$($PSQL -d vl -f "$HERE/84_wall_work_and_profit.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT84"
+OUT="$OUT
+$OUT84"
 
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
