@@ -67,7 +67,7 @@ import { RequirePermission } from '../auth/guards'
 import { PERM } from '../../lib/permissions'
 import { BOARD_FIELDS, SupplierPickupChip } from './boardFields'
 import type { BoardLookups } from './boardFields'
-import { COLOR_BY_OPTIONS, buildTones, byTaskTime, clusterDay, performerLabel } from './grouping'
+import { COLOR_BY_OPTIONS, buildTones, byTaskTime, clusterDay, performerColor, performerLabel } from './grouping'
 import type { Cluster, ColorBy, GroupTone, SelfPerformer } from './grouping'
 import type { CustomerTruck, Truck, WorkBoardRow } from '../../types/domain'
 import { errorMessage } from '../../lib/errors'
@@ -1562,6 +1562,7 @@ export default function WorkBoardPage() {
                               row={col.row}
                               groupKey={col.groupKey}
                               performer={performerLabel(col.row, selfPerformer)}
+                              performerFill={performerColor(col.row, selfPerformer)}
                               canOpenEvent={canOpenEvent}
                               canOpenTask={canOpenTask}
                               onOpen={openTask}
@@ -1798,6 +1799,7 @@ function MobileBoard({
                         <MobileTaskCard
                           row={row}
                           performer={performerLabel(row, selfPerformer)}
+                          performerFill={performerColor(row, selfPerformer)}
                           tone={cluster.tone}
                           onOpen={onOpen}
                           onPanel={onPanel}
@@ -1819,6 +1821,7 @@ function MobileBoard({
 const MobileTaskCard = memo(function MobileTaskCard({
   row,
   performer,
+  performerFill,
   tone,
   onOpen,
   onPanel,
@@ -1827,6 +1830,8 @@ const MobileTaskCard = memo(function MobileTaskCard({
 }: {
   row: WorkBoardRow
   performer: string | null
+  /** הגוון של מי שמבצע, ללקוח שמבצע בעצמו — על הפס, כמו בכותרת בלו״ז */
+  performerFill: string | null
   tone: GroupTone | null
   onOpen: (row: WorkBoardRow) => void
   onPanel: (taskId: string, kind: 'staffing' | 'contractor') => void
@@ -1857,10 +1862,12 @@ const MobileTaskCard = memo(function MobileTaskCard({
       className="flex items-stretch gap-1.5 px-2.5 py-1.5"
       style={tone ? { background: tone.tint } : undefined}
     >
+      {/* הפס הוא זהות: גוון האירוע לכל קורא, ומי מבצע ללקוח שמבצע בעצמו —
+          הרקע של הכרטיס נשאר הגוון של האירוע, ולכן הקיבוץ אינו נאבד. */}
       <span
         aria-hidden
         className="w-1 shrink-0 rounded-full"
-        style={{ background: tone?.solid ?? row.customer_color ?? 'var(--vl-border-strong)' }}
+        style={{ background: performerFill ?? tone?.solid ?? row.customer_color ?? 'var(--vl-border-strong)' }}
       />
       <button onClick={() => onOpen(row)} className="min-w-0 flex-1 space-y-0.5 text-start">
         <span className="flex items-center gap-1.5">
@@ -1968,11 +1975,14 @@ const TaskHeader = memo(function TaskHeader({
   onOpenEvent,
   onHover,
   performer,
+  performerFill,
 }: {
   row: WorkBoardRow
   groupKey: string
   /** ‏"ארקו" או "וייפר" ללקוח שמבצע בעצמו — גובר על שם הלקוח */
   performer: string | null
+  /** והגוון שלו — גובר על צבע הלקוח, שהוא אותו צבע בכל העמודות שלו */
+  performerFill: string | null
   canOpenEvent: boolean
   /** בלי המפתח אין לחיצה כפולה, וההמתנה שמאפשרת אותה נחסכת */
   canOpenTask: boolean
@@ -1988,8 +1998,12 @@ const TaskHeader = memo(function TaskHeader({
   /* The fill is the customer's own colour, straight from settings, so a
      regular can find their customer's columns without reading a word. The
      label flips between near-black and white by the fill's luminance —
-     `color-mix(…, black N%)` only holds over a tint, never over a solid. */
-  const fill = row.customer_color || NEUTRAL
+     `color-mix(…, black N%)` only holds over a tint, never over a solid.
+
+     ‏לקוח שמבצע בעצמו הוא היוצא מן הכלל: בלו״ז שלו כל המשימות שלו, ולכן
+     "למצוא את הלקוח שלי" אינה השאלה — "מי מבצע" היא, ו-`performerColor`
+     עונה עליה בצבע (ראו `grouping.ts`). */
+  const fill = performerFill || row.customer_color || NEUTRAL
   /* A task with no event, or a reader who may not open one, opens no event —
      the second press still opens the task, which is the point of the name. */
   const eventId = canOpenEvent ? row.event_id : null

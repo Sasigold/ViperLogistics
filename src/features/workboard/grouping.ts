@@ -197,3 +197,27 @@ export function performerLabel(
   if (!reader?.performed_by_enabled || row.customer_id !== reader.id) return null
   return row.performed_by === 'arko' ? row.customer_name ?? reader.name : 'וייפר'
 }
+
+/**
+ * הגוון שבו אותו קורא מבדיל בעין בין משימה שלו למשימה של וייפר.
+ *
+ * כותרת העמודה בלו״ז נצבעת בצבע הלקוח, ולכן אצל ארקו *כל* העמודות יצאו
+ * באותו ירוק והשם לבדו ("ארקו"/"וייפר") היה כל ההבדל — טקסט בשורה אחת
+ * מול לוח שנקרא בסריקה. ארקו נשארת בצבע שלה, זה שהיא מכירה מכל מסך אחר,
+ * ווייפר מקבלת גוון קבוע אחד.
+ *
+ * ‏hex ולא משתנה CSS: ‏`readableOn` מודדת את הבהירות של המילוי כדי לבחור
+ * שחור או לבן לכיתוב שעליו, ומשתנה אינו נמדד. כמו צבע לקוח הוא אותו צבע
+ * בשני המצבים (בהיר/כהה).
+ *
+ * ‏null לכל קורא אחר, כמו ב-`performerLabel` — ואז הכותרת נשארת בצבע הלקוח.
+ */
+export const VIPER_COLOR = '#c44a22'
+
+export function performerColor(
+  row: Pick<WorkBoardRow, 'customer_id' | 'customer_color' | 'performed_by'>,
+  reader: SelfPerformer,
+): string | null {
+  if (!reader?.performed_by_enabled || row.customer_id !== reader.id) return null
+  return row.performed_by === 'arko' ? row.customer_color : VIPER_COLOR
+}
