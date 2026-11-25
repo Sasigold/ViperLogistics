@@ -213,6 +213,9 @@ function IncomeCategoriesCard() {
                 )}
                 {/* ‏0212: העמלה נקבעת ביד על כל אירוע, ולא לפי אחוז */}
                 {c.manual_commission && <Badge tone="warning">עמלה ידנית</Badge>}
+                {/* ‏0242: הסכום מגיע מ-ViperFlow, ובכל זאת נערך ביד על האירוע.
+                    גם זו תווית ולא מתג, מאותו טעם. */}
+                {c.manual_override && <Badge tone="neutral">נערך ביד על האירוע</Badge>}
                 {!c.is_active && <Badge tone="neutral">כבויה</Badge>}
                 <Switch
                   checked={c.is_active}

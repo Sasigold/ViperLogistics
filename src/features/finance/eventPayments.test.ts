@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   commissionError,
   commissionNote,
+  incomeFieldHint,
   lineLabel,
+  lockedHint,
+  manualNote,
   matchesFilter,
   overpayWarning,
   parseAmount,
@@ -148,5 +151,55 @@ describe('manual commission (0212)', () => {
     expect(stale.text).toContain('המפרט השתנה לאחר קביעת העמלה')
     expect(stale.text).toContain('1000 ₪')
     expect(stale.text).toContain('2000 ₪')
+  })
+})
+
+describe('a haulage amount edited by hand (0242)', () => {
+  const money = (n: number) => `${n} ₪`
+
+  it('says nothing on a line nobody touched', () => {
+    expect(manualNote({ gross: 2000, is_manual: false, synced_amount: 2000 }, money)).toBeNull()
+  })
+
+  it('names the order amount only when it differs', () => {
+    expect(manualNote({ gross: 2000, is_manual: true, synced_amount: 2000 }, money)).toEqual({
+      tone: 'muted',
+      text: 'הסכום נקבע ידנית — וזהה למה שבהזמנה',
+    })
+    const moved = manualNote({ gross: 2500, is_manual: true, synced_amount: 3000 }, money)
+    expect(moved).toEqual({ tone: 'warning', text: 'הסכום נקבע ידנית · בהזמנה ב-ViperFlow 3000 ₪' })
+    expect(manualNote({ gross: 2500, is_manual: true, synced_amount: null }, money)).toEqual({
+      tone: 'muted',
+      text: 'הסכום נקבע ידנית',
+    })
+  })
+
+  it('the locked hint speaks of one line in the singular', () => {
+    expect(lockedHint([])).toBe('')
+    expect(lockedHint(['ריהוט ישן'])).toContain('ריהוט ישן מגיע מ-ViperFlow')
+    expect(lockedHint(['ריהוט ישן'])).toContain('לערוך אותו ביד')
+    expect(lockedHint(['ריהוט ישן', 'ריהוט חדש'])).toContain('ריהוט ישן, ריהוט חדש מגיעים מ-ViperFlow')
+  })
+
+  it('the field hint tells what an edit does, and what an empty field undoes', () => {
+    const base = { editable: true, manual_commission: false, manual_override: true, is_manual: false }
+    expect(incomeFieldHint({ ...base, synced_amount: 2000 }, money)).toBe(
+      'מגיע מ-ViperFlow, ותיקון כאן גובר עליו מכאן והלאה',
+    )
+    expect(incomeFieldHint({ ...base, is_manual: true, synced_amount: 2000 }, money)).toBe(
+      'הסכום נקבע ידנית. שדה ריק יחזיר לסכום מ-ViperFlow (2000 ₪)',
+    )
+    expect(incomeFieldHint({ ...base, is_manual: true, synced_amount: null }, money)).toBe(
+      'הסכום נקבע ידנית. שדה ריק מוריד את השורה',
+    )
+    expect(
+      incomeFieldHint({ ...base, editable: false, synced_amount: 2000 }, money),
+    ).toBe('מגיע מ-ViperFlow — עצירת סנכרון פותחת אותו לעריכה')
+    expect(
+      incomeFieldHint({ ...base, manual_override: false, manual_commission: true, synced_amount: null }, money),
+    ).toBe('העמלה על הסכום הזה נקבעת ביד, בשורה שלו בכרטיס')
+    expect(
+      incomeFieldHint({ ...base, manual_override: false, synced_amount: null }, money),
+    ).toBeUndefined()
   })
 })

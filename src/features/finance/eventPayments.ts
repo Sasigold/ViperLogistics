@@ -6,7 +6,7 @@
  * האירוע, איך כותבים שורת עמלה, ואיך הופכים את מה שהוקלד לסכום.
  */
 import { endOfMonth, endOfYear, format, startOfMonth, startOfYear, subMonths } from 'date-fns'
-import type { EventPaymentLine, PaymentMethod } from '../../types/domain'
+import type { EventIncomeEditCategory, EventPaymentLine, PaymentMethod } from '../../types/domain'
 
 export const METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: 'מזומן',
@@ -90,6 +90,60 @@ export function parseCommission(raw: string): number | null {
   if (!/^\d+(\.\d{1,2})?$/.test(clean)) return null
   const n = Number(clean)
   return Number.isFinite(n) && n >= 0 ? n : null
+}
+
+/**
+ * מה כתוב מתחת לשורה שהסכום עליה נקבע ביד (0242, ההובלות). ההשוואה היא מול
+ * מה שההזמנה ב-ViperFlow אומרת *עכשיו*: כל עוד הם שווים אין על מה להתריע,
+ * וכשהם נפרדים הבעלים צריך לראות את שני המספרים כדי להכריע אם לתקן.
+ * ‏null = השורה אינה ידנית, ואין מה לכתוב.
+ */
+export function manualNote(
+  line: Pick<EventPaymentLine, 'gross' | 'is_manual' | 'synced_amount'>,
+  money: (n: number) => string,
+): { tone: 'warning' | 'muted'; text: string } | null {
+  if (!line.is_manual) return null
+  const synced = line.synced_amount == null ? null : Number(line.synced_amount)
+  if (synced == null) return { tone: 'muted', text: 'הסכום נקבע ידנית' }
+  if (cents(synced) === cents(Number(line.gross ?? 0))) {
+    return { tone: 'muted', text: 'הסכום נקבע ידנית — וזהה למה שבהזמנה' }
+  }
+  return { tone: 'warning', text: `הסכום נקבע ידנית · בהזמנה ב-ViperFlow ${money(synced)}` }
+}
+
+/**
+ * ההערה מתחת לפירוט על הסכומים שנעולים (0212): מי נעול, ואיך פותחים. ‏0242
+ * הוציא את ההובלות מהרשימה, ולכן היא כבר אינה "הסכומים" אלא שמות — ויחיד
+ * ורבים אינם אותו משפט.
+ */
+export function lockedHint(labels: string[]): string {
+  if (labels.length === 0) return ''
+  const names = labels.join(', ')
+  return labels.length === 1
+    ? `${names} מגיע מ-ViperFlow. כדי לערוך אותו ביד — ״עצירת סנכרון״ בראש הדף.`
+    : `${names} מגיעים מ-ViperFlow. כדי לערוך אותם ביד — ״עצירת סנכרון״ בראש הדף.`
+}
+
+/**
+ * ההסבר מתחת לשדה בחלון עריכת הסכומים. ‏0242: בקטגוריה שמותר לערוך ביד
+ * (ההובלות) הטקסט אומר מה יקרה — התיקון גובר על הסנכרון — ומה מחזיר אחורה.
+ */
+export function incomeFieldHint(
+  c: Pick<EventIncomeEditCategory, 'editable' | 'manual_commission' | 'manual_override' | 'is_manual' | 'synced_amount'>,
+  money: (n: number) => string,
+): string | undefined {
+  if (!c.editable) return 'מגיע מ-ViperFlow — עצירת סנכרון פותחת אותו לעריכה'
+  if (c.manual_override) {
+    const synced = c.synced_amount == null ? null : Number(c.synced_amount)
+    if (c.is_manual) {
+      return synced == null
+        ? 'הסכום נקבע ידנית. שדה ריק מוריד את השורה'
+        : `הסכום נקבע ידנית. שדה ריק יחזיר לסכום מ-ViperFlow (${money(synced)})`
+    }
+    return 'מגיע מ-ViperFlow, ותיקון כאן גובר עליו מכאן והלאה'
+  }
+  if (c.manual_commission) return 'העמלה על הסכום הזה נקבעת ביד, בשורה שלו בכרטיס'
+  return undefined
 }
 
 /** אותו כלל שהשרת אוכף: עמלה אינה גבוהה מהסכום שעליו היא נקבעת. */

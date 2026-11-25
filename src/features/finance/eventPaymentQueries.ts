@@ -153,3 +153,24 @@ export function useSetIncomeCommission() {
     },
   })
 }
+
+/**
+ * ביטול עריכה ידנית של סעיף הכנסה (0242, ההובלות): הסכום חוזר למה שהסנכרון
+ * מ-ViperFlow מסר אחרון, ומשם הסנכרון שולט בו שוב.
+ */
+export function useReleaseEventIncome() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { eventId: string; categoryId: string }) => {
+      const { error } = await supabase.rpc('event_income_release', {
+        p_event_id: input.eventId,
+        p_category_id: input.categoryId,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      invalidateEventPayments(qc)
+      void qc.invalidateQueries({ queryKey: ['event_income'] })
+    },
+  })
+}

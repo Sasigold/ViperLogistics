@@ -52,6 +52,11 @@ export interface IncomeCategory {
    * כיסאות ופריטים חופשיים). בלעדיה החלק של וייפר הוא האחוז שבחלוקת הלקוח.
    */
   manual_commission: boolean
+  /**
+   * הסכום מגיע מ-ViperFlow, ובכל זאת מותר לערוך אותו ביד גם כשהסנכרון רץ —
+   * העריכה ננעלת והסנכרון מפסיק לדרוס אותה (0242). רק ההובלות.
+   */
+  manual_override: boolean
 }
 
 export type ViperflowIncomeSource =
@@ -114,6 +119,13 @@ export interface EventPaymentLine {
   commission_stale?: boolean
   /** הסכום מגיע מ-ViperFlow והסנכרון רץ — אינו נערך ביד */
   synced?: boolean
+  /** הקטגוריה נערכת ביד גם כשהסנכרון רץ (0242) */
+  manual_override?: boolean
+  /** הסכום נקבע ביד וגובר על ViperFlow (0242) */
+  is_manual?: boolean
+  /** הסכום שהסנכרון מסר אחרון; null = לא נמסר (0242) */
+  synced_amount?: number | null
+  manual_set_at?: string | null
 }
 
 /** קטגוריה שמופעלת ללקוח, לחלון עריכת הסכומים בכרטיס התשלומים (0212) */
@@ -126,6 +138,12 @@ export interface EventIncomeEditCategory {
   source: ViperflowIncomeSource | null
   /** false = הסכום מסונכרן מ-ViperFlow, והסנכרון לאירוע רץ */
   editable: boolean
+  /** הקטגוריה נערכת ביד גם כשהסנכרון רץ (0242) */
+  manual_override: boolean
+  /** הסכום שמוצג נקבע ביד (0242) */
+  is_manual: boolean
+  /** הסכום שהסנכרון מסר אחרון (0242) */
+  synced_amount: number | null
 }
 
 /** תשלום אחד שנרשם על אירוע — תקבול עם `event_id` (0205) */

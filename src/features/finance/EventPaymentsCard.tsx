@@ -8,6 +8,7 @@ import {
   Lock,
   Pencil,
   Plus,
+  RotateCcw,
   STROKE,
   Trash2,
 } from '../../components/ui/icons'
@@ -40,7 +41,10 @@ import {
   STATE_TONES,
   commissionError,
   commissionNote,
+  incomeFieldHint,
   lineLabel,
+  lockedHint,
+  manualNote,
   overpayWarning,
   parseAmount,
   parseCommission,
@@ -52,6 +56,7 @@ import {
   useEventPaymentSummary,
   useRemoveEventCharge,
   useRemoveEventPayment,
+  useReleaseEventIncome,
   useSaveEventIncome,
   useSetIncomeCommission,
 } from './eventPaymentQueries'
@@ -69,6 +74,7 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
   const { data, isLoading, error, refetch } = useEventPaymentSummary(eventId)
   const remove = useRemoveEventPayment()
   const removeCharge = useRemoveEventCharge()
+  const release = useReleaseEventIncome()
   const toast = useToast()
   const { confirm, dialog } = useConfirm()
   const [collectOpen, setCollectOpen] = useState(false)
@@ -94,8 +100,9 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
   const canManage = data.can_manage
   const canEditIncome = data.can_edit_income
   /* ‏0212: באירוע מ-ViperFlow שהסנכרון שלו רץ, הסכומים שמגיעים משם סגורים
-     לעריכה — עצירת הסנכרון (בראש הדף) היא שפותחת אותם. */
-  const syncedAmounts = data.lines.some((l) => l.synced)
+     לעריכה — עצירת הסנכרון (בראש הדף) היא שפותחת אותם. ‏0242: ההובלות כבר
+     אינן ביניהם, ולכן ההערה נוקבת בשמות של מי שכן נעול. */
+  const lockedLines = data.lines.filter((l) => l.synced)
   const editableCategories = (data.income_categories ?? []).filter((c) => c.editable)
   const staleLines = data.lines.filter((l) => l.commission_stale)
 
@@ -122,6 +129,26 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
       onSuccess: () => toast.success('החיוב נמחק'),
       onError: (e) => toast.error(errorMessage(e)),
     })
+  }
+
+  /* ‏0242: ביטול עריכה ידנית — הסכום חוזר למה שההזמנה ב-ViperFlow אומרת. */
+  const releaseLine = async (l: EventPaymentLine) => {
+    if (!l.category_id) return
+    const to = l.synced_amount == null ? null : Number(l.synced_amount)
+    const ok = await confirm(
+      to == null
+        ? `לבטל את הסכום שהוזן ביד ב"${l.label}"? לא הגיע סכום מ-ViperFlow, ולכן השורה תרד.`
+        : `להחזיר את "${l.label}" לסכום מ-ViperFlow (${fmtMoney(to)})? הסכום שהוזן ביד יימחק.`,
+      { title: 'חזרה לסכום מ-ViperFlow', confirmLabel: 'חזרה' },
+    )
+    if (!ok) return
+    release.mutate(
+      { eventId, categoryId: l.category_id },
+      {
+        onSuccess: () => toast.success('הסכום חזר לסכום מ-ViperFlow'),
+        onError: (e) => toast.error(errorMessage(e)),
+      },
+    )
   }
 
   const collectButton = canManage && (
@@ -186,6 +213,7 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
               {l.charge_id && <Badge className="ms-1.5">חיוב ידני</Badge>}
               {l.note && <span className="block whitespace-pre-line text-ink-secondary">{l.note}</span>}
               {l.manual_commission && <CommissionNote line={l} />}
+              {l.is_manual && <ManualNote line={l} />}
             </dt>
             <dd className="flex shrink-0 items-center gap-1">
               <span dir="ltr" className="tabular-nums type-body font-medium">
@@ -198,6 +226,16 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
                   onClick={() => setCommissionLine(l)}
                 >
                   <Pencil size={ICON.sm} strokeWidth={STROKE} />
+                </IconButton>
+              )}
+              {canEditIncome && l.is_manual && l.category_id && (
+                <IconButton
+                  label="חזרה לסכום מ-ViperFlow"
+                  size="sm"
+                  loading={release.isPending && release.variables?.categoryId === l.category_id}
+                  onClick={() => void releaseLine(l)}
+                >
+                  <RotateCcw size={ICON.sm} strokeWidth={STROKE} />
                 </IconButton>
               )}
               {canManage && l.charge_id && (
@@ -224,10 +262,10 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
             {incomeButton}
           </div>
         )}
-        {canEditIncome && syncedAmounts && !data.cancelled && (
+        {canEditIncome && lockedLines.length > 0 && !data.cancelled && (
           <p className="flex items-start gap-1.5 py-1.5 type-caption text-ink-tertiary">
             <Lock size={ICON.sm} strokeWidth={STROKE} className="mt-0.5 shrink-0" />
-            הסכומים מגיעים מ-ViperFlow. כדי לערוך אותם ביד — ״עצירת סנכרון״ בראש הדף.
+            {lockedHint(lockedLines.map((l) => l.label))}
           </p>
         )}
         <div className="flex items-baseline justify-between gap-3 pt-2">
@@ -348,6 +386,23 @@ export function EventPaymentsCard({ eventId, bare }: { eventId: string; bare?: b
 /** מתחת לשורה שהעמלה עליה ידנית (0212): על כמה נקבעה, או שהמפרט זז ממנה. */
 function CommissionNote({ line }: { line: EventPaymentLine }) {
   const note = commissionNote(line, fmtMoney)
+  return (
+    <span
+      className={cx(
+        'mt-0.5 flex items-start gap-1',
+        note.tone === 'warning' ? 'font-medium text-warning-text' : 'tabular-nums',
+      )}
+    >
+      {note.tone === 'warning' && <AlertTriangle size={ICON.xs} strokeWidth={STROKE} className="mt-0.5 shrink-0" />}
+      {note.text}
+    </span>
+  )
+}
+
+/** מתחת לשורה שהסכום עליה נקבע ביד (0242): ומה ההזמנה אומרת עכשיו. */
+function ManualNote({ line }: { line: EventPaymentLine }) {
+  const note = manualNote(line, fmtMoney)
+  if (!note) return null
   return (
     <span
       className={cx(
@@ -532,13 +587,7 @@ function IncomeEditModal({
             <Field
               key={c.id}
               label={`${c.name} (₪)`}
-              hint={
-                !c.editable
-                  ? 'מגיע מ-ViperFlow — עצירת סנכרון פותחת אותו לעריכה'
-                  : c.manual_commission
-                    ? 'העמלה על הסכום הזה נקבעת ביד, בשורה שלו בכרטיס'
-                    : undefined
-              }
+              hint={incomeFieldHint(c, fmtMoney)}
               error={bad ? 'סכום לא תקין' : undefined}
             >
               <Input

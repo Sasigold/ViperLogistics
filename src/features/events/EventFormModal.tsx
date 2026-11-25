@@ -261,10 +261,13 @@ export function EventFormModal({
   const { data: eventIncome } = useEventIncome(open && event ? event.id : null)
   const canEditIncome = has(PERM.FINANCE_INCOME_EDIT)
   /* ‏0212: באירוע מ-ViperFlow שהסנכרון שלו רץ, סכום שמגיע משם אינו נערך
-     כאן — הוא היה נדרס בסנכרון הבא, והשרת דוחה אותו. עצירת הסנכרון פותחת. */
+     כאן — הוא היה נדרס בסנכרון הבא, והשרת דוחה אותו. עצירת הסנכרון פותחת.
+     ‏0242: קטגוריה שמסומנת `manual_override` — ההובלות — כן נערכת, והתיקון
+     גובר על הסנכרון מכאן והלאה. */
   const { data: viperflowLink = null } = useViperflowLink(event?.id, open && !!event)
   const viperflowSynced = !!viperflowLink && !viperflowLink.sync_locked_at
-  const incomeLocked = (c: IncomeCategory) => viperflowSynced && !!c.viperflow_income_source
+  const incomeLocked = (c: IncomeCategory) =>
+    viperflowSynced && !!c.viperflow_income_source && !c.manual_override
   /**
    * מפרט כבר בטופס היצירה (0113).
    *
@@ -1063,9 +1066,11 @@ export function EventFormModal({
                   hint={
                     locked
                       ? 'מגיע מ-ViperFlow — עצירת סנכרון פותחת אותו לעריכה'
-                      : c.manual_commission
-                        ? 'העמלה נקבעת ביד, בכרטיס התשלומים של האירוע'
-                        : `ויפר ${pct}% · לקוח ${Math.round((100 - pct) * 100) / 100}%`
+                      : viperflowSynced && c.manual_override
+                        ? 'מגיע מ-ViperFlow, ותיקון כאן גובר עליו מכאן והלאה'
+                        : c.manual_commission
+                          ? 'העמלה נקבעת ביד, בכרטיס התשלומים של האירוע'
+                          : `ויפר ${pct}% · לקוח ${Math.round((100 - pct) * 100) / 100}%`
                   }
                 >
                   <Input

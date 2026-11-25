@@ -817,6 +817,13 @@ echo "$OUT84"
 OUT="$OUT
 $OUT84"
 
+# ‏85: ההובלה נערכת ביד והסנכרון ממשיך (0242). אירוע ב-current_date + 1120,
+# משאיר אחריו אירוע, הכנסות, משלוחים והתראות.
+OUT85=$($PSQL -d vl -f "$HERE/85_the_haulage_is_edited_by_hand.sql" 2>&1 | grep -v '^[0-9a-f-]\{36\}$' | grep -v '^$')
+echo "$OUT85"
+OUT="$OUT
+$OUT85"
+
 echo
 FAILED=$(echo "$OUT" | grep -c '^FAIL' || true)
 echo "pass: $(echo "$OUT" | grep -c '^pass')   FAIL: $FAILED"
